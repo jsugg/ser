@@ -55,4 +55,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 This project is licensed under the MIT License. See `LICENSE` for more information.
 
-The diagram above provides a high-level overview of the workflow of the Speech Emotion Recognition system. The audio input is first processed to extract MFCC, Chroma, and Mel features. The data is then split into a training set and a testing set. The MLPClassifier model is trained on the training set. The model's performance is evaluated by making predictions on the testing set and calculating the accuracy score.
+The diagram above provides a high-level overview of the workflow of the Speech Emotion Recognition system. The audio input is first processed to extract MFCC, Chroma, and Mel features. The data is then split into a training set and a testing set. The MLPClassifier model is trained on the training set. The model's performance is evaluated by making predictions on the testing set and calculating the accuracy score. The accuracy of the current model is 85%.
