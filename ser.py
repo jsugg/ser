@@ -69,7 +69,7 @@ def extended_extract_feature(file, mfcc, chroma, mel, frame_size=3, frame_stride
 def load_data(test_size=0.2, feature_extraction='regular'):
     observed_emotions=list(emotions.values()) # Observe all supported emotions, or a subset: observed_emotions=['calm', 'happy', 'fearful', 'disgust']
     x,y=[],[]
-    for file in tqdm.tqdm(glob.glob("./dataset/ravdess/Actor_*/*.wav")):
+    for file in tqdm.tqdm(glob.glob("./dataset/combined-datasets/Actor_*/*.wav")):
         file_name=os.path.basename(file)
         emotion=emotions[file_name.split("-")[2]]
         if emotion not in observed_emotions:
