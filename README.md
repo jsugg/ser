@@ -32,6 +32,10 @@ The project structure is as follows:
 ## Installation
 To get started with this project, clone the repository and install the dependencies listed in the Pipfile.
 
+Downlaod the RAVDESS database and move its contents into the dataset/ravdess/ folder.
+The Ryerson Audio-Visual Database of Emotional Speech and Song (RAVDESS) can be downloaded free of charge [here](https://zenodo.org/record/1188976).
+
+
 ## Usage
 The main script is `ser.py`. It can be used to train the model or to predict the emotion from an audio file.
 
