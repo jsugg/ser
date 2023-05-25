@@ -26,34 +26,23 @@ The project structure is as follows:
 ├── README.md
 ├── model.pkl
 ├── sample.wav
-└── sre.py
+└── ser.py
 ```
 
 ## Installation
-1. Clone the repository:
-```bash
-git clone https://github.com/jsugg/ser.git
-```
-2. Navigate to the project directory:
-```bash
-cd ser
-```
-3. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
+To get started with this project, clone the repository and install the dependencies listed in the Pipfile.
 
 ## Usage
-The main script is `sre.py`. It can be used to train the model or to predict the emotion from an audio file.
+The main script is `ser.py`. It can be used to train the model or to predict the emotion from an audio file.
 
 To train the model, use the following command:
 ```bash
-python sre.py --train
+python ser.py --train
 ```
 
 To predict the emotion from an audio file, use the following command:
 ```bash
-python sre.py --file <path_to_audio_file>
+python ser.py --file <path_to_audio_file>
 ```
 
 ## Contributing
@@ -61,7 +50,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 This project is licensed under the MIT License. See `LICENSE` for more information.
-
-[You can edit this diagram online if you want to make any changes.](https://showme.redstarplugin.com/s/Ffm2o9Ii)
 
 The diagram above provides a high-level overview of the workflow of the Speech Emotion Recognition system. The audio input is first processed to extract MFCC, Chroma, and Mel features. The data is then split into a training set and a testing set. The MLPClassifier model is trained on the training set. The model's performance is evaluated by making predictions on the testing set and calculating the accuracy score.
