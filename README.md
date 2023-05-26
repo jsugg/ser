@@ -32,8 +32,10 @@ The project structure is as follows:
 ## Installation
 To get started with this project, clone the repository and install the dependencies listed in the Pipfile.
 
-Downlaod the RAVDESS database and move its contents into the dataset/ravdess/ folder.
-The Ryerson Audio-Visual Database of Emotional Speech and Song (RAVDESS) can be downloaded free of charge [here](https://zenodo.org/record/1188976).
+The datasets under dataset/combined-datasets onsolidate the RAVDESS and the TESS datasets.
+The Ryerson Audio-Visual Database of Emotional Speech and Song (RAVDESS) can be downloaded free of charge in the PLOSE ONE journal for Medicine & Health [here](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0196391).
+The Toronto emotional speech set (TESS) can be downloaded free of charge in the University of Toronto's Department of Psychology website [here](https://tspace.library.utoronto.ca/handle/1807/24501)
+
 
 
 ## Usage
