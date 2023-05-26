@@ -20,7 +20,7 @@ The SER model is trained on the RAVDESS dataset and uses MFCC (Mel Frequency Cep
 The project structure is as follows:
 ```
 .
-├── dataset/ravdess/
+├── dataset/combined-datasets/
 ├── .gitignore
 ├── Pipfile
 ├── README.md
@@ -32,7 +32,7 @@ The project structure is as follows:
 ## Installation
 To get started with this project, clone the repository and install the dependencies listed in the Pipfile.
 
-The datasets under dataset/combined-datasets onsolidate the RAVDESS and the TESS datasets.
+The datasets under dataset/combined-datasets consolidate the RAVDESS and the TESS datasets.
 The Ryerson Audio-Visual Database of Emotional Speech and Song (RAVDESS) can be downloaded free of charge in the PLOSE ONE journal for Medicine & Health [here](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0196391).
 The Toronto emotional speech set (TESS) can be downloaded free of charge in the University of Toronto's Department of Psychology website [here](https://tspace.library.utoronto.ca/handle/1807/24501)
 
