@@ -6,7 +6,8 @@ import time
 import pickle
 import numpy as np
 import librosa
-from soundfile import SoundFile
+#from soundfile import SoundFile
+import soundfile as soundfile
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score
@@ -81,7 +82,7 @@ def read_audio_file(file_path: str, max_retries: int = 3, retry_delay: int = 1) 
             print(f"Falling back to soundfile...")
             
             try:
-                with SoundFile(file_path) as sf:
+                with soundfile.SoundFile(file_path) as sf:
                     audiofile = sf.read(dtype='float32')
                     current_sample_rate = sf.samplerate
 
