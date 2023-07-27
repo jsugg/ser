@@ -11,6 +11,15 @@ sklearn = "*"
 pyaudio = "*"
 argparse = "*"
 tqdm = "*"
+audioread = "*"
+wave = "*"
+pydub = "*"
+stable-ts = "==2.0.0"
+halo = "*"
+openai-whisper = "==20230308"
+colored = "*"
+demucs = "*"
+opennmt-py = "*"
 
 [dev-packages]
 
