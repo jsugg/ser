@@ -85,14 +85,6 @@ graph LR;
 * Specify language: **`--language <language>--`**
 * Save transcript: **`--save_transcript`**
 
-```mermaid
-graph TD;
-    A[User Input] -->|Train Command| B[Train Model];
-    A -->|Predict Command| C[Predict Emotion];
-    C --> D[Display Emotion];
-    A -->|Transcript Command| E[Extract Transcript];
-    E --> F[Display Transcript];
-```
 ---
 ## Modules
 * **`transcript_extractor`**: Extracts transcripts from audio files.
