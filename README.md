@@ -3,7 +3,7 @@
 </div>
 
 
-# Speech Emotion Recognition (SER) System
+# Speech Emotion Recognition (SER)
 ---
 ## Overview
 The `ser` package is a Python package designed to identify and analyze emotions from spoken language. Utilizing cutting-edge machine learning techniques and audio processing algorithms, this package classifies emotions in speech, providing insights into the emotional states conveyed in audio recordings.
