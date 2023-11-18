@@ -48,7 +48,7 @@ def extract_transcript(filename: str, language: str) -> list:
     with Halo(
         text='Loading the speech recognition model...',
         spinner='dots', text_color='green'):
-        model_download_path: str = f"{MODELS_CONFIG['models_folder']}{MODELS_CONFIG['whisper_model']['path']}"
+        model_download_path: str = f"{MODELS_CONFIG['models_folder']}/{MODELS_CONFIG['whisper_model']['path']}"
         model = stable_whisper.load_model(
             name=MODELS_CONFIG['whisper_model']['name'],
             device="cpu", dq=False, download_root=model_download_path,
