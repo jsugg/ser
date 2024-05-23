@@ -1,7 +1,7 @@
 """
-Data Loader for Speech Emotion Recognition (SER) System
+Data Loader for Speech Emotion Recognition (SER) Tool
 
-This module provides functions to load and process audio data for the SER system. It
+This module provides functions to load and process audio data for the SER tool. It
 handles feature extraction from audio files, splitting the dataset into training and
 testing sets, and parallel processing of audio files.
 
@@ -25,8 +25,8 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 from ser.utils import get_logger
-from ser.features.feature_extractor import extract_feature
-from ser.config import Config
+from ser.features import extract_feature
+from ser import Config
 
 
 logger: logging.Logger = get_logger(__name__)
@@ -43,7 +43,8 @@ def process_file(
         observed_emotions (List[str]): List of observed emotions.
 
     Returns:
-        Optional[Tuple[np.ndarray, str]]: Extracted features and associated emotion label for the audio file.
+        Optional[Tuple[np.ndarray, str]]: Extracted features and associated
+            emotion label for the audio file.
         Returns None if the emotion is not in observed_emotions.
     """
     try:
@@ -68,7 +69,8 @@ def load_data(test_size: float = 0.2) -> Optional[List]:
         test_size (float): Fraction of the dataset to be used as test set.
 
     Returns:
-        Tuple containing training features, training labels, test features, and test labels.
+        Tuple containing training features, training labels, test features,
+        and test labels.
     """
     observed_emotions: List[str] = list(Config.EMOTIONS.values())
     data: List[Tuple[np.ndarray, str]]

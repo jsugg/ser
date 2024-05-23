@@ -1,5 +1,5 @@
 """
-Transcript Extraction for Speech Emotion Recognition (SER) System
+Transcript Extraction for Speech Emotion Recognition (SER) Tool
 
 This module provides functions to extract transcripts from audio files using the Whisper
 model. It includes functions to load the Whisper model and extract and format the transcript.

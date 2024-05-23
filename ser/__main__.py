@@ -1,12 +1,12 @@
 """
-Speech Emotion Recognition (SER) System
+Speech Emotion Recognition (SER) Tool
 
-This module serves as the entry point for the Speech Emotion Recognition (SER) system.
+This module serves as the entry point for the Speech Emotion Recognition (SER) tool.
 It provides command-line interface (CLI) options for training the emotion classification model
 or predicting emotions and generating transcripts from audio files.
 
 Usage:
-    The system can be operated in two primary modes:
+    The tool can be operated in two primary modes:
     1. Training mode: Trains the model using labeled audio data.
     2. Prediction mode: Predicts emotions in a given audio file and extracts the transcript.
 
@@ -40,7 +40,7 @@ def main() -> None:
     Main function to handle the command line interface logic.
     """
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Speech Emotion Recognition System"
+        description="Speech Emotion Recognition Tool"
     )
     parser.add_argument(
         "--train",

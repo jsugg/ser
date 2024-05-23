@@ -1,5 +1,5 @@
 """
-Timeline Utility Functions for Speech Emotion Recognition (SER) System
+Timeline Utility Functions for Speech Emotion Recognition (SER) Tool
 
 This module provides functions to build, print, and save timelines that integrate recognized
 emotions with corresponding transcripts. It includes functions to build the timeline, print it,

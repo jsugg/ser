@@ -1,5 +1,5 @@
 """
-Feature Extraction for Speech Emotion Recognition (SER) System
+Feature Extraction for Speech Emotion Recognition (SER) Tool
 
 This module provides functions to extract various audio features 
 (e.g., MFCC, chroma, mel, spectral contrast, tonnetz) from audio
