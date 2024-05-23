@@ -25,9 +25,8 @@ import librosa
 import soundfile as sf
 from halo import Halo
 
-from ser.utils import get_logger
+from ser.utils import get_logger, read_audio_file
 from ser.config import Config
-from ser.utils.audio_utils import read_audio_file
 
 
 logger: logging.Logger = get_logger(__name__)
@@ -114,16 +113,18 @@ def extended_extract_feature(
     audiofile: str, frame_size: int = 3, frame_stride: int = 1
 ) -> List[np.ndarray]:
     """
-    Extract features (mfcc, chroma, mel) from an audio file using
-    extended audio frames.
+    Extract features (mfcc, chroma, mel) from an audio file 
+    using extended audio frames.
 
     Arguments:
         audiofile (str) Path to the audio file.
         mfcc (bool): Whether to include MFCC features.
         chroma (bool): Whether to include chroma features.
         mel (bool): Whether to include mel features.
-        frame_size (int, optional): Size of the frame in seconds, by default 3.
-        frame_stride (int, optional): Stride between frames in seconds, by default 1.
+        frame_size (int, optional): Size of the frame in seconds,
+            by default 3.
+        frame_stride (int, optional): Stride between frames in 
+            seconds, by default 1.
 
     Returns:
         List[np.ndarray]: List of extracted features.

@@ -27,17 +27,13 @@ from sklearn.metrics import accuracy_score
 from sklearn.neural_network import MLPClassifier
 from halo import Halo
 
-from ser.utils import get_logger
+from ser.utils import get_logger, read_audio_file
 from ser.config import Config
-from ser.data.data_loader import load_data
-from ser.features.feature_extractor import extended_extract_feature
-from ser.utils.audio_utils import read_audio_file
+from ser.data import load_data
+from ser.features import extended_extract_feature
 
 
 logger: logging.Logger = get_logger(__name__)
-
-warnings.filterwarnings("ignore", message=".*The 'nopython' keyword.*")
-warnings.filterwarnings("ignore", message=".*Cannot set number of intraop threads after parallel work has started.*")
 
 
 def train_model() -> None:
@@ -96,30 +92,37 @@ def load_model() -> MLPClassifier:
     """
     model_path: str = f'{Config.MODELS_CONFIG["models_folder"]}/ser_model.pkl'
     model: MLPClassifier | None = None
+    try:
 
-    with Halo(
-        text=f"Loading SER model from {model_path}... ",
-        spinner="dots",
-        text_color="green",
-    ):
-        if os.path.exists(model_path):
-            model = pickle.load(open(model_path, "rb"))
-    if model:
-        logger.info(msg=f"Model loaded from {model_path}")
-        return model
+        with Halo(
+            text=f"Loading SER model from {model_path}... ",
+            spinner="dots",
+            text_color="green",
+        ):
+            if os.path.exists(model_path):
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore")
+                    model = pickle.load(open(model_path, "rb"))
+
+        if model:
+            logger.info(msg=f"Model loaded from {model_path}")
+            return model
+    except FileNotFoundError as err:
+        logger.error(
+            msg="Model not found. Please train the model first. "
+            "If you already trained the model, please ensure that "
+            f"{model_path} file exists and is a valid .pkl file."
+        )
+        raise err
 
     logger.error(
         msg=(
-            "Model not found. Please train the model first. "
-            "If you already trained the model, "
-            f"please ensure that {model_path} exists and it's a valid .pkl file"
+            'Failed to load the model. Ensure `MODELS_CONFIG["models_folder"]` '
+            "is defined in the Config class in the config file, and that the "
+            f"file {model_path} actually exists and is a valid .pkl file."
         )
     )
-    raise FileNotFoundError(
-        "Model not found. Please train the model first. "
-        "If you already trained the model, "
-        f"please ensure that {model_path} exists and it's a valid .pkl file."
-    )
+    raise ValueError("Failed to load the model.")
 
 
 def predict_emotions(file: str) -> List[Tuple[str, float, float]]:
@@ -134,8 +137,8 @@ def predict_emotions(file: str) -> List[Tuple[str, float, float]]:
         file (str): Path to the audio file.
 
     Returns:
-        List[Tuple[str, float, float]]: A list of tuples where each tuple contains the
-        predicted emotion, start time, and end time.
+        List[Tuple[str, float, float]]: A list of tuples where each tuple contains
+        the predicted emotion, start time, and end time.
 
     Raises:
         Exception: If the model is not loaded.
@@ -161,7 +164,7 @@ def predict_emotions(file: str) -> List[Tuple[str, float, float]]:
     for timestamp, emotion in enumerate(predicted_emotions):
         if emotion != prev_emotion:
             if prev_emotion is not None:
-                end_time = timestamp * audio_duration / len(predicted_emotions)
+                end_time: float = timestamp * audio_duration / len(predicted_emotions)
                 emotion_timestamps.append((prev_emotion, start_time, end_time))
             (
                 prev_emotion,

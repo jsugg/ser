@@ -40,7 +40,7 @@ class Config:
     }
 
     # Temporary folder for processing
-    TMP_FOLDER: str = "./ser/tmp"
+    TMP_FOLDER: str = "./tmp"
 
     # Default feature extraction configuration
     DEFAULT_FEATURE_CONFIG: dict[str, bool] = {

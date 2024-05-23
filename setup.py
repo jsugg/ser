@@ -27,7 +27,7 @@ setup(
     ],
     entry_points='''
         [console_scripts]
-        ser=ser.ser:main
+        ser=ser.__main__:main
     ''',
         cmdclass={
         'runscript': CustomInstall,

@@ -12,7 +12,7 @@ Functions:
 
 Author: Juan Sugg (juanpedrosugg [at] gmail.com)
 Version: 1.0
-License: MIT
+Licenserr: MIT
 """
 
 import logging
@@ -28,12 +28,6 @@ from ser.config import Config
 
 
 logger: logging.Logger = get_logger(__name__)
-
-warnings.filterwarnings("ignore", message=".*The 'nopython' keyword.*")
-warnings.filterwarnings(
-    "ignore",
-    message=".*Cannot set number of intraop threads after parallel work has started.*",
-)
 
 
 def load_whisper_model() -> Whisper:
@@ -55,8 +49,8 @@ def load_whisper_model() -> Whisper:
             in_memory=True,
         )
         return model
-    except Exception as e:
-        logger.error(msg=f"Failed to load Whisper model: {e}", exc_info=True)
+    except Exception as err:
+        logger.error(msg=f"Failed to load Whisper model: {err}", exc_info=True)
         raise
 
 
@@ -104,8 +98,8 @@ def extract_transcript(
 
         logger.info("Transcript extraction completed successfully.")
         return formatted_transcript
-    except Exception as e:
-        logger.error(msg=f"Failed to extract transcript: {e}", exc_info=True)
+    except Exception as err:
+        logger.error(msg=f"Failed to extract transcript: {err}", exc_info=True)
         raise
 
 
