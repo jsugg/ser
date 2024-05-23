@@ -23,7 +23,6 @@ setup(
         'ffmpeg-python==0.2.0',
         'scikit-learn==1.3.2',
         'soundfile==0.12.1',
-        'tqdm==4.66.1',
         'typing-extensions==4.8.0'
     ],
     entry_points='''
