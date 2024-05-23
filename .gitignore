@@ -2,3 +2,7 @@
 .vscode
 .git
 .DS_Store
+ser/dataset/**/*.wav
+ser/models/**/*
+transcripts/**/*
+Pipfile.lock

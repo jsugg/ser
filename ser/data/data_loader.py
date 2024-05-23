@@ -1,78 +1,98 @@
-import glob
+"""
+Data Loader for Speech Emotion Recognition (SER) System
+
+This module provides functions to load and process audio data for the SER system. It
+handles feature extraction from audio files, splitting the dataset into training and
+testing sets, and parallel processing of audio files.
+
+Functions:
+    - process_file: Processes an audio file to extract features and associated emotion label.
+    - load_data: Loads data from the dataset directory and splits it into training and testing sets.
+
+Author: Juan Sugg (juanpedrosugg [at] gmail.com)
+Version: 1.0
+License: MIT
+"""
+
 import os
-import warnings
+import glob
+import logging
 from typing import List, Tuple, Optional
+import multiprocessing as mp
+from functools import partial
+
 import numpy as np
 from sklearn.model_selection import train_test_split
-from functools import partial
-import multiprocessing as mp
-from ser.features.feature_extractor import extract_feature
-from ser.config import EMOTIONS, MODELS_CONFIG, DATASET
 
-warnings.filterwarnings("ignore", message=".*The 'nopython' keyword.*")
+from ser.utils import get_logger
+from ser.features.feature_extractor import extract_feature
+from ser.config import Config
+
+
+logger: logging.Logger = get_logger(__name__)
+
 
 def process_file(
-        file: str,
-        observed_emotions: List[str],
-    ) -> Optional[Tuple[np.ndarray, str]]:
+    file: str, observed_emotions: List[str]
+) -> Tuple[np.ndarray, str]:
     """
     Process an audio file to extract features and the associated emotion label.
 
-    Parameters
-    ----------
-    file : str
-        Path to the audio file.
-    observed_emotions : List[str]
-        List of observed emotions.
+    Arguments:
+        file (str): Path to the audio file.
+        observed_emotions (List[str]): List of observed emotions.
 
-    Returns
-    -------
-    Optional[Tuple[np.ndarray, str]]
-        Extracted features and associated emotion label for the audio file.
+    Returns:
+        Optional[Tuple[np.ndarray, str]]: Extracted features and associated emotion label for the audio file.
         Returns None if the emotion is not in observed_emotions.
     """
-    file_name: str = os.path.basename(file)
-    emotion: str = EMOTIONS[file_name.split("-")[2]]
+    try:
+        file_name: str = os.path.basename(file)
+        emotion: Optional[str] = Config.EMOTIONS.get(file_name.split("-")[2])
 
-    if emotion not in observed_emotions:
+        if not emotion or emotion not in observed_emotions:
+            return (np.array([]), "")
+        features: np.ndarray = extract_feature(file)
+
+        return (features, emotion)
+    except Exception as e:
+        logger.error(msg=f"Failed to process file {file}: {e}")
+        raise e
+
+
+def load_data(test_size: float = 0.2) -> Optional[List]:
+    """
+    Load data from the dataset directory and split into training and testing sets.
+
+    Arguments:
+        test_size (float): Fraction of the dataset to be used as test set.
+
+    Returns:
+        Tuple containing training features, training labels, test features, and test labels.
+    """
+    observed_emotions: List[str] = list(Config.EMOTIONS.values())
+    data: List[Tuple[np.ndarray, str]]
+    data_path_pattern: str = (
+        f"{Config.DATASET['folder']}/"
+        f"{Config.DATASET['subfolder_prefix']}/"
+        f"{Config.DATASET['extension']}"
+    )
+    files: List[str] = glob.glob(data_path_pattern)
+
+    with mp.Pool(int(Config.MODELS_CONFIG["num_cores"])) as pool:
+        data = pool.map(
+            partial(process_file, observed_emotions=observed_emotions), files
+        )
+
+    # Remove None entries from data list
+    data = [item for item in data if item is not None]
+    if not data:
+        logger.warning("No data found or processed.")
         return None
 
-    feature: Optional[np.ndarray] = extract_feature(file)
-    return (feature, emotion) if feature is not None else None
-
-
-def load_data(
-        test_size: float = 0.2,
-    ) -> List:
-    """
-    Loads the data and extracts features for each sound file.
-
-    Parameters
-    ----------
-    test_size : float, optional
-        Ratio of test data, by default 0.2.
-
-    Returns
-    -------
-    Tuple[np.ndarray, List[str], np.ndarray, List[str]]
-        Tuple containing train and test data and labels.
-    """
-    process_pool = mp.Pool(MODELS_CONFIG['num_cores'])
-    observed_emotions: List[str] = list(EMOTIONS.values())
-    folder, subfolder_prefix, extension = DATASET.values()
-    print(f"{folder}/{subfolder_prefix}/{extension}")
-
-    data: List = process_pool.map(
-        partial(
-            process_file,
-            observed_emotions=observed_emotions
-        ),
-        glob.glob(f"{folder}/{subfolder_prefix}/{extension}"))
-
-    process_pool.close()
-
-    # Filter out None values
-    data = [item for item in data if item is not None]
-    x, y = zip(*data) if data else ([], [])
-
-    return train_test_split(np.array(x), y, test_size=test_size, random_state=9)
+    features: Tuple[np.ndarray, ...]
+    labels: Tuple[str, ...]
+    features, labels = zip(*data)
+    return train_test_split(
+        np.array(features), labels, test_size=test_size, random_state=42
+    )

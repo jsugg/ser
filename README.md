@@ -55,7 +55,7 @@ pip install -r requirements.txt
 To train the emotion classification model:
 
 ```bash
-python -m ser.ser --train
+python -m ser --train
 ```
 ```mermaid
 graph TD;
@@ -70,7 +70,7 @@ graph TD;
 To predict emotions in an audio file:
 
 ```bash
-python -m ser.ser --file audio.mp3
+python -m ser --file audio.mp3
 ```
 ```mermaid
 graph LR;
@@ -108,7 +108,7 @@ Edit **`ser/config.py`** to modify default configurations, including model paths
 ---
 
 ## Contributing
-Contributions to the SER System are welcome! Please read **`CONTRIBUTING.md`** for details on our code of conduct and the process for submitting pull requests.
+Contributions to SER are welcome!
 
 ---
 
