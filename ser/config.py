@@ -1,8 +1,8 @@
 """
-Configuration Module for Speech Emotion Recognition (SER) System
+Configuration Module for Speech Emotion Recognition (SER) Tool
 
 This module provides a central configuration class for the SER application. It defines
-various settings and parameters used throughout the system, including emotions, feature
+various settings and parameters used throughout the tool, including emotions, feature
 extraction configuration, neural network parameters, audio file read parameters, dataset
 configuration, model configuration, transcript configuration, and default language settings.
 
