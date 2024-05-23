@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/jsugg/ser/main/.github/assets/DALL%C2%B7E%202023-11-15%2020.42.19%20-%20A%20creative%20and%20informative%20header%20image%20for%20a%20GitHub%20repository%20about%20a%20Speech%20Emotion%20Recognition%20(SER)%20System.%20The%20image%20includes%20a%20symbolic%20represe.png" width="600">
+    <img src="https://raw.githubusercontent.com/jsugg/ser/main/.github/assets/header.png" width="600">
 </div>
 
 
