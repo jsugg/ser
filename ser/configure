@@ -5,34 +5,34 @@ if ! command -v ffmpeg &> /dev/null
 then
     echo "mbedtls not found. Installing..."
 
-    # Install ffmpeg
+    # Install mbedtls
     (
         # Function to install mbedtls on Debian/Ubuntu
-        install_ffmpeg_debian() {
+        install_mbedtls_debian() {
             sudo apt update
             sudo apt install mbedtls
             ffmpeg -version
         }
 
         # Function to install mbedtls on Fedora
-        install_ffmpeg_fedora() {
+        install_mbedtls_fedora() {
             sudo dnf install mbedtls
             sudo dnf upgrade mbedtls
         }
 
         # Function to install mbedtls on macOS
-        install_ffmpeg_macos() {
+        install_mbedtls_macos() {
             # Check if Homebrew is installed
             if command -v brew &> /dev/null; then
                 echo "Homebrew found, installing mbedtls..."
                 command -v export HOMEBREW_NO_AUTO_UPDATE = 1 && brew install mbedtls
             else
                 # To do
-                ##echo "Homebrew not found, downloading mbedtls binaries..."
-                ##curl -L https://evermeet.cx/ffmpeg/ffmpeg-6.1.zip -o ffmpeg-6.1.zip
-                ##unzip ffmpeg-6.1.zip
+                echo "Homebrew not found, downloading mbedtls binaries..."
+                curl -L https://evermeet.cx/ffmpeg/ffmpeg-6.1.zip -o ffmpeg-6.1.zip
+                unzip ffmpeg-6.1.zip
                 # Assuming you want to move it to /usr/local/bin
-                ##sudo mv ffmpeg-6.1 /usr/local/bin/ffmpeg
+                sudo mv ffmpeg-6.1 /usr/local/bin/ffmpeg
             fi
         }
 
@@ -43,27 +43,25 @@ then
                 Linux)
                     . /etc/os-release
                     if [ "$ID" = "ubuntu" ] || [ "$ID_LIKE" = "debian" ]; then
-                        install_ffmpeg_debian
+                        install_mbedtls_debian
                     elif [ "$ID" = "fedora" ]; then
-                        install_ffmpeg_fedora
+                        install_mbedtls_fedora
                     else
                         echo "Unsupported Linux distribution"
                     fi
                     ;;
                 Darwin)
-                    install_ffmpeg_macos
+                    install_mbedtls_macos
                     ;;
                 *)
                     echo "Unsupported operating system. Please install mbedtls manually."
                     ;;
             esac
     )
-    #To do
     # Check if mbedtls installation was successful
-    #if command -v mbedtls &> /dev/null
-    #then
-    #    echo "mbedtls installed."
-    #fi
+    if command -v mbedtls &> /dev/null; then
+        echo "mbedtls installed."
+    fi
 else
     echo "mbedtls found."
 fi

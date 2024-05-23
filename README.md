@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/jsugg/ser/main/.github/assets/DALL%C2%B7E%202023-11-15%2020.42.19%20-%20A%20creative%20and%20informative%20header%20image%20for%20a%20GitHub%20repository%20about%20a%20Speech%20Emotion%20Recognition%20(SER)%20System.%20The%20image%20includes%20a%20symbolic%20represe.png" width="600">
+    <img src="https://raw.githubusercontent.com/jsugg/ser/main/.github/assets/header.png" width="600">
 </div>
 
 
@@ -55,7 +55,7 @@ pip install -r requirements.txt
 To train the emotion classification model:
 
 ```bash
-python -m ser.ser --train
+python -m ser --train
 ```
 ```mermaid
 graph TD;
@@ -70,7 +70,7 @@ graph TD;
 To predict emotions in an audio file:
 
 ```bash
-python -m ser.ser --file audio.mp3
+python -m ser --file audio.mp3
 ```
 ```mermaid
 graph LR;
@@ -108,7 +108,7 @@ Edit **`ser/config.py`** to modify default configurations, including model paths
 ---
 
 ## Contributing
-Contributions to the SER System are welcome! Please read **`CONTRIBUTING.md`** for details on our code of conduct and the process for submitting pull requests.
+Contributions to SER are welcome!
 
 ---
 
