@@ -34,8 +34,10 @@ setup(
     },
     author='Juan Sugg',
     author_email='juanpedrosugg@gmail.com',
-    description='A Speech Emotion Recognition system',
     license='MIT',
     keywords='speech emotion recognition',
-    url='https://github.com/jsugg/ser/'
+    url='https://github.com/jsugg/ser/',
+    description='A Speech Emotion Recognition tool',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
 )
