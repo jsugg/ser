@@ -26,7 +26,7 @@ from sklearn.model_selection import train_test_split
 
 from ser.utils import get_logger
 from ser.features import extract_feature
-from ser import Config
+from ser.config import Config
 
 
 logger: logging.Logger = get_logger(__name__)
