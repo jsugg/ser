@@ -6,3 +6,7 @@ ser/dataset/**/*.wav
 ser/models/**/*
 transcripts/**/*
 Pipfile.lock
+**/*.pyc
+dist/
+build/
+*.egg-info/
