@@ -1,14 +1,10 @@
 import argparse
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Tuple
 
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class SubtitleFormatter(ABC):
     """Abstract base class for subtitle formatters."""
@@ -24,7 +20,7 @@ class SubtitleFormatter(ABC):
         pass
 
     @abstractmethod
-    def generate_file(self, subtitles: List[Tuple[float, float, str, str]], output_file: str) -> None:
+    def generate_file(self, subtitles: list[tuple[float, float, str, str]], output_file: str) -> None:
         """Generate a subtitle file from a list of subtitles."""
         pass
 
@@ -58,19 +54,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         """Generate a single ASS subtitle entry."""
         start_time: str = self.format_time(start)
         end_time: str = self.format_time(end)
-        logging.debug(f"ASS Entry: Start {start_time}, End {end_time}, Text {text}, Emotion {emotion}")
+        logger.debug(
+            "ASS Entry: Start %s, End %s, Text %s, Emotion %s",
+            start_time,
+            end_time,
+            text,
+            emotion,
+        )
         return f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text} ({emotion})"
 
-    def generate_file(self, subtitles: List[Tuple[float, float, str, str]], output_file: str) -> None:
+    def generate_file(self, subtitles: list[tuple[float, float, str, str]], output_file: str) -> None:
         """Generate an ASS file from a list of subtitles."""
-        logging.info(f"Generating ASS file: {output_file}")
+        logger.info("Generating ASS file: %s", output_file)
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(self.ASS_HEADER)
             for i, (start, duration, text, emotion) in enumerate(subtitles, 1):
                 end: float = start + duration
                 entry: str = self.generate_entry(i, start, end, text, emotion)
                 f.write(entry + '\n')
-        logging.info(f"ASS file generated successfully: {output_file}")
+        logger.info("ASS file generated successfully: %s", output_file)
 
 class SRTFormatter(SubtitleFormatter):
     """Formatter for SRT subtitles."""
@@ -87,18 +89,24 @@ class SRTFormatter(SubtitleFormatter):
         """Generate a single SRT subtitle entry."""
         start_time: str = self.format_time(start)
         end_time: str = self.format_time(end)
-        logging.debug(f"SRT Entry: Start {start_time}, End {end_time}, Text {text}, Emotion {emotion}")
+        logger.debug(
+            "SRT Entry: Start %s, End %s, Text %s, Emotion %s",
+            start_time,
+            end_time,
+            text,
+            emotion,
+        )
         return f"{index}\n{start_time} --> {end_time}\n{text} ({emotion})\n"
 
-    def generate_file(self, subtitles: List[Tuple[float, float, str, str]], output_file: str) -> None:
+    def generate_file(self, subtitles: list[tuple[float, float, str, str]], output_file: str) -> None:
         """Generate an SRT file from a list of subtitles."""
-        logging.info(f"Generating SRT file: {output_file}")
+        logger.info("Generating SRT file: %s", output_file)
         with open(output_file, 'w', encoding='utf-8') as f:
             for i, (start, duration, text, emotion) in enumerate(subtitles, 1):
                 end: float = start + duration
                 entry: str = self.generate_entry(i, start, end, text, emotion)
                 f.write(entry + '\n')
-        logging.info(f"SRT file generated successfully: {output_file}")
+        logger.info("SRT file generated successfully: %s", output_file)
 
 class VTTFormatter(SubtitleFormatter):
     """Formatter for WebVTT subtitles."""
@@ -115,19 +123,72 @@ class VTTFormatter(SubtitleFormatter):
         """Generate a single WebVTT subtitle entry."""
         start_time: str = self.format_time(start)
         end_time: str = self.format_time(end)
-        logging.debug(f"VTT Entry: Start {start_time}, End {end_time}, Text {text}, Emotion {emotion}")
+        logger.debug(
+            "VTT Entry: Start %s, End %s, Text %s, Emotion %s",
+            start_time,
+            end_time,
+            text,
+            emotion,
+        )
         return f"{start_time} --> {end_time}\n{text} ({emotion})\n"
 
-    def generate_file(self, subtitles: List[Tuple[float, float, str, str]], output_file: str) -> None:
+    def generate_file(self, subtitles: list[tuple[float, float, str, str]], output_file: str) -> None:
         """Generate a WebVTT file from a list of subtitles."""
-        logging.info(f"Generating WebVTT file: {output_file}")
+        logger.info("Generating WebVTT file: %s", output_file)
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write("WEBVTT\n\n")
             for i, (start, duration, text, emotion) in enumerate(subtitles, 1):
                 end: float = start + duration
                 entry: str = self.generate_entry(i, start, end, text, emotion)
                 f.write(entry + '\n')
-        logging.info(f"WebVTT file generated successfully: {output_file}")
+        logger.info("WebVTT file generated successfully: %s", output_file)
+
+
+DEFAULT_SUBTITLE_DURATION = 1.0
+
+
+def timeline_to_subtitles(
+    timeline: list[tuple[float, str, str]],
+    default_duration: float = DEFAULT_SUBTITLE_DURATION,
+) -> list[tuple[float, float, str, str]]:
+    """Convert a timeline of transcript/emotion entries to subtitle tuples."""
+    if not timeline:
+        logger.debug("Received empty timeline for subtitle conversion")
+        return []
+
+    sorted_timeline: list[tuple[float, str, str]] = sorted(
+        timeline,
+        key=lambda entry: entry[0],
+    )
+
+    subtitles: list[tuple[float, float, str, str]] = []
+    for index, (timestamp, emotion, text) in enumerate(sorted_timeline):
+        cleaned_text: str = text.strip()
+        if not cleaned_text:
+            continue
+
+        next_timestamp: float | None = None
+        if index + 1 < len(sorted_timeline):
+            next_timestamp = float(sorted_timeline[index + 1][0])
+
+        if next_timestamp is not None:
+            duration: float = max(next_timestamp - float(timestamp), 0.0)
+            if duration == 0.0:
+                duration = default_duration
+        else:
+            duration = default_duration
+
+        subtitles.append((float(timestamp), duration, cleaned_text, emotion))
+        logger.debug(
+            "Subtitle entry prepared: Start %s, Duration %s, Text %s, Emotion %s",
+            timestamp,
+            duration,
+            cleaned_text,
+            emotion,
+        )
+
+    return subtitles
+
 
 class SubtitleGenerator:
     """Main class to generate subtitle files in different formats."""
@@ -135,12 +196,16 @@ class SubtitleGenerator:
     def __init__(self, formatter: SubtitleFormatter) -> None:
         self.formatter: SubtitleFormatter = formatter
 
-    def generate_file(self, subtitles: List[Tuple[float, float, str, str]], output_file: str) -> None:
+    def generate_file(self, subtitles: list[tuple[float, float, str, str]], output_file: str) -> None:
         """Generate a subtitle file using the provided formatter."""
-        try:
-            self.formatter.generate_file(subtitles, output_file)
-        except Exception as e:
-            logging.error(f"Failed to generate file: {output_file}, error: {e}")
+        self.formatter.generate_file(subtitles, output_file)
+
+
+FORMATTERS: dict[str, SubtitleFormatter] = {
+    "ass": ASSFormatter(),
+    "srt": SRTFormatter(),
+    "vtt": VTTFormatter(),
+}
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -149,9 +214,9 @@ def parse_arguments() -> argparse.Namespace:
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument(
-        "format", 
-        type=str, 
-        choices=["ass", "srt", "vtt"], 
+        "format",
+        type=str,
+        choices=tuple(FORMATTERS.keys()),
         help="Output subtitle format. Choices are:\n"
              "  ass: Generate Advanced SubStation Alpha (.ass) file\n"
              "  srt: Generate SubRip Subtitle (.srt) file\n"
@@ -170,33 +235,33 @@ def parse_arguments() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-def parse_subtitles(subtitles_str: str) -> List[Tuple[float, float, str, str]]:
+def parse_subtitles(subtitles_str: str) -> list[tuple[float, float, str, str]]:
     """Parse the input string of subtitles into a list of tuples."""
-    subtitles: List[Tuple[float, float, str, str]] = []
+    subtitles: list[tuple[float, float, str, str]] = []
     for subtitle in subtitles_str.split(';'):
         try:
             start_str, duration_str, text, emotion = subtitle.split(',')
             start: float = float(start_str)
             duration: float = float(duration_str)
             subtitles.append((start, duration, text, emotion))
-            logging.debug(f"Parsed subtitle: Start {start}, Duration {duration}, Text {text}, Emotion {emotion}")
+            logger.debug(
+                "Parsed subtitle: Start %s, Duration %s, Text %s, Emotion %s",
+                start,
+                duration,
+                text,
+                emotion,
+            )
         except ValueError:
-            logging.error(f"Invalid subtitle format: {subtitle}")
+            logger.error("Invalid subtitle format: %s", subtitle)
             continue
     return subtitles
 
 def main() -> None:
     """Main entry point for the CLI."""
     args: argparse.Namespace = parse_arguments()
-    subtitles: List[Tuple[float, float, str, str]] = parse_subtitles(args.subtitles)
-    
-    formatters: Dict[str, SubtitleFormatter] = {
-        "ass": ASSFormatter(),
-        "srt": SRTFormatter(),
-        "vtt": VTTFormatter()
-    }
-    
-    formatter: SubtitleFormatter = formatters[args.format]
+    subtitles: list[tuple[float, float, str, str]] = parse_subtitles(args.subtitles)
+
+    formatter: SubtitleFormatter = FORMATTERS[args.format]
     generator: SubtitleGenerator = SubtitleGenerator(formatter)
     generator.generate_file(subtitles, args.output)
 
