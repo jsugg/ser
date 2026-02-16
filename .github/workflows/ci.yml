@@ -28,7 +28,7 @@ jobs:
         run: uv sync --python 3.12 --extra dev
 
       - name: Run linters and type checks (pre-push stage)
-        run: uv run pre-commit run --all-files --hook-stage pre-push
+        run: uvx pre-commit run --all-files --hook-stage pre-push
 
   resolve:
     runs-on: ubuntu-latest
