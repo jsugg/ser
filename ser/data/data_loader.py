@@ -1,18 +1,4 @@
-"""
-Data Loader for Speech Emotion Recognition (SER) Tool
-
-This module provides functions to load and process audio data for the SER tool. It
-handles feature extraction from audio files, splitting the dataset into training and
-testing sets, and parallel processing of audio files.
-
-Functions:
-    - process_file: Processes an audio file to extract features and associated emotion label.
-    - load_data: Loads data from the dataset directory and splits it into training and testing sets.
-
-Author: Juan Sugg (juanpedrosugg [at] gmail.com)
-Version: 1.0
-License: MIT
-"""
+"""Dataset loading and feature extraction helpers for model training."""
 
 import glob
 import logging
@@ -33,17 +19,15 @@ logger: logging.Logger = get_logger(__name__)
 def process_file(
     file: str, observed_emotions: list[str]
 ) -> tuple[np.ndarray, str] | None:
-    """
-    Process an audio file to extract features and the associated emotion label.
+    """Extracts features for a file when its label is in the target emotion set.
 
-    Arguments:
-        file (str): Path to the audio file.
-        observed_emotions (List[str]): List of observed emotions.
+    Args:
+        file: Path to an audio file.
+        observed_emotions: Emotion labels accepted for training.
 
     Returns:
-        Optional[Tuple[np.ndarray, str]]: Extracted features and associated
-            emotion label for the audio file.
-        Returns None if the emotion is not in observed_emotions.
+        A tuple of `(feature_vector, emotion_label)` when the file matches one of
+        `observed_emotions`; otherwise `None`.
     """
     try:
         file_name: str = os.path.basename(file)
@@ -60,15 +44,14 @@ def process_file(
 
 
 def load_data(test_size: float = 0.2) -> list | None:
-    """
-    Load data from the dataset directory and split into training and testing sets.
+    """Loads the configured dataset, extracts features, and splits train/test sets.
 
-    Arguments:
-        test_size (float): Fraction of the dataset to be used as test set.
+    Args:
+        test_size: Fraction of examples reserved for the test split.
 
     Returns:
-        Tuple containing training features, training labels, test features,
-        and test labels.
+        The `train_test_split` output `(x_train, x_test, y_train, y_test)` when
+        data is available; otherwise `None`.
     """
     observed_emotions: list[str] = list(Config.EMOTIONS.values())
     raw_data: list[tuple[np.ndarray, str] | None]
@@ -84,7 +67,6 @@ def load_data(test_size: float = 0.2) -> list | None:
             partial(process_file, observed_emotions=observed_emotions), files
         )
 
-    # Remove files that were skipped because they did not map to a known emotion.
     data: list[tuple[np.ndarray, str]] = [item for item in raw_data if item is not None]
     if not data:
         logger.warning("No data found or processed.")

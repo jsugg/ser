@@ -1,42 +1,30 @@
 #!/bin/bash
 
-# Check if mbedtls is installed
-if ! command -v ffmpeg &> /dev/null
+if ! command -v mbedtls &> /dev/null
 then
     echo "mbedtls not found. Installing..."
 
-    # Install mbedtls
     (
-        # Function to install mbedtls on Debian/Ubuntu
         install_mbedtls_debian() {
             sudo apt update
             sudo apt install mbedtls
-            ffmpeg -version
+            mbedtls --version
         }
 
-        # Function to install mbedtls on Fedora
         install_mbedtls_fedora() {
             sudo dnf install mbedtls
             sudo dnf upgrade mbedtls
         }
 
-        # Function to install mbedtls on macOS
         install_mbedtls_macos() {
-            # Check if Homebrew is installed
             if command -v brew &> /dev/null; then
                 echo "Homebrew found, installing mbedtls..."
-                command -v export HOMEBREW_NO_AUTO_UPDATE = 1 && brew install mbedtls
+                HOMEBREW_NO_AUTO_UPDATE=1 brew install mbedtls
             else
-                # To do
-                echo "Homebrew not found, downloading mbedtls binaries..."
-                curl -L https://evermeet.cx/ffmpeg/ffmpeg-6.1.zip -o ffmpeg-6.1.zip
-                unzip ffmpeg-6.1.zip
-                # Assuming you want to move it to /usr/local/bin
-                sudo mv ffmpeg-6.1 /usr/local/bin/ffmpeg
+                echo "Homebrew not found; install mbedtls manually on macOS."
             fi
         }
 
-        # Detect the operating system and call the respective function
         OS=$(uname -s)
 
             case "$OS" in
@@ -58,7 +46,6 @@ then
                     ;;
             esac
     )
-    # Check if mbedtls installation was successful
     if command -v mbedtls &> /dev/null; then
         echo "mbedtls installed."
     fi
@@ -66,42 +53,34 @@ else
     echo "mbedtls found."
 fi
 
-# Check if ffmpeg is installed
 if ! command -v ffmpeg &> /dev/null
 then
     echo "ffmpeg not found. Installing..."
 
-    # Install ffmpeg
     (
-        # Function to install ffmpeg on Debian/Ubuntu
         install_ffmpeg_debian() {
             sudo apt update
             sudo apt install ffmpeg
             ffmpeg -version
         }
 
-        # Function to install ffmpeg on Fedora
         install_ffmpeg_fedora() {
             sudo dnf install ffmpeg
             sudo dnf upgrade ffmpeg
         }
 
-        # Function to install ffmpeg on macOS
         install_ffmpeg_macos() {
-            # Check if Homebrew is installed
             if command -v brew &> /dev/null; then
                 echo "Homebrew found, installing ffmpeg..."
-                command -v export HOMEBREW_NO_AUTO_UPDATE = 1 && brew install ffmpeg
+                HOMEBREW_NO_AUTO_UPDATE=1 brew install ffmpeg
             else
                 echo "Homebrew not found, downloading ffmpeg binaries..."
                 curl -L https://evermeet.cx/ffmpeg/ffmpeg-6.1.zip -o ffmpeg-6.1.zip
                 unzip ffmpeg-6.1.zip
-                # Assuming you want to move it to /usr/local/bin
                 sudo mv ffmpeg-6.1 /usr/local/bin/ffmpeg
             fi
         }
 
-        # Detect the operating system and call the respective function
         OS=$(uname -s)
 
             case "$OS" in
@@ -124,7 +103,6 @@ then
             esac
     )
 
-    # Check if ffmpeg installation was successful
     if command -v ffmpeg &> /dev/null
     then
         echo "ffmpeg installed."

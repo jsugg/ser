@@ -1,14 +1,14 @@
-def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
-    """
-    Returns the elapsed time in seconds in long or short format.
+"""General utility helpers shared across CLI output paths."""
 
-    Arguments:
-        elapsed_time (float): Elapsed time in seconds.
-        format (str, optional): Format of the elapsed time
-            ('long' or 'short'), by default 'long'.
+def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
+    """Formats elapsed seconds as either verbose or compact text.
+
+    Args:
+        elapsed_time: Elapsed time in seconds.
+        _format: Output style, either `"long"` or `"short"`.
 
     Returns:
-        str: Formatted elapsed time.
+        Human-readable elapsed time text.
     """
     minutes, seconds = divmod(int(elapsed_time), 60)
     if _format == "long":

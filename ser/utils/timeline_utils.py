@@ -1,21 +1,4 @@
-"""
-Timeline Utility Functions for Speech Emotion Recognition (SER) Tool
-
-This module provides functions to build, print, and save timelines that integrate recognized
-emotions with corresponding transcripts. It includes functions to build the timeline, print it,
-and save it to a CSV file.
-
-Functions:
-    - save_timeline_to_csv: Saves the timeline to a CSV file.
-    - display_elapsed_time: Displays elapsed time in a formatted string.
-    - build_timeline: Builds a timeline from text and emotion data.
-    - print_timeline: Prints the ASCII timeline vertically.
-    - color_txt: Colorizes a string.
-
-Author: Juan Sugg (juanpedrosugg [at] gmail.com)
-Version: 1.0
-License: MIT
-"""
+"""Utilities to merge, render, and persist transcript-emotion timelines."""
 
 import csv
 import logging
@@ -31,16 +14,14 @@ logger: logging.Logger = get_logger(__name__)
 
 
 def save_timeline_to_csv(timeline: list[tuple], file_name: str) -> str:
-    """
-    Saves the timeline to a CSV file.
+    """Saves timeline rows as CSV under the configured transcript folder.
 
-    Arguments:
-        timeline (List[tuple]): The timeline data to be saved.
-        file_name (str): The name of the file to save the timeline to.
-
+    Args:
+        timeline: Sequence of `(timestamp, emotion, speech)` rows.
+        file_name: Source audio path used to derive the output CSV name.
 
     Returns:
-        str: The path to the saved CSV file.
+        The generated CSV path.
     """
     logger.info(msg="Starting to save timeline to CSV.")
     file_name = file_name.split("/")[-1]
@@ -59,11 +40,9 @@ def save_timeline_to_csv(timeline: list[tuple], file_name: str) -> str:
     ):
         with open(file_name, mode="w", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
-            # Write the header
             writer.writerow(["Time (s)", "Emotion", "Speech"])
             logger.debug("Header written to CSV file.")
 
-            # Write the data
             for timestamp, emotion, speech in timeline:
                 rounded_time = round(float(timestamp), 2)
                 writer.writerow([rounded_time, emotion, speech])
@@ -74,16 +53,14 @@ def save_timeline_to_csv(timeline: list[tuple], file_name: str) -> str:
 
 
 def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
-    """
-    Returns the elapsed time in seconds in long or short format.
+    """Formats elapsed seconds as either verbose or compact text.
 
-    Arguments:
-        elapsed_time (Union[int, float]): Elapsed time in seconds.
-        format (str, optional): Format of the elapsed time
-            ('long' or 'short'), by default 'long'.
+    Args:
+        elapsed_time: Elapsed time in seconds.
+        _format: Output style, either `"long"` or `"short"`.
 
     Returns:
-        str: Formatted elapsed time.
+        Human-readable elapsed time text.
     """
     minutes, seconds = divmod(int(elapsed_time), 60)
     if _format == "long":
@@ -96,16 +73,14 @@ def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
 def build_timeline(
     text_with_timestamps, emotion_with_timestamps
 ) -> list[tuple[float, str, str]]:
-    """
-    Builds a timeline from text and emotion data.
+    """Merges transcript and emotion timestamp streams into a single timeline.
 
-    Arguments:
-        text_with_timestamps (List[tuple]): Transcript data with timestamps.
-        emotion_with_timestamps (List[tuple]): Emotion data with timestamps.
+    Args:
+        text_with_timestamps: Transcript tuples `(word, start, end)`.
+        emotion_with_timestamps: Emotion tuples `(emotion, start, end)`.
 
     Returns:
-        List[Tuple[float, str, str]]: Combined timeline with timestamps,
-            emotions, and text.
+        Timeline tuples `(timestamp, emotion, speech)` keyed on observed starts.
     """
     logger.info("Building timeline from text and emotion data.")
     timeline: list[tuple[float, str, str]] = []
@@ -137,16 +112,16 @@ def build_timeline(
 
 
 def color_txt(string: str, fg_color: str, bg_color: str, padding: int = 0) -> str:
-    """
-    Colorizes a string.
+    """Applies foreground/background ANSI colors to terminal text.
 
-    Arguments:
-        string (str): String to be colorized.
-        fg_color (str): Foreground color.
-        bg_color (str): Background color.
+    Args:
+        string: Text to colorize.
+        fg_color: Foreground color name.
+        bg_color: Background color name.
+        padding: Optional right-padding width for alignment.
 
     Returns:
-        str: Colorized string.
+        ANSI-formatted text.
     """
     if padding:
         string = string.ljust(padding)
@@ -155,13 +130,11 @@ def color_txt(string: str, fg_color: str, bg_color: str, padding: int = 0) -> st
 
 
 def print_timeline(timeline: list[tuple]) -> None:
-    """
-    Prints the ASCII timeline vertically.
+    """Prints the timeline in a colorized tabular terminal format.
 
-    Arguments:
-        timeline (List[Tuple[Union[int, float], str, str]]): ASCII timeline.
+    Args:
+        timeline: Sequence of `(timestamp, emotion, speech)` rows.
     """
-    # Calculate maximum width for each column
     logger.info(msg=f"Printing timeline with {len(timeline)} entries.")
     max_time_width: int = max(
         len(display_elapsed_time(float(ts), _format="short")) for ts, _, _ in timeline
@@ -169,12 +142,10 @@ def print_timeline(timeline: list[tuple]) -> None:
     max_emotion_width: int = max(len(em.capitalize()) for _, em, _ in timeline)
     max_text_width: int = max(len(txt.strip()) for _, _, txt in timeline)
 
-    # Header
     print(color_txt("Time", "black", "green", max_time_width), end="")
     print(color_txt("Emotion", "black", "yellow", max_time_width), end="")
     print(color_txt("Speech", "black", "blue", max_time_width))
 
-    # Print each entry vertically
     for ts, em, txt in timeline:
         time_str: str = f"{display_elapsed_time(float(ts), _format='short')}".ljust(
             max_time_width

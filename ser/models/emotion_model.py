@@ -1,19 +1,4 @@
-"""
-Emotion Classification Model for Speech Emotion Recognition (SER) System
-
-This module provides functions for training and using the emotion classification model
-in the SER system. It includes functions to train the model, load the trained model, and
-predict emotions from audio files.
-
-Functions:
-    - train_model: Trains the emotion classification model.
-    - load_model: Loads the trained emotion classification model.
-    - predict_emotions: Predicts emotions from an audio file.
-
-Author: Juan Sugg (juanpedrosugg [at] gmail.com)
-Version: 1.0
-License: MIT
-"""
+"""Training and inference helpers for the SER emotion classification model."""
 
 import logging
 import os
@@ -36,14 +21,10 @@ logger: logging.Logger = get_logger(__name__)
 
 
 def train_model() -> None:
-    """
-    Train the emotion classification model.
-
-    This function loads the dataset, trains an MLPClassifier on the training data,
-    measures the model's accuracy on the test data, and saves the trained model to a file.
+    """Trains the MLP classifier and persists the resulting model artifact.
 
     Raises:
-        Exception: If the dataset is not loaded successfully.
+        RuntimeError: If no training data could be loaded from the dataset path.
     """
     with Halo(text="Loading dataset... ", spinner="dots", text_color="green"):
         if data := load_data(test_size=0.25):
@@ -72,16 +53,14 @@ def train_model() -> None:
 
 
 def load_model() -> MLPClassifier:
-    """
-    Load the trained emotion classification model.
-
-    This function loads the trained MLPClassifier model from a file.
+    """Loads the serialized SER model from disk.
 
     Returns:
-        MLPClassifier: The trained emotion classification model.
+        The trained `MLPClassifier` instance.
 
     Raises:
-        FileNotFoundError: If the model file does not exist.
+        FileNotFoundError: If the model file is missing during file open.
+        ValueError: If the model could not be loaded for any other reason.
     """
     model_path: str = f"{Config.MODELS_CONFIG['models_folder']}/ser_model.pkl"
     model: MLPClassifier | None = None
@@ -119,22 +98,16 @@ def load_model() -> MLPClassifier:
 
 
 def predict_emotions(file: str) -> list[tuple[str, float, float]]:
-    """
-    Predict emotions from an audio file.
+    """Runs frame-level inference and merges adjacent equal labels into segments.
 
-    This function loads a trained model, extracts features from the audio file,
-    predicts emotions at each timestamp, and returns a list of predicted emotions
-    with their start and end timestamps.
-
-    Arguments:
-        file (str): Path to the audio file.
+    Args:
+        file: Path to the audio file.
 
     Returns:
-        List[Tuple[str, float, float]]: A list of tuples where each tuple contains
-        the predicted emotion, start time, and end time.
+        A list of `(emotion, start_seconds, end_seconds)` tuples.
 
     Raises:
-        Exception: If the model is not loaded.
+        RuntimeError: If model loading unexpectedly returns `None`.
     """
     model: MLPClassifier = load_model()
     if model is None:
