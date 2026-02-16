@@ -50,7 +50,7 @@ uv sync --python 3.12
 ```
 
 ### Compatibility
-- Supported Python versions: `3.12` and `3.13`
+- Supported Python versions: `3.12`
 - Recommended for Intel macOS (`x86_64`): `3.12`
 
 -----
