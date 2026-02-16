@@ -14,27 +14,23 @@ Version: 1.0
 License: MIT
 """
 
-import os
 import glob
 import logging
-from typing import List, Tuple, Optional
 import multiprocessing as mp
+import os
 from functools import partial
 
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from ser.utils import get_logger
-from ser.features import extract_feature
 from ser.config import Config
-
+from ser.features import extract_feature
+from ser.utils import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
 
-def process_file(
-    file: str, observed_emotions: List[str]
-) -> Tuple[np.ndarray, str]:
+def process_file(file: str, observed_emotions: list[str]) -> tuple[np.ndarray, str]:
     """
     Process an audio file to extract features and the associated emotion label.
 
@@ -49,7 +45,7 @@ def process_file(
     """
     try:
         file_name: str = os.path.basename(file)
-        emotion: Optional[str] = Config.EMOTIONS.get(file_name.split("-")[2])
+        emotion: str | None = Config.EMOTIONS.get(file_name.split("-")[2])
 
         if not emotion or emotion not in observed_emotions:
             return (np.array([]), "")
@@ -61,7 +57,7 @@ def process_file(
         raise e
 
 
-def load_data(test_size: float = 0.2) -> Optional[List]:
+def load_data(test_size: float = 0.2) -> list | None:
     """
     Load data from the dataset directory and split into training and testing sets.
 
@@ -72,14 +68,14 @@ def load_data(test_size: float = 0.2) -> Optional[List]:
         Tuple containing training features, training labels, test features,
         and test labels.
     """
-    observed_emotions: List[str] = list(Config.EMOTIONS.values())
-    data: List[Tuple[np.ndarray, str]]
+    observed_emotions: list[str] = list(Config.EMOTIONS.values())
+    data: list[tuple[np.ndarray, str]]
     data_path_pattern: str = (
         f"{Config.DATASET['folder']}/"
         f"{Config.DATASET['subfolder_prefix']}/"
         f"{Config.DATASET['extension']}"
     )
-    files: List[str] = glob.glob(data_path_pattern)
+    files: list[str] = glob.glob(data_path_pattern)
 
     with mp.Pool(int(Config.MODELS_CONFIG["num_cores"])) as pool:
         data = pool.map(
@@ -92,9 +88,9 @@ def load_data(test_size: float = 0.2) -> Optional[List]:
         logger.warning("No data found or processed.")
         return None
 
-    features: Tuple[np.ndarray, ...]
-    labels: Tuple[str, ...]
-    features, labels = zip(*data)
+    features: tuple[np.ndarray, ...]
+    labels: tuple[str, ...]
+    features, labels = zip(*data, strict=False)
     return train_test_split(
         np.array(features), labels, test_size=test_size, random_state=42
     )

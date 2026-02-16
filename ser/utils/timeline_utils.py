@@ -19,26 +19,24 @@ License: MIT
 
 import csv
 import logging
-from typing import List, Tuple
 
 from colored import attr, bg, fg
 from halo import Halo
 
-from ser.utils import get_logger
 from ser.config import Config
-
+from ser.utils import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
 
-def save_timeline_to_csv(timeline: List[tuple], file_name: str) -> str:
+def save_timeline_to_csv(timeline: list[tuple], file_name: str) -> str:
     """
     Saves the timeline to a CSV file.
 
     Arguments:
         timeline (List[tuple]): The timeline data to be saved.
         file_name (str): The name of the file to save the timeline to.
-    
+
 
     Returns:
         str: The path to the saved CSV file.
@@ -47,9 +45,7 @@ def save_timeline_to_csv(timeline: List[tuple], file_name: str) -> str:
     file_name = file_name.split("/")[-1]
     file_name = ".".join(
         [
-            "/".join(
-                [Config.TIMELINE_CONFIG["folder"], file_name.split(".")[0]]
-            ),
+            "/".join([Config.TIMELINE_CONFIG["folder"], file_name.split(".")[0]]),
             "csv",
         ]
     )
@@ -66,10 +62,10 @@ def save_timeline_to_csv(timeline: List[tuple], file_name: str) -> str:
             logger.debug("Header written to CSV file.")
 
             # Write the data
-            for time, emotion, speech in timeline:
-                time: float = round(float(time), 2)
-                writer.writerow([time, emotion, speech])
-                logger.debug(msg=f"Written row: {[time, emotion, speech]}")
+            for timestamp, emotion, speech in timeline:
+                rounded_time = round(float(timestamp), 2)
+                writer.writerow([rounded_time, emotion, speech])
+                logger.debug(msg=f"Written row: {[rounded_time, emotion, speech]}")
 
     logger.info(msg=f"Timeline successfully saved to {file_name}")
     return file_name
@@ -81,7 +77,7 @@ def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
 
     Arguments:
         elapsed_time (Union[int, float]): Elapsed time in seconds.
-        format (str, optional): Format of the elapsed time 
+        format (str, optional): Format of the elapsed time
             ('long' or 'short'), by default 'long'.
 
     Returns:
@@ -90,16 +86,14 @@ def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
     minutes, seconds = divmod(int(elapsed_time), 60)
     if _format == "long":
         return (
-            f"{minutes} min {seconds} seconds"
-            if minutes
-            else f"{elapsed_time} seconds"
+            f"{minutes} min {seconds} seconds" if minutes else f"{elapsed_time} seconds"
         )
     return f"{minutes}m{seconds}s" if minutes else f"{elapsed_time:.2f}s"
 
 
 def build_timeline(
     text_with_timestamps, emotion_with_timestamps
-) -> List[Tuple[float, str, str]]:
+) -> list[tuple[float, str, str]]:
     """
     Builds a timeline from text and emotion data.
 
@@ -108,28 +102,26 @@ def build_timeline(
         emotion_with_timestamps (List[tuple]): Emotion data with timestamps.
 
     Returns:
-        List[Tuple[float, str, str]]: Combined timeline with timestamps, 
+        List[Tuple[float, str, str]]: Combined timeline with timestamps,
             emotions, and text.
     """
     logger.info("Building timeline from text and emotion data.")
-    timeline: List[Tuple[float, str, str]] = []
-    all_timestamps: List[float] = sorted(
+    timeline: list[tuple[float, str, str]] = []
+    all_timestamps: list[float] = sorted(
         set(
             [t for _, t, _ in text_with_timestamps]
             + [t for _, t, _ in emotion_with_timestamps]
             + [t for _, _, t in emotion_with_timestamps]
         )
     )
-    
+
     logger.debug(msg=f"All timestamps: {all_timestamps}")
     logger.debug(msg=f"Text with timestamps: {text_with_timestamps}")
     logger.debug(msg=f"Emotion with timestamps: {emotion_with_timestamps}")
 
     text_dict: dict = {t: text for text, t, _ in text_with_timestamps}
-    emotion_dict: dict = {
-        t: emotion for emotion, t, _ in emotion_with_timestamps
-    }
-    
+    emotion_dict: dict = {t: emotion for emotion, t, _ in emotion_with_timestamps}
+
     logger.debug(msg=f"Text dict: {text_dict}")
     logger.debug(msg=f"Emotion dict: {emotion_dict}")
 
@@ -142,9 +134,7 @@ def build_timeline(
     return timeline
 
 
-def color_txt(
-    string: str, fg_color: str, bg_color: str, padding: int = 0
-) -> str:
+def color_txt(string: str, fg_color: str, bg_color: str, padding: int = 0) -> str:
     """
     Colorizes a string.
 
@@ -162,7 +152,7 @@ def color_txt(
     return f"{fg(fg_color)}{bg(bg_color)}{string}{attr('reset')}"
 
 
-def print_timeline(timeline: List[tuple]) -> None:
+def print_timeline(timeline: list[tuple]) -> None:
     """
     Prints the ASCII timeline vertically.
 
@@ -172,8 +162,7 @@ def print_timeline(timeline: List[tuple]) -> None:
     # Calculate maximum width for each column
     logger.info(msg=f"Printing timeline with {len(timeline)} entries.")
     max_time_width: int = max(
-        len(display_elapsed_time(float(ts), _format="short"))
-        for ts, _, _ in timeline
+        len(display_elapsed_time(float(ts), _format="short")) for ts, _, _ in timeline
     )
     max_emotion_width: int = max(len(em.capitalize()) for _, em, _ in timeline)
     max_text_width: int = max(len(txt.strip()) for _, _, txt in timeline)
@@ -185,10 +174,8 @@ def print_timeline(timeline: List[tuple]) -> None:
 
     # Print each entry vertically
     for ts, em, txt in timeline:
-        time_str: str = (
-            f"{display_elapsed_time(float(ts), _format='short')}".ljust(
-                max_time_width
-            )
+        time_str: str = f"{display_elapsed_time(float(ts), _format='short')}".ljust(
+            max_time_width
         )
         emotion_str: str = f"{em.capitalize()}".ljust(max_emotion_width)
         text_str: str = f"{txt.strip()}".ljust(max_text_width)

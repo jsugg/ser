@@ -45,8 +45,13 @@ graph TD;
 ```bash
 git clone https://github.com/jsugg/ser/
 cd ser
-pip install -r requirements.txt
+uv python install 3.12
+uv sync --python 3.12
 ```
+
+### Compatibility
+- Supported Python versions: `3.12` and `3.13`
+- Recommended for Intel macOS (`x86_64`): `3.12`
 
 -----
 ## Usage
@@ -55,7 +60,7 @@ pip install -r requirements.txt
 To train the emotion classification model:
 
 ```bash
-python -m ser --train
+uv run ser --train
 ```
 ```mermaid
 graph TD;
@@ -70,7 +75,7 @@ graph TD;
 To predict emotions in an audio file:
 
 ```bash
-python -m ser --file audio.mp3
+uv run ser --file audio.mp3
 ```
 ```mermaid
 graph LR;
@@ -82,7 +87,7 @@ graph LR;
 ```
 -------
 ### Additional Options
-* Specify language: **`--language <language>--`**
+* Specify language: **`--language <language>`**
 * Save transcript: **`--save_transcript`**
 
 ---
@@ -109,6 +114,23 @@ Edit **`ser/config.py`** to modify default configurations, including model paths
 
 ## Contributing
 Contributions to SER are welcome!
+
+### Development Checks
+```bash
+uv sync --extra dev
+uv run ruff check ser
+uv run black --check ser
+uv run isort --check-only ser
+uv run mypy ser
+uv run pyright ser
+```
+
+### Git Hooks
+```bash
+uv sync --extra dev
+uv run pre-commit install
+uv run pre-commit install --hook-type pre-push
+```
 
 ---
 

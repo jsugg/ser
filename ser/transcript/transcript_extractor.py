@@ -16,17 +16,16 @@ Licenserr: MIT
 """
 
 import logging
-from typing import Tuple, List, Any, Optional
 import warnings
+from typing import Any
 
-from halo import Halo
 import stable_whisper
+from halo import Halo
 from stable_whisper.result import WhisperResult
 from whisper.model import Whisper
 
-from ser.utils import get_logger
 from ser.config import Config
-
+from ser.utils import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -59,7 +58,7 @@ def load_whisper_model() -> Whisper:
 
 def extract_transcript(
     file_path: str, language: str = Config.DEFAULT_LANGUAGE
-) -> List[Tuple[str, float, float]]:
+) -> list[tuple[str, float, float]]:
     """
     Extracts the transcript from an audio file using the Whisper model.
 
@@ -79,7 +78,7 @@ def extract_transcript(
 
 def _extract_transcript(
     file_path: str, language: str
-) -> List[Tuple[str, float, float]]:
+) -> list[tuple[str, float, float]]:
     with Halo(
         text="Loading the Whisper model...",
         spinner="dots",
@@ -88,9 +87,7 @@ def _extract_transcript(
         try:
             model: Whisper = load_whisper_model()
         except Exception as err:
-            logger.error(
-                msg=f"Error loading Whisper model: {err}", exc_info=True
-            )
+            logger.error(msg=f"Error loading Whisper model: {err}", exc_info=True)
             raise
     logger.info(msg="Whisper model loaded successfully.")
     try:
@@ -99,23 +96,21 @@ def _extract_transcript(
             spinner="dots",
             text_color="green",
         ):
-            transcript: Optional[WhisperResult] = __transcribe_file(
+            transcript: WhisperResult | None = __transcribe_file(
                 model, language, file_path
             )
         logger.info(msg="Audio file transcription process completed.")
 
         if transcript:
-            formatted_transcript: list[Tuple[str, float, float]] = (
-                format_transcript(transcript)
+            formatted_transcript: list[tuple[str, float, float]] = format_transcript(
+                transcript
             )
         else:
             logger.info(msg="Transcript is empty.")
             return [("", 0, 0)]
         logger.debug(msg="Transcript output formatted successfully.")
     except Exception as err:
-        logger.error(
-            msg=f"Error generating the transcript: {err}", exc_info=True
-        )
+        logger.error(msg=f"Error generating the transcript: {err}", exc_info=True)
         raise err
 
     logger.info("Transcript extraction process completed successfully.")
@@ -128,7 +123,7 @@ def __transcribe_file(
     try:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            transcript = model.transcribe(
+            raw_transcript = model.transcribe(
                 audio=file_path,
                 language=language,
                 verbose=False,
@@ -138,14 +133,22 @@ def __transcribe_file(
                 vad=True,
             )
     except Exception as err:
-        logger.error(
-            msg=f"Error processing speech extraction: {err}", exc_info=True
-        )
+        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
         return None
-    return transcript  # type: ignore
+    if isinstance(raw_transcript, WhisperResult):
+        return raw_transcript
+
+    if isinstance(raw_transcript, (dict, list, str)):
+        return WhisperResult(raw_transcript)
+
+    logger.error(
+        "Unexpected transcription result type from stable-whisper: %s",
+        type(raw_transcript).__name__,
+    )
+    return None
 
 
-def format_transcript(result: WhisperResult) -> list[Tuple[str, float, float]]:
+def format_transcript(result: WhisperResult) -> list[tuple[str, float, float]]:
     """
     Formats the transcript into a list of tuples containing the word,
     start time, and end time.
@@ -159,12 +162,10 @@ def format_transcript(result: WhisperResult) -> list[Tuple[str, float, float]]:
     try:
         words: list[Any] = result.all_words()
     except AttributeError as err:
-        logger.error(
-            msg=f"Error extracting words from result: {err}", exc_info=True
-        )
+        logger.error(msg=f"Error extracting words from result: {err}", exc_info=True)
         raise
 
-    text_with_timestamps: list[Tuple[str, float, float]] = (
+    text_with_timestamps: list[tuple[str, float, float]] = (
         [(word.word, word.start, word.end) for word in words]
         if result.text != ""
         else [("", 0, 0)]
