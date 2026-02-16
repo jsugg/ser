@@ -4,21 +4,28 @@ import glob
 import logging
 import multiprocessing as mp
 import os
+from collections.abc import Collection
 from functools import partial
 
 import numpy as np
+from numpy.typing import NDArray
 from sklearn.model_selection import train_test_split
 
-from ser.config import Config
+from ser.config import get_settings
 from ser.features import extract_feature
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
+type FeatureVector = NDArray[np.float64]
+type FeatureMatrix = NDArray[np.float64]
+type LabelList = list[str]
+type DataSplit = tuple[FeatureMatrix, FeatureMatrix, LabelList, LabelList]
+
 
 def process_file(
-    file: str, observed_emotions: list[str]
-) -> tuple[np.ndarray, str] | None:
+    file: str, observed_emotions: Collection[str]
+) -> tuple[FeatureVector, str] | None:
     """Extracts features for a file when its label is in the target emotion set.
 
     Args:
@@ -29,21 +36,22 @@ def process_file(
         A tuple of `(feature_vector, emotion_label)` when the file matches one of
         `observed_emotions`; otherwise `None`.
     """
+    settings = get_settings()
     try:
         file_name: str = os.path.basename(file)
-        emotion: str | None = Config.EMOTIONS.get(file_name.split("-")[2])
+        emotion: str | None = settings.emotions.get(file_name.split("-")[2])
 
         if not emotion or emotion not in observed_emotions:
             return None
-        features: np.ndarray = extract_feature(file)
+        features: FeatureVector = np.asarray(extract_feature(file), dtype=np.float64)
 
         return (features, emotion)
-    except Exception as e:
-        logger.error(msg=f"Failed to process file {file}: {e}")
-        raise e
+    except Exception as err:
+        logger.error(msg=f"Failed to process file {file}: {err}", exc_info=True)
+        raise
 
 
-def load_data(test_size: float = 0.2) -> list | None:
+def load_data(test_size: float = 0.2) -> DataSplit | None:
     """Loads the configured dataset, extracts features, and splits train/test sets.
 
     Args:
@@ -53,28 +61,35 @@ def load_data(test_size: float = 0.2) -> list | None:
         The `train_test_split` output `(x_train, x_test, y_train, y_test)` when
         data is available; otherwise `None`.
     """
-    observed_emotions: list[str] = list(Config.EMOTIONS.values())
-    raw_data: list[tuple[np.ndarray, str] | None]
-    data_path_pattern: str = (
-        f"{Config.DATASET['folder']}/"
-        f"{Config.DATASET['subfolder_prefix']}/"
-        f"{Config.DATASET['extension']}"
-    )
+    settings = get_settings()
+    observed_emotions: set[str] = set(settings.emotions.values())
+    raw_data: list[tuple[FeatureVector, str] | None]
+    data_path_pattern: str = settings.dataset.glob_pattern
     files: list[str] = glob.glob(data_path_pattern)
 
-    with mp.Pool(int(Config.MODELS_CONFIG["num_cores"])) as pool:
+    with mp.Pool(settings.models.num_cores) as pool:
         raw_data = pool.map(
             partial(process_file, observed_emotions=observed_emotions), files
         )
 
-    data: list[tuple[np.ndarray, str]] = [item for item in raw_data if item is not None]
+    data: list[tuple[FeatureVector, str]] = [
+        item for item in raw_data if item is not None
+    ]
     if not data:
         logger.warning("No data found or processed.")
         return None
 
-    features: tuple[np.ndarray, ...]
+    features: tuple[FeatureVector, ...]
     labels: tuple[str, ...]
     features, labels = zip(*data, strict=False)
-    return train_test_split(
-        np.array(features), labels, test_size=test_size, random_state=42
+    split = train_test_split(
+        np.asarray(features, dtype=np.float64),
+        list(labels),
+        test_size=test_size,
+        random_state=42,
     )
+    x_train = np.asarray(split[0], dtype=np.float64)
+    x_test = np.asarray(split[1], dtype=np.float64)
+    y_train = [str(label) for label in split[2]]
+    y_test = [str(label) for label in split[3]]
+    return x_train, x_test, y_train, y_test

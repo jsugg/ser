@@ -3,7 +3,8 @@
 .git
 .DS_Store
 ser/dataset/**/*.wav
-ser/models/**/*
+ser/models/*.pkl
+ser/models/OpenAI/**
 transcripts/**/*
 **/*.pyc
 dist/

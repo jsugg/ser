@@ -30,14 +30,14 @@ repos:
     hooks:
       - id: mypy
         pass_filenames: false
-        args: [ser]
+        args: [ser, tests]
         stages: [pre-push]
 
   - repo: local
     hooks:
       - id: pyright
         name: pyright
-        entry: uvx pyright ser
+        entry: uvx pyright ser tests
         language: system
         pass_filenames: false
         stages: [pre-push]
