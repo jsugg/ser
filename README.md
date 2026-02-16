@@ -4,6 +4,10 @@
 
 
 # Speech Emotion Recognition (SER)
+[![CI](https://github.com/jsugg/ser/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jsugg/ser/actions/workflows/ci.yml)
+[![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://github.com/jsugg/ser/blob/main/pyproject.toml)
+[![PyPI Version](https://img.shields.io/pypi/v/ser)](https://pypi.org/project/ser/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/license/mit)
 ---
 ## Overview
 The `ser` package is a Python package designed to identify and analyze emotions from spoken language. Utilizing cutting-edge machine learning techniques and audio processing algorithms, this package classifies emotions in speech, providing insights into the emotional states conveyed in audio recordings.
