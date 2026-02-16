@@ -1,16 +1,15 @@
+import logging
 import time
 import warnings
-import logging
 from typing import Any
 
-from numpy import ndarray
-import numpy as np
 import librosa
+import numpy as np
 import soundfile as sf
+from numpy import ndarray
 
-from ser.utils import get_logger
 from ser.config import Config
-
+from ser.utils import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -27,16 +26,12 @@ def read_audio_file(file_path: str) -> tuple[ndarray, Any]:
     """
     logger.debug(msg=f"Starting to read audio file: {file_path}")
     for attempt in range(Config.AUDIO_READ_CONFIG["max_retries"]):
-        logger.debug(
-            msg=f"Attempt {attempt + 1} to read audio file using librosa."
-        )
+        logger.debug(msg=f"Attempt {attempt + 1} to read audio file using librosa.")
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                audiofile, current_sample_rate = librosa.load(
-                    file_path, sr=None
-                )
-            audiofile: ndarray = np.array(audiofile, dtype=np.float32)
+                audiofile, current_sample_rate = librosa.load(file_path, sr=None)
+            audiofile = np.array(audiofile, dtype=np.float32)
 
             max_abs_value: Any = np.max(np.abs(audiofile))
             if max_abs_value == 0:
@@ -44,9 +39,7 @@ def read_audio_file(file_path: str) -> tuple[ndarray, Any]:
             else:
                 audiofile /= max_abs_value
 
-            logger.debug(
-                msg=f"Successfully read audio file using librosa: {file_path}"
-            )
+            logger.debug(msg=f"Successfully read audio file using librosa: {file_path}")
             return audiofile, current_sample_rate
 
         except Exception as e:
@@ -54,20 +47,17 @@ def read_audio_file(file_path: str) -> tuple[ndarray, Any]:
             logger.warning(msg="Falling back to soundfile...")
             try:
                 with sf.SoundFile(file_path) as sound_file:
-                    audiofile: ndarray = sound_file.read(dtype="float32")
+                    audiofile = sound_file.read(dtype="float32")
                     current_sample_rate = sound_file.samplerate
 
-                max_abs_value: Any = np.max(np.abs(audiofile))
+                max_abs_value = np.max(np.abs(audiofile))
                 if max_abs_value == 0:
                     audiofile = np.zeros_like(audiofile)
                 else:
                     audiofile /= max_abs_value
 
                 logger.debug(
-                    msg=(
-                        "Successfully read audio file using soundfile: "
-                        f"{file_path}"
-                    )
+                    msg=(f"Successfully read audio file using soundfile: {file_path}")
                 )
                 return audiofile, current_sample_rate
 
@@ -87,4 +77,4 @@ def read_audio_file(file_path: str) -> tuple[ndarray, Any]:
             f"after {Config.AUDIO_READ_CONFIG['max_retries']} retries."
         )
     )
-    raise IOError(f"Error reading {file_path}")
+    raise OSError(f"Error reading {file_path}")

@@ -16,6 +16,7 @@ License: MIT
 
 import os
 from typing import Any
+
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file

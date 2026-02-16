@@ -124,7 +124,7 @@ then
             esac
     )
 
-    # Check if pipenv installation was successful
+    # Check if ffmpeg installation was successful
     if command -v ffmpeg &> /dev/null
     then
         echo "ffmpeg installed."

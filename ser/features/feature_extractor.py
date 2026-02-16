@@ -1,7 +1,7 @@
 """
 Feature Extraction for Speech Emotion Recognition (SER) Tool
 
-This module provides functions to extract various audio features 
+This module provides functions to extract various audio features
 (e.g., MFCC, chroma, mel, spectral contrast, tonnetz) from audio
 files. It includes both basic and extended feature extraction methods.
 
@@ -15,26 +15,22 @@ Version: 1.0
 License: MIT
 """
 
-from typing import List
-import os
 import logging
+import os
 import warnings
 
-import numpy as np
 import librosa
+import numpy as np
 import soundfile as sf
 from halo import Halo
 
-from ser.utils import get_logger, read_audio_file
 from ser.config import Config
-
+from ser.utils import get_logger, read_audio_file
 
 logger: logging.Logger = get_logger(__name__)
 
 warnings.filterwarnings("ignore", message=".*The 'nopython' keyword.*")
-warnings.filterwarnings(
-    "ignore", message=".*is too large for input signal of length.*"
-)
+warnings.filterwarnings("ignore", message=".*is too large for input signal of length.*")
 
 
 def extract_feature(file: str) -> np.ndarray:
@@ -62,27 +58,21 @@ def extract_feature(file: str) -> np.ndarray:
     try:
         if Config.DEFAULT_FEATURE_CONFIG["mfcc"]:
             mfccs: np.ndarray = np.mean(
-                librosa.feature.mfcc(
-                    y=audio, sr=sample_rate, n_mfcc=40, n_fft=n_fft
-                ).T,
+                librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=40, n_fft=n_fft).T,
                 axis=0,
             )
             result = np.hstack((result, mfccs))
 
         if Config.DEFAULT_FEATURE_CONFIG["chroma"]:
             chroma: np.ndarray = np.mean(
-                librosa.feature.chroma_stft(
-                    S=stft, sr=sample_rate, n_fft=n_fft
-                ).T,
+                librosa.feature.chroma_stft(S=stft, sr=sample_rate, n_fft=n_fft).T,
                 axis=0,
             )
             result = np.hstack((result, chroma))
 
         if Config.DEFAULT_FEATURE_CONFIG["mel"]:
             mel: np.ndarray = np.mean(
-                librosa.feature.melspectrogram(
-                    y=audio, sr=sample_rate, n_fft=n_fft
-                ).T,
+                librosa.feature.melspectrogram(y=audio, sr=sample_rate, n_fft=n_fft).T,
                 axis=0,
             )
             result = np.hstack((result, mel))
@@ -111,9 +101,9 @@ def extract_feature(file: str) -> np.ndarray:
 
 def extended_extract_feature(
     audiofile: str, frame_size: int = 3, frame_stride: int = 1
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """
-    Extract features (mfcc, chroma, mel) from an audio file 
+    Extract features (mfcc, chroma, mel) from an audio file
     using extended audio frames.
 
     Arguments:
@@ -123,14 +113,14 @@ def extended_extract_feature(
         mel (bool): Whether to include mel features.
         frame_size (int, optional): Size of the frame in seconds,
             by default 3.
-        frame_stride (int, optional): Stride between frames in 
+        frame_stride (int, optional): Stride between frames in
             seconds, by default 1.
 
     Returns:
         List[np.ndarray]: List of extracted features.
     """
     temp_filename: str = f"{Config.TMP_FOLDER}/temp.wav"
-    features: List[np.ndarray] = []
+    features: list[np.ndarray] = []
     audio: np.ndarray
     sample_rate: float
     audio, sample_rate = read_audio_file(audiofile)

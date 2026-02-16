@@ -15,23 +15,21 @@ Version: 1.0
 License: MIT
 """
 
-import os
-import warnings
 import logging
+import os
 import pickle
-from typing import Optional, Tuple, List
+import warnings
 
-import numpy as np
 import librosa
+import numpy as np
+from halo import Halo
 from sklearn.metrics import accuracy_score
 from sklearn.neural_network import MLPClassifier
-from halo import Halo
 
-from ser.utils import get_logger, read_audio_file
 from ser.config import Config
 from ser.data import load_data
 from ser.features import extended_extract_feature
-
+from ser.utils import get_logger, read_audio_file
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -53,24 +51,16 @@ def train_model() -> None:
             logger.info(msg="Dataset loaded successfully.")
         else:
             logger.error("Dataset not loaded. Please load the dataset first.")
-            raise RuntimeError(
-                "Dataset not loaded. Please load the dataset first."
-            )
+            raise RuntimeError("Dataset not loaded. Please load the dataset first.")
 
-    with Halo(
-        text="Training the model... ", spinner="dots", text_color="green"
-    ):
+    with Halo(text="Training the model... ", spinner="dots", text_color="green"):
         model.fit(x_train, y_train)
     logger.info(msg=f"Model trained with {len(x_train)} samples")
 
-    with Halo(
-        text="Measuring accuracy... ", spinner="dots", text_color="green"
-    ):
-        y_pred: np.ndarray = model.predict(x_test)
+    with Halo(text="Measuring accuracy... ", spinner="dots", text_color="green"):
+        y_pred = model.predict(x_test)
         accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
-        model_file: str = (
-            f"{Config.MODELS_CONFIG['models_folder']}/ser_model.pkl"
-        )
+        model_file: str = f"{Config.MODELS_CONFIG['models_folder']}/ser_model.pkl"
     logger.info(msg=f"Accuracy: {accuracy * 100:.2f}%")
 
     with Halo(text="Saving the model... ", spinner="dots", text_color="green"):
@@ -90,10 +80,9 @@ def load_model() -> MLPClassifier:
     Raises:
         FileNotFoundError: If the model file does not exist.
     """
-    model_path: str = f'{Config.MODELS_CONFIG["models_folder"]}/ser_model.pkl'
+    model_path: str = f"{Config.MODELS_CONFIG['models_folder']}/ser_model.pkl"
     model: MLPClassifier | None = None
     try:
-
         with Halo(
             text=f"Loading SER model from {model_path}... ",
             spinner="dots",
@@ -125,7 +114,7 @@ def load_model() -> MLPClassifier:
     raise ValueError("Failed to load the model.")
 
 
-def predict_emotions(file: str) -> List[Tuple[str, float, float]]:
+def predict_emotions(file: str) -> list[tuple[str, float, float]]:
     """
     Predict emotions from an audio file.
 
@@ -152,13 +141,13 @@ def predict_emotions(file: str) -> List[Tuple[str, float, float]]:
         spinner="dots",
         text_color="green",
     ):
-        feature: List[np.ndarray] = extended_extract_feature(file)
-        predicted_emotions: np.ndarray = model.predict(feature)
+        feature: list[np.ndarray] = extended_extract_feature(file)
+        predicted_emotions = model.predict(feature)
     logger.info(msg="Emotion inference completed.")
 
     audio_duration: float = librosa.get_duration(y=read_audio_file(file)[0])
-    emotion_timestamps: List[Tuple[str, float, float]] = []
-    prev_emotion: Optional[str] = None
+    emotion_timestamps: list[tuple[str, float, float]] = []
+    prev_emotion: str | None = None
     start_time: float = 0
 
     for timestamp, emotion in enumerate(predicted_emotions):

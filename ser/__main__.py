@@ -2,14 +2,14 @@
 Speech Emotion Recognition (SER) Tool
 
 This module serves as the entry point for the Speech Emotion Recognition (SER)
-tool. It provides command-line interface (CLI) options for training the 
+tool. It provides command-line interface (CLI) options for training the
 emotion classification model or predicting emotions and generating transcripts
 from audio files.
 
 Usage:
     The tool can be operated in two primary modes:
     1. Training mode: Trains the model using labeled audio data.
-    2. Prediction mode: Predicts emotions in a given audio file 
+    2. Prediction mode: Predicts emotions in a given audio file
         and extracts the transcript.
 
 Author: Juan Sugg (juanpedrosugg@gmail.com)
@@ -18,21 +18,19 @@ License: MIT
 """
 
 import argparse
+import logging
 import sys
 import time
-import logging
-from typing import List, Tuple
 
+from ser.config import Config
 from ser.models.emotion_model import predict_emotions, train_model
 from ser.transcript import extract_transcript
 from ser.utils import (
-    get_logger,
     build_timeline,
+    get_logger,
     print_timeline,
     save_timeline_to_csv,
 )
-from ser.config import Config
-
 
 logger: logging.Logger = get_logger("ser")
 
@@ -71,9 +69,7 @@ def main() -> None:
         logger.info("Starting model training...")
         start_time: float = time.time()
         train_model()
-        logger.info(
-            msg=f"Training completed in {time.time() - start_time:.2f} seconds"
-        )
+        logger.info(msg=f"Training completed in {time.time() - start_time:.2f} seconds")
         sys.exit(0)
 
     if not args.file:
@@ -82,8 +78,8 @@ def main() -> None:
 
     logger.info(msg="Starting emotion prediction...")
     start_time = time.time()
-    emotions: List[Tuple[str, float, float]] = predict_emotions(args.file)
-    transcript: List[Tuple[str, float, float]] = extract_transcript(
+    emotions: list[tuple[str, float, float]] = predict_emotions(args.file)
+    transcript: list[tuple[str, float, float]] = extract_transcript(
         args.file, args.language
     )
     timeline: list = build_timeline(transcript, emotions)
