@@ -16,6 +16,7 @@ Licenserr: MIT
 """
 
 import logging
+import os
 import warnings
 from typing import Any
 
@@ -25,7 +26,7 @@ from stable_whisper.result import WhisperResult
 from whisper.model import Whisper
 
 from ser.config import Config
-from ser.utils import get_logger
+from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -38,16 +39,18 @@ def load_whisper_model() -> Whisper:
         stable_whisper.Whisper: Loaded Whisper model.
     """
     try:
+        download_root = (
+            f"{Config.MODELS_CONFIG['models_folder']}/"
+            f"{Config.MODELS_CONFIG['whisper_model']['path']}"
+        )
+        os.makedirs(download_root, exist_ok=True)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module="stable_whisper")
             model: Whisper = stable_whisper.load_model(
                 name=Config.MODELS_CONFIG["whisper_model"]["name"],
                 device="cpu",
                 dq=False,
-                download_root=(
-                    f"{Config.MODELS_CONFIG['models_folder']}/"
-                    f"{Config.MODELS_CONFIG['whisper_model']['path']}"
-                ),
+                download_root=download_root,
                 in_memory=True,
             )
         return model

@@ -19,12 +19,13 @@ License: MIT
 
 import csv
 import logging
+import os
 
 from colored import attr, bg, fg
 from halo import Halo
 
 from ser.config import Config
-from ser.utils import get_logger
+from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -49,6 +50,7 @@ def save_timeline_to_csv(timeline: list[tuple], file_name: str) -> str:
             "csv",
         ]
     )
+    os.makedirs(Config.TIMELINE_CONFIG["folder"], exist_ok=True)
 
     with Halo(
         text=f"Saving transcript to {file_name}",

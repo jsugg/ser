@@ -9,7 +9,7 @@ import soundfile as sf
 from numpy import ndarray
 
 from ser.config import Config
-from ser.utils import get_logger
+from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
