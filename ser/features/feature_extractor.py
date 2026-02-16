@@ -1,19 +1,4 @@
-"""
-Feature Extraction for Speech Emotion Recognition (SER) Tool
-
-This module provides functions to extract various audio features
-(e.g., MFCC, chroma, mel, spectral contrast, tonnetz) from audio
-files. It includes both basic and extended feature extraction methods.
-
-Functions:
-    - extract_feature: Extracts features from an audio file.
-    - extended_extract_feature: Extracts features from audio frames
-        with extended audio frame handling.
-
-Author: Juan Sugg (juanpedrosugg [at] gmail.com)
-Version: 1.0
-License: MIT
-"""
+"""Audio feature extraction utilities used by the SER model pipeline."""
 
 import logging
 import os
@@ -36,14 +21,13 @@ warnings.filterwarnings("ignore", message=".*is too large for input signal of le
 
 
 def extract_feature(file: str) -> np.ndarray:
-    """
-    Extract features (mfcc, chroma, mel, contrast, tonnetz) from an audio file.
+    """Extracts the configured spectral features from one audio file.
 
-    Arguments:
-        file (str): Path to the audio file.
+    Args:
+        file: Path to the audio file.
 
     Returns:
-        np.ndarray: Extracted features.
+        A one-dimensional feature vector combining all enabled feature groups.
     """
     audio: np.ndarray
     sample_rate: float
@@ -104,22 +88,15 @@ def extract_feature(file: str) -> np.ndarray:
 def extended_extract_feature(
     audiofile: str, frame_size: int = 3, frame_stride: int = 1
 ) -> list[np.ndarray]:
-    """
-    Extract features (mfcc, chroma, mel) from an audio file
-    using extended audio frames.
+    """Extracts frame-wise feature vectors from an audio file.
 
-    Arguments:
-        audiofile (str) Path to the audio file.
-        mfcc (bool): Whether to include MFCC features.
-        chroma (bool): Whether to include chroma features.
-        mel (bool): Whether to include mel features.
-        frame_size (int, optional): Size of the frame in seconds,
-            by default 3.
-        frame_stride (int, optional): Stride between frames in
-            seconds, by default 1.
+    Args:
+        audiofile: Path to the audio file.
+        frame_size: Duration of each frame, in seconds.
+        frame_stride: Step between successive frames, in seconds.
 
     Returns:
-        List[np.ndarray]: List of extracted features.
+        A list of feature vectors, one for each extracted frame.
     """
     os.makedirs(Config.TMP_FOLDER, exist_ok=True)
     temp_filename: str

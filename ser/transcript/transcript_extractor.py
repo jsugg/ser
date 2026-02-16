@@ -1,19 +1,4 @@
-"""
-Transcript Extraction for Speech Emotion Recognition (SER) Tool
-
-This module provides functions to extract transcripts from audio files using the Whisper
-model. It includes functions to load the Whisper model and extract and format the transcript.
-
-Functions:
-    - load_whisper_model: Loads the Whisper model specified in the configuration.
-    - extract_transcript: Extracts the transcript from an audio file using the Whisper model.
-    - format_transcript: Formats the transcript into a list of tuples containing the word,
-                         start time, and end time.
-
-Author: Juan Sugg (juanpedrosugg [at] gmail.com)
-Version: 1.0
-Licenserr: MIT
-"""
+"""Whisper-based transcript extraction with word-level timestamps."""
 
 import logging
 import os
@@ -32,11 +17,10 @@ logger: logging.Logger = get_logger(__name__)
 
 
 def load_whisper_model() -> Whisper:
-    """
-    Loads the Whisper model specified in the configuration.
+    """Loads the configured Whisper model for CPU inference.
 
     Returns:
-        stable_whisper.Whisper: Loaded Whisper model.
+        The loaded Whisper model instance.
     """
     try:
         download_root = (
@@ -62,15 +46,14 @@ def load_whisper_model() -> Whisper:
 def extract_transcript(
     file_path: str, language: str = Config.DEFAULT_LANGUAGE
 ) -> list[tuple[str, float, float]]:
-    """
-    Extracts the transcript from an audio file using the Whisper model.
+    """Extracts a transcript with per-word timing for an input audio file.
 
-    Arguments:
-        file_path (str): Path to the audio file.
-        language (str): Language of the audio.
+    Args:
+        file_path: Path to the audio file.
+        language: Language code used by Whisper during transcription.
 
     Returns:
-        list: List of tuples (word, start_time, end_time).
+        A list of `(word, start_seconds, end_seconds)` tuples.
     """
     try:
         return _extract_transcript(file_path, language)
@@ -82,6 +65,7 @@ def extract_transcript(
 def _extract_transcript(
     file_path: str, language: str
 ) -> list[tuple[str, float, float]]:
+    """Internal transcript workflow with model loading and formatting."""
     with Halo(
         text="Loading the Whisper model...",
         spinner="dots",
@@ -123,6 +107,7 @@ def _extract_transcript(
 def __transcribe_file(
     model: Whisper, language: str, file_path: str
 ) -> WhisperResult | None:
+    """Runs a Whisper transcription call and normalizes return types."""
     try:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -152,15 +137,13 @@ def __transcribe_file(
 
 
 def format_transcript(result: WhisperResult) -> list[tuple[str, float, float]]:
-    """
-    Formats the transcript into a list of tuples containing the word,
-    start time, and end time.
+    """Formats a Whisper result object into a word-level timestamp list.
 
     Args:
-        result (dict): The transcript result.
+        result: Whisper transcription result.
 
     Returns:
-        List[Tuple[str, float, float]]: Formatted transcript with timestamps.
+        A list of `(word, start_seconds, end_seconds)` tuples.
     """
     try:
         words: list[Any] = result.all_words()

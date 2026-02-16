@@ -1,3 +1,5 @@
+"""Audio loading utilities with fallback between librosa and soundfile."""
+
 import logging
 import time
 import warnings
@@ -15,14 +17,13 @@ logger: logging.Logger = get_logger(__name__)
 
 
 def read_audio_file(file_path: str) -> tuple[ndarray, Any]:
-    """
-    Read an audio file.
+    """Reads an audio file and normalizes amplitude to [-1, 1].
 
-    Arguments:
-        file_path (str): Path to the audio file.
+    Args:
+        file_path: Path to the audio file.
 
     Returns:
-        np.ndarray: Audio data.
+        A tuple of `(audio_samples, sample_rate)`.
     """
     logger.debug(msg=f"Starting to read audio file: {file_path}")
     for attempt in range(Config.AUDIO_READ_CONFIG["max_retries"]):
