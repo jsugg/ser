@@ -6,7 +6,7 @@ authors = [{ name = "Juan Sugg", email = "juanpedrosugg@gmail.com" }]
 license = { text = "MIT" }
 readme = "README.md"
 keywords = ["speech", "emotion", "recognition"]
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.13"
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
@@ -16,7 +16,6 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
   "Topic :: Multimedia :: Sound/Audio :: Analysis",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -66,7 +65,7 @@ packages = ["ser"]
 
 [tool.black]
 line-length = 88
-target-version = ["py312", "py313"]
+target-version = ["py312"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
