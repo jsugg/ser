@@ -62,6 +62,7 @@ To train the emotion classification model:
 ```bash
 uv run ser --train
 ```
+This generates `ser/models/ser_model.pkl` locally. The model artifact is intentionally not tracked in Git.
 ```mermaid
 graph TD;
     A[Data Loading] --> B[Data Splitting];
@@ -122,8 +123,8 @@ uv sync --extra dev
 uv run ruff check ser
 uv run black --check ser
 uv run isort --check-only ser
-uv run mypy ser
-uv run pyright ser
+uv run mypy ser tests
+uv run pyright ser tests
 ```
 
 ### Git Hooks

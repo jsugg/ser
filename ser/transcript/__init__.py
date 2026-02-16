@@ -1,3 +1,3 @@
-from .transcript_extractor import extract_transcript
+from .transcript_extractor import TranscriptionError, extract_transcript
 
-__all__ = ["extract_transcript"]
+__all__ = ["extract_transcript", "TranscriptionError"]

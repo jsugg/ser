@@ -3,7 +3,7 @@
 import logging
 
 
-def get_logger(name: str, level=logging.INFO) -> logging.Logger:
+def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """Creates or retrieves a configured logger.
 
     Args:

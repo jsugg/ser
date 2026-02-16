@@ -1,5 +1,6 @@
 """General utility helpers shared across CLI output paths."""
 
+
 def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
     """Formats elapsed seconds as either verbose or compact text.
 
@@ -12,5 +13,9 @@ def display_elapsed_time(elapsed_time: float, _format: str = "long") -> str:
     """
     minutes, seconds = divmod(int(elapsed_time), 60)
     if _format == "long":
-        return f"{minutes} min {seconds} seconds"
-    return f"{minutes}m{seconds}s"
+        return (
+            f"{minutes} min {seconds} seconds"
+            if minutes
+            else f"{elapsed_time:.2f} seconds"
+        )
+    return f"{minutes}m{seconds}s" if minutes else f"{elapsed_time:.2f}s"

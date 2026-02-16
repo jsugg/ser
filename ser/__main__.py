@@ -5,9 +5,12 @@ import logging
 import sys
 import time
 
-from ser.config import Config
+from dotenv import load_dotenv
+
+from ser.config import reload_settings
+from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.models.emotion_model import predict_emotions, train_model
-from ser.transcript import extract_transcript
+from ser.transcript import TranscriptionError, extract_transcript
 from ser.utils.logger import get_logger
 from ser.utils.timeline_utils import (
     build_timeline,
@@ -20,6 +23,9 @@ logger: logging.Logger = get_logger("ser")
 
 def main() -> None:
     """Parses CLI arguments and runs training or inference workflows."""
+    load_dotenv()
+    settings = reload_settings()
+
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Speech Emotion Recognition Tool"
     )
@@ -36,7 +42,7 @@ def main() -> None:
     parser.add_argument(
         "--language",
         type=str,
-        default=Config.DEFAULT_LANGUAGE,
+        default=settings.default_language,
         help="Language of the audio file",
     )
     parser.add_argument(
@@ -49,7 +55,14 @@ def main() -> None:
     if args.train:
         logger.info("Starting model training...")
         start_time: float = time.time()
-        train_model()
+        try:
+            train_model()
+        except RuntimeError as err:
+            logger.error("%s", err)
+            sys.exit(2)
+        except Exception as err:
+            logger.error("Training workflow failed: %s", err, exc_info=True)
+            sys.exit(1)
         logger.info(msg=f"Training completed in {time.time() - start_time:.2f} seconds")
         sys.exit(0)
 
@@ -59,16 +72,24 @@ def main() -> None:
 
     logger.info(msg="Starting emotion prediction...")
     start_time = time.time()
-    emotions: list[tuple[str, float, float]] = predict_emotions(args.file)
-    transcript: list[tuple[str, float, float]] = extract_transcript(
-        args.file, args.language
-    )
-    timeline: list = build_timeline(transcript, emotions)
-    print_timeline(timeline)
+    try:
+        emotions: list[EmotionSegment] = predict_emotions(args.file)
+        transcript: list[TranscriptWord] = extract_transcript(args.file, args.language)
+        timeline: list[TimelineEntry] = build_timeline(transcript, emotions)
+        print_timeline(timeline)
 
-    if args.save_transcript:
-        csv_file_name: str = save_timeline_to_csv(timeline, args.file)
-        logger.info(msg=f"Timeline saved to {csv_file_name}")
+        if args.save_transcript:
+            csv_file_name: str = save_timeline_to_csv(timeline, args.file)
+            logger.info(msg=f"Timeline saved to {csv_file_name}")
+    except TranscriptionError as err:
+        logger.error("Transcription failed: %s", err, exc_info=True)
+        sys.exit(3)
+    except FileNotFoundError as err:
+        logger.error("%s", err)
+        sys.exit(2)
+    except Exception as err:
+        logger.error("Prediction workflow failed: %s", err, exc_info=True)
+        sys.exit(1)
 
     logger.info(
         msg=f"Emotion prediction completed in {time.time() - start_time:.2f} seconds"
