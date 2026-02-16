@@ -75,7 +75,7 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }} --extra dev
 
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run --extra dev pytest -q
 
   build:
     runs-on: ubuntu-latest
