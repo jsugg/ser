@@ -4,9 +4,8 @@ import csv
 import logging
 from collections import defaultdict
 from pathlib import Path
-
-from colored import attr, bg, fg
-from halo import Halo
+from types import TracebackType
+from typing import Protocol
 
 from ser.config import get_settings
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
@@ -14,6 +13,62 @@ from ser.utils.common_utils import display_elapsed_time
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
+
+
+class HaloContext(Protocol):
+    """Runtime protocol for the context manager returned by `halo.Halo`."""
+
+    def __enter__(self) -> object: ...
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _tb: TracebackType | None,
+    ) -> bool | None: ...
+
+
+class HaloFactory(Protocol):
+    """Callable protocol for constructing spinner context managers."""
+
+    def __call__(self, *args: object, **kwargs: object) -> HaloContext: ...
+
+
+class ColorFunction(Protocol):
+    """Callable protocol for color formatter helpers."""
+
+    def __call__(self, name: str) -> str: ...
+
+
+class AttrFunction(Protocol):
+    """Callable protocol for terminal attribute formatter helpers."""
+
+    def __call__(self, name: str) -> str: ...
+
+
+halo_factory: HaloFactory | None
+halo_factory = None
+try:
+    from halo import Halo as _Halo
+except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
+    pass
+else:
+    halo_factory = _Halo
+
+attr_fn: AttrFunction | None
+bg_fn: ColorFunction | None
+fg_fn: ColorFunction | None
+attr_fn = bg_fn = fg_fn = None
+try:
+    from colored import attr as _attr
+    from colored import bg as _bg
+    from colored import fg as _fg
+except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
+    pass
+else:
+    attr_fn = _attr
+    bg_fn = _bg
+    fg_fn = _fg
 
 
 def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
@@ -26,13 +81,18 @@ def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
     Returns:
         The generated CSV path.
     """
+    if halo_factory is None:
+        raise RuntimeError(
+            "Missing timeline output dependency 'halo'. Install project dependencies."
+        )
+
     settings = get_settings()
     logger.info(msg="Starting to save timeline to CSV.")
     output_folder: Path = settings.timeline.folder
     output_folder.mkdir(parents=True, exist_ok=True)
     output_path: Path = output_folder / f"{Path(file_name).stem}.csv"
 
-    with Halo(
+    with halo_factory(
         text=f"Saving transcript to {output_path}",
         spinner="dots",
         text_color="green",
@@ -150,10 +210,15 @@ def color_txt(string: str, fg_color: str, bg_color: str, padding: int = 0) -> st
     Returns:
         ANSI-formatted text.
     """
+    if attr_fn is None or bg_fn is None or fg_fn is None:
+        raise RuntimeError(
+            "Missing terminal color dependency 'colored'. Install project dependencies."
+        )
+
     if padding:
         string = string.ljust(padding)
 
-    return f"{fg(fg_color)}{bg(bg_color)}{string}{attr('reset')}"
+    return f"{fg_fn(fg_color)}{bg_fn(bg_color)}{string}{attr_fn('reset')}"
 
 
 def print_timeline(timeline: list[TimelineEntry]) -> None:

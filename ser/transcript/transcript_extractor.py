@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from types import TracebackType
 from typing import TYPE_CHECKING, Protocol, cast
-
-from halo import Halo
 
 from ser.config import get_settings
 from ser.domain import TranscriptWord
@@ -18,6 +17,35 @@ if TYPE_CHECKING:
     from whisper.model import Whisper
 
 logger: logging.Logger = get_logger(__name__)
+
+
+class HaloContext(Protocol):
+    """Runtime protocol for the context manager returned by `halo.Halo`."""
+
+    def __enter__(self) -> object: ...
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _tb: TracebackType | None,
+    ) -> bool | None: ...
+
+
+class HaloFactory(Protocol):
+    """Callable protocol for constructing spinner context managers."""
+
+    def __call__(self, *args: object, **kwargs: object) -> HaloContext: ...
+
+
+Halo: HaloFactory | None
+Halo = None
+try:
+    from halo import Halo as _Halo
+except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
+    pass
+else:
+    Halo = _Halo
 
 
 class TranscriptionError(RuntimeError):
@@ -38,7 +66,12 @@ def load_whisper_model() -> Whisper:
     Returns:
         The loaded Whisper model instance.
     """
-    import stable_whisper
+    try:
+        import stable_whisper
+    except ModuleNotFoundError as err:
+        raise TranscriptionError(
+            "Missing transcription dependencies. Ensure project dependencies are installed."
+        ) from err
 
     settings = get_settings()
     try:
@@ -77,6 +110,11 @@ def extract_transcript(
 
 def _extract_transcript(file_path: str, language: str) -> list[TranscriptWord]:
     """Internal transcript workflow with model loading and formatting."""
+    if Halo is None:
+        raise TranscriptionError(
+            "Missing transcription dependency 'halo'. Ensure project dependencies are installed."
+        )
+
     with Halo(
         text="Loading the Whisper model...",
         spinner="dots",

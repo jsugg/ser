@@ -4,19 +4,15 @@ import argparse
 import logging
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
 from ser.config import reload_settings
-from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
-from ser.models.emotion_model import predict_emotions, train_model
-from ser.transcript import TranscriptionError, extract_transcript
 from ser.utils.logger import get_logger
-from ser.utils.timeline_utils import (
-    build_timeline,
-    print_timeline,
-    save_timeline_to_csv,
-)
+
+if TYPE_CHECKING:
+    from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 
 logger: logging.Logger = get_logger("ser")
 
@@ -53,6 +49,8 @@ def main() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     if args.train:
+        from ser.models.emotion_model import train_model
+
         logger.info("Starting model training...")
         start_time: float = time.time()
         try:
@@ -69,6 +67,14 @@ def main() -> None:
     if not args.file:
         logger.error(msg="No audio file provided for prediction.")
         sys.exit(1)
+
+    from ser.models.emotion_model import predict_emotions
+    from ser.transcript import TranscriptionError, extract_transcript
+    from ser.utils.timeline_utils import (
+        build_timeline,
+        print_timeline,
+        save_timeline_to_csv,
+    )
 
     logger.info(msg="Starting emotion prediction...")
     start_time = time.time()

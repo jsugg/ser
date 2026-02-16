@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -24,8 +28,21 @@ jobs:
       - name: Install uv
         run: python -m pip install --upgrade pip uv
 
-      - name: Sync dev dependencies
-        run: uv sync --python 3.12 --extra dev
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-quality-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-quality-
+
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py3.12-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-py3.12-
 
       - name: Run linters and type checks (pre-push stage)
         run: uvx pre-commit run --all-files --hook-stage pre-push
@@ -49,8 +66,16 @@ jobs:
       - name: Install uv
         run: python -m pip install --upgrade pip uv
 
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-resolve-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-resolve-py${{ matrix.python-version }}-
+
       - name: Validate dependency resolution
-        run: uv sync --python ${{ matrix.python-version }} --extra dev --dry-run
+        run: uv sync --frozen --python ${{ matrix.python-version }} --all-extras --dry-run
 
   tests:
     runs-on: ubuntu-latest
@@ -79,11 +104,8 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-py${{ matrix.python-version }}-
 
-      - name: Sync dev dependencies
-        run: uv sync --frozen --python ${{ matrix.python-version }} --extra dev
-
       - name: Run tests
-        run: .venv/bin/pytest -q
+        run: PYTHONPATH=. uvx --python ${{ matrix.python-version }} --with pytest pytest -q
 
   build:
     runs-on: ubuntu-latest
@@ -100,6 +122,14 @@ jobs:
 
       - name: Install uv
         run: python -m pip install --upgrade pip uv
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-build-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-build-
 
       - name: Build package
         run: uv build
