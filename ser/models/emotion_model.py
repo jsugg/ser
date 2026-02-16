@@ -29,7 +29,8 @@ from sklearn.neural_network import MLPClassifier
 from ser.config import Config
 from ser.data import load_data
 from ser.features import extended_extract_feature
-from ser.utils import get_logger, read_audio_file
+from ser.utils.audio_utils import read_audio_file
+from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -60,11 +61,13 @@ def train_model() -> None:
     with Halo(text="Measuring accuracy... ", spinner="dots", text_color="green"):
         y_pred = model.predict(x_test)
         accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
+        os.makedirs(Config.MODELS_CONFIG["models_folder"], exist_ok=True)
         model_file: str = f"{Config.MODELS_CONFIG['models_folder']}/ser_model.pkl"
     logger.info(msg=f"Accuracy: {accuracy * 100:.2f}%")
 
     with Halo(text="Saving the model... ", spinner="dots", text_color="green"):
-        pickle.dump(model, open(model_file, "wb"))
+        with open(model_file, "wb") as model_fh:
+            pickle.dump(model, model_fh)
     logger.info(msg=f"Model saved to {model_file}")
 
 
@@ -91,7 +94,8 @@ def load_model() -> MLPClassifier:
             if os.path.exists(model_path):
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore")
-                    model = pickle.load(open(model_path, "rb"))
+                    with open(model_path, "rb") as model_fh:
+                        model = pickle.load(model_fh)
 
         if model:
             logger.info(msg=f"Model loaded from {model_path}")

@@ -17,6 +17,7 @@ License: MIT
 
 import logging
 import os
+import tempfile
 import warnings
 
 import librosa
@@ -25,7 +26,8 @@ import soundfile as sf
 from halo import Halo
 
 from ser.config import Config
-from ser.utils import get_logger, read_audio_file
+from ser.utils.audio_utils import read_audio_file
+from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -119,7 +121,12 @@ def extended_extract_feature(
     Returns:
         List[np.ndarray]: List of extracted features.
     """
-    temp_filename: str = f"{Config.TMP_FOLDER}/temp.wav"
+    os.makedirs(Config.TMP_FOLDER, exist_ok=True)
+    temp_filename: str
+    with tempfile.NamedTemporaryFile(
+        suffix=".wav", dir=Config.TMP_FOLDER, delete=False
+    ) as tmp_file:
+        temp_filename = tmp_file.name
     features: list[np.ndarray] = []
     audio: np.ndarray
     sample_rate: float
@@ -130,17 +137,18 @@ def extended_extract_feature(
     spinner = Halo(text="Processing", spinner="dots", text_color="green")
 
     spinner.start()
-    for frame in range(num_frames):
-        start: int = frame * frame_step
-        end: int = min(start + frame_length, len(audio))
-        frame_data: np.ndarray = audio[start:end]
+    try:
+        for frame in range(num_frames):
+            start: int = frame * frame_step
+            end: int = min(start + frame_length, len(audio))
+            frame_data: np.ndarray = audio[start:end]
 
-        sf.write(temp_filename, frame_data, sample_rate)
-        feature: np.ndarray = extract_feature(temp_filename)
-        features.append(feature)
-
+            sf.write(temp_filename, frame_data, sample_rate)
+            feature: np.ndarray = extract_feature(temp_filename)
+            features.append(feature)
+    finally:
+        spinner.stop()
         if os.path.exists(temp_filename):
             os.remove(temp_filename)
-    spinner.stop()
 
     return features

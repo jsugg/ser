@@ -25,9 +25,9 @@ import time
 from ser.config import Config
 from ser.models.emotion_model import predict_emotions, train_model
 from ser.transcript import extract_transcript
-from ser.utils import (
+from ser.utils.logger import get_logger
+from ser.utils.timeline_utils import (
     build_timeline,
-    get_logger,
     print_timeline,
     save_timeline_to_csv,
 )

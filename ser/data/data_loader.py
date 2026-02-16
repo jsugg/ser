@@ -25,12 +25,14 @@ from sklearn.model_selection import train_test_split
 
 from ser.config import Config
 from ser.features import extract_feature
-from ser.utils import get_logger
+from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
 
-def process_file(file: str, observed_emotions: list[str]) -> tuple[np.ndarray, str]:
+def process_file(
+    file: str, observed_emotions: list[str]
+) -> tuple[np.ndarray, str] | None:
     """
     Process an audio file to extract features and the associated emotion label.
 
@@ -48,7 +50,7 @@ def process_file(file: str, observed_emotions: list[str]) -> tuple[np.ndarray, s
         emotion: str | None = Config.EMOTIONS.get(file_name.split("-")[2])
 
         if not emotion or emotion not in observed_emotions:
-            return (np.array([]), "")
+            return None
         features: np.ndarray = extract_feature(file)
 
         return (features, emotion)
@@ -69,7 +71,7 @@ def load_data(test_size: float = 0.2) -> list | None:
         and test labels.
     """
     observed_emotions: list[str] = list(Config.EMOTIONS.values())
-    data: list[tuple[np.ndarray, str]]
+    raw_data: list[tuple[np.ndarray, str] | None]
     data_path_pattern: str = (
         f"{Config.DATASET['folder']}/"
         f"{Config.DATASET['subfolder_prefix']}/"
@@ -78,12 +80,12 @@ def load_data(test_size: float = 0.2) -> list | None:
     files: list[str] = glob.glob(data_path_pattern)
 
     with mp.Pool(int(Config.MODELS_CONFIG["num_cores"])) as pool:
-        data = pool.map(
+        raw_data = pool.map(
             partial(process_file, observed_emotions=observed_emotions), files
         )
 
-    # Remove None entries from data list
-    data = [item for item in data if item is not None]
+    # Remove files that were skipped because they did not map to a known emotion.
+    data: list[tuple[np.ndarray, str]] = [item for item in raw_data if item is not None]
     if not data:
         logger.warning("No data found or processed.")
         return None
