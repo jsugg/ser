@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol
+from typing import Protocol, cast
 
 from ser.config import get_settings
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
@@ -50,10 +50,13 @@ halo_factory: HaloFactory | None
 halo_factory = None
 try:
     from halo import Halo as _Halo
-except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - exercised in lightweight CI envs.
     pass
 else:
-    halo_factory = _Halo
+    # `halo` constructor typing is narrower than this generic runtime factory.
+    halo_factory = cast(HaloFactory, _Halo)
 
 attr_fn: AttrFunction | None
 bg_fn: ColorFunction | None
@@ -63,7 +66,9 @@ try:
     from colored import attr as _attr
     from colored import bg as _bg
     from colored import fg as _fg
-except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - exercised in lightweight CI envs.
     pass
 else:
     attr_fn = _attr
@@ -150,13 +155,17 @@ def build_timeline(
         return []
 
     words_by_timestamp: dict[int, list[str]] = defaultdict(list)
-    for word in sorted(text_with_timestamps, key=lambda item: item.start_seconds):
+    for word in sorted(
+        text_with_timestamps, key=lambda item: item.start_seconds
+    ):
         words_by_timestamp[_to_milliseconds(float(word.start_seconds))].append(
             word.word.strip()
         )
 
     emotion_segments: list[tuple[str, int, int]] = []
-    for emotion in sorted(emotion_with_timestamps, key=lambda item: item.start_seconds):
+    for emotion in sorted(
+        emotion_with_timestamps, key=lambda item: item.start_seconds
+    ):
         start_ms: int = _to_milliseconds(float(emotion.start_seconds))
         end_ms: int = _to_milliseconds(float(emotion.end_seconds))
 
@@ -185,7 +194,9 @@ def build_timeline(
     timeline: list[TimelineEntry] = []
     for timestamp_ms in all_timestamps:
         text: str = " ".join(words_by_timestamp.get(timestamp_ms, [])).strip()
-        active_emotion: str = _emotion_at_timestamp(timestamp_ms, emotion_segments)
+        active_emotion: str = _emotion_at_timestamp(
+            timestamp_ms, emotion_segments
+        )
         timeline.append(
             TimelineEntry(
                 timestamp_seconds=timestamp_ms / 1000.0,
@@ -198,7 +209,9 @@ def build_timeline(
     return timeline
 
 
-def color_txt(string: str, fg_color: str, bg_color: str, padding: int = 0) -> str:
+def color_txt(
+    string: str, fg_color: str, bg_color: str, padding: int = 0
+) -> str:
     """Applies foreground/background ANSI colors to terminal text.
 
     Args:
@@ -236,12 +249,17 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
     max_time_width: int = max(
         len("Time"),
         *(
-            len(display_elapsed_time(float(entry.timestamp_seconds), _format="short"))
+            len(
+                display_elapsed_time(
+                    float(entry.timestamp_seconds), _format="short"
+                )
+            )
             for entry in timeline
         ),
     )
     max_emotion_width: int = max(
-        len("Emotion"), *(len(entry.emotion.capitalize()) for entry in timeline)
+        len("Emotion"),
+        *(len(entry.emotion.capitalize()) for entry in timeline),
     )
     max_text_width: int = max(
         len("Speech"), *(len(entry.speech.strip()) for entry in timeline)
@@ -255,7 +273,9 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
         time_str: str = display_elapsed_time(
             float(entry.timestamp_seconds), _format="short"
         ).ljust(max_time_width)
-        emotion_str: str = f"{entry.emotion.capitalize()}".ljust(max_emotion_width)
+        emotion_str: str = f"{entry.emotion.capitalize()}".ljust(
+            max_emotion_width
+        )
         text_str: str = f"{entry.speech.strip()}".ljust(max_text_width)
 
         print(f"{time_str} {emotion_str} {text_str}")

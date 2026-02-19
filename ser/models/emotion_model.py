@@ -5,7 +5,6 @@ import os
 import pickle
 import warnings
 
-import librosa
 import numpy as np
 from halo import Halo
 from sklearn.metrics import accuracy_score
@@ -132,7 +131,8 @@ def predict_emotions(file: str) -> list[EmotionSegment]:
         logger.warning("No emotions predicted for file %s.", file)
         return []
 
-    audio_duration: float = librosa.get_duration(y=read_audio_file(file)[0])
+    audio_samples, sample_rate = read_audio_file(file)
+    audio_duration: float = len(audio_samples) / float(sample_rate)
     emotion_timestamps: list[EmotionSegment] = []
     prev_emotion: str | None = None
     start_time: float = 0
