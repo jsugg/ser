@@ -13,6 +13,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from statistics import fmean
 from typing import Any, Literal, NamedTuple
 
 import numpy as np
@@ -25,8 +26,15 @@ from sklearn.preprocessing import StandardScaler
 from ser.config import LEGACY_MODEL_FOLDER, get_settings
 from ser.data import load_data
 from ser.domain import EmotionSegment
-from ser.features import extended_extract_feature
-from ser.utils.audio_utils import read_audio_file
+from ser.features import extract_feature_frames
+from ser.runtime.schema import (
+    OUTPUT_SCHEMA_VERSION,
+    FramePrediction,
+    InferenceResult,
+    SegmentPrediction,
+    to_legacy_emotion_segments,
+)
+from ser.train.metrics import compute_ser_metrics
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
@@ -225,6 +233,7 @@ def _build_training_report(
     *,
     accuracy: float,
     macro_f1: float,
+    ser_metrics: dict[str, object],
     train_samples: int,
     test_samples: int,
     feature_vector_size: int,
@@ -254,6 +263,7 @@ def _build_training_report(
         "label_distribution": label_distribution,
         "accuracy": accuracy,
         "macro_f1": macro_f1,
+        "metrics": ser_metrics,
         "model_artifacts": model_artifacts,
     }
 
@@ -402,11 +412,16 @@ def train_model() -> None:
     logger.info(msg=f"Model trained with {len(x_train)} samples")
 
     with Halo(text="Measuring accuracy... ", spinner="dots", text_color="green"):
-        y_pred = model.predict(x_test)
+        y_pred = [str(item) for item in model.predict(x_test)]
         accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
         macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
+        ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    uar = ser_metrics.get("uar")
+    if not isinstance(uar, float):
+        raise RuntimeError("SER metrics payload missing float 'uar'.")
     logger.info(msg=f"Accuracy: {accuracy * 100:.2f}%")
     logger.info(msg=f"Macro F1 score: {macro_f1:.4f}")
+    logger.info(msg=f"UAR: {uar:.4f}")
 
     with Halo(text="Saving the model... ", spinner="dots", text_color="green"):
         artifact = _build_model_artifact(
@@ -423,6 +438,7 @@ def train_model() -> None:
     report = _build_training_report(
         accuracy=accuracy,
         macro_f1=macro_f1,
+        ser_metrics=ser_metrics,
         train_samples=int(x_train.shape[0]),
         test_samples=int(x_test.shape[0]),
         feature_vector_size=int(x_train.shape[1]),
@@ -473,16 +489,131 @@ def load_model() -> LoadedModel:
         raise ValueError("Failed to load model from configured locations.") from err
 
 
-def predict_emotions(file: str) -> list[EmotionSegment]:
-    """Runs frame-level inference and merges adjacent equal labels into segments.
+def _frame_confidence_and_probabilities(
+    model: EmotionClassifier,
+    feature_matrix: np.ndarray,
+    frame_count: int,
+) -> tuple[list[float], list[dict[str, float] | None]]:
+    """Returns per-frame confidence and optional class-probability maps."""
+    fallback_confidence = [1.0] * frame_count
+    fallback_probabilities: list[dict[str, float] | None] = [None] * frame_count
 
-    Args:
-        file: Path to the audio file.
+    predict_proba = getattr(model, "predict_proba", None)
+    if not callable(predict_proba):
+        logger.warning(
+            "Loaded model does not expose predict_proba; using confidence=1.0 fallback."
+        )
+        return fallback_confidence, fallback_probabilities
 
-    Returns:
-        A list of emotion segments with start/end timing.
+    classes_attr = getattr(model, "classes_", None)
+    if not isinstance(classes_attr, (list, tuple, np.ndarray)):
+        logger.warning(
+            "Loaded model predict_proba path missing classes_; using confidence fallback."
+        )
+        return fallback_confidence, fallback_probabilities
 
-    """
+    class_labels = [str(item) for item in classes_attr]
+    raw_probabilities = np.asarray(predict_proba(feature_matrix), dtype=np.float64)
+    if raw_probabilities.ndim != 2:
+        logger.warning(
+            "Unexpected predict_proba output shape %s; using confidence fallback.",
+            raw_probabilities.shape,
+        )
+        return fallback_confidence, fallback_probabilities
+    if raw_probabilities.shape[0] != frame_count:
+        logger.warning(
+            "predict_proba frame count mismatch (expected=%s, got=%s); using fallback.",
+            frame_count,
+            raw_probabilities.shape[0],
+        )
+        return fallback_confidence, fallback_probabilities
+    if raw_probabilities.shape[1] != len(class_labels):
+        logger.warning(
+            "predict_proba class count mismatch (classes=%s, probs=%s); using fallback.",
+            len(class_labels),
+            raw_probabilities.shape[1],
+        )
+        return fallback_confidence, fallback_probabilities
+
+    confidences = [float(np.max(row)) for row in raw_probabilities]
+    probabilities: list[dict[str, float] | None] = [
+        {class_labels[idx]: float(row[idx]) for idx in range(len(class_labels))}
+        for row in raw_probabilities
+    ]
+    return confidences, probabilities
+
+
+def _aggregate_probabilities(
+    probabilities: list[dict[str, float] | None],
+) -> dict[str, float] | None:
+    """Averages per-frame probabilities when all frames provide full maps."""
+    if not probabilities or any(item is None for item in probabilities):
+        return None
+
+    first = probabilities[0]
+    if first is None:
+        return None
+    labels = list(first.keys())
+    if any(item is None or set(item.keys()) != set(labels) for item in probabilities[1:]):
+        return None
+
+    aggregates: dict[str, float] = {}
+    for label in labels:
+        values = [item[label] for item in probabilities if item is not None]
+        aggregates[label] = float(fmean(values))
+    return aggregates
+
+
+def _segment_predictions(
+    frame_predictions: list[FramePrediction],
+) -> list[SegmentPrediction]:
+    """Merges adjacent equal frame labels into segment-level predictions."""
+    if not frame_predictions:
+        return []
+
+    segments: list[SegmentPrediction] = []
+    active_emotion = frame_predictions[0].emotion
+    active_start = frame_predictions[0].start_seconds
+    active_end = frame_predictions[0].end_seconds
+    active_confidences = [frame_predictions[0].confidence]
+    active_probabilities = [frame_predictions[0].probabilities]
+
+    for frame in frame_predictions[1:]:
+        if frame.emotion == active_emotion:
+            active_end = frame.end_seconds
+            active_confidences.append(frame.confidence)
+            active_probabilities.append(frame.probabilities)
+            continue
+
+        segments.append(
+            SegmentPrediction(
+                emotion=active_emotion,
+                start_seconds=active_start,
+                end_seconds=active_end,
+                confidence=float(fmean(active_confidences)),
+                probabilities=_aggregate_probabilities(active_probabilities),
+            )
+        )
+        active_emotion = frame.emotion
+        active_start = frame.start_seconds
+        active_end = frame.end_seconds
+        active_confidences = [frame.confidence]
+        active_probabilities = [frame.probabilities]
+
+    segments.append(
+        SegmentPrediction(
+            emotion=active_emotion,
+            start_seconds=active_start,
+            end_seconds=active_end,
+            confidence=float(fmean(active_confidences)),
+            probabilities=_aggregate_probabilities(active_probabilities),
+        )
+    )
+    return segments
+
+
+def predict_emotions_detailed(file: str) -> InferenceResult:
+    """Runs inference and returns detailed frame + segment predictions."""
     loaded_model: LoadedModel = load_model()
     model = loaded_model.model
 
@@ -491,15 +622,20 @@ def predict_emotions(file: str) -> list[EmotionSegment]:
         spinner="dots",
         text_color="green",
     ):
-        feature: list[np.ndarray] = extended_extract_feature(file)
-        if not feature:
+        feature_frames = extract_feature_frames(file)
+        if not feature_frames:
             logger.warning("No features extracted for file %s.", file)
-            return []
+            return InferenceResult(
+                schema_version=OUTPUT_SCHEMA_VERSION,
+                segments=[],
+                frames=[],
+            )
 
+        feature_vectors: list[np.ndarray] = [frame.features for frame in feature_frames]
         if loaded_model.expected_feature_size is not None:
             invalid_sizes = {
                 vector.shape[0]
-                for vector in feature
+                for vector in feature_vectors
                 if vector.shape[0] != loaded_model.expected_feature_size
             }
             if invalid_sizes:
@@ -509,41 +645,49 @@ def predict_emotions(file: str) -> list[EmotionSegment]:
                     f"got {sorted(invalid_sizes)}."
                 )
 
+        feature_matrix = np.asarray(feature_vectors, dtype=np.float64)
         predicted_emotions: list[str] = [
-            str(item) for item in model.predict(np.asarray(feature, dtype=np.float64))
+            str(item) for item in model.predict(feature_matrix)
         ]
-    logger.info(msg="Emotion inference completed.")
-
-    if not predicted_emotions:
-        logger.warning("No emotions predicted for file %s.", file)
-        return []
-
-    audio_samples, sample_rate = read_audio_file(file)
-    audio_duration: float = len(audio_samples) / float(sample_rate)
-    emotion_timestamps: list[EmotionSegment] = []
-    prev_emotion: str | None = None
-    start_time: float = 0
-    segment_count: int = len(predicted_emotions)
-
-    for timestamp, emotion in enumerate(predicted_emotions):
-        if emotion != prev_emotion:
-            if prev_emotion is not None:
-                end_time: float = timestamp * audio_duration / segment_count
-                emotion_timestamps.append(
-                    EmotionSegment(prev_emotion, start_time, end_time)
-                )
-            (
-                prev_emotion,
-                start_time,
-            ) = (
-                emotion,
-                timestamp * audio_duration / segment_count,
+        if len(predicted_emotions) != len(feature_frames):
+            raise RuntimeError(
+                "Frame/prediction length mismatch. "
+                f"Got {len(feature_frames)} frames and {len(predicted_emotions)} predictions."
             )
-
-    if prev_emotion is not None:
-        emotion_timestamps.append(
-            EmotionSegment(prev_emotion, start_time, audio_duration)
+        confidences, probabilities = _frame_confidence_and_probabilities(
+            model=model,
+            feature_matrix=feature_matrix,
+            frame_count=len(feature_frames),
         )
 
+    logger.info(msg="Emotion inference completed.")
+    if not predicted_emotions:
+        logger.warning("No emotions predicted for file %s.", file)
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        )
+
+    frame_predictions = [
+        FramePrediction(
+            start_seconds=feature_frames[idx].start_seconds,
+            end_seconds=feature_frames[idx].end_seconds,
+            emotion=predicted_emotions[idx],
+            confidence=confidences[idx],
+            probabilities=probabilities[idx],
+        )
+        for idx in range(len(feature_frames))
+    ]
+    segment_predictions = _segment_predictions(frame_predictions)
     logger.info("Emotion prediction and timestamp extraction completed.")
-    return emotion_timestamps
+    return InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=segment_predictions,
+        frames=frame_predictions,
+    )
+
+
+def predict_emotions(file: str) -> list[EmotionSegment]:
+    """Compatibility wrapper returning legacy emotion segments."""
+    return to_legacy_emotion_segments(predict_emotions_detailed(file))

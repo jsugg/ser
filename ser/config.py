@@ -185,6 +185,25 @@ class TranscriptionConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeFlags:
+    """Feature flags for staged runtime rollout."""
+
+    profile_pipeline: bool = False
+    medium_profile: bool = False
+    accurate_profile: bool = False
+    restricted_backends: bool = False
+    new_output_schema: bool = False
+
+
+@dataclass(frozen=True)
+class SchemaConfig:
+    """Version controls for runtime and artifact schema compatibility."""
+
+    output_schema_version: str = "v1"
+    artifact_schema_version: str = "v1"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Immutable runtime configuration for the application."""
 
@@ -201,6 +220,8 @@ class AppConfig:
     models: ModelsConfig = field(default_factory=ModelsConfig)
     timeline: TimelineConfig = field(default_factory=TimelineConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    runtime_flags: RuntimeFlags = field(default_factory=RuntimeFlags)
+    schema: SchemaConfig = field(default_factory=SchemaConfig)
     default_language: str = "en"
 
 
@@ -283,6 +304,13 @@ def _build_settings() -> AppConfig:
     random_state: int = _read_int_env("SER_RANDOM_STATE", 42, minimum=0)
     use_demucs: bool = _read_bool_env("WHISPER_DEMUCS", True)
     use_vad: bool = _read_bool_env("WHISPER_VAD", True)
+    profile_pipeline: bool = _read_bool_env("SER_ENABLE_PROFILE_PIPELINE", False)
+    medium_profile: bool = _read_bool_env("SER_ENABLE_MEDIUM_PROFILE", False)
+    accurate_profile: bool = _read_bool_env("SER_ENABLE_ACCURATE_PROFILE", False)
+    restricted_backends: bool = _read_bool_env("SER_ENABLE_RESTRICTED_BACKENDS", False)
+    new_output_schema: bool = _read_bool_env("SER_ENABLE_NEW_OUTPUT_SCHEMA", False)
+    output_schema_version: str = os.getenv("SER_OUTPUT_SCHEMA_VERSION", "v1")
+    artifact_schema_version: str = os.getenv("SER_ARTIFACT_SCHEMA_VERSION", "v1")
     model_file_name: str = os.getenv("SER_MODEL_FILE_NAME", "ser_model.pkl")
     secure_model_file_name: str = os.getenv(
         "SER_SECURE_MODEL_FILE_NAME", "ser_model.skops"
@@ -318,6 +346,17 @@ def _build_settings() -> AppConfig:
         ),
         timeline=TimelineConfig(folder=transcripts_folder),
         transcription=TranscriptionConfig(use_demucs=use_demucs, use_vad=use_vad),
+        runtime_flags=RuntimeFlags(
+            profile_pipeline=profile_pipeline,
+            medium_profile=medium_profile,
+            accurate_profile=accurate_profile,
+            restricted_backends=restricted_backends,
+            new_output_schema=new_output_schema,
+        ),
+        schema=SchemaConfig(
+            output_schema_version=output_schema_version,
+            artifact_schema_version=artifact_schema_version,
+        ),
         default_language=default_language,
     )
 

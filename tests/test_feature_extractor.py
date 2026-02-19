@@ -108,6 +108,27 @@ def test_extended_extract_feature_uses_in_memory_frames(
     assert [int(item[0]) for item in features] == [4, 4, 4, 4, 2]
 
 
+def test_extract_feature_frames_exposes_frame_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frame extractor should expose exact start/end bounds per frame."""
+    monkeypatch.setattr(
+        fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
+    )
+    monkeypatch.setattr(fe, "Halo", DummyHalo)
+    monkeypatch.setattr(
+        fe,
+        "extract_feature_from_signal",
+        lambda audio, _sample_rate: np.asarray([float(audio.size)], dtype=np.float64),
+    )
+
+    frames = fe.extract_feature_frames("sample.wav", frame_size=2, frame_stride=1)
+
+    assert [round(frame.start_seconds, 3) for frame in frames] == [0.0, 1.0, 2.0, 3.0, 4.0]
+    assert [round(frame.end_seconds, 3) for frame in frames] == [2.0, 3.0, 4.0, 5.0, 5.0]
+    assert [int(frame.features[0]) for frame in frames] == [4, 4, 4, 4, 2]
+
+
 def test_extended_extract_feature_rejects_invalid_window_arguments() -> None:
     """Frame size and stride must be positive."""
     with pytest.raises(ValueError, match="frame_size"):

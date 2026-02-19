@@ -1,6 +1,7 @@
 """Audio feature extraction utilities used by the SER model pipeline."""
 
 import logging
+from dataclasses import dataclass
 
 import librosa
 import numpy as np
@@ -14,6 +15,15 @@ from ser.utils.logger import get_logger
 logger: logging.Logger = get_logger(__name__)
 
 type FeatureVector = NDArray[np.float64]
+
+
+@dataclass(frozen=True)
+class FeatureFrame:
+    """A frame-level feature vector with explicit temporal boundaries."""
+
+    start_seconds: float
+    end_seconds: float
+    features: FeatureVector
 
 
 def _pad_audio_for_fft(
@@ -143,12 +153,26 @@ def extended_extract_feature(
     Returns:
         A list of feature vectors, one for each extracted frame.
     """
+    frames = extract_feature_frames(
+        audiofile=audiofile,
+        frame_size=frame_size,
+        frame_stride=frame_stride,
+    )
+    return [frame.features for frame in frames]
+
+
+def extract_feature_frames(
+    audiofile: str,
+    frame_size: int = 3,
+    frame_stride: int = 1,
+) -> list[FeatureFrame]:
+    """Extracts frame-wise features with explicit start/end timestamps."""
     if frame_size <= 0:
         raise ValueError("frame_size must be greater than zero.")
     if frame_stride <= 0:
         raise ValueError("frame_stride must be greater than zero.")
 
-    features: list[FeatureVector] = []
+    frames: list[FeatureFrame] = []
     audio: NDArray[np.float32]
     sample_rate: int
     audio, sample_rate = read_audio_file(audiofile)
@@ -161,6 +185,13 @@ def extended_extract_feature(
             frame_audio = audio[start:end]
             if frame_audio.size == 0:
                 continue
-            features.append(extract_feature_from_signal(frame_audio, sample_rate))
+            frame_features = extract_feature_from_signal(frame_audio, sample_rate)
+            frames.append(
+                FeatureFrame(
+                    start_seconds=float(start) / float(sample_rate),
+                    end_seconds=float(end) / float(sample_rate),
+                    features=frame_features,
+                )
+            )
 
-    return features
+    return frames

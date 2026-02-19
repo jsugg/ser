@@ -5,10 +5,13 @@ import pickle
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 
+import numpy as np
 import pytest
 from sklearn.neural_network import MLPClassifier
 
+from ser.features import FeatureFrame
 from ser.models import emotion_model as em
+from ser.runtime.schema import OUTPUT_SCHEMA_VERSION
 
 
 class DummyHalo:
@@ -27,6 +30,36 @@ class DummyHalo:
         _tb: TracebackType | None,
     ) -> None:
         return None
+
+
+class PredictOnlyModel(MLPClassifier):
+    """Deterministic model stub exposing `predict` only."""
+
+    def __init__(self, predictions: list[str]) -> None:
+        super().__init__(hidden_layer_sizes=(1,), max_iter=1, random_state=0)
+        self._predictions = predictions
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        del X
+        return np.asarray(self._predictions, dtype=object)
+
+
+class PredictProbaModel(PredictOnlyModel):
+    """Deterministic model stub exposing both `predict` and `predict_proba`."""
+
+    def __init__(
+        self,
+        predictions: list[str],
+        probabilities: list[list[float]],
+        classes: list[str],
+    ) -> None:
+        super().__init__(predictions)
+        self._probabilities = np.asarray(probabilities, dtype=np.float64)
+        self.classes_ = np.asarray(classes, dtype=object)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        del X
+        return self._probabilities
 
 
 def _build_classifier() -> MLPClassifier:
@@ -229,6 +262,13 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
     report = em._build_training_report(
         accuracy=0.95,
         macro_f1=0.91,
+        ser_metrics={
+            "labels": ["happy", "sad"],
+            "uar": 0.75,
+            "macro_f1": 0.91,
+            "per_class_recall": {"happy": 1.0, "sad": 0.5},
+            "confusion_matrix": [[2, 0], [1, 1]],
+        },
         train_samples=6,
         test_samples=3,
         feature_vector_size=193,
@@ -243,3 +283,104 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
     assert report["dataset_effective_samples"] == 9
     assert report["dataset_skipped_samples"] == 1
     assert report["feature_vector_size"] == 193
+    assert report["metrics"] == {
+        "labels": ["happy", "sad"],
+        "uar": 0.75,
+        "macro_f1": 0.91,
+        "per_class_recall": {"happy": 1.0, "sad": 0.5},
+        "confusion_matrix": [[2, 0], [1, 1]],
+    }
+
+
+def test_predict_emotions_detailed_uses_predict_proba(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Detailed inference should carry per-frame confidence/probabilities."""
+    frames = [
+        FeatureFrame(
+            start_seconds=0.0,
+            end_seconds=1.0,
+            features=np.asarray([1.0, 1.0], dtype=np.float64),
+        ),
+        FeatureFrame(
+            start_seconds=1.0,
+            end_seconds=2.0,
+            features=np.asarray([2.0, 2.0], dtype=np.float64),
+        ),
+    ]
+    model = PredictProbaModel(
+        predictions=["happy", "sad"],
+        probabilities=[[0.8, 0.2], [0.4, 0.6]],
+        classes=["happy", "sad"],
+    )
+
+    monkeypatch.setattr(em, "Halo", DummyHalo)
+    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
+    monkeypatch.setattr(
+        em,
+        "load_model",
+        lambda: em.LoadedModel(
+            model=model,
+            expected_feature_size=2,
+        ),
+    )
+
+    detailed = em.predict_emotions_detailed("sample.wav")
+    legacy = em.predict_emotions("sample.wav")
+
+    assert detailed.schema_version == OUTPUT_SCHEMA_VERSION
+    assert [item.confidence for item in detailed.frames] == pytest.approx([0.8, 0.6])
+    assert detailed.frames[0].probabilities == {"happy": 0.8, "sad": 0.2}
+    assert detailed.frames[1].probabilities == {"happy": 0.4, "sad": 0.6}
+    assert [(seg.emotion, seg.start_seconds, seg.end_seconds) for seg in detailed.segments] == [
+        ("happy", 0.0, 1.0),
+        ("sad", 1.0, 2.0),
+    ]
+    assert legacy == [
+        em.EmotionSegment("happy", 0.0, 1.0),
+        em.EmotionSegment("sad", 1.0, 2.0),
+    ]
+
+
+def test_predict_emotions_detailed_falls_back_without_predict_proba(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Models without probabilities should use deterministic confidence fallback."""
+    frames = [
+        FeatureFrame(
+            start_seconds=0.0,
+            end_seconds=1.5,
+            features=np.asarray([1.0, 1.0], dtype=np.float64),
+        ),
+        FeatureFrame(
+            start_seconds=1.0,
+            end_seconds=2.0,
+            features=np.asarray([2.0, 2.0], dtype=np.float64),
+        ),
+    ]
+    model = PredictOnlyModel(predictions=["neutral", "neutral"])
+
+    monkeypatch.setattr(em, "Halo", DummyHalo)
+    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
+    monkeypatch.setattr(
+        em,
+        "load_model",
+        lambda: em.LoadedModel(
+            model=model,
+            expected_feature_size=2,
+        ),
+    )
+
+    detailed = em.predict_emotions_detailed("sample.wav")
+
+    assert [frame.confidence for frame in detailed.frames] == [1.0, 1.0]
+    assert [frame.probabilities for frame in detailed.frames] == [None, None]
+    assert detailed.segments == [
+        em.SegmentPrediction(
+            emotion="neutral",
+            start_seconds=0.0,
+            end_seconds=2.0,
+            confidence=1.0,
+            probabilities=None,
+        )
+    ]
