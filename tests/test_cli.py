@@ -11,6 +11,7 @@ import ser.transcript as transcript_module
 import ser.utils.timeline_utils as timeline_utils
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.runtime import InferenceRequest
+from ser.runtime.registry import UnsupportedProfileError
 
 
 def _patch_common_cli_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -219,3 +220,37 @@ def test_cli_prediction_uses_runtime_pipeline_when_enabled(
     assert request.file_path == "sample.wav"
     assert request.language == "pt"
     assert request.save_transcript is True
+
+
+def test_cli_prediction_pipeline_unsupported_profile_exits_two(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline capability failures should map to exit code 2."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "reload_settings",
+        lambda: SimpleNamespace(
+            default_language="en",
+            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        ),
+    )
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
+
+    class FakePipeline:
+        def run_training(self) -> None:
+            raise AssertionError("Training path should not run for prediction command.")
+
+        def run_inference(self, _request: object) -> object:
+            raise UnsupportedProfileError(
+                "Runtime profile 'medium' is not implemented."
+            )
+
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
