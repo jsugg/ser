@@ -88,6 +88,7 @@ def main() -> None:
         logger.error(msg="No audio file provided for prediction.")
         sys.exit(1)
 
+    from ser.runtime import UnsupportedProfileError
     from ser.transcript import TranscriptionError
 
     logger.info(msg="Starting emotion prediction...")
@@ -124,6 +125,9 @@ def main() -> None:
             if args.save_transcript:
                 csv_file_name: str = save_timeline_to_csv(timeline, args.file)
                 logger.info(msg=f"Timeline saved to {csv_file_name}")
+    except UnsupportedProfileError as err:
+        logger.error("%s", err)
+        sys.exit(2)
     except TranscriptionError as err:
         logger.error("Transcription failed: %s", err, exc_info=True)
         sys.exit(3)
