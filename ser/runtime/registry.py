@@ -27,6 +27,9 @@ class RuntimeCapability:
     message: str | None = None
 
 
+DEFAULT_IMPLEMENTED_BACKENDS: frozenset[str] = frozenset({"handcrafted"})
+
+
 def _missing_optional_modules(required_modules: tuple[str, ...]) -> tuple[str, ...]:
     """Returns optional modules that are not import-resolvable in this environment."""
     return tuple(
@@ -41,33 +44,38 @@ def _profile_requirements(
 ) -> tuple[
     str,
     tuple[str, ...],
-    bool,
     Literal["SER_ENABLE_MEDIUM_PROFILE", "SER_ENABLE_ACCURATE_PROFILE"] | None,
 ]:
-    """Returns backend id, optional dependencies, implementation status, and flag name."""
+    """Returns backend id, optional dependencies, and controlling flag name."""
     if profile == "fast":
-        return ("handcrafted", (), True, None)
+        return ("handcrafted", (), None)
     if profile == "medium":
         return (
             "hf_xlsr",
             ("torch", "transformers"),
-            False,
             "SER_ENABLE_MEDIUM_PROFILE",
         )
     return (
         "hf_whisper",
         ("torch", "transformers"),
-        False,
         "SER_ENABLE_ACCURATE_PROFILE",
     )
 
 
-def resolve_runtime_capability(settings: AppConfig) -> RuntimeCapability:
+def resolve_runtime_capability(
+    settings: AppConfig,
+    *,
+    available_backend_hooks: frozenset[str] | None = None,
+) -> RuntimeCapability:
     """Maps configured profile selection to runtime backend capability."""
     profile = resolve_profile_name(settings)
-    backend_id, required_modules, implementation_ready, profile_flag = (
-        _profile_requirements(profile)
+    backend_id, required_modules, profile_flag = _profile_requirements(profile)
+    resolved_backend_hooks = (
+        available_backend_hooks
+        if available_backend_hooks is not None
+        else DEFAULT_IMPLEMENTED_BACKENDS
     )
+    implementation_ready = backend_id in resolved_backend_hooks
     missing_modules = _missing_optional_modules(required_modules)
     available = implementation_ready and not missing_modules
     if available:

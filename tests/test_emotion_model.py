@@ -121,10 +121,17 @@ def test_load_model_reads_versioned_artifact(
         "model": classifier,
         "metadata": {
             "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
             "created_at_utc": "2026-01-01T00:00:00+00:00",
             "feature_vector_size": 2,
             "training_samples": 4,
             "labels": ["happy", "sad"],
+            "backend_id": "handcrafted",
+            "profile": "fast",
+            "feature_dim": 2,
+            "frame_size_seconds": 3.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean",
         },
     }
     with model_path.open("wb") as handle:
@@ -277,18 +284,47 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
             pickle_path=Path("ser_model.pkl"),
             secure_path=None,
         ),
+        artifact_metadata={
+            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "feature_vector_size": 193,
+            "training_samples": 6,
+            "labels": ["happy", "sad"],
+            "backend_id": "handcrafted",
+            "profile": "fast",
+            "feature_dim": 193,
+            "frame_size_seconds": 3.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean",
+        },
     )
 
     assert report["dataset_corpus_samples"] == 10
     assert report["dataset_effective_samples"] == 9
     assert report["dataset_skipped_samples"] == 1
     assert report["feature_vector_size"] == 193
+    assert report["artifact_schema_version"] == "v2"
     assert report["metrics"] == {
         "labels": ["happy", "sad"],
         "uar": 0.75,
         "macro_f1": 0.91,
         "per_class_recall": {"happy": 1.0, "sad": 0.5},
         "confusion_matrix": [[2, 0], [1, 1]],
+    }
+    assert report["artifact_metadata"] == {
+        "artifact_version": em.MODEL_ARTIFACT_VERSION,
+        "artifact_schema_version": "v2",
+        "created_at_utc": "2026-01-01T00:00:00+00:00",
+        "feature_vector_size": 193,
+        "training_samples": 6,
+        "labels": ["happy", "sad"],
+        "backend_id": "handcrafted",
+        "profile": "fast",
+        "feature_dim": 193,
+        "frame_size_seconds": 3.0,
+        "frame_stride_seconds": 1.0,
+        "pooling_strategy": "mean",
     }
 
 

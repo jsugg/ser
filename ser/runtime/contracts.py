@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
@@ -24,8 +25,13 @@ class InferenceExecution:
 
     profile: ProfileName
     output_schema_version: str
+    backend_id: str
     emotions: list[EmotionSegment]
     transcript: list[TranscriptWord]
     timeline: list[TimelineEntry]
+    used_backend_path: bool = False
     timeline_csv_path: str | None = None
     detailed_result: InferenceResult | None = None
+
+
+type BackendInferenceCallable = Callable[[InferenceRequest], InferenceResult]

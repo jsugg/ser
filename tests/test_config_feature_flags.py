@@ -25,7 +25,7 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.runtime_flags.restricted_backends is False
     assert settings.runtime_flags.new_output_schema is False
     assert settings.schema.output_schema_version == "v1"
-    assert settings.schema.artifact_schema_version == "v1"
+    assert settings.schema.artifact_schema_version == "v2"
 
 
 def test_runtime_flags_and_schema_env_overrides(
@@ -38,7 +38,7 @@ def test_runtime_flags_and_schema_env_overrides(
     monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "on")
     monkeypatch.setenv("SER_ENABLE_NEW_OUTPUT_SCHEMA", "true")
     monkeypatch.setenv("SER_OUTPUT_SCHEMA_VERSION", "v2")
-    monkeypatch.setenv("SER_ARTIFACT_SCHEMA_VERSION", "v2")
+    monkeypatch.setenv("SER_ARTIFACT_SCHEMA_VERSION", "v3")
 
     settings = config.reload_settings()
 
@@ -48,4 +48,4 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.runtime_flags.restricted_backends is True
     assert settings.runtime_flags.new_output_schema is True
     assert settings.schema.output_schema_version == "v2"
-    assert settings.schema.artifact_schema_version == "v2"
+    assert settings.schema.artifact_schema_version == "v3"

@@ -77,6 +77,29 @@ def test_resolve_runtime_capability_marks_medium_unavailable_when_not_implemente
     assert "not implemented yet" in capability.message
 
 
+def test_resolve_runtime_capability_marks_medium_available_when_hook_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Medium profile should become available when hook and deps are present."""
+    monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
+    monkeypatch.setattr(
+        registry,
+        "_missing_optional_modules",
+        lambda _required_modules: (),
+    )
+    capability = resolve_runtime_capability(
+        config.reload_settings(),
+        available_backend_hooks=frozenset({"handcrafted", "hf_xlsr"}),
+    )
+    assert capability.profile == "medium"
+    assert capability.backend_id == "hf_xlsr"
+    assert capability.available is True
+    assert capability.required_modules == ("torch", "transformers")
+    assert capability.missing_modules == ()
+    assert capability.implementation_ready is True
+    assert capability.message is None
+
+
 def test_resolve_runtime_capability_marks_accurate_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from ser.domain import EmotionSegment
 
 OUTPUT_SCHEMA_VERSION = "v1"
-ARTIFACT_SCHEMA_VERSION = "v1"
+ARTIFACT_SCHEMA_VERSION = "v2"
 
 
 @dataclass(frozen=True)
