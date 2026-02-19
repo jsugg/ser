@@ -6,10 +6,11 @@ import logging
 import os
 import warnings
 from dataclasses import dataclass
+from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol, cast
 
-from ser.config import get_settings
+from ser.config import AppConfig, get_settings
 from ser.domain import TranscriptWord
 from ser.utils.logger import get_logger
 
@@ -78,7 +79,7 @@ def resolve_transcription_profile(
     """Resolves profile overrides or falls back to configured defaults."""
     if profile is not None:
         return profile
-    settings = get_settings()
+    settings: AppConfig = get_settings()
     return TranscriptionProfile(
         model_name=settings.models.whisper_model.name,
         use_demucs=settings.transcription.use_demucs,
@@ -99,10 +100,10 @@ def load_whisper_model(profile: TranscriptionProfile | None = None) -> Whisper:
             "Missing transcription dependencies. Ensure project dependencies are installed."
         ) from err
 
-    settings = get_settings()
-    active_profile = resolve_transcription_profile(profile)
+    settings: AppConfig = get_settings()
+    active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
     try:
-        download_root = settings.models.whisper_download_root
+        download_root: Path = settings.models.whisper_download_root
         os.makedirs(download_root, exist_ok=True)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module="stable_whisper")
@@ -191,7 +192,7 @@ def _transcribe_file_with_profile(
     profile: TranscriptionProfile | None,
 ) -> WhisperResult:
     """Runs a Whisper transcription call using an explicit runtime profile."""
-    active_profile = resolve_transcription_profile(profile)
+    active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
     try:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -251,15 +252,13 @@ def format_transcript(result: WhisperResult) -> list[TranscriptWord]:
         logger.error(msg=f"Error extracting words from result: {err}", exc_info=True)
         raise TranscriptionError("Invalid Whisper result object.") from err
 
-    text_with_timestamps: list[TranscriptWord] = []
-    for word in words:
-        if word.start is None or word.end is None:
-            continue
-        text_with_timestamps.append(
-            TranscriptWord(
-                word=str(word.word),
-                start_seconds=float(word.start),
-                end_seconds=float(word.end),
-            )
+    text_with_timestamps: list[TranscriptWord] = [
+        TranscriptWord(
+            word=str(word.word),
+            start_seconds=float(word.start),
+            end_seconds=float(word.end),
         )
+        for word in words
+        if word.start is not None and word.end is not None
+    ]
     return text_with_timestamps

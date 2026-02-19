@@ -1,0 +1,321 @@
+"""XLS-R representation backend with encode-once/pool-many contracts."""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
+from typing import Protocol, cast
+
+import numpy as np
+from numpy.typing import NDArray
+
+from ser.repr.backend import (
+    EncodedSequence,
+    FeatureMatrix,
+    FeatureVector,
+    PoolingWindow,
+    overlap_frame_mask,
+)
+
+
+class _FeatureExtractor(Protocol):
+    """Runtime protocol for Hugging Face feature extractor callables."""
+
+    def __call__(
+        self,
+        audio: NDArray[np.float32],
+        *,
+        sampling_rate: int,
+        return_tensors: str,
+        padding: bool,
+    ) -> Mapping[str, object]:
+        """Produces model-ready tensors from raw audio."""
+        ...
+
+
+class _ModelConfig(Protocol):
+    """Runtime protocol for model configuration metadata."""
+
+    @property
+    def hidden_size(self) -> int:
+        """Returns hidden-state embedding size."""
+        ...
+
+
+class _ModelOutput(Protocol):
+    """Runtime protocol for model forward outputs."""
+
+    @property
+    def last_hidden_state(self) -> object:
+        """Returns hidden-state tensor-like output."""
+        ...
+
+
+class _EncoderModel(Protocol):
+    """Runtime protocol for sequence encoder models."""
+
+    @property
+    def config(self) -> _ModelConfig:
+        """Returns model configuration metadata."""
+        ...
+
+    def eval(self) -> object:
+        """Switches model to eval mode."""
+        ...
+
+    def __call__(self, **kwargs: object) -> _ModelOutput:
+        """Runs forward pass and returns hidden-state outputs."""
+        ...
+
+
+class XLSRBackend:
+    """XLS-R backend with bounded chunked encoding and deterministic pooling."""
+
+    def __init__(
+        self,
+        *,
+        model_id: str = "facebook/wav2vec2-xls-r-300m",
+        max_chunk_seconds: float = 30.0,
+        feature_extractor: _FeatureExtractor | None = None,
+        model: _EncoderModel | None = None,
+    ) -> None:
+        """Initializes backend and optional injected test doubles.
+
+        Args:
+            model_id: Hugging Face model id for XLS-R backbone loading.
+            max_chunk_seconds: Maximum chunk duration for bounded-memory encoding.
+            feature_extractor: Optional injected feature extractor for deterministic tests.
+            model: Optional injected model for deterministic tests.
+
+        Raises:
+            ValueError: If any configuration values are invalid.
+        """
+        if not model_id:
+            raise ValueError("model_id must be a non-empty string.")
+        if not np.isfinite(max_chunk_seconds) or max_chunk_seconds <= 0.0:
+            raise ValueError("max_chunk_seconds must be greater than zero.")
+        if (feature_extractor is None) ^ (model is None):
+            raise ValueError(
+                "feature_extractor and model must be provided together or omitted together."
+            )
+        self._model_id = model_id
+        self._max_chunk_seconds = max_chunk_seconds
+        self._feature_extractor = feature_extractor
+        self._model = model
+
+    @property
+    def backend_id(self) -> str:
+        """Stable backend identifier used by runtime capability registry."""
+        return "hf_xlsr"
+
+    @property
+    def feature_dim(self) -> int:
+        """Returns dynamic embedding size from model configuration."""
+        _, model = self._ensure_runtime_components()
+        hidden_size = getattr(model.config, "hidden_size", None)
+        if not isinstance(hidden_size, int) or hidden_size <= 0:
+            raise RuntimeError(
+                "XLSR model configuration is missing a valid positive hidden_size."
+            )
+        return hidden_size
+
+    def encode_sequence(
+        self,
+        audio: NDArray[np.float32],
+        sample_rate: int,
+    ) -> EncodedSequence:
+        """Encodes audio to frame embeddings with explicit chunk-aware timestamps.
+
+        Args:
+            audio: Mono waveform samples.
+            sample_rate: Sample rate in Hz.
+
+        Returns:
+            Encoded sequence with frame embeddings and timestamp arrays.
+
+        Raises:
+            ValueError: If input audio/sample-rate invariants are violated.
+            RuntimeError: If dependencies or model outputs are invalid.
+        """
+        if sample_rate <= 0:
+            raise ValueError("sample_rate must be a positive integer.")
+        if audio.ndim != 1:
+            raise ValueError("audio must be mono (1D array).")
+        if audio.size == 0:
+            raise ValueError("audio must contain at least one sample.")
+
+        normalized_audio = np.asarray(audio, dtype=np.float32)
+        chunk_size_samples = max(
+            1,
+            int(round(self._max_chunk_seconds * float(sample_rate))),
+        )
+
+        chunk_embeddings: list[NDArray[np.float32]] = []
+        chunk_starts: list[NDArray[np.float64]] = []
+        chunk_ends: list[NDArray[np.float64]] = []
+
+        for start_index in range(0, int(normalized_audio.size), chunk_size_samples):
+            end_index = min(start_index + chunk_size_samples, int(normalized_audio.size))
+            audio_chunk = normalized_audio[start_index:end_index]
+            if audio_chunk.size == 0:
+                continue
+
+            embeddings = self._encode_chunk(audio_chunk, sample_rate)
+            if embeddings.shape[1] != self.feature_dim:
+                raise RuntimeError(
+                    "XLSR encoder output dimension does not match model hidden_size."
+                )
+
+            chunk_start_seconds = float(start_index) / float(sample_rate)
+            chunk_duration_seconds = float(end_index - start_index) / float(sample_rate)
+            starts, ends = self._build_chunk_timestamps(
+                chunk_start_seconds=chunk_start_seconds,
+                chunk_duration_seconds=chunk_duration_seconds,
+                frame_count=int(embeddings.shape[0]),
+            )
+            chunk_embeddings.append(embeddings)
+            chunk_starts.append(starts)
+            chunk_ends.append(ends)
+
+        if not chunk_embeddings:
+            raise RuntimeError("XLSR backend did not produce frame embeddings.")
+
+        return EncodedSequence(
+            embeddings=np.vstack(chunk_embeddings).astype(np.float32, copy=False),
+            frame_start_seconds=np.concatenate(chunk_starts).astype(np.float64, copy=False),
+            frame_end_seconds=np.concatenate(chunk_ends).astype(np.float64, copy=False),
+            backend_id=self.backend_id,
+        )
+
+    def pool(
+        self,
+        encoded: EncodedSequence,
+        windows: Sequence[PoolingWindow],
+    ) -> FeatureMatrix:
+        """Mean-pools frame embeddings for every overlapping pooling window."""
+        if not windows:
+            return np.empty((0, encoded.embeddings.shape[1]), dtype=np.float64)
+
+        pooled_rows: list[FeatureVector] = []
+        for window in windows:
+            mask = overlap_frame_mask(encoded, window)
+            pooled_rows.append(
+                np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64)
+            )
+        return np.vstack(pooled_rows).astype(np.float64, copy=False)
+
+    def _encode_chunk(
+        self,
+        audio_chunk: NDArray[np.float32],
+        sample_rate: int,
+    ) -> NDArray[np.float32]:
+        """Encodes a single chunk and normalizes output to 2D frame matrix."""
+        feature_extractor, model = self._ensure_runtime_components()
+        inputs = feature_extractor(
+            audio_chunk,
+            sampling_rate=sample_rate,
+            return_tensors="pt",
+            padding=False,
+        )
+        with self._no_grad_context():
+            outputs = model(**inputs)
+        return self._normalize_hidden_state(outputs.last_hidden_state)
+
+    def _ensure_runtime_components(self) -> tuple[_FeatureExtractor, _EncoderModel]:
+        """Loads runtime components lazily or returns injected test doubles."""
+        if self._feature_extractor is not None and self._model is not None:
+            return self._feature_extractor, self._model
+
+        self._ensure_dependencies_available()
+        transformers_module = importlib.import_module("transformers")
+        auto_feature_extractor = getattr(transformers_module, "AutoFeatureExtractor", None)
+        auto_model = getattr(transformers_module, "AutoModel", None)
+        if auto_feature_extractor is None or auto_model is None:
+            raise RuntimeError(
+                "transformers package does not expose AutoFeatureExtractor/AutoModel."
+            )
+
+        feature_extractor = cast(
+            _FeatureExtractor,
+            auto_feature_extractor.from_pretrained(self._model_id),
+        )
+        model = cast(_EncoderModel, auto_model.from_pretrained(self._model_id))
+        model.eval()
+        self._feature_extractor = feature_extractor
+        self._model = model
+        return feature_extractor, model
+
+    def _ensure_dependencies_available(self) -> None:
+        """Validates optional backend dependencies and raises actionable errors."""
+        missing: list[str] = []
+        for module_name in ("torch", "transformers"):
+            if importlib.util.find_spec(module_name) is None:
+                missing.append(module_name)
+        if missing:
+            modules = ", ".join(missing)
+            raise RuntimeError(
+                "XLSR backend requires optional dependencies that are not installed: "
+                f"{modules}. Install medium-profile dependencies and retry."
+            )
+
+    def _no_grad_context(self) -> AbstractContextManager[object]:
+        """Returns a torch.no_grad context when torch is available."""
+        try:
+            torch_module = importlib.import_module("torch")
+        except ModuleNotFoundError:
+            return nullcontext()
+        no_grad = getattr(torch_module, "no_grad", None)
+        if callable(no_grad):
+            return cast(AbstractContextManager[object], no_grad())
+        return nullcontext()
+
+    def _normalize_hidden_state(self, hidden_state: object) -> NDArray[np.float32]:
+        """Normalizes model hidden state output into `(frames, hidden)` matrix."""
+        current = hidden_state
+        detach = getattr(current, "detach", None)
+        if callable(detach):
+            current = detach()
+        cpu = getattr(current, "cpu", None)
+        if callable(cpu):
+            current = cpu()
+        to_numpy = getattr(current, "numpy", None)
+        if callable(to_numpy):
+            current = to_numpy()
+
+        embeddings = np.asarray(current, dtype=np.float32)
+        if embeddings.ndim == 3:
+            if embeddings.shape[0] != 1:
+                raise RuntimeError(
+                    "XLSR backend expects batch size 1 per chunk during encoding."
+                )
+            embeddings = embeddings[0]
+        if embeddings.ndim != 2:
+            raise RuntimeError(
+                "XLSR backend produced invalid hidden-state rank; expected 2D or 3D output."
+            )
+        if embeddings.shape[0] <= 0:
+            raise RuntimeError("XLSR backend produced zero frame embeddings.")
+        return np.ascontiguousarray(embeddings, dtype=np.float32)
+
+    def _build_chunk_timestamps(
+        self,
+        *,
+        chunk_start_seconds: float,
+        chunk_duration_seconds: float,
+        frame_count: int,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Builds monotonic frame start/end timestamps for one encoded chunk."""
+        if frame_count <= 0:
+            raise RuntimeError("XLSR backend cannot map timestamps for zero frames.")
+        if not np.isfinite(chunk_duration_seconds) or chunk_duration_seconds <= 0.0:
+            raise RuntimeError("XLSR backend received non-positive chunk duration.")
+
+        frame_duration = chunk_duration_seconds / float(frame_count)
+        starts = chunk_start_seconds + (
+            np.arange(frame_count, dtype=np.float64) * frame_duration
+        )
+        ends = starts + frame_duration
+        ends[-1] = chunk_start_seconds + chunk_duration_seconds
+        return starts, ends
