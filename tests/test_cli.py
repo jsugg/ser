@@ -1,6 +1,7 @@
 """Behavior tests for CLI argument dispatch and exit semantics."""
 
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -9,6 +10,7 @@ import ser.models.emotion_model as emotion_model
 import ser.transcript as transcript_module
 import ser.utils.timeline_utils as timeline_utils
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
+from ser.runtime import InferenceRequest
 
 
 def _patch_common_cli_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -144,3 +146,76 @@ def test_cli_prediction_does_not_save_when_flag_is_absent(
     cli.main()
 
     assert save_called["value"] is False
+
+
+def test_cli_train_option_uses_runtime_pipeline_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--train` should dispatch through runtime pipeline when flag is enabled."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "reload_settings",
+        lambda: SimpleNamespace(
+            default_language="en",
+            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        ),
+    )
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "--train"])
+
+    called = {"train": False}
+
+    class FakePipeline:
+        def run_training(self) -> None:
+            called["train"] = True
+
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert called["train"] is True
+
+
+def test_cli_prediction_uses_runtime_pipeline_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prediction should route through runtime pipeline when flag is enabled."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "reload_settings",
+        lambda: SimpleNamespace(
+            default_language="en",
+            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        ),
+    )
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--language", "pt", "--save_transcript"],
+    )
+
+    calls: dict[str, object] = {}
+
+    class FakePipeline:
+        def run_training(self) -> None:
+            raise AssertionError("Training path should not run for prediction command.")
+
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path="timeline.csv")
+
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
+
+    cli.main()
+
+    request = cast(InferenceRequest, calls["request"])
+    assert request.file_path == "sample.wav"
+    assert request.language == "pt"
+    assert request.save_transcript is True
