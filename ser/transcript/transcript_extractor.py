@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -62,7 +63,30 @@ class WhisperWord(Protocol):
     end: float | None
 
 
-def load_whisper_model() -> Whisper:
+@dataclass(frozen=True)
+class TranscriptionProfile:
+    """Runtime Whisper profile settings used for transcription."""
+
+    model_name: str
+    use_demucs: bool
+    use_vad: bool
+
+
+def resolve_transcription_profile(
+    profile: TranscriptionProfile | None = None,
+) -> TranscriptionProfile:
+    """Resolves profile overrides or falls back to configured defaults."""
+    if profile is not None:
+        return profile
+    settings = get_settings()
+    return TranscriptionProfile(
+        model_name=settings.models.whisper_model.name,
+        use_demucs=settings.transcription.use_demucs,
+        use_vad=settings.transcription.use_vad,
+    )
+
+
+def load_whisper_model(profile: TranscriptionProfile | None = None) -> Whisper:
     """Loads the configured Whisper model for CPU inference.
 
     Returns:
@@ -76,13 +100,14 @@ def load_whisper_model() -> Whisper:
         ) from err
 
     settings = get_settings()
+    active_profile = resolve_transcription_profile(profile)
     try:
         download_root = settings.models.whisper_download_root
         os.makedirs(download_root, exist_ok=True)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module="stable_whisper")
             model: Whisper = stable_whisper.load_model(
-                name=settings.models.whisper_model.name,
+                name=active_profile.model_name,
                 device="cpu",
                 dq=False,
                 download_root=str(download_root),
@@ -95,22 +120,29 @@ def load_whisper_model() -> Whisper:
 
 
 def extract_transcript(
-    file_path: str, language: str | None = None
+    file_path: str,
+    language: str | None = None,
+    profile: TranscriptionProfile | None = None,
 ) -> list[TranscriptWord]:
     """Extracts a transcript with per-word timing for an input audio file.
 
     Args:
         file_path: Path to the audio file.
         language: Language code used by Whisper during transcription.
+        profile: Optional runtime overrides for model and preprocessing toggles.
 
     Returns:
         A list of transcript word entries with timing metadata.
     """
     active_language: str = language or get_settings().default_language
-    return _extract_transcript(file_path, active_language)
+    return _extract_transcript(file_path, active_language, profile)
 
 
-def _extract_transcript(file_path: str, language: str) -> list[TranscriptWord]:
+def _extract_transcript(
+    file_path: str,
+    language: str,
+    profile: TranscriptionProfile | None = None,
+) -> list[TranscriptWord]:
     """Internal transcript workflow with model loading and formatting."""
     if Halo is None:
         raise TranscriptionError(
@@ -122,7 +154,7 @@ def _extract_transcript(file_path: str, language: str) -> list[TranscriptWord]:
         spinner="dots",
         text_color="green",
     ):
-        model: Whisper = load_whisper_model()
+        model: Whisper = load_whisper_model(profile)
 
     logger.info(msg="Whisper model loaded successfully.")
 
@@ -131,7 +163,11 @@ def _extract_transcript(file_path: str, language: str) -> list[TranscriptWord]:
         spinner="dots",
         text_color="green",
     ):
-        transcript: WhisperResult = __transcribe_file(model, language, file_path)
+        transcript: WhisperResult = (
+            __transcribe_file(model, language, file_path)
+            if profile is None
+            else _transcribe_file_with_profile(model, language, file_path, profile)
+        )
     logger.info(msg="Audio file transcription process completed.")
 
     formatted_transcript: list[TranscriptWord] = format_transcript(transcript)
@@ -145,6 +181,17 @@ def _extract_transcript(file_path: str, language: str) -> list[TranscriptWord]:
 
 def __transcribe_file(model: Whisper, language: str, file_path: str) -> WhisperResult:
     """Runs a Whisper transcription call and normalizes return types."""
+    return _transcribe_file_with_profile(model, language, file_path, profile=None)
+
+
+def _transcribe_file_with_profile(
+    model: Whisper,
+    language: str,
+    file_path: str,
+    profile: TranscriptionProfile | None,
+) -> WhisperResult:
+    """Runs a Whisper transcription call using an explicit runtime profile."""
+    active_profile = resolve_transcription_profile(profile)
     try:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -154,8 +201,8 @@ def __transcribe_file(model: Whisper, language: str, file_path: str) -> WhisperR
                 verbose=False,
                 word_timestamps=True,
                 no_speech_threshold=None,
-                demucs=True,
-                vad=True,
+                demucs=active_profile.use_demucs,
+                vad=active_profile.use_vad,
             )
     except Exception as err:
         logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
@@ -176,6 +223,17 @@ def __transcribe_file(model: Whisper, language: str, file_path: str) -> WhisperR
     raise TranscriptionError(
         "Unexpected transcription result type from stable-whisper."
     )
+
+
+def transcribe_with_model(
+    model: Whisper,
+    file_path: str,
+    language: str,
+    profile: TranscriptionProfile | None = None,
+) -> list[TranscriptWord]:
+    """Transcribes one file with a pre-loaded model for profiling workloads."""
+    result = _transcribe_file_with_profile(model, language, file_path, profile=profile)
+    return format_transcript(result)
 
 
 def format_transcript(result: WhisperResult) -> list[TranscriptWord]:

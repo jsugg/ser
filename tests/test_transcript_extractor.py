@@ -52,7 +52,7 @@ def test_extract_transcript_raises_transcription_error(
 ) -> None:
     """Operational failures should propagate as TranscriptionError."""
     monkeypatch.setattr(te, "Halo", DummyHalo)
-    monkeypatch.setattr(te, "load_whisper_model", lambda: FailingModel())
+    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: FailingModel())
 
     with pytest.raises(te.TranscriptionError, match="Failed to transcribe audio"):
         te.extract_transcript("does-not-matter.wav", "en")
@@ -63,7 +63,7 @@ def test_extract_transcript_returns_empty_list_for_successful_empty_result(
 ) -> None:
     """A successful call with no words should return an empty transcript."""
     monkeypatch.setattr(te, "Halo", DummyHalo)
-    monkeypatch.setattr(te, "load_whisper_model", lambda: object())
+    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
     monkeypatch.setattr(
         te,
         "__transcribe_file",
@@ -78,7 +78,7 @@ def test_extract_transcript_formats_word_timestamps(
 ) -> None:
     """Word-level timestamps should be preserved in formatted output."""
     monkeypatch.setattr(te, "Halo", DummyHalo)
-    monkeypatch.setattr(te, "load_whisper_model", lambda: object())
+    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
     monkeypatch.setattr(
         te,
         "__transcribe_file",

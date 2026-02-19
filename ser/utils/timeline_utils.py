@@ -50,9 +50,7 @@ halo_factory: HaloFactory | None
 halo_factory = None
 try:
     from halo import Halo as _Halo
-except (
-    ModuleNotFoundError
-):  # pragma: no cover - exercised in lightweight CI envs.
+except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
     pass
 else:
     # `halo` constructor typing is narrower than this generic runtime factory.
@@ -66,9 +64,7 @@ try:
     from colored import attr as _attr
     from colored import bg as _bg
     from colored import fg as _fg
-except (
-    ModuleNotFoundError
-):  # pragma: no cover - exercised in lightweight CI envs.
+except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
     pass
 else:
     attr_fn = _attr
@@ -123,17 +119,32 @@ def _to_milliseconds(seconds: float) -> int:
     return int(round(seconds * 1000))
 
 
-def _emotion_at_timestamp(
-    timestamp_ms: int, emotion_segments: list[tuple[str, int, int]]
-) -> str:
-    """Returns the active emotion for a timestamp based on segment intervals."""
-    for emotion, start_ms, end_ms in emotion_segments:
-        if start_ms <= timestamp_ms < end_ms:
-            return emotion
+def _emotion_lookup_by_timestamp(
+    timestamps_ms: list[int], emotion_segments: list[tuple[str, int, int]]
+) -> dict[int, str]:
+    """Builds an O(T + E) lookup for active emotion at each timeline timestamp."""
+    if not timestamps_ms or not emotion_segments:
+        return {}
 
-    if emotion_segments and timestamp_ms == emotion_segments[-1][2]:
-        return emotion_segments[-1][0]
-    return ""
+    lookup: dict[int, str] = {}
+    segment_idx = 0
+    last_emotion, _, last_end_ms = emotion_segments[-1]
+
+    for timestamp_ms in timestamps_ms:
+        while segment_idx < len(emotion_segments):
+            _, _, current_end_ms = emotion_segments[segment_idx]
+            if timestamp_ms < current_end_ms:
+                break
+            segment_idx += 1
+
+        if segment_idx < len(emotion_segments):
+            emotion, start_ms, end_ms = emotion_segments[segment_idx]
+            if start_ms <= timestamp_ms < end_ms:
+                lookup[timestamp_ms] = emotion
+        elif timestamp_ms == last_end_ms:
+            lookup[timestamp_ms] = last_emotion
+
+    return lookup
 
 
 def build_timeline(
@@ -155,17 +166,13 @@ def build_timeline(
         return []
 
     words_by_timestamp: dict[int, list[str]] = defaultdict(list)
-    for word in sorted(
-        text_with_timestamps, key=lambda item: item.start_seconds
-    ):
+    for word in sorted(text_with_timestamps, key=lambda item: item.start_seconds):
         words_by_timestamp[_to_milliseconds(float(word.start_seconds))].append(
             word.word.strip()
         )
 
     emotion_segments: list[tuple[str, int, int]] = []
-    for emotion in sorted(
-        emotion_with_timestamps, key=lambda item: item.start_seconds
-    ):
+    for emotion in sorted(emotion_with_timestamps, key=lambda item: item.start_seconds):
         start_ms: int = _to_milliseconds(float(emotion.start_seconds))
         end_ms: int = _to_milliseconds(float(emotion.end_seconds))
 
@@ -191,12 +198,11 @@ def build_timeline(
     logger.debug(msg=f"Text with timestamps: {text_with_timestamps}")
     logger.debug(msg=f"Emotion with timestamps: {emotion_with_timestamps}")
 
+    emotion_lookup = _emotion_lookup_by_timestamp(all_timestamps, emotion_segments)
     timeline: list[TimelineEntry] = []
     for timestamp_ms in all_timestamps:
         text: str = " ".join(words_by_timestamp.get(timestamp_ms, [])).strip()
-        active_emotion: str = _emotion_at_timestamp(
-            timestamp_ms, emotion_segments
-        )
+        active_emotion: str = emotion_lookup.get(timestamp_ms, "")
         timeline.append(
             TimelineEntry(
                 timestamp_seconds=timestamp_ms / 1000.0,
@@ -209,9 +215,7 @@ def build_timeline(
     return timeline
 
 
-def color_txt(
-    string: str, fg_color: str, bg_color: str, padding: int = 0
-) -> str:
+def color_txt(string: str, fg_color: str, bg_color: str, padding: int = 0) -> str:
     """Applies foreground/background ANSI colors to terminal text.
 
     Args:
@@ -249,11 +253,7 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
     max_time_width: int = max(
         len("Time"),
         *(
-            len(
-                display_elapsed_time(
-                    float(entry.timestamp_seconds), _format="short"
-                )
-            )
+            len(display_elapsed_time(float(entry.timestamp_seconds), _format="short"))
             for entry in timeline
         ),
     )
@@ -273,9 +273,7 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
         time_str: str = display_elapsed_time(
             float(entry.timestamp_seconds), _format="short"
         ).ljust(max_time_width)
-        emotion_str: str = f"{entry.emotion.capitalize()}".ljust(
-            max_emotion_width
-        )
+        emotion_str: str = f"{entry.emotion.capitalize()}".ljust(max_emotion_width)
         text_str: str = f"{entry.speech.strip()}".ljust(max_text_width)
 
         print(f"{time_str} {emotion_str} {text_str}")
