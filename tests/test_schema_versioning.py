@@ -9,10 +9,10 @@ from ser.runtime.schema import (
 )
 
 
-def test_schema_constants_default_to_v1() -> None:
+def test_schema_constants_default_to_seed_versions() -> None:
     """Schema seed constants should remain stable until explicit migration."""
     assert OUTPUT_SCHEMA_VERSION == "v1"
-    assert ARTIFACT_SCHEMA_VERSION == "v1"
+    assert ARTIFACT_SCHEMA_VERSION == "v2"
 
 
 def test_inference_result_contract_shape() -> None:

@@ -143,6 +143,8 @@ def test_run_inference_with_save_transcript_enabled() -> None:
 
     assert execution.profile == "fast"
     assert execution.output_schema_version == "v1"
+    assert execution.backend_id == "handcrafted"
+    assert execution.used_backend_path is False
     assert execution.emotions == emotions
     assert execution.transcript == transcript
     assert execution.timeline == timeline
@@ -180,6 +182,8 @@ def test_run_inference_skips_save_when_flag_is_disabled() -> None:
     )
 
     assert execution.output_schema_version == "v1"
+    assert execution.backend_id == "handcrafted"
+    assert execution.used_backend_path is False
     assert execution.timeline_csv_path is None
 
 
@@ -251,8 +255,69 @@ def test_run_inference_uses_detailed_schema_when_enabled(
 
     assert calls["detailed"] == "sample.wav"
     assert execution.output_schema_version == OUTPUT_SCHEMA_VERSION
+    assert execution.backend_id == "handcrafted"
+    assert execution.used_backend_path is False
     assert execution.detailed_result == detailed
     assert execution.emotions == [EmotionSegment("angry", 0.0, 1.0)]
+
+
+def test_run_inference_uses_backend_hook_for_supported_medium_profile() -> None:
+    """Medium profile should route through backend hook when capability is ready."""
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    calls: dict[str, object] = {}
+    detailed = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[
+            SegmentPrediction(
+                emotion="happy",
+                start_seconds=0.0,
+                end_seconds=1.0,
+                confidence=0.9,
+                probabilities={"happy": 0.9, "neutral": 0.1},
+            )
+        ],
+        frames=[],
+    )
+
+    def fake_backend_inference(inference_request: InferenceRequest) -> InferenceResult:
+        calls["request"] = inference_request
+        return detailed
+
+    pipeline = RuntimePipeline(
+        settings=config.reload_settings(),
+        profile=RuntimeProfile(name="medium", description="Medium test profile"),
+        capability=RuntimeCapability(
+            profile="medium",
+            backend_id="hf_xlsr",
+            available=True,
+        ),
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Legacy predict path should not run for backend hook flow.")
+        ),
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Detailed legacy path should not run for backend hook flow.")
+        ),
+        extract_transcript=lambda _file_path, _language: [
+            TranscriptWord("oi", 0.0, 0.5)
+        ],
+        build_timeline=lambda _transcript, emotions: [
+            TimelineEntry(0.0, emotions[0].emotion, "oi")
+        ],
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+        backend_inference=fake_backend_inference,
+    )
+
+    execution = pipeline.run_inference(request)
+
+    assert calls["request"] == request
+    assert execution.profile == "medium"
+    assert execution.output_schema_version == OUTPUT_SCHEMA_VERSION
+    assert execution.backend_id == "hf_xlsr"
+    assert execution.used_backend_path is True
+    assert execution.detailed_result == detailed
+    assert execution.emotions == [EmotionSegment("happy", 0.0, 1.0)]
 
 
 def test_run_inference_raises_for_unsupported_profile_capability() -> None:

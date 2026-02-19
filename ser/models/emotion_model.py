@@ -28,6 +28,7 @@ from ser.data import load_data
 from ser.domain import EmotionSegment
 from ser.features import extract_feature_frames
 from ser.runtime.schema import (
+    ARTIFACT_SCHEMA_VERSION,
     OUTPUT_SCHEMA_VERSION,
     FramePrediction,
     InferenceResult,
@@ -39,7 +40,12 @@ from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 
-MODEL_ARTIFACT_VERSION = 1
+MODEL_ARTIFACT_VERSION = 2
+DEFAULT_BACKEND_ID = "handcrafted"
+DEFAULT_PROFILE_ID = "fast"
+DEFAULT_FRAME_SIZE_SECONDS = 3.0
+DEFAULT_FRAME_STRIDE_SECONDS = 1.0
+DEFAULT_POOLING_STRATEGY = "mean"
 type EmotionClassifier = MLPClassifier | Pipeline
 type ArtifactFormat = Literal["pickle", "skops"]
 
@@ -49,6 +55,7 @@ class LoadedModel(NamedTuple):
 
     model: EmotionClassifier
     expected_feature_size: int | None
+    artifact_metadata: dict[str, object] | None = None
 
 
 class ModelCandidate(NamedTuple):
@@ -65,6 +72,127 @@ class PersistedArtifacts:
 
     pickle_path: Path
     secure_path: Path | None
+
+
+def _read_positive_int(metadata: dict[str, object], field_name: str) -> int:
+    """Returns a required positive integer field from metadata."""
+    raw_value = metadata.get(field_name)
+    if not isinstance(raw_value, int) or raw_value <= 0:
+        raise ValueError(
+            f"Model artifact metadata contains invalid {field_name!r} value."
+        )
+    return raw_value
+
+
+def _read_positive_float(metadata: dict[str, object], field_name: str) -> float:
+    """Returns a required positive float field from metadata."""
+    raw_value = metadata.get(field_name)
+    if not isinstance(raw_value, (int, float)) or float(raw_value) <= 0.0:
+        raise ValueError(
+            f"Model artifact metadata contains invalid {field_name!r} value."
+        )
+    return float(raw_value)
+
+
+def _read_non_empty_text(metadata: dict[str, object], field_name: str) -> str:
+    """Returns a required non-empty text field from metadata."""
+    raw_value = metadata.get(field_name)
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise ValueError(
+            f"Model artifact metadata contains invalid {field_name!r} value."
+        )
+    return raw_value
+
+
+def _read_labels(metadata: dict[str, object]) -> list[str]:
+    """Returns validated class labels from metadata."""
+    raw_labels = metadata.get("labels")
+    if not isinstance(raw_labels, list):
+        raise ValueError("Model artifact metadata contains invalid 'labels' value.")
+    labels: list[str] = []
+    for raw_label in raw_labels:
+        if not isinstance(raw_label, str) or not raw_label.strip():
+            raise ValueError("Model artifact metadata contains invalid 'labels' value.")
+        labels.append(raw_label)
+    if not labels:
+        raise ValueError("Model artifact metadata contains invalid 'labels' value.")
+    return sorted(set(labels))
+
+
+def _normalize_v2_artifact_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    """Validates and normalizes artifact metadata to v2 shape."""
+    artifact_version = _read_positive_int(metadata, "artifact_version")
+    if artifact_version != MODEL_ARTIFACT_VERSION:
+        raise ValueError(
+            "Model artifact metadata contains unsupported 'artifact_version' value."
+        )
+    feature_vector_size = _read_positive_int(metadata, "feature_vector_size")
+    feature_dim = _read_positive_int(metadata, "feature_dim")
+    if feature_dim != feature_vector_size:
+        raise ValueError(
+            "Model artifact metadata 'feature_dim' must match 'feature_vector_size'."
+        )
+    return {
+        "artifact_version": MODEL_ARTIFACT_VERSION,
+        "artifact_schema_version": _read_non_empty_text(
+            metadata, "artifact_schema_version"
+        ),
+        "created_at_utc": _read_non_empty_text(metadata, "created_at_utc"),
+        "feature_vector_size": feature_vector_size,
+        "training_samples": _read_positive_int(metadata, "training_samples"),
+        "labels": _read_labels(metadata),
+        "backend_id": _read_non_empty_text(metadata, "backend_id"),
+        "profile": _read_non_empty_text(metadata, "profile"),
+        "feature_dim": feature_dim,
+        "frame_size_seconds": _read_positive_float(metadata, "frame_size_seconds"),
+        "frame_stride_seconds": _read_positive_float(metadata, "frame_stride_seconds"),
+        "pooling_strategy": _read_non_empty_text(metadata, "pooling_strategy"),
+    }
+
+
+def _upgrade_v1_artifact_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    """Upgrades legacy v1 metadata to normalized v2 metadata."""
+    return _normalize_v2_artifact_metadata(
+        {
+            "artifact_version": MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            "created_at_utc": _read_non_empty_text(metadata, "created_at_utc"),
+            "feature_vector_size": _read_positive_int(metadata, "feature_vector_size"),
+            "training_samples": _read_positive_int(metadata, "training_samples"),
+            "labels": _read_labels(metadata),
+            "backend_id": DEFAULT_BACKEND_ID,
+            "profile": DEFAULT_PROFILE_ID,
+            "feature_dim": _read_positive_int(metadata, "feature_vector_size"),
+            "frame_size_seconds": DEFAULT_FRAME_SIZE_SECONDS,
+            "frame_stride_seconds": DEFAULT_FRAME_STRIDE_SECONDS,
+            "pooling_strategy": DEFAULT_POOLING_STRATEGY,
+        }
+    )
+
+
+def _build_v2_artifact_metadata(
+    *,
+    feature_vector_size: int,
+    training_samples: int,
+    labels: list[str],
+) -> dict[str, object]:
+    """Builds normalized v2 artifact metadata for persisted model envelopes."""
+    return _normalize_v2_artifact_metadata(
+        {
+            "artifact_version": MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            "created_at_utc": datetime.now(tz=UTC).isoformat(),
+            "feature_vector_size": feature_vector_size,
+            "training_samples": training_samples,
+            "labels": labels,
+            "backend_id": DEFAULT_BACKEND_ID,
+            "profile": DEFAULT_PROFILE_ID,
+            "feature_dim": feature_vector_size,
+            "frame_size_seconds": DEFAULT_FRAME_SIZE_SECONDS,
+            "frame_stride_seconds": DEFAULT_FRAME_STRIDE_SECONDS,
+            "pooling_strategy": DEFAULT_POOLING_STRATEGY,
+        }
+    )
 
 
 def _create_classifier() -> EmotionClassifier:
@@ -94,16 +222,15 @@ def _build_model_artifact(
     labels: list[str],
 ) -> dict[str, object]:
     """Constructs a versioned model artifact envelope for safer loading."""
+    metadata = _build_v2_artifact_metadata(
+        feature_vector_size=feature_vector_size,
+        training_samples=training_samples,
+        labels=labels,
+    )
     return {
         "artifact_version": MODEL_ARTIFACT_VERSION,
         "model": model,
-        "metadata": {
-            "artifact_version": MODEL_ARTIFACT_VERSION,
-            "created_at_utc": datetime.now(tz=UTC).isoformat(),
-            "feature_vector_size": feature_vector_size,
-            "training_samples": training_samples,
-            "labels": sorted(set(labels)),
-        },
+        "metadata": metadata,
     }
 
 
@@ -113,7 +240,11 @@ def _deserialize_model_artifact(payload: object) -> LoadedModel:
         logger.warning(
             "Loaded legacy model artifact without metadata validation envelope."
         )
-        return LoadedModel(model=payload, expected_feature_size=None)
+        return LoadedModel(
+            model=payload,
+            expected_feature_size=None,
+            artifact_metadata=None,
+        )
 
     if not isinstance(payload, dict):
         raise ValueError(
@@ -122,7 +253,7 @@ def _deserialize_model_artifact(payload: object) -> LoadedModel:
         )
 
     artifact_version = payload.get("artifact_version")
-    if artifact_version != MODEL_ARTIFACT_VERSION:
+    if not isinstance(artifact_version, int):
         raise ValueError(
             "Unsupported model artifact version "
             f"{artifact_version!r}; expected {MODEL_ARTIFACT_VERSION}."
@@ -135,17 +266,30 @@ def _deserialize_model_artifact(payload: object) -> LoadedModel:
             f"{type(model).__name__}."
         )
 
-    metadata = payload.get("metadata")
-    if not isinstance(metadata, dict):
+    metadata_obj = payload.get("metadata")
+    if not isinstance(metadata_obj, dict):
         raise ValueError("Model artifact metadata is missing or invalid.")
+    metadata: dict[str, object] = metadata_obj
 
-    expected_feature_size = metadata.get("feature_vector_size")
-    if not isinstance(expected_feature_size, int) or expected_feature_size <= 0:
+    if artifact_version == 1:
+        normalized_metadata = _upgrade_v1_artifact_metadata(metadata)
+    elif artifact_version == MODEL_ARTIFACT_VERSION:
+        normalized_metadata = _normalize_v2_artifact_metadata(metadata)
+    else:
         raise ValueError(
-            "Model artifact metadata contains invalid 'feature_vector_size'."
+            "Unsupported model artifact version "
+            f"{artifact_version!r}; expected {MODEL_ARTIFACT_VERSION}."
         )
+    expected_feature_size = _read_positive_int(
+        normalized_metadata,
+        "feature_vector_size",
+    )
 
-    return LoadedModel(model=model, expected_feature_size=expected_feature_size)
+    return LoadedModel(
+        model=model,
+        expected_feature_size=expected_feature_size,
+        artifact_metadata=normalized_metadata,
+    )
 
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
@@ -226,7 +370,15 @@ def _read_training_report_feature_size(path: Path) -> int | None:
         return None
 
     feature_size = payload.get("feature_vector_size")
-    return feature_size if isinstance(feature_size, int) and feature_size > 0 else None
+    if isinstance(feature_size, int) and feature_size > 0:
+        return feature_size
+
+    artifact_metadata = payload.get("artifact_metadata")
+    if isinstance(artifact_metadata, dict):
+        nested_feature_size = artifact_metadata.get("feature_vector_size")
+        if isinstance(nested_feature_size, int) and nested_feature_size > 0:
+            return nested_feature_size
+    return None
 
 
 def _build_training_report(
@@ -239,6 +391,7 @@ def _build_training_report(
     feature_vector_size: int,
     labels: list[str],
     artifacts: PersistedArtifacts,
+    artifact_metadata: dict[str, object],
 ) -> dict[str, object]:
     """Builds a structured report for training quality and artifact traceability."""
     settings = get_settings()
@@ -251,6 +404,7 @@ def _build_training_report(
 
     return {
         "artifact_version": MODEL_ARTIFACT_VERSION,
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
         "created_at_utc": datetime.now(tz=UTC).isoformat(),
         "dataset_glob_pattern": settings.dataset.glob_pattern,
         "dataset_corpus_samples": corpus_samples,
@@ -264,6 +418,7 @@ def _build_training_report(
         "accuracy": accuracy,
         "macro_f1": macro_f1,
         "metrics": ser_metrics,
+        "artifact_metadata": artifact_metadata,
         "model_artifacts": model_artifacts,
     }
 
@@ -430,6 +585,10 @@ def train_model() -> None:
             training_samples=int(x_train.shape[0]),
             labels=y_train,
         )
+        artifact_metadata_obj = artifact.get("metadata")
+        if not isinstance(artifact_metadata_obj, dict):
+            raise RuntimeError("Model artifact metadata is missing before persistence.")
+        artifact_metadata = _normalize_v2_artifact_metadata(artifact_metadata_obj)
         persisted_artifacts = _persist_model_artifacts(model=model, artifact=artifact)
     logger.info(msg=f"Model saved to {persisted_artifacts.pickle_path}")
     if persisted_artifacts.secure_path is not None:
@@ -444,6 +603,7 @@ def train_model() -> None:
         feature_vector_size=int(x_train.shape[1]),
         labels=[*y_train, *y_test],
         artifacts=persisted_artifacts,
+        artifact_metadata=artifact_metadata,
     )
     _persist_training_report(report, settings.models.training_report_file)
     logger.info(msg=f"Training report saved to {settings.models.training_report_file}")

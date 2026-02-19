@@ -9,6 +9,7 @@ from halo import Halo
 from numpy.typing import NDArray
 
 from ser.config import get_settings
+from ser.repr import HandcraftedBackend
 from ser.utils.audio_utils import read_audio_file
 from ser.utils.logger import get_logger
 
@@ -137,7 +138,8 @@ def extract_feature(file: str) -> FeatureVector:
     except Exception as err:
         logger.error(msg=f"Error reading file {file}: {err}")
         raise
-    return extract_feature_from_signal(audio, sample_rate)
+    backend = HandcraftedBackend()
+    return backend.extract_vector(audio=audio, sample_rate=sample_rate)
 
 
 def extended_extract_feature(
@@ -172,26 +174,21 @@ def extract_feature_frames(
     if frame_stride <= 0:
         raise ValueError("frame_stride must be greater than zero.")
 
-    frames: list[FeatureFrame] = []
     audio: NDArray[np.float32]
     sample_rate: int
     audio, sample_rate = read_audio_file(audiofile)
-    frame_length: int = max(1, int(round(frame_size * sample_rate)))
-    frame_step: int = max(1, int(round(frame_stride * sample_rate)))
-
+    backend = HandcraftedBackend(
+        frame_size_seconds=frame_size,
+        frame_stride_seconds=frame_stride,
+    )
     with Halo(text="Processing", spinner="dots", text_color="green"):
-        for start in range(0, audio.size, frame_step):
-            end: int = min(start + frame_length, audio.size)
-            frame_audio = audio[start:end]
-            if frame_audio.size == 0:
-                continue
-            frame_features = extract_feature_from_signal(frame_audio, sample_rate)
-            frames.append(
-                FeatureFrame(
-                    start_seconds=float(start) / float(sample_rate),
-                    end_seconds=float(end) / float(sample_rate),
-                    features=frame_features,
-                )
-            )
+        encoded = backend.encode_sequence(audio=audio, sample_rate=sample_rate)
 
-    return frames
+    return [
+        FeatureFrame(
+            start_seconds=float(encoded.frame_start_seconds[index]),
+            end_seconds=float(encoded.frame_end_seconds[index]),
+            features=np.asarray(encoded.embeddings[index], dtype=np.float64),
+        )
+        for index in range(encoded.embeddings.shape[0])
+    ]

@@ -200,7 +200,7 @@ class SchemaConfig:
     """Version controls for runtime and artifact schema compatibility."""
 
     output_schema_version: str = "v1"
-    artifact_schema_version: str = "v1"
+    artifact_schema_version: str = "v2"
 
 
 @dataclass(frozen=True)
@@ -310,7 +310,7 @@ def _build_settings() -> AppConfig:
     restricted_backends: bool = _read_bool_env("SER_ENABLE_RESTRICTED_BACKENDS", False)
     new_output_schema: bool = _read_bool_env("SER_ENABLE_NEW_OUTPUT_SCHEMA", False)
     output_schema_version: str = os.getenv("SER_OUTPUT_SCHEMA_VERSION", "v1")
-    artifact_schema_version: str = os.getenv("SER_ARTIFACT_SCHEMA_VERSION", "v1")
+    artifact_schema_version: str = os.getenv("SER_ARTIFACT_SCHEMA_VERSION", "v2")
     model_file_name: str = os.getenv("SER_MODEL_FILE_NAME", "ser_model.pkl")
     secure_model_file_name: str = os.getenv(
         "SER_SECURE_MODEL_FILE_NAME", "ser_model.skops"
