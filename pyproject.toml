@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "A Speech Emotion Recognition tool"
 authors = [{ name = "Juan Sugg", email = "juanpedrosugg@gmail.com" }]
 license = { text = "MIT" }
+license-files = ["LICENSE"]
 readme = "README.md"
 keywords = ["speech", "emotion", "recognition"]
 requires-python = ">=3.12,<3.14"
@@ -66,8 +67,31 @@ ser = "ser.__main__:main"
 requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.sdist]
+include = [
+  "/ser",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+  "/pyproject.toml",
+]
+exclude = [
+  "/ser/.gitignore",
+  "/ser/configure",
+  "/ser/dataset/**",
+  "/ser/models/OpenAI/**",
+  "/ser/models/*.pkl",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["ser"]
+exclude = [
+  "ser/.gitignore",
+  "ser/configure",
+  "ser/dataset/**",
+  "ser/models/OpenAI/**",
+  "ser/models/*.pkl",
+]
 
 [tool.black]
 line-length = 88

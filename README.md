@@ -46,6 +46,12 @@ graph TD;
 
 ## Installation
 
+### From PyPI (recommended)
+```bash
+python -m pip install ser
+```
+
+### From source (development)
 ```bash
 git clone https://github.com/jsugg/ser/
 cd ser
@@ -56,6 +62,7 @@ uv sync --python 3.12
 ### Compatibility
 - Supported Python versions: `3.12` and `3.13`
 - Intel macOS (`x86_64`): use `3.12` (PyTorch wheels for `3.13` are not available)
+- Runtime prerequisite: `ffmpeg` must be installed and available on `PATH`
 
 -----
 ## Usage
@@ -141,7 +148,7 @@ uv run pre-commit install --hook-type pre-push
 ---
 
 ## License
-This project is licensed under the MIT License - see the `LICENSE.md` file for details.
+This project is licensed under the MIT License - see `LICENSE` for details.
 
 ---
 

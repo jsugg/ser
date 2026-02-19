@@ -45,7 +45,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
     pass
 else:
-    Halo = _Halo
+    # `halo` does not provide precise typing for this constructor shape, while
+    # this module intentionally treats it as a generic context-manager factory.
+    Halo = cast(HaloFactory, _Halo)
 
 
 class TranscriptionError(RuntimeError):
