@@ -192,11 +192,45 @@ def test_create_runtime_pipeline_uses_resolved_profile(
 ) -> None:
     """Factory should resolve medium profile when medium flag is enabled."""
     monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
+    monkeypatch.setattr(
+        "ser.runtime.backend_hooks._missing_optional_modules",
+        lambda _required_modules: ("transformers",),
+    )
     settings = config.reload_settings()
     pipeline = create_runtime_pipeline(settings)
     assert pipeline.profile.name == "medium"
     assert pipeline.capability.profile == "medium"
     assert pipeline.capability.available is False
+
+
+def test_create_runtime_pipeline_marks_medium_available_when_hook_registry_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Factory should treat medium as available when hook registry is populated."""
+    monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+
+    def fake_medium_hook(_request: InferenceRequest) -> InferenceResult:
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        )
+
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {"hf_xlsr": fake_medium_hook},
+    )
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+
+    assert pipeline.profile.name == "medium"
+    assert pipeline.capability.profile == "medium"
+    assert pipeline.capability.available is True
+    assert pipeline.backend_inference is fake_medium_hook
 
 
 def test_run_inference_uses_detailed_schema_when_enabled(

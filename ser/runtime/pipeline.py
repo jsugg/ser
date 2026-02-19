@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from ser.config import AppConfig, get_settings
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile, resolve_profile
+from ser.runtime.backend_hooks import build_backend_hooks
 from ser.runtime.contracts import (
     BackendInferenceCallable,
     InferenceExecution,
@@ -97,7 +98,7 @@ class RuntimePipeline:
 def create_runtime_pipeline(settings: AppConfig | None = None) -> RuntimePipeline:
     """Creates a runtime pipeline configured from application settings."""
     active_settings = settings if settings is not None else get_settings()
-    backend_hooks: dict[str, BackendInferenceCallable] = {}
+    backend_hooks = build_backend_hooks(active_settings)
     implemented_backends = frozenset({"handcrafted", *backend_hooks.keys()})
     profile = resolve_profile(active_settings)
     capability = resolve_runtime_capability(
