@@ -39,6 +39,16 @@ def _extract_emotion_code(file_name: str) -> str | None:
     return parts[2]
 
 
+def extract_ravdess_speaker_id_from_path(file_path: str) -> str | None:
+    """Extracts actor ID from a RAVDESS-style file path when present."""
+    file_name = os.path.basename(file_path)
+    parts = file_name.split("-")
+    if len(parts) < 7:
+        return None
+    speaker_id = parts[6].split(".")[0].strip()
+    return speaker_id or None
+
+
 def _resolve_worker_count(max_cores: int, max_workers: int, file_count: int) -> int:
     """Returns a bounded worker count based on configured and runtime limits."""
     if file_count <= 0:

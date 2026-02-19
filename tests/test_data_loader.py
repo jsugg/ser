@@ -35,6 +35,13 @@ def test_process_file_reports_unexpected_name_format() -> None:
     assert "unexpected name format" in result.error
 
 
+def test_extract_ravdess_speaker_id_from_path() -> None:
+    """RAVDESS actor IDs should be parsed from full file paths."""
+    path = "ser/dataset/ravdess/Actor_24/03-01-05-01-02-01-24.wav"
+    assert dl.extract_ravdess_speaker_id_from_path(path) == "24"
+    assert dl.extract_ravdess_speaker_id_from_path("invalid.wav") is None
+
+
 def test_load_data_aborts_when_failure_ratio_exceeds_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
