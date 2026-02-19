@@ -49,3 +49,16 @@ def test_build_timeline_skips_invalid_emotion_segments() -> None:
 def test_build_timeline_returns_empty_for_empty_inputs() -> None:
     """No transcript and no emotions should produce an empty timeline."""
     assert build_timeline([], []) == []
+
+
+def test_build_timeline_keeps_last_emotion_on_terminal_boundary() -> None:
+    """A word exactly on the final boundary should keep the final emotion."""
+    text = [TranscriptWord("done", 1.0, 1.1)]
+    emotions = [EmotionSegment("calm", 0.0, 1.0)]
+
+    timeline = build_timeline(text, emotions)
+    indexed = {
+        round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline
+    }
+
+    assert indexed[1.0] == ("calm", "done")

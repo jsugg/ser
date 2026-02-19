@@ -73,7 +73,9 @@ To train the emotion classification model:
 ```bash
 uv run ser --train
 ```
-This generates `ser/models/ser_model.pkl` locally. The model artifact is intentionally not tracked in Git.
+This generates a compatibility model artifact (`*.pkl`) and a `training_report.json`
+under your configured models directory. If `skops` is available, a secure `*.skops`
+artifact is also generated.
 ```mermaid
 graph TD;
     A[Data Loading] --> B[Data Splitting];
@@ -122,6 +124,29 @@ graph TD;
 
 ## Configuration
 Edit **`ser/config.py`** to modify default configurations, including model paths, dataset paths, and feature extraction settings.
+
+### Environment Overrides
+You can also override runtime behavior with environment variables:
+
+* `DATASET_FOLDER`: dataset root folder (default: `ser/dataset/ravdess`)
+* `DEFAULT_LANGUAGE`: default transcription language (default: `en`)
+* `SER_CACHE_DIR`: runtime cache root (default: platform cache dir + `/ser`)
+* `SER_DATA_DIR`: runtime data root (default: platform data dir + `/ser`)
+* `SER_TMP_DIR`: temporary audio working directory (default: `$SER_CACHE_DIR/tmp`)
+* `SER_MODELS_DIR`: trained model storage directory (default: `$SER_DATA_DIR/models`)
+* `SER_TRANSCRIPTS_DIR`: transcript CSV output directory (default: `$SER_DATA_DIR/transcripts`)
+* `SER_MODEL_FILE_NAME`: compatibility model artifact filename (default: `ser_model.pkl`)
+* `SER_SECURE_MODEL_FILE_NAME`: secure model artifact filename (default: `ser_model.skops`)
+* `SER_TRAINING_REPORT_FILE_NAME`: training report filename (default: `training_report.json`)
+* `SER_MAX_WORKERS`: max parallel workers for feature extraction (default: `8`)
+* `SER_MAX_FAILED_FILE_RATIO`: abort threshold for failed dataset files in training (default: `0.01`)
+* `SER_TEST_SIZE`: train/test split ratio for training (default: `0.25`)
+* `SER_RANDOM_STATE`: random seed for split/model reproducibility (default: `42`)
+* `WHISPER_MODEL`: whisper model name (default: `large-v2`)
+* `WHISPER_DEMUCS`: enable/disable source separation in transcription (`true`/`false`, default: `true`)
+* `WHISPER_VAD`: enable/disable voice activity detection in transcription (`true`/`false`, default: `true`)
+
+Model loading checks `SER_MODELS_DIR` first and falls back to legacy `ser/models` when present.
 
 ---
 
