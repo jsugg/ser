@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from collections.abc import Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -19,6 +19,17 @@ from ser.repr.backend import (
     PoolingWindow,
     overlap_frame_mask,
 )
+from ser.utils.logger import get_logger
+from ser.utils.torch_inference import (
+    TorchRuntime,
+    inference_context,
+    maybe_resolve_torch_runtime,
+    move_inputs_to_runtime,
+    move_model_to_runtime,
+    runtime_with_dtype,
+)
+
+logger = get_logger(__name__)
 
 
 class _FeatureExtractor(Protocol):
@@ -80,6 +91,8 @@ class XLSRBackend:
         model_id: str = "facebook/wav2vec2-xls-r-300m",
         max_chunk_seconds: float = 30.0,
         cache_dir: Path | None = None,
+        device: str = "auto",
+        dtype: str = "auto",
         feature_extractor: _FeatureExtractor | None = None,
         model: _EncoderModel | None = None,
     ) -> None:
@@ -106,8 +119,11 @@ class XLSRBackend:
         self._model_id = model_id
         self._max_chunk_seconds = max_chunk_seconds
         self._cache_dir = cache_dir
+        self._device = device
+        self._dtype = dtype
         self._feature_extractor = feature_extractor
         self._model = model
+        self._torch_runtime: TorchRuntime | None = None
 
     @property
     def backend_id(self) -> str:
@@ -231,9 +247,46 @@ class XLSRBackend:
             return_tensors="pt",
             padding=False,
         )
-        with self._no_grad_context():
-            outputs = model(**inputs)
-        return self._normalize_hidden_state(outputs.last_hidden_state)
+        runtime = self._get_torch_runtime()
+        if runtime is not None:
+            inputs = move_inputs_to_runtime(
+                inputs,
+                runtime,
+                dtype_keys=frozenset({"input_values"}),
+            )
+        embeddings = self._encode_with_model(model=model, inputs=inputs)
+        if runtime is None or runtime.dtype_name == "float32":
+            return embeddings
+        if np.all(np.isfinite(embeddings)):
+            return embeddings
+
+        fallback_runtime = runtime_with_dtype(runtime, dtype="float32")
+        if fallback_runtime is None:
+            raise RuntimeError(
+                "XLSR backend produced non-finite embeddings and torch is unavailable "
+                "for float32 fallback."
+            )
+        logger.warning(
+            "XLSR backend produced non-finite embeddings with dtype=%s. "
+            "Retrying chunk with float32 fallback.",
+            runtime.dtype_name,
+        )
+        move_model_to_runtime(model, fallback_runtime)
+        self._torch_runtime = fallback_runtime
+        fallback_inputs = move_inputs_to_runtime(
+            inputs,
+            fallback_runtime,
+            dtype_keys=frozenset({"input_values"}),
+        )
+        fallback_embeddings = self._encode_with_model(
+            model=model,
+            inputs=fallback_inputs,
+        )
+        if not np.all(np.isfinite(fallback_embeddings)):
+            raise RuntimeError(
+                "XLSR backend produced non-finite embeddings after float32 fallback."
+            )
+        return fallback_embeddings
 
     def _ensure_runtime_components(self) -> tuple[_FeatureExtractor, _EncoderModel]:
         """Loads runtime components lazily or returns injected test doubles."""
@@ -281,9 +334,21 @@ class XLSRBackend:
                 "upgrade torch to >=2.6 for legacy checkpoint loading."
             ) from err
         model.eval()
+        runtime = self._get_torch_runtime()
+        if runtime is not None:
+            move_model_to_runtime(model, runtime)
         self._feature_extractor = feature_extractor
         self._model = model
         return feature_extractor, model
+
+    def _get_torch_runtime(self) -> TorchRuntime | None:
+        """Lazily resolves optional torch runtime selectors."""
+        if self._torch_runtime is None:
+            self._torch_runtime = maybe_resolve_torch_runtime(
+                device=self._device,
+                dtype=self._dtype,
+            )
+        return self._torch_runtime
 
     def _ensure_dependencies_available(self) -> None:
         """Validates optional backend dependencies and raises actionable errors."""
@@ -299,15 +364,19 @@ class XLSRBackend:
             )
 
     def _no_grad_context(self) -> AbstractContextManager[object]:
-        """Returns a torch.no_grad context when torch is available."""
-        try:
-            torch_module = importlib.import_module("torch")
-        except ModuleNotFoundError:
-            return nullcontext()
-        no_grad = getattr(torch_module, "no_grad", None)
-        if callable(no_grad):
-            return cast(AbstractContextManager[object], no_grad())
-        return nullcontext()
+        """Returns best-available inference context when torch is present."""
+        return inference_context()
+
+    def _encode_with_model(
+        self,
+        *,
+        model: _EncoderModel,
+        inputs: Mapping[str, object],
+    ) -> NDArray[np.float32]:
+        """Runs model forward pass and normalizes hidden-state outputs."""
+        with self._no_grad_context():
+            outputs = model(**inputs)
+        return self._normalize_hidden_state(outputs.last_hidden_state)
 
     def _normalize_hidden_state(self, hidden_state: object) -> NDArray[np.float32]:
         """Normalizes model hidden state output into `(frames, hidden)` matrix."""

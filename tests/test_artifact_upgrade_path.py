@@ -110,6 +110,31 @@ def test_deserialize_round_trips_accurate_v2_artifact_metadata() -> None:
     assert loaded.artifact_metadata["feature_dim"] == 2560
 
 
+def test_deserialize_round_trips_optional_torch_runtime_metadata() -> None:
+    """Artifacts should preserve optional torch runtime selector metadata."""
+    artifact = em._build_model_artifact(
+        model=_build_classifier(),
+        feature_vector_size=2560,
+        training_samples=10,
+        labels=["sad", "happy", "angry"],
+        backend_id="hf_whisper",
+        profile="accurate",
+        feature_dim=2560,
+        frame_size_seconds=1.0,
+        frame_stride_seconds=1.0,
+        pooling_strategy="mean_std",
+        backend_model_id="openai/whisper-large-v3",
+        torch_device="cuda:0",
+        torch_dtype="float16",
+    )
+
+    loaded = em._deserialize_model_artifact(artifact)
+
+    assert loaded.artifact_metadata is not None
+    assert loaded.artifact_metadata["torch_device"] == "cuda:0"
+    assert loaded.artifact_metadata["torch_dtype"] == "float16"
+
+
 @pytest.mark.parametrize(
     ("field_name", "field_value", "error_match"),
     [

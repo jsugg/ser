@@ -23,7 +23,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, ProfileRuntimeConfig, get_settings
 from ser.data import (
     EmbeddingCache,
     LabeledAudioSample,
@@ -304,6 +304,20 @@ def _normalize_v2_artifact_metadata(metadata: dict[str, object]) -> dict[str, ob
                 "Model artifact metadata contains invalid 'backend_model_id' value."
             )
         normalized["backend_model_id"] = backend_model_id.strip()
+    torch_device = metadata.get("torch_device")
+    if torch_device is not None:
+        if not isinstance(torch_device, str) or not torch_device.strip():
+            raise ValueError(
+                "Model artifact metadata contains invalid 'torch_device' value."
+            )
+        normalized["torch_device"] = torch_device.strip().lower()
+    torch_dtype = metadata.get("torch_dtype")
+    if torch_dtype is not None:
+        if not isinstance(torch_dtype, str) or not torch_dtype.strip():
+            raise ValueError(
+                "Model artifact metadata contains invalid 'torch_dtype' value."
+            )
+        normalized["torch_dtype"] = torch_dtype.strip().lower()
     return normalized
 
 
@@ -319,6 +333,8 @@ def _build_v2_artifact_metadata(
     frame_stride_seconds: float = DEFAULT_FRAME_STRIDE_SECONDS,
     pooling_strategy: str = DEFAULT_POOLING_STRATEGY,
     backend_model_id: str | None = None,
+    torch_device: str | None = None,
+    torch_dtype: str | None = None,
     provenance: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Builds normalized v2 artifact metadata for persisted model envelopes."""
@@ -346,6 +362,20 @@ def _build_v2_artifact_metadata(
                 "Model artifact metadata contains invalid 'backend_model_id' value."
             )
         payload["backend_model_id"] = resolved_backend_model_id
+    if torch_device is not None:
+        resolved_torch_device = torch_device.strip().lower()
+        if not resolved_torch_device:
+            raise ValueError(
+                "Model artifact metadata contains invalid 'torch_device' value."
+            )
+        payload["torch_device"] = resolved_torch_device
+    if torch_dtype is not None:
+        resolved_torch_dtype = torch_dtype.strip().lower()
+        if not resolved_torch_dtype:
+            raise ValueError(
+                "Model artifact metadata contains invalid 'torch_dtype' value."
+            )
+        payload["torch_dtype"] = resolved_torch_dtype
     return _normalize_v2_artifact_metadata(payload)
 
 
@@ -381,6 +411,8 @@ def _build_model_artifact(
     frame_stride_seconds: float = DEFAULT_FRAME_STRIDE_SECONDS,
     pooling_strategy: str = DEFAULT_POOLING_STRATEGY,
     backend_model_id: str | None = None,
+    torch_device: str | None = None,
+    torch_dtype: str | None = None,
     provenance: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Constructs a versioned model artifact envelope for safer loading."""
@@ -395,6 +427,8 @@ def _build_model_artifact(
         frame_stride_seconds=frame_stride_seconds,
         pooling_strategy=pooling_strategy,
         backend_model_id=backend_model_id,
+        torch_device=torch_device,
+        torch_dtype=torch_dtype,
         provenance=provenance,
     )
     return {
@@ -918,13 +952,15 @@ def _split_labeled_audio_samples(
 
 def _pooling_windows_from_encoded_frames(
     encoded: EncodedSequence,
+    *,
+    window_size_seconds: float,
+    window_stride_seconds: float,
 ) -> list[PoolingWindow]:
-    """Creates medium temporal pooling windows from configured window policy."""
-    settings: AppConfig = get_settings()
+    """Creates temporal pooling windows from explicit window policy."""
     return temporal_pooling_windows(
         encoded,
-        window_size_seconds=settings.medium_runtime.pool_window_size_seconds,
-        window_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        window_size_seconds=window_size_seconds,
+        window_stride_seconds=window_stride_seconds,
     )
 
 
@@ -973,6 +1009,8 @@ def _build_medium_feature_dataset(
     model_id: str | None = None,
 ) -> tuple[np.ndarray, list[str], MediumNoiseControlStats]:
     """Builds frame-pooled medium feature matrix from labeled audio files."""
+    settings: AppConfig = get_settings()
+    runtime_config = settings.medium_runtime
     feature_blocks: list[np.ndarray] = []
     labels: list[str] = []
     aggregate_stats = MediumNoiseControlStats()
@@ -983,7 +1021,11 @@ def _build_medium_feature_dataset(
             cache=cache,
             model_id=model_id,
         )
-        windows = _pooling_windows_from_encoded_frames(encoded)
+        windows = _pooling_windows_from_encoded_frames(
+            encoded,
+            window_size_seconds=runtime_config.pool_window_size_seconds,
+            window_stride_seconds=runtime_config.pool_window_stride_seconds,
+        )
         pooled = mean_std_pool(encoded, windows)
         filtered, stats = _apply_medium_noise_controls(
             np.asarray(pooled, dtype=np.float64)
@@ -1010,6 +1052,13 @@ def _encode_accurate_sequence(
 ) -> EncodedSequence:
     """Encodes one file with cache reuse for accurate training."""
     settings: AppConfig = get_settings()
+    runtime_config: ProfileRuntimeConfig
+    if backend_id == ACCURATE_BACKEND_ID:
+        runtime_config = settings.accurate_runtime
+    elif backend_id == ACCURATE_RESEARCH_BACKEND_ID:
+        runtime_config = settings.accurate_research_runtime
+    else:
+        raise ValueError(f"Unknown accurate backend id: {backend_id!r}.")
     resolved_model_id = (
         model_id.strip() if isinstance(model_id, str) and model_id.strip() else None
     )
@@ -1029,8 +1078,8 @@ def _encode_accurate_sequence(
         audio_path=audio_path,
         backend_id=backend_id,
         model_id=resolved_model_id,
-        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
-        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        frame_size_seconds=runtime_config.pool_window_size_seconds,
+        frame_stride_seconds=runtime_config.pool_window_stride_seconds,
         compute=_compute_sequence,
     )
     logger.debug(
@@ -1052,6 +1101,14 @@ def _build_accurate_feature_dataset(
     backend_id: str = ACCURATE_BACKEND_ID,
 ) -> tuple[np.ndarray, list[str]]:
     """Builds frame-pooled accurate feature matrix from labeled audio files."""
+    settings: AppConfig = get_settings()
+    runtime_config: ProfileRuntimeConfig
+    if backend_id == ACCURATE_BACKEND_ID:
+        runtime_config = settings.accurate_runtime
+    elif backend_id == ACCURATE_RESEARCH_BACKEND_ID:
+        runtime_config = settings.accurate_research_runtime
+    else:
+        raise ValueError(f"Unknown accurate backend id: {backend_id!r}.")
     feature_blocks: list[np.ndarray] = []
     labels: list[str] = []
     for audio_path, emotion_label in samples:
@@ -1062,7 +1119,11 @@ def _build_accurate_feature_dataset(
             model_id=model_id,
             backend_id=backend_id,
         )
-        windows = _pooling_windows_from_encoded_frames(encoded)
+        windows = _pooling_windows_from_encoded_frames(
+            encoded,
+            window_size_seconds=runtime_config.pool_window_size_seconds,
+            window_stride_seconds=runtime_config.pool_window_stride_seconds,
+        )
         pooled = mean_std_pool(encoded, windows)
         feature_blocks.append(np.asarray(pooled, dtype=np.float64))
         labels.extend([emotion_label] * int(pooled.shape[0]))
@@ -1156,6 +1217,8 @@ def train_medium_model() -> None:
     backend = XLSRBackend(
         model_id=medium_model_id,
         cache_dir=settings.models.huggingface_cache_root,
+        device=settings.torch_runtime.device,
+        dtype=settings.torch_runtime.dtype,
     )
     cache = EmbeddingCache(settings.tmp_folder / "medium_embeddings")
     x_train, y_train, train_noise_stats = _build_medium_feature_dataset(
@@ -1209,6 +1272,8 @@ def train_medium_model() -> None:
         frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
         pooling_strategy=MEDIUM_POOLING_STRATEGY,
         backend_model_id=medium_model_id,
+        torch_device=settings.torch_runtime.device,
+        torch_dtype=settings.torch_runtime.dtype,
         provenance=provenance,
     )
     artifact_metadata_obj = artifact.get("metadata")
@@ -1281,6 +1346,8 @@ def train_accurate_model() -> None:
     backend = WhisperBackend(
         model_id=accurate_model_id,
         cache_dir=settings.models.huggingface_cache_root,
+        device=settings.torch_runtime.device,
+        dtype=settings.torch_runtime.dtype,
     )
     cache = EmbeddingCache(settings.tmp_folder / "accurate_embeddings")
     x_train, y_train = _build_accurate_feature_dataset(
@@ -1332,10 +1399,12 @@ def train_accurate_model() -> None:
         backend_id=ACCURATE_BACKEND_ID,
         profile=ACCURATE_PROFILE_ID,
         feature_dim=int(x_train.shape[1]),
-        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
-        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        frame_size_seconds=settings.accurate_runtime.pool_window_size_seconds,
+        frame_stride_seconds=settings.accurate_runtime.pool_window_stride_seconds,
         pooling_strategy=ACCURATE_POOLING_STRATEGY,
         backend_model_id=accurate_model_id,
+        torch_device=settings.torch_runtime.device,
+        torch_dtype=settings.torch_runtime.dtype,
         provenance=provenance,
     )
     artifact_metadata_obj = artifact.get("metadata")
@@ -1451,10 +1520,16 @@ def train_accurate_research_model() -> None:
         backend_id=ACCURATE_RESEARCH_BACKEND_ID,
         profile=ACCURATE_RESEARCH_PROFILE_ID,
         feature_dim=int(x_train.shape[1]),
-        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
-        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        frame_size_seconds=(
+            settings.accurate_research_runtime.pool_window_size_seconds
+        ),
+        frame_stride_seconds=(
+            settings.accurate_research_runtime.pool_window_stride_seconds
+        ),
         pooling_strategy=ACCURATE_POOLING_STRATEGY,
         backend_model_id=accurate_research_model_id,
+        torch_device=settings.torch_runtime.device,
+        torch_dtype=settings.torch_runtime.dtype,
         provenance=provenance,
     )
     artifact_metadata_obj = artifact.get("metadata")

@@ -32,6 +32,15 @@ def _settings_stub(tmp_path: Path) -> SimpleNamespace:
             pool_window_size_seconds=1.0,
             pool_window_stride_seconds=1.0,
         ),
+        accurate_runtime=SimpleNamespace(
+            pool_window_size_seconds=2.0,
+            pool_window_stride_seconds=0.5,
+        ),
+        accurate_research_runtime=SimpleNamespace(
+            pool_window_size_seconds=2.5,
+            pool_window_stride_seconds=0.75,
+        ),
+        torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
     )
 
 
@@ -159,6 +168,14 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     assert metadata["backend_model_id"] == settings.models.accurate_model_id
     assert metadata["pooling_strategy"] == "mean_std"
     assert metadata["feature_dim"] == 4
+    assert metadata["torch_device"] == settings.torch_runtime.device
+    assert metadata["torch_dtype"] == settings.torch_runtime.dtype
+    assert metadata["frame_size_seconds"] == pytest.approx(
+        settings.accurate_runtime.pool_window_size_seconds
+    )
+    assert metadata["frame_stride_seconds"] == pytest.approx(
+        settings.accurate_runtime.pool_window_stride_seconds
+    )
 
     report = captured.get("report")
     assert isinstance(report, dict)
@@ -168,6 +185,14 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     assert artifact_metadata["profile"] == "accurate"
     assert artifact_metadata["backend_model_id"] == settings.models.accurate_model_id
     assert artifact_metadata["pooling_strategy"] == "mean_std"
+    assert artifact_metadata["torch_device"] == settings.torch_runtime.device
+    assert artifact_metadata["torch_dtype"] == settings.torch_runtime.dtype
+    assert artifact_metadata["frame_size_seconds"] == pytest.approx(
+        settings.accurate_runtime.pool_window_size_seconds
+    )
+    assert artifact_metadata["frame_stride_seconds"] == pytest.approx(
+        settings.accurate_runtime.pool_window_stride_seconds
+    )
     data_controls = report.get("data_controls")
     assert isinstance(data_controls, dict)
     grouped = data_controls.get("accurate_grouped_evaluation")
@@ -203,9 +228,18 @@ def test_train_accurate_model_uses_configured_model_id(
     captured: dict[str, object] = {"dataset_model_ids": []}
 
     class _BackendStub:
-        def __init__(self, *, model_id: str, cache_dir: Path) -> None:
+        def __init__(
+            self,
+            *,
+            model_id: str,
+            cache_dir: Path,
+            device: str = "auto",
+            dtype: str = "auto",
+        ) -> None:
             captured["backend_model_id"] = model_id
             captured["backend_cache_dir"] = cache_dir
+            captured["backend_device"] = device
+            captured["backend_dtype"] = dtype
 
     monkeypatch.setattr(em, "WhisperBackend", _BackendStub)
     monkeypatch.setattr(em, "get_settings", lambda: settings)
@@ -261,6 +295,8 @@ def test_train_accurate_model_uses_configured_model_id(
 
     assert captured["backend_model_id"] == "unit-test/whisper-tiny"
     assert captured["backend_cache_dir"] == settings.models.huggingface_cache_root
+    assert captured["backend_device"] == settings.torch_runtime.device
+    assert captured["backend_dtype"] == settings.torch_runtime.dtype
     dataset_model_ids = captured["dataset_model_ids"]
     assert isinstance(dataset_model_ids, list)
     assert dataset_model_ids == ["unit-test/whisper-tiny", "unit-test/whisper-tiny"]
@@ -397,6 +433,14 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
         == settings.models.accurate_research_model_id
     )
     assert artifact_metadata["pooling_strategy"] == "mean_std"
+    assert artifact_metadata["torch_device"] == settings.torch_runtime.device
+    assert artifact_metadata["torch_dtype"] == settings.torch_runtime.dtype
+    assert artifact_metadata["frame_size_seconds"] == pytest.approx(
+        settings.accurate_research_runtime.pool_window_size_seconds
+    )
+    assert artifact_metadata["frame_stride_seconds"] == pytest.approx(
+        settings.accurate_research_runtime.pool_window_stride_seconds
+    )
 
     report_path = captured.get("report_path")
     assert report_path == settings.models.training_report_file
