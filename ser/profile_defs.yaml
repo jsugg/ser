@@ -10,8 +10,9 @@ profiles:
       env_var: null
       default_model_id: null
     transcription_defaults:
-      model_name: turbo
-      use_demucs: true
+      backend_id: faster_whisper
+      model_name: distil-large-v3
+      use_demucs: false
       use_vad: true
     runtime_defaults:
       timeout_seconds: 0.0
@@ -49,6 +50,7 @@ profiles:
       env_var: SER_MEDIUM_MODEL_ID
       default_model_id: facebook/wav2vec2-xls-r-300m
     transcription_defaults:
+      backend_id: stable_whisper
       model_name: turbo
       use_demucs: true
       use_vad: true
@@ -88,6 +90,7 @@ profiles:
       env_var: SER_ACCURATE_MODEL_ID
       default_model_id: openai/whisper-large-v3
     transcription_defaults:
+      backend_id: stable_whisper
       model_name: large
       use_demucs: true
       use_vad: true
@@ -128,6 +131,7 @@ profiles:
       env_var: SER_ACCURATE_RESEARCH_MODEL_ID
       default_model_id: iic/emotion2vec_plus_large
     transcription_defaults:
+      backend_id: stable_whisper
       model_name: large
       use_demucs: true
       use_vad: true

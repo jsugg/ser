@@ -361,18 +361,38 @@ def test_create_runtime_pipeline_marks_accurate_research_available_when_hook_reg
 
 
 @pytest.mark.parametrize(
-    ("env", "backend_id", "expected_model_name"),
+    (
+        "env",
+        "backend_id",
+        "expected_transcription_backend_id",
+        "expected_model_name",
+        "expected_use_demucs",
+    ),
     [
-        ({}, "handcrafted", "turbo"),
-        ({"SER_ENABLE_MEDIUM_PROFILE": "true"}, "hf_xlsr", "turbo"),
-        ({"SER_ENABLE_ACCURATE_PROFILE": "true"}, "hf_whisper", "large"),
+        ({}, "handcrafted", "faster_whisper", "distil-large-v3", False),
+        (
+            {"SER_ENABLE_MEDIUM_PROFILE": "true"},
+            "hf_xlsr",
+            "stable_whisper",
+            "turbo",
+            True,
+        ),
+        (
+            {"SER_ENABLE_ACCURATE_PROFILE": "true"},
+            "hf_whisper",
+            "stable_whisper",
+            "large",
+            True,
+        ),
         (
             {
                 "SER_ENABLE_ACCURATE_PROFILE": "true",
                 "SER_ENABLE_ACCURATE_RESEARCH_PROFILE": "true",
             },
             "emotion2vec",
+            "stable_whisper",
             "large",
+            True,
         ),
     ],
 )
@@ -380,7 +400,9 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     monkeypatch: pytest.MonkeyPatch,
     env: dict[str, str],
     backend_id: str,
+    expected_transcription_backend_id: str,
     expected_model_name: str,
+    expected_use_demucs: bool,
 ) -> None:
     """Factory should bind transcript extraction to selected profile defaults."""
     monkeypatch.delenv("WHISPER_MODEL", raising=False)
@@ -424,8 +446,9 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
 
     profile = captured["profile"]
     assert isinstance(profile, TranscriptionProfile)
+    assert profile.backend_id == expected_transcription_backend_id
     assert profile.model_name == expected_model_name
-    assert profile.use_demucs is True
+    assert profile.use_demucs is expected_use_demucs
     assert profile.use_vad is True
 
 

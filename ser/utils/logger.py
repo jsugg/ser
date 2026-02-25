@@ -69,11 +69,13 @@ class DependencyLogFilter(logging.Filter):
         *,
         policy: DependencyLogPolicy,
         keep_demoted: bool = True,
+        minimum_visible_level: int = logging.NOTSET,
     ) -> None:
         """Initializes filter behavior for one scoped dependency policy."""
         super().__init__()
         self._policy = policy
         self._keep_demoted = keep_demoted
+        self._minimum_visible_level = minimum_visible_level
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Demotes matching records and optionally suppresses demoted output."""
@@ -83,7 +85,9 @@ class DependencyLogFilter(logging.Filter):
         ):
             record.levelno = self._policy.demote_to_level
             record.levelname = logging.getLevelName(self._policy.demote_to_level)
-            return self._keep_demoted
+            if not self._keep_demoted:
+                return False
+            return record.levelno >= self._minimum_visible_level
         return True
 
 
@@ -101,7 +105,11 @@ def scoped_dependency_log_policy(
     active_handlers = (
         tuple(handlers) if handlers is not None else tuple(logging.getLogger().handlers)
     )
-    dependency_filter = DependencyLogFilter(policy=policy, keep_demoted=keep_demoted)
+    dependency_filter = DependencyLogFilter(
+        policy=policy,
+        keep_demoted=keep_demoted,
+        minimum_visible_level=logging.getLogger().getEffectiveLevel(),
+    )
     for handler in active_handlers:
         handler.addFilter(dependency_filter)
 
@@ -164,6 +172,10 @@ def configure_logging(level: str | int | None = None) -> int:
     root_logger = logging.getLogger()
     if not root_logger.handlers:
         logging.basicConfig(format=_LOG_FORMAT, level=resolved_level)
+        formatter = logging.Formatter(_LOG_FORMAT)
+        for handler in root_logger.handlers:
+            handler.setLevel(resolved_level)
+            handler.setFormatter(formatter)
         _LOGGING_CONFIGURED = True
         return resolved_level
 

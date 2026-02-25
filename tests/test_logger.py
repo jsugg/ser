@@ -44,3 +44,63 @@ def test_get_logger_does_not_reapply_env_after_explicit_configuration(
     logger_utils.get_logger("ser.test")
 
     assert logging.getLogger().level == logging.INFO
+
+
+def test_configure_logging_sets_handler_level_during_first_initialization() -> None:
+    """First-time basicConfig path should align handler level with resolved level."""
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_configured = logger_utils._LOGGING_CONFIGURED
+
+    for handler in original_handlers:
+        root_logger.removeHandler(handler)
+    logger_utils._LOGGING_CONFIGURED = False
+
+    try:
+        applied_level = logger_utils.configure_logging("INFO")
+
+        assert applied_level == logging.INFO
+        assert root_logger.handlers
+        assert all(handler.level == logging.INFO for handler in root_logger.handlers)
+    finally:
+        for handler in list(root_logger.handlers):
+            root_logger.removeHandler(handler)
+        for handler in original_handlers:
+            root_logger.addHandler(handler)
+        root_logger.setLevel(original_level)
+        logger_utils._LOGGING_CONFIGURED = original_configured
+
+
+def test_scoped_dependency_log_policy_hides_demoted_logs_at_info_level(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Demoted dependency DEBUG entries should stay hidden in INFO-level runs."""
+    dependency_logger = logging.getLogger("faster_whisper")
+    policy = logger_utils.DependencyLogPolicy(logger_prefixes=frozenset({"faster_whisper"}))
+
+    with caplog.at_level(logging.INFO):
+        with logger_utils.scoped_dependency_log_policy(
+            policy=policy,
+            keep_demoted=True,
+        ):
+            dependency_logger.info("dependency info")
+
+    assert "dependency info" not in caplog.text
+
+
+def test_scoped_dependency_log_policy_keeps_demoted_logs_at_debug_level(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Demoted dependency entries should remain visible when DEBUG is enabled."""
+    dependency_logger = logging.getLogger("faster_whisper")
+    policy = logger_utils.DependencyLogPolicy(logger_prefixes=frozenset({"faster_whisper"}))
+
+    with caplog.at_level(logging.DEBUG):
+        with logger_utils.scoped_dependency_log_policy(
+            policy=policy,
+            keep_demoted=True,
+        ):
+            dependency_logger.info("dependency info")
+
+    assert "dependency info" in caplog.text

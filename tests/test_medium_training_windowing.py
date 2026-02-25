@@ -46,10 +46,14 @@ def test_medium_train_and_infer_share_configured_temporal_window_policy(
     monkeypatch.setenv("SER_MEDIUM_POOL_WINDOW_SIZE_SECONDS", "2.0")
     monkeypatch.setenv("SER_MEDIUM_POOL_WINDOW_STRIDE_SECONDS", "1.0")
     config.reload_settings()
+    runtime_config = config.get_settings().medium_runtime
 
     encoded = _encoded_sequence()
     train_windows = emotion_model._pooling_windows_from_encoded_frames(encoded)
-    infer_windows = medium_inference._pooling_windows_from_encoded_frames(encoded)
+    infer_windows = medium_inference._pooling_windows_from_encoded_frames(
+        encoded,
+        runtime_config=runtime_config,
+    )
 
     expected = [(0.0, 2.0), (1.0, 3.0), (2.0, 4.0)]
     assert [(w.start_seconds, w.end_seconds) for w in train_windows] == expected
@@ -63,9 +67,13 @@ def test_medium_temporal_window_policy_uses_runtime_env_overrides(
     monkeypatch.setenv("SER_MEDIUM_POOL_WINDOW_SIZE_SECONDS", "1.5")
     monkeypatch.setenv("SER_MEDIUM_POOL_WINDOW_STRIDE_SECONDS", "0.5")
     config.reload_settings()
+    runtime_config = config.get_settings().medium_runtime
 
     encoded = _encoded_sequence()
-    windows = medium_inference._pooling_windows_from_encoded_frames(encoded)
+    windows = medium_inference._pooling_windows_from_encoded_frames(
+        encoded,
+        runtime_config=runtime_config,
+    )
 
     assert [(w.start_seconds, w.end_seconds) for w in windows] == [
         (0.0, 1.5),
