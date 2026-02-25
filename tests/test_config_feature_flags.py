@@ -71,6 +71,8 @@ def test_runtime_flags_and_schema_defaults() -> None:
     )
     assert settings.schema.output_schema_version == "v1"
     assert settings.schema.artifact_schema_version == "v2"
+    assert settings.torch_runtime.device == "auto"
+    assert settings.torch_runtime.dtype == "auto"
     assert settings.models.medium_model_id == "facebook/wav2vec2-xls-r-300m"
     assert settings.models.accurate_model_id == "openai/whisper-large-v3"
     assert settings.models.accurate_research_model_id == "iic/emotion2vec_plus_large"
@@ -140,6 +142,8 @@ def test_runtime_flags_and_schema_env_overrides(
     )
     monkeypatch.setenv("SER_OUTPUT_SCHEMA_VERSION", "v2")
     monkeypatch.setenv("SER_ARTIFACT_SCHEMA_VERSION", "v3")
+    monkeypatch.setenv("SER_TORCH_DEVICE", "cuda:0")
+    monkeypatch.setenv("SER_TORCH_DTYPE", "bfloat16")
     monkeypatch.setenv("SER_MODEL_CACHE_DIR", "unit-test/model-cache")
     monkeypatch.setenv("SER_MEDIUM_MODEL_ID", "unit-test/xlsr")
     monkeypatch.setenv("SER_ACCURATE_MODEL_ID", "unit-test/whisper-tiny")
@@ -201,6 +205,8 @@ def test_runtime_flags_and_schema_env_overrides(
     )
     assert settings.schema.output_schema_version == "v2"
     assert settings.schema.artifact_schema_version == "v3"
+    assert settings.torch_runtime.device == "cuda:0"
+    assert settings.torch_runtime.dtype == "bfloat16"
     assert settings.models.model_cache_dir == Path("unit-test/model-cache")
     assert settings.models.huggingface_cache_root == Path(
         "unit-test/model-cache/huggingface"
@@ -304,3 +310,16 @@ def test_runtime_timeout_zero_disables_budget(
     assert settings.medium_runtime.timeout_seconds == pytest.approx(0.0)
     assert settings.accurate_runtime.timeout_seconds == pytest.approx(0.0)
     assert settings.accurate_research_runtime.timeout_seconds == pytest.approx(0.0)
+
+
+def test_invalid_torch_runtime_env_falls_back_to_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid torch runtime selectors should fall back to conservative defaults."""
+    monkeypatch.setenv("SER_TORCH_DEVICE", "quantum:9")
+    monkeypatch.setenv("SER_TORCH_DTYPE", "float128")
+
+    settings = config.reload_settings()
+
+    assert settings.torch_runtime.device == "auto"
+    assert settings.torch_runtime.dtype == "auto"

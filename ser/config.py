@@ -375,6 +375,14 @@ class SchemaConfig:
 
 
 @dataclass(frozen=True)
+class TorchRuntimeConfig:
+    """Torch runtime selection controls for optional HF backend acceleration."""
+
+    device: str = "auto"
+    dtype: str = "auto"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Immutable runtime configuration for the application."""
 
@@ -403,6 +411,7 @@ class AppConfig:
     medium_training: MediumTrainingConfig = field(default_factory=MediumTrainingConfig)
     quality_gate: QualityGateConfig = field(default_factory=QualityGateConfig)
     schema: SchemaConfig = field(default_factory=SchemaConfig)
+    torch_runtime: TorchRuntimeConfig = field(default_factory=TorchRuntimeConfig)
     default_language: str = "en"
 
 
@@ -507,6 +516,32 @@ def _resolve_profile_model_id(
         return default_model_id
     resolved = os.getenv(env_var, default_model_id).strip()
     return resolved if resolved else default_model_id
+
+
+def _read_torch_device_env(name: str, default: str = "auto") -> str:
+    """Reads and validates torch device selector from environment."""
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"auto", "cpu", "mps", "cuda"}:
+        return normalized
+    if re.fullmatch(r"cuda:\d+", normalized):
+        return normalized
+    return default
+
+
+def _read_torch_dtype_env(name: str, default: str = "auto") -> str:
+    """Reads and validates torch dtype selector from environment."""
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    return (
+        normalized
+        if normalized in {"auto", "float32", "float16", "bfloat16"}
+        else default
+    )
 
 
 def _resolve_runtime_config_from_profile(
@@ -699,6 +734,8 @@ def _build_settings() -> AppConfig:
     )
     output_schema_version: str = os.getenv("SER_OUTPUT_SCHEMA_VERSION", "v1")
     artifact_schema_version: str = os.getenv("SER_ARTIFACT_SCHEMA_VERSION", "v2")
+    torch_device: str = _read_torch_device_env("SER_TORCH_DEVICE", "auto")
+    torch_dtype: str = _read_torch_dtype_env("SER_TORCH_DTYPE", "auto")
     medium_model_id = _resolve_profile_model_id(
         medium_profile_entry,
         fallback_default_model_id=DEFAULT_MEDIUM_MODEL_ID,
@@ -906,6 +943,10 @@ def _build_settings() -> AppConfig:
         schema=SchemaConfig(
             output_schema_version=output_schema_version,
             artifact_schema_version=artifact_schema_version,
+        ),
+        torch_runtime=TorchRuntimeConfig(
+            device=torch_device,
+            dtype=torch_dtype,
         ),
         default_language=default_language,
     )
