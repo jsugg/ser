@@ -1,0 +1,15 @@
+# Repository-wide fallback owner.
+* @jsugg
+
+# CI/CD and release infrastructure.
+/.github/workflows/ @jsugg
+/pyproject.toml @jsugg
+/uv.lock @jsugg
+
+# Application and tests.
+/ser/ @jsugg
+/tests/ @jsugg
+
+# Documentation and tooling.
+/docs/ @jsugg
+/scripts/ @jsugg
