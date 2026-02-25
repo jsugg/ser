@@ -127,6 +127,12 @@ jobs:
           tests/test_postprocessing.py
           tests/test_medium_quality_report.py
 
+      - name: Enforce transcription benchmark contract gate
+        if: matrix.python-version == '3.12'
+        run: >
+          uvx --python ${{ matrix.python-version }} --with pytest pytest -q
+          tests/test_transcription_profiling.py
+
   supply-chain:
     runs-on: ubuntu-latest
     needs: [quality, resolve, tests]

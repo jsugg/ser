@@ -19,6 +19,8 @@ def _summary(
     return tp.ProfileBenchmarkSummary(
         profile=tp.TranscriptionProfileCandidate(
             name=name,
+            source_profile="accurate",
+            backend_id="stable_whisper",
             model_name="large-v2",
             use_demucs=True,
             use_vad=True,
@@ -47,16 +49,41 @@ def test_ravdess_reference_text_maps_statement_codes() -> None:
     assert tp.ravdess_reference_text(invalid_path) is None
 
 
-def test_default_profile_candidates_match_internal_fast_balanced_accurate_set() -> None:
-    """Internal candidates should stay aligned with the approved three profiles."""
+def test_default_profile_candidates_match_profile_catalog_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Benchmark candidates should stay aligned with profile transcription defaults."""
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
+    monkeypatch.delenv("WHISPER_MODEL", raising=False)
     candidates = tp.default_profile_candidates()
-    names = [candidate.name for candidate in candidates]
-
-    assert names == [
-        "accurate_large-v2_demucs_vad",
-        "balanced_base_no_demucs_vad",
-        "fast_tiny_no_demucs_no_vad",
+    assert [candidate.source_profile for candidate in candidates] == [
+        "accurate",
+        "medium",
+        "fast",
     ]
+    assert [candidate.backend_id for candidate in candidates] == [
+        "stable_whisper",
+        "stable_whisper",
+        "faster_whisper",
+    ]
+    assert [candidate.model_name for candidate in candidates] == [
+        "large",
+        "turbo",
+        "distil-large-v3",
+    ]
+
+
+def test_default_profile_candidates_follow_runtime_backend_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Benchmark candidates should reflect global backend/model env overrides."""
+    monkeypatch.setenv("WHISPER_BACKEND", "stable_whisper")
+    monkeypatch.setenv("WHISPER_MODEL", "base")
+
+    candidates = tp.default_profile_candidates()
+
+    assert all(candidate.backend_id == "stable_whisper" for candidate in candidates)
+    assert all(candidate.model_name == "base" for candidate in candidates)
 
 
 def test_word_error_rate_handles_normalization_and_exact_match() -> None:

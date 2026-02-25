@@ -553,6 +553,10 @@ def test_cli_profile_override_updates_transcription_defaults_by_profile(
     monkeypatch.delenv("WHISPER_VAD", raising=False)
     settings = config_module.reload_settings()
 
+    resolved_fast = cast(
+        config_module.AppConfig,
+        cli._apply_cli_profile_override(settings, "fast"),
+    )
     resolved_medium = cast(
         config_module.AppConfig,
         cli._apply_cli_profile_override(settings, "medium"),
@@ -566,10 +570,17 @@ def test_cli_profile_override_updates_transcription_defaults_by_profile(
         cli._apply_cli_profile_override(settings, "accurate-research"),
     )
 
+    assert resolved_fast.transcription.backend_id == "faster_whisper"
+    assert resolved_fast.models.whisper_model.name == "distil-large-v3"
+    assert resolved_fast.transcription.use_demucs is False
+    assert resolved_fast.transcription.use_vad is True
+    assert resolved_medium.transcription.backend_id == "stable_whisper"
     assert resolved_medium.models.whisper_model.name == "turbo"
     assert resolved_medium.transcription.use_demucs is True
     assert resolved_medium.transcription.use_vad is True
+    assert resolved_accurate.transcription.backend_id == "stable_whisper"
     assert resolved_accurate.models.whisper_model.name == "large"
+    assert resolved_accurate_research.transcription.backend_id == "stable_whisper"
     assert resolved_accurate_research.models.whisper_model.name == "large"
 
 

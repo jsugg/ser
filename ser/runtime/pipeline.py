@@ -189,10 +189,14 @@ def create_runtime_pipeline(settings: AppConfig | None = None) -> RuntimePipelin
         selected_train_model = train_accurate_research_model
     else:
         selected_train_model = train_model
-    transcription_model_name, transcription_use_demucs, transcription_use_vad = (
-        resolve_profile_transcription_config(capability.profile)
-    )
+    (
+        transcription_backend_id,
+        transcription_model_name,
+        transcription_use_demucs,
+        transcription_use_vad,
+    ) = resolve_profile_transcription_config(capability.profile)
     transcription_profile = TranscriptionProfile(
+        backend_id=transcription_backend_id,
         model_name=transcription_model_name,
         use_demucs=transcription_use_demucs,
         use_vad=transcription_use_vad,

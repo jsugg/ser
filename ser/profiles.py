@@ -18,6 +18,7 @@ type ProfileEnableFlag = Literal[
     "SER_ENABLE_ACCURATE_PROFILE",
     "SER_ENABLE_ACCURATE_RESEARCH_PROFILE",
 ]
+type TranscriptionBackendId = Literal["stable_whisper", "faster_whisper"]
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class ProfileModelDefinition:
 class ProfileTranscriptionDefaults:
     """Default Whisper transcription controls for one runtime profile."""
 
+    backend_id: TranscriptionBackendId
     model_name: str
     use_demucs: bool
     use_vad: bool
@@ -113,6 +115,9 @@ _ALLOWED_ENABLE_FLAGS: frozenset[str] = frozenset(
         "SER_ENABLE_ACCURATE_PROFILE",
         "SER_ENABLE_ACCURATE_RESEARCH_PROFILE",
     }
+)
+_ALLOWED_TRANSCRIPTION_BACKENDS: frozenset[str] = frozenset(
+    {"stable_whisper", "faster_whisper"}
 )
 
 
@@ -335,6 +340,15 @@ def _validate_transcription_defaults(
             f"Profile definition entry {name!r} has invalid 'transcription_defaults'."
         )
     transcription_defaults = cast(dict[str, object], raw)
+    backend_id_raw = _read_optional_text(
+        transcription_defaults,
+        key="backend_id",
+        entry_name=name,
+    )
+    if backend_id_raw is None or backend_id_raw not in _ALLOWED_TRANSCRIPTION_BACKENDS:
+        raise RuntimeError(
+            f"Profile definition entry {name!r} has invalid 'backend_id'."
+        )
     model_name = _read_optional_text(
         transcription_defaults,
         key="model_name",
@@ -353,6 +367,7 @@ def _validate_transcription_defaults(
     if not isinstance(use_vad, bool):
         raise RuntimeError(f"Profile definition entry {name!r} has invalid 'use_vad'.")
     return ProfileTranscriptionDefaults(
+        backend_id=cast(TranscriptionBackendId, backend_id_raw),
         model_name=model_name,
         use_demucs=use_demucs,
         use_vad=use_vad,

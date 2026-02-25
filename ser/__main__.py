@@ -121,6 +121,7 @@ def _apply_cli_profile_override(
             ),
         )
         (
+            profile_transcription_backend_id,
             profile_whisper_model_name,
             profile_use_demucs,
             profile_use_vad,
@@ -165,6 +166,7 @@ def _apply_cli_profile_override(
             ),
             transcription=replace(
                 resolved_settings.transcription,
+                backend_id=profile_transcription_backend_id,
                 use_demucs=profile_use_demucs,
                 use_vad=profile_use_vad,
             ),

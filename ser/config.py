@@ -10,9 +10,13 @@ from dataclasses import dataclass, field
 from hashlib import sha1
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal
+from typing import Literal, cast
 
-from ser.profiles import ProfileCatalogEntry, get_profile_catalog
+from ser.profiles import (
+    ProfileCatalogEntry,
+    TranscriptionBackendId,
+    get_profile_catalog,
+)
 
 APP_NAME = "ser"
 DEFAULT_ACCURATE_MODEL_ID = "openai/whisper-large-v3"
@@ -269,6 +273,7 @@ class TimelineConfig:
 class TranscriptionConfig:
     """Runtime controls for Whisper transcription behavior."""
 
+    backend_id: TranscriptionBackendId = "stable_whisper"
     use_demucs: bool = True
     use_vad: bool = True
 
@@ -592,16 +597,26 @@ def _resolve_runtime_config_from_profile(
 
 def resolve_profile_transcription_config(
     profile: ArtifactProfileName,
-) -> tuple[str, bool, bool]:
+) -> tuple[TranscriptionBackendId, str, bool, bool]:
     """Resolves transcription defaults for one profile with env overrides."""
     entry = get_profile_catalog()[profile]
     defaults = entry.transcription_defaults
+    backend_override = os.getenv("WHISPER_BACKEND")
+    backend_id_raw = (
+        defaults.backend_id
+        if backend_override is None
+        else backend_override.strip().lower()
+    )
+    if backend_id_raw in {"stable_whisper", "faster_whisper"}:
+        backend_id = cast(TranscriptionBackendId, backend_id_raw)
+    else:
+        backend_id = defaults.backend_id
     model_name = os.getenv("WHISPER_MODEL", defaults.model_name).strip()
     if not model_name:
         model_name = defaults.model_name
     use_demucs = _read_bool_env("WHISPER_DEMUCS", defaults.use_demucs)
     use_vad = _read_bool_env("WHISPER_VAD", defaults.use_vad)
-    return model_name, use_demucs, use_vad
+    return backend_id, model_name, use_demucs, use_vad
 
 
 def _build_settings() -> AppConfig:
@@ -701,9 +716,12 @@ def _build_settings() -> AppConfig:
         accurate_profile=accurate_profile,
         accurate_research_profile=accurate_research_profile,
     )
-    whisper_model_name, use_demucs, use_vad = resolve_profile_transcription_config(
-        default_artifact_profile
-    )
+    (
+        whisper_backend_id,
+        whisper_model_name,
+        use_demucs,
+        use_vad,
+    ) = resolve_profile_transcription_config(default_artifact_profile)
     (
         default_model_file_name,
         default_secure_model_file_name,
@@ -758,7 +776,11 @@ def _build_settings() -> AppConfig:
             accurate_research_model_id=accurate_research_model_id,
         ),
         timeline=TimelineConfig(folder=transcripts_folder),
-        transcription=TranscriptionConfig(use_demucs=use_demucs, use_vad=use_vad),
+        transcription=TranscriptionConfig(
+            backend_id=whisper_backend_id,
+            use_demucs=use_demucs,
+            use_vad=use_vad,
+        ),
         runtime_flags=RuntimeFlags(
             profile_pipeline=profile_pipeline,
             medium_profile=medium_profile,

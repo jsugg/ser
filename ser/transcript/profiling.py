@@ -15,8 +15,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
-from ser.config import get_settings
+from ser.config import (
+    ArtifactProfileName,
+    get_settings,
+    resolve_profile_transcription_config,
+)
 from ser.domain import TranscriptWord
+from ser.profiles import TranscriptionBackendId
 from ser.transcript.transcript_extractor import (
     TranscriptionProfile,
     load_whisper_model,
@@ -31,6 +36,13 @@ RAVDESS_STATEMENT_TEXT: Final[dict[str, str]] = {
     "01": "kids are talking by the door",
     "02": "dogs are sitting by the door",
 }
+DEFAULT_BENCHMARK_PROFILES: Final[
+    tuple[ArtifactProfileName, ArtifactProfileName, ArtifactProfileName]
+] = (
+    "accurate",
+    "medium",
+    "fast",
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +50,8 @@ class TranscriptionProfileCandidate:
     """Candidate runtime profile to benchmark for default selection."""
 
     name: str
+    source_profile: str
+    backend_id: TranscriptionBackendId
     model_name: str
     use_demucs: bool
     use_vad: bool
@@ -104,28 +118,44 @@ class RavdessMetadata:
     actor_id: str
 
 
+def _candidate_name(
+    *,
+    source_profile: str,
+    backend_id: TranscriptionBackendId,
+    model_name: str,
+    use_demucs: bool,
+    use_vad: bool,
+) -> str:
+    """Builds one deterministic benchmark candidate identifier."""
+    demucs_label = "demucs" if use_demucs else "no_demucs"
+    vad_label = "vad" if use_vad else "no_vad"
+    return f"{source_profile}_{backend_id}_{model_name}_{demucs_label}_{vad_label}"
+
+
 def default_profile_candidates() -> tuple[TranscriptionProfileCandidate, ...]:
-    """Returns internal candidate defaults in accuracy-first order."""
-    return (
-        TranscriptionProfileCandidate(
-            name="accurate_large-v2_demucs_vad",
-            model_name="large-v2",
-            use_demucs=True,
-            use_vad=True,
-        ),
-        TranscriptionProfileCandidate(
-            name="balanced_base_no_demucs_vad",
-            model_name="base",
-            use_demucs=False,
-            use_vad=True,
-        ),
-        TranscriptionProfileCandidate(
-            name="fast_tiny_no_demucs_no_vad",
-            model_name="tiny",
-            use_demucs=False,
-            use_vad=False,
-        ),
-    )
+    """Returns benchmark candidates aligned to effective runtime transcription defaults."""
+    candidates: list[TranscriptionProfileCandidate] = []
+    for profile_name in DEFAULT_BENCHMARK_PROFILES:
+        backend_id, model_name, use_demucs, use_vad = (
+            resolve_profile_transcription_config(profile_name)
+        )
+        candidates.append(
+            TranscriptionProfileCandidate(
+                name=_candidate_name(
+                    source_profile=profile_name,
+                    backend_id=backend_id,
+                    model_name=model_name,
+                    use_demucs=use_demucs,
+                    use_vad=use_vad,
+                ),
+                source_profile=profile_name,
+                backend_id=backend_id,
+                model_name=model_name,
+                use_demucs=use_demucs,
+                use_vad=use_vad,
+            )
+        )
+    return tuple(candidates)
 
 
 def ravdess_reference_text(file_path: Path) -> str | None:
@@ -318,6 +348,7 @@ def profile_transcription_candidate(
         )
 
     profile = TranscriptionProfile(
+        backend_id=candidate.backend_id,
         model_name=candidate.model_name,
         use_demucs=candidate.use_demucs,
         use_vad=candidate.use_vad,

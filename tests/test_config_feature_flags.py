@@ -9,10 +9,11 @@ import ser.config as config
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
     config.reload_settings()
 
 
@@ -73,8 +74,9 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.models.medium_model_id == "facebook/wav2vec2-xls-r-300m"
     assert settings.models.accurate_model_id == "openai/whisper-large-v3"
     assert settings.models.accurate_research_model_id == "iic/emotion2vec_plus_large"
-    assert settings.models.whisper_model.name == "turbo"
-    assert settings.transcription.use_demucs is True
+    assert settings.models.whisper_model.name == "distil-large-v3"
+    assert settings.transcription.backend_id == "faster_whisper"
+    assert settings.transcription.use_demucs is False
     assert settings.transcription.use_vad is True
     assert settings.models.model_cache_dir.name == "model-cache"
     assert settings.models.huggingface_cache_root == (
@@ -142,6 +144,7 @@ def test_runtime_flags_and_schema_env_overrides(
     monkeypatch.setenv("SER_MEDIUM_MODEL_ID", "unit-test/xlsr")
     monkeypatch.setenv("SER_ACCURATE_MODEL_ID", "unit-test/whisper-tiny")
     monkeypatch.setenv("SER_ACCURATE_RESEARCH_MODEL_ID", "unit-test/emotion2vec-plus")
+    monkeypatch.setenv("WHISPER_BACKEND", "faster_whisper")
     monkeypatch.setenv("WHISPER_MODEL", "base")
     monkeypatch.setenv("WHISPER_DEMUCS", "false")
     monkeypatch.setenv("WHISPER_VAD", "false")
@@ -209,21 +212,23 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.models.medium_model_id == "unit-test/xlsr"
     assert settings.models.accurate_model_id == "unit-test/whisper-tiny"
     assert settings.models.accurate_research_model_id == "unit-test/emotion2vec-plus"
+    assert settings.transcription.backend_id == "faster_whisper"
     assert settings.models.whisper_model.name == "base"
     assert settings.transcription.use_demucs is False
     assert settings.transcription.use_vad is False
 
 
 @pytest.mark.parametrize(
-    ("env", "expected_model_name"),
+    ("env", "expected_backend_id", "expected_model_name"),
     [
-        ({"SER_ENABLE_MEDIUM_PROFILE": "true"}, "turbo"),
-        ({"SER_ENABLE_ACCURATE_PROFILE": "true"}, "large"),
+        ({"SER_ENABLE_MEDIUM_PROFILE": "true"}, "stable_whisper", "turbo"),
+        ({"SER_ENABLE_ACCURATE_PROFILE": "true"}, "stable_whisper", "large"),
         (
             {
                 "SER_ENABLE_ACCURATE_PROFILE": "true",
                 "SER_ENABLE_ACCURATE_RESEARCH_PROFILE": "true",
             },
+            "stable_whisper",
             "large",
         ),
     ],
@@ -231,6 +236,7 @@ def test_runtime_flags_and_schema_env_overrides(
 def test_profile_selection_controls_transcription_defaults(
     monkeypatch: pytest.MonkeyPatch,
     env: dict[str, str],
+    expected_backend_id: str,
     expected_model_name: str,
 ) -> None:
     """Selected runtime profile should drive default Whisper transcription model."""
@@ -242,9 +248,21 @@ def test_profile_selection_controls_transcription_defaults(
 
     settings = config.reload_settings()
 
+    assert settings.transcription.backend_id == expected_backend_id
     assert settings.models.whisper_model.name == expected_model_name
     assert settings.transcription.use_demucs is True
     assert settings.transcription.use_vad is True
+
+
+def test_invalid_whisper_backend_env_falls_back_to_profile_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid backend override should not replace profile-defined backend id."""
+    monkeypatch.setenv("WHISPER_BACKEND", "not-a-real-backend")
+
+    settings = config.reload_settings()
+
+    assert settings.transcription.backend_id == "faster_whisper"
 
 
 def test_profile_default_artifact_names_include_backend_model_id(
