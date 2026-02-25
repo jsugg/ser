@@ -474,9 +474,7 @@ def test_build_training_report_includes_optional_data_controls(
         data_controls={"medium_noise_controls": {"min_window_std": 0.1}},
     )
 
-    assert report["data_controls"] == {
-        "medium_noise_controls": {"min_window_std": 0.1}
-    }
+    assert report["data_controls"] == {"medium_noise_controls": {"min_window_std": 0.1}}
 
 
 def test_predict_emotions_detailed_uses_predict_proba(
@@ -518,7 +516,9 @@ def test_predict_emotions_detailed_uses_predict_proba(
     assert [item.confidence for item in detailed.frames] == pytest.approx([0.8, 0.6])
     assert detailed.frames[0].probabilities == {"happy": 0.8, "sad": 0.2}
     assert detailed.frames[1].probabilities == {"happy": 0.4, "sad": 0.6}
-    assert [(seg.emotion, seg.start_seconds, seg.end_seconds) for seg in detailed.segments] == [
+    assert [
+        (seg.emotion, seg.start_seconds, seg.end_seconds) for seg in detailed.segments
+    ] == [
         ("happy", 0.0, 1.0),
         ("sad", 1.0, 2.0),
     ]

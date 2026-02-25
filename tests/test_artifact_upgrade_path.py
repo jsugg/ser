@@ -77,8 +77,7 @@ def test_deserialize_round_trips_medium_v2_artifact_metadata() -> None:
     assert loaded.artifact_metadata["backend_id"] == "hf_xlsr"
     assert loaded.artifact_metadata["profile"] == "medium"
     assert (
-        loaded.artifact_metadata["backend_model_id"]
-        == "facebook/wav2vec2-xls-r-300m"
+        loaded.artifact_metadata["backend_model_id"] == "facebook/wav2vec2-xls-r-300m"
     )
     assert loaded.artifact_metadata["pooling_strategy"] == "mean_std"
     assert loaded.artifact_metadata["feature_dim"] == 2048

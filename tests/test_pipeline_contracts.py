@@ -85,5 +85,7 @@ def test_model_load_candidate_order_and_uniqueness(
         "skops",
         "pickle",
     ]
-    keys = {(str(candidate.path), candidate.artifact_format) for candidate in candidates}
+    keys = {
+        (str(candidate.path), candidate.artifact_format) for candidate in candidates
+    }
     assert len(keys) == len(candidates)

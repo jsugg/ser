@@ -220,6 +220,7 @@ def test_faster_whisper_info_logs_are_demoted_to_debug_during_transcription() ->
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(handler)
     try:
+
         class _FakeFasterModel:
             def transcribe(
                 self, *_args: object, **_kwargs: object
@@ -376,9 +377,11 @@ def test_faster_whisper_setup_required_when_cache_missing(
     monkeypatch.setattr(
         te.importlib,
         "import_module",
-        lambda name: SimpleNamespace(download_model=_fake_download_model)
-        if name == "faster_whisper.utils"
-        else __import__(name),
+        lambda name: (
+            SimpleNamespace(download_model=_fake_download_model)
+            if name == "faster_whisper.utils"
+            else __import__(name)
+        ),
     )
 
     required = te._transcription_setup_required(
@@ -422,9 +425,11 @@ def test_faster_whisper_prepare_transcription_assets_downloads(
     monkeypatch.setattr(
         te.importlib,
         "import_module",
-        lambda name: SimpleNamespace(download_model=_fake_download_model)
-        if name == "faster_whisper.utils"
-        else __import__(name),
+        lambda name: (
+            SimpleNamespace(download_model=_fake_download_model)
+            if name == "faster_whisper.utils"
+            else __import__(name)
+        ),
     )
 
     te._prepare_transcription_assets(

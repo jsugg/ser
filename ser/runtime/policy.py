@@ -11,6 +11,7 @@ from ser.config import ProfileRuntimeConfig
 type RetryDelaySeconds = Callable[..., float]
 type TransientErrorFactory = Callable[[Exception], Exception]
 
+
 def run_with_retry_policy[ResultT](
     *,
     operation: Callable[[], ResultT],
@@ -41,7 +42,10 @@ def run_with_retry_policy[ResultT](
                 runtime_config.max_timeout_retries + 1,
                 err,
             )
-            if not allow_retries or timeout_failures > runtime_config.max_timeout_retries:
+            if (
+                not allow_retries
+                or timeout_failures > runtime_config.max_timeout_retries
+            ):
                 raise err
         except transient_error_type as err:
             transient_failures += 1

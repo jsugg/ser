@@ -67,7 +67,9 @@ def extract_feature_from_signal(
     if not bool(np.all(np.isfinite(prepared_audio))):
         raise ValueError("Audio buffer is not finite everywhere.")
     n_fft: int = min(prepared_audio.size, 2048)
-    stft_magnitude: NDArray[np.float32] = np.abs(librosa.stft(prepared_audio, n_fft=n_fft))
+    stft_magnitude: NDArray[np.float32] = np.abs(
+        librosa.stft(prepared_audio, n_fft=n_fft)
+    )
     stft_power_db: NDArray[np.float32] = librosa.power_to_db(
         np.square(stft_magnitude),
         ref=np.max,
@@ -188,7 +190,9 @@ def extract_feature_frames(
         frame_size_seconds=frame_size,
         frame_stride_seconds=frame_stride,
     )
-    encoded: EncodedSequence = backend.encode_sequence(audio=audio, sample_rate=sample_rate)
+    encoded: EncodedSequence = backend.encode_sequence(
+        audio=audio, sample_rate=sample_rate
+    )
 
     return [
         FeatureFrame(

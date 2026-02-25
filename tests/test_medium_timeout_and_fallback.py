@@ -97,7 +97,9 @@ def test_medium_timeout_retries_up_to_configured_budget(
         calls["attempts"] += 1
         raise MediumInferenceTimeoutError("timeout")
 
-    monkeypatch.setattr("ser.runtime.medium_inference._run_with_timeout", fake_timeout_runner)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_timeout", fake_timeout_runner
+    )
     monkeypatch.setattr(
         "ser.runtime.medium_inference._retry_delay_seconds",
         lambda **_kwargs: 0.1,
@@ -109,7 +111,9 @@ def test_medium_timeout_retries_up_to_configured_budget(
 
     with pytest.raises(MediumInferenceTimeoutError, match="timeout"):
         run_medium_inference(
-            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            InferenceRequest(
+                file_path="sample.wav", language="en", save_transcript=False
+            ),
             settings,
         )
 
@@ -144,11 +148,15 @@ def test_medium_transient_backend_failure_respects_retry_upper_bound(
         "ser.runtime.medium_inference._run_with_timeout",
         lambda operation, timeout_seconds: operation(),
     )
-    monkeypatch.setattr("ser.runtime.medium_inference._run_medium_inference_once", fake_attempt)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_inference_once", fake_attempt
+    )
 
     with pytest.raises(MediumInferenceExecutionError, match="retry budget"):
         run_medium_inference(
-            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            InferenceRequest(
+                file_path="sample.wav", language="en", save_transcript=False
+            ),
             settings,
         )
 
@@ -182,7 +190,9 @@ def test_medium_non_retryable_value_error_exits_without_retries(
         "ser.runtime.medium_inference._run_with_timeout",
         lambda operation, timeout_seconds: operation(),
     )
-    monkeypatch.setattr("ser.runtime.medium_inference._run_medium_inference_once", fake_attempt)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_inference_once", fake_attempt
+    )
     monkeypatch.setattr(
         "ser.runtime.policy.time.sleep",
         lambda _delay: calls.__setitem__("sleeps", calls["sleeps"] + 1),
@@ -190,7 +200,9 @@ def test_medium_non_retryable_value_error_exits_without_retries(
 
     with pytest.raises(ValueError, match="Feature vector size mismatch"):
         run_medium_inference(
-            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            InferenceRequest(
+                file_path="sample.wav", language="en", save_transcript=False
+            ),
             settings,
         )
 
@@ -225,11 +237,15 @@ def test_medium_dependency_error_is_not_retried(
         "ser.runtime.medium_inference._run_with_timeout",
         lambda operation, timeout_seconds: operation(),
     )
-    monkeypatch.setattr("ser.runtime.medium_inference._run_medium_inference_once", fake_attempt)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_inference_once", fake_attempt
+    )
 
     with pytest.raises(MediumRuntimeDependencyError, match="transformers"):
         run_medium_inference(
-            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            InferenceRequest(
+                file_path="sample.wav", language="en", save_transcript=False
+            ),
             settings,
         )
 
@@ -242,7 +258,9 @@ def test_medium_backend_setup_runs_before_timeout_wrapper(
     """Backend setup should execute before timeout-wrapped compute operation."""
     settings = config.reload_settings()
     setup_calls = {"count": 0}
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
 
     class _BackendStub:
         def prepare_runtime(self) -> None:
@@ -293,10 +311,14 @@ def test_medium_profile_pipeline_uses_process_timeout_runner(
     settings = config.reload_settings()
 
     calls = {"process": 0, "sleep": 0}
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError("In-process load_model path should not run in process mode.")
+        raise AssertionError(
+            "In-process load_model path should not run in process mode."
+        )
 
     def fake_process_runner(*_args: object, **_kwargs: object) -> InferenceResult:
         calls["process"] += 1
@@ -336,10 +358,14 @@ def test_medium_profile_pipeline_allows_timeout_disable(
     monkeypatch.setenv("SER_MEDIUM_TIMEOUT_SECONDS", "0")
     settings = config.reload_settings()
     calls = {"process": 0}
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError("In-process load_model path should not run in process mode.")
+        raise AssertionError(
+            "In-process load_model path should not run in process mode."
+        )
 
     def fake_process_runner(*_args: object, **_kwargs: object) -> InferenceResult:
         timeout_seconds = _kwargs.get("timeout_seconds")
@@ -366,7 +392,9 @@ def test_medium_process_timeout_applies_after_setup_phase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Process timeout budget should start only after setup phase is acknowledged."""
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
     poll_calls: list[float | None] = []
     settings = config.reload_settings()
 
@@ -420,7 +448,9 @@ def test_medium_process_timeout_applies_after_setup_phase(
             self._child = _ChildConnection()
             self._process = _Process()
 
-        def Pipe(self, duplex: bool = False) -> tuple[_ParentConnection, _ChildConnection]:  # noqa: N802
+        def Pipe(
+            self, duplex: bool = False
+        ) -> tuple[_ParentConnection, _ChildConnection]:  # noqa: N802
             del duplex
             return self._parent, self._child
 
@@ -432,7 +462,9 @@ def test_medium_process_timeout_applies_after_setup_phase(
         lambda _name: _Context(),
     )
     payload = medium_inference.MediumProcessPayload(
-        request=InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        request=InferenceRequest(
+            file_path="sample.wav", language="en", save_transcript=False
+        ),
         settings=settings,
         expected_backend_model_id=settings.models.medium_model_id,
     )

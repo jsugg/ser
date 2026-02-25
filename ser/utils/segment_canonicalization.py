@@ -164,7 +164,9 @@ def canonicalize_segments(segments: Sequence[SegmentLike]) -> list[CanonicalSegm
     if not validated:
         return []
 
-    validated.sort(key=lambda candidate: (candidate.start_seconds, candidate.end_seconds))
+    validated.sort(
+        key=lambda candidate: (candidate.start_seconds, candidate.end_seconds)
+    )
     selected_by_start: list[_CandidateSegment] = []
     group_start = 0
     while group_start < len(validated):

@@ -66,7 +66,9 @@ def test_fast_inference_returns_expected_schema(
     """Fast runtime should return deterministic inference schema payload."""
     settings = config.reload_settings()
     _patch_fast_prerequisites(monkeypatch)
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
     monkeypatch.setattr(
         "ser.runtime.fast_inference.predict_emotions_detailed",
         lambda _file_path, loaded_model=None: expected,
@@ -111,7 +113,9 @@ def test_fast_timeout_retries_up_to_configured_budget(
 
     with pytest.raises(FastInferenceTimeoutError, match="timeout"):
         run_fast_inference(
-            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            InferenceRequest(
+                file_path="sample.wav", language="en", save_transcript=False
+            ),
             settings,
         )
 
@@ -129,10 +133,14 @@ def test_fast_profile_pipeline_uses_process_timeout_runner(
     settings = config.reload_settings()
 
     calls = {"process": 0, "sleep": 0}
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError("In-process load_model path should not run in process mode.")
+        raise AssertionError(
+            "In-process load_model path should not run in process mode."
+        )
 
     def fake_process_runner(*_args: object, **_kwargs: object) -> InferenceResult:
         calls["process"] += 1
@@ -172,11 +180,15 @@ def test_fast_profile_pipeline_allows_timeout_disable(
     monkeypatch.setenv("SER_FAST_PROCESS_ISOLATION", "true")
     monkeypatch.setenv("SER_FAST_TIMEOUT_SECONDS", "0")
     settings = config.reload_settings()
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
     calls = {"process": 0}
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError("In-process load_model path should not run in process mode.")
+        raise AssertionError(
+            "In-process load_model path should not run in process mode."
+        )
 
     def fake_process_runner(*_args: object, **_kwargs: object) -> InferenceResult:
         timeout_seconds = _kwargs.get("timeout_seconds")
@@ -203,7 +215,9 @@ def test_fast_process_timeout_applies_after_setup_phase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Process timeout budget should start only after setup phase is acknowledged."""
-    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
     poll_calls: list[float | None] = []
     settings = config.reload_settings()
 
@@ -257,7 +271,9 @@ def test_fast_process_timeout_applies_after_setup_phase(
             self._child = _ChildConnection()
             self._process = _Process()
 
-        def Pipe(self, duplex: bool = False) -> tuple[_ParentConnection, _ChildConnection]:  # noqa: N802
+        def Pipe(
+            self, duplex: bool = False
+        ) -> tuple[_ParentConnection, _ChildConnection]:  # noqa: N802
             del duplex
             return self._parent, self._child
 
@@ -269,7 +285,9 @@ def test_fast_process_timeout_applies_after_setup_phase(
         lambda _name: _Context(),
     )
     payload = fast_inference.FastProcessPayload(
-        request=InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        request=InferenceRequest(
+            file_path="sample.wav", language="en", save_transcript=False
+        ),
         settings=settings,
     )
 
@@ -300,7 +318,9 @@ def test_fast_single_flight_serializes_calls(
         time.sleep(0.05)
         with counter_lock:
             counters["active"] -= 1
-        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+        )
 
     monkeypatch.setattr(
         "ser.runtime.fast_inference._run_fast_inference_once",
@@ -308,12 +328,16 @@ def test_fast_single_flight_serializes_calls(
     )
 
     errors: list[Exception] = []
-    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    request = InferenceRequest(
+        file_path="sample.wav", language="en", save_transcript=False
+    )
 
     def invoke() -> None:
         try:
             run_fast_inference(request, settings)
-        except Exception as err:  # pragma: no cover - defensive capture for assertion clarity
+        except (
+            Exception
+        ) as err:  # pragma: no cover - defensive capture for assertion clarity
             errors.append(err)
 
     first = threading.Thread(target=invoke)

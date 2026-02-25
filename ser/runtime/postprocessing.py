@@ -206,7 +206,9 @@ def _merge_short_segments(
         else:
             previous = merged[index - 1]
             following = merged[index + 1]
-            target_index = index - 1 if previous.confidence >= following.confidence else index + 1
+            target_index = (
+                index - 1 if previous.confidence >= following.confidence else index + 1
+            )
 
         target = merged[target_index]
         merged_segment = _merge_into_target(target=target, source=current)
@@ -251,7 +253,8 @@ def _merge_into_target(
         confidence = float(fmean([target.confidence, source.confidence]))
     else:
         confidence = (
-            (target.confidence * target_duration) + (source.confidence * source_duration)
+            (target.confidence * target_duration)
+            + (source.confidence * source_duration)
         ) / total_duration
 
     probabilities = _merge_probability_maps(

@@ -121,6 +121,10 @@ printf '[setup] ffmpeg check: %s\n' "$check_ffmpeg"
 run_cmd uv python install "$python_version"
 run_cmd uv sync "${sync_args[@]}"
 
+if [[ "$include_dev" == "true" && -d .git ]]; then
+  run_cmd ./scripts/install_git_hooks.sh
+fi
+
 if [[ "$check_ffmpeg" == "true" ]]; then
   if ! command -v ffmpeg >/dev/null 2>&1; then
     printf 'ffmpeg was not found on PATH. Install ffmpeg before running inference.\n' >&2

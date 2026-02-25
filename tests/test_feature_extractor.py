@@ -127,8 +127,20 @@ def test_extract_feature_frames_exposes_frame_boundaries(
 
     frames = fe.extract_feature_frames("sample.wav", frame_size=2, frame_stride=1)
 
-    assert [round(frame.start_seconds, 3) for frame in frames] == [0.0, 1.0, 2.0, 3.0, 4.0]
-    assert [round(frame.end_seconds, 3) for frame in frames] == [2.0, 3.0, 4.0, 5.0, 5.0]
+    assert [round(frame.start_seconds, 3) for frame in frames] == [
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+    ]
+    assert [round(frame.end_seconds, 3) for frame in frames] == [
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        5.0,
+    ]
     assert [int(frame.features[0]) for frame in frames] == [4, 4, 4, 4, 2]
 
 

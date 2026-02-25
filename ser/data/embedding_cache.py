@@ -84,7 +84,9 @@ class EmbeddingCache:
 
         source_path: Path = Path(audio_path).expanduser()
         if not source_path.exists():
-            raise FileNotFoundError(f"Audio file not found for embedding cache: {audio_path}")
+            raise FileNotFoundError(
+                f"Audio file not found for embedding cache: {audio_path}"
+            )
 
         cache_key: str = self._cache_key(
             source_path=source_path,
@@ -170,7 +172,9 @@ class EmbeddingCache:
     def _read_cache_entry(self, path: Path) -> EncodedSequence:
         """Reads and validates one cache entry."""
         with np.load(path, allow_pickle=False) as payload:
-            embeddings: NDArray[np.float32] = np.asarray(payload["embeddings"], dtype=np.float32)
+            embeddings: NDArray[np.float32] = np.asarray(
+                payload["embeddings"], dtype=np.float32
+            )
             frame_start_seconds: NDArray[np.float64] = np.asarray(
                 payload["frame_start_seconds"], dtype=np.float64
             )
@@ -201,7 +205,9 @@ class EmbeddingCache:
                         encoded.frame_start_seconds,
                         dtype=np.float64,
                     ),
-                    frame_end_seconds=np.asarray(encoded.frame_end_seconds, dtype=np.float64),
+                    frame_end_seconds=np.asarray(
+                        encoded.frame_end_seconds, dtype=np.float64
+                    ),
                     backend_id=np.asarray(encoded.backend_id, dtype=np.str_),
                 )
                 handle.flush()

@@ -79,7 +79,9 @@ def resolve_runtime_capability(
 
     if missing_modules:
         dependency_list: str = ", ".join(missing_modules)
-        disable_hint = f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
+        disable_hint = (
+            f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
+        )
         return RuntimeCapability(
             profile=profile,
             backend_id=backend_id,
@@ -94,7 +96,9 @@ def resolve_runtime_capability(
             ),
         )
 
-    disable_hint = f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
+    disable_hint = (
+        f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
+    )
     return RuntimeCapability(
         profile=profile,
         backend_id=backend_id,

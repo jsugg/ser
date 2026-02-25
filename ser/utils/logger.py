@@ -25,9 +25,7 @@ class DependencyLogPolicy:
     def __post_init__(self) -> None:
         """Normalizes dependency logger prefixes and root path markers."""
         normalized_prefixes = frozenset(
-            prefix.strip().lower()
-            for prefix in self.logger_prefixes
-            if prefix.strip()
+            prefix.strip().lower() for prefix in self.logger_prefixes if prefix.strip()
         )
         normalized_markers = frozenset(
             marker.replace("\\", "/").strip().lower()
@@ -38,7 +36,9 @@ class DependencyLogPolicy:
         object.__setattr__(self, "root_path_markers", normalized_markers)
 
 
-def _record_matches_policy(record: logging.LogRecord, policy: DependencyLogPolicy) -> bool:
+def _record_matches_policy(
+    record: logging.LogRecord, policy: DependencyLogPolicy
+) -> bool:
     """Checks whether a log record matches one dependency policy."""
     logger_name = record.name.strip().lower()
     for prefix in policy.logger_prefixes:
