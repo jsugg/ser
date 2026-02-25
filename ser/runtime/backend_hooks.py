@@ -14,6 +14,7 @@ from ser.license_check import (
     load_persisted_backend_consents,
     parse_allowed_restricted_backends_env,
 )
+from ser.profiles import get_profile_catalog
 from ser.runtime.contracts import BackendInferenceCallable, InferenceRequest
 from ser.runtime.schema import InferenceResult
 
@@ -23,6 +24,15 @@ type AccurateResearchInferenceRunner = Callable[
     [InferenceRequest, AppConfig], InferenceResult
 ]
 type FastInferenceRunner = Callable[[InferenceRequest, AppConfig], InferenceResult]
+
+_PROFILE_CATALOG = get_profile_catalog()
+_MEDIUM_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG["medium"].required_modules
+_ACCURATE_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG[
+    "accurate"
+].required_modules
+_ACCURATE_RESEARCH_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG[
+    "accurate-research"
+].required_modules
 
 
 def _missing_optional_modules(required_modules: tuple[str, ...]) -> tuple[str, ...]:
@@ -126,7 +136,7 @@ def _build_medium_hook(
         allowed_restricted_backends=allowed_restricted_backends,
         persisted_consents=persisted_consents,
     )
-    if _missing_optional_modules(("torch", "transformers")):
+    if _missing_optional_modules(_MEDIUM_REQUIRED_MODULES):
         return None
 
     runner = _load_medium_inference_runner()
@@ -154,7 +164,7 @@ def _build_accurate_hook(
         allowed_restricted_backends=allowed_restricted_backends,
         persisted_consents=persisted_consents,
     )
-    if _missing_optional_modules(("torch", "transformers")):
+    if _missing_optional_modules(_ACCURATE_REQUIRED_MODULES):
         return None
 
     runner = _load_accurate_inference_runner()
@@ -182,7 +192,7 @@ def _build_accurate_research_hook(
         allowed_restricted_backends=allowed_restricted_backends,
         persisted_consents=persisted_consents,
     )
-    if _missing_optional_modules(("torch", "transformers")):
+    if _missing_optional_modules(_ACCURATE_RESEARCH_REQUIRED_MODULES):
         return None
 
     runner = _load_accurate_research_inference_runner()

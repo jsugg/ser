@@ -69,6 +69,9 @@ jobs:
       - name: Sync all dependency groups (Python 3.13)
         run: uv sync --frozen --python 3.13 --all-extras
 
+      - name: Build synthetic RAVDESS smoke dataset
+        run: python ./scripts/build_synthetic_ravdess_dataset.py
+
       - name: Fast profile train and predict
         run: |
           uv run --python 3.13 ser --train --profile fast

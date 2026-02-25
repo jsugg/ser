@@ -177,13 +177,22 @@ def test_build_accurate_research_hook_returns_none_when_dependencies_are_missing
     """Accurate-research hook should not register when required modules are absent."""
     monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
     monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
+
+    captured_required_modules: tuple[str, ...] | None = None
+
+    def _fake_missing(required_modules: tuple[str, ...]) -> tuple[str, ...]:
+        nonlocal captured_required_modules
+        captured_required_modules = required_modules
+        return ("funasr",)
+
     monkeypatch.setattr(
         backend_hooks,
         "_missing_optional_modules",
-        lambda _required_modules: ("funasr",),
+        _fake_missing,
     )
     settings = config.reload_settings()
     assert backend_hooks._build_accurate_research_hook(settings) is None
+    assert captured_required_modules == ("torch", "funasr", "modelscope")
 
 
 def test_build_accurate_research_hook_returns_none_when_runner_is_unavailable(
