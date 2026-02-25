@@ -42,6 +42,53 @@ def test_extract_ravdess_speaker_id_from_path() -> None:
     assert dl.extract_ravdess_speaker_id_from_path("invalid.wav") is None
 
 
+def test_load_labeled_audio_paths_returns_expected_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Labeled path loader should keep only supported emotions with valid names."""
+    monkeypatch.setattr(
+        dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0)
+    )
+    monkeypatch.setattr(
+        dl.glob,
+        "glob",
+        lambda _pattern: [
+            "Actor_01/03-01-03-01-01-01-01.wav",
+            "Actor_02/03-01-04-01-01-01-02.wav",
+            "Actor_03/03-01-08-01-01-01-03.wav",
+            "invalid.wav",
+        ],
+    )
+
+    samples = dl.load_labeled_audio_paths()
+
+    assert samples == [
+        ("Actor_01/03-01-03-01-01-01-01.wav", "happy"),
+        ("Actor_02/03-01-04-01-01-01-02.wav", "sad"),
+    ]
+
+
+def test_load_labeled_audio_paths_aborts_on_high_parse_failure_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Label-loader should stop early when parse failures exceed threshold."""
+    monkeypatch.setattr(
+        dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.3)
+    )
+    monkeypatch.setattr(
+        dl.glob,
+        "glob",
+        lambda _pattern: [
+            "bad-a.wav",
+            "bad-b.wav",
+            "Actor_01/03-01-03-01-01-01-01.wav",
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="exceeded configured limit"):
+        dl.load_labeled_audio_paths()
+
+
 def test_load_data_aborts_when_failure_ratio_exceeds_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

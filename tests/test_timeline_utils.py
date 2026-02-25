@@ -62,3 +62,37 @@ def test_build_timeline_keeps_last_emotion_on_terminal_boundary() -> None:
     }
 
     assert indexed[1.0] == ("calm", "done")
+
+
+def test_build_timeline_canonicalizes_overlaps_before_render() -> None:
+    """Overlapping labels should be canonicalized into one active label per time."""
+    text: list[TranscriptWord] = []
+    emotions = [
+        EmotionSegment("happy", 0.0, 1.0),
+        EmotionSegment("sad", 0.8, 1.5),
+    ]
+
+    timeline = build_timeline(text, emotions)
+    indexed = {
+        round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline
+    }
+
+    assert indexed[0.0] == ("happy", "")
+    assert indexed[0.8] == ("sad", "")
+    assert indexed[1.5] == ("sad", "")
+
+
+def test_build_timeline_same_start_conflict_uses_lexical_tie_break() -> None:
+    """Conflicting labels at the same start use deterministic lexical tie-break."""
+    timeline = build_timeline(
+        text_with_timestamps=[],
+        emotion_with_timestamps=[
+            EmotionSegment("sad", 0.0, 1.0),
+            EmotionSegment("happy", 0.0, 1.0),
+        ],
+    )
+
+    assert timeline == [
+        TimelineEntry(0.0, "happy", ""),
+        TimelineEntry(1.0, "happy", ""),
+    ]

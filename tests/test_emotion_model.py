@@ -3,7 +3,7 @@
 import json
 import pickle
 from pathlib import Path
-from types import SimpleNamespace, TracebackType
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,24 +12,6 @@ from sklearn.neural_network import MLPClassifier
 from ser.features import FeatureFrame
 from ser.models import emotion_model as em
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION
-
-
-class DummyHalo:
-    """No-op replacement for spinner context manager during tests."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        pass
-
-    def __enter__(self) -> "DummyHalo":
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _tb: TracebackType | None,
-    ) -> None:
-        return None
 
 
 class PredictOnlyModel(MLPClassifier):
@@ -91,7 +73,6 @@ def _set_model_settings(
         else training_report_path
     )
 
-    monkeypatch.setattr(em, "Halo", DummyHalo)
     monkeypatch.setattr(
         em,
         "get_settings",
@@ -144,41 +125,29 @@ def test_load_model_reads_versioned_artifact(
     assert loaded.expected_feature_size == 2
 
 
-def test_load_model_accepts_legacy_pickled_classifier(
+def test_load_model_rejects_legacy_pickled_classifier(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Legacy pickled classifiers should still load for backward compatibility."""
+    """Legacy pickled classifiers should fail without envelope metadata."""
     model_path = tmp_path / "legacy.pkl"
     classifier = _build_classifier()
     with model_path.open("wb") as handle:
         pickle.dump(classifier, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     _set_model_settings(monkeypatch, model_path=model_path)
-    loaded = em.load_model()
-
-    assert isinstance(loaded.model, MLPClassifier)
-    assert loaded.expected_feature_size is None
+    with pytest.raises(ValueError, match="configured locations"):
+        em.load_model()
 
 
-def test_load_model_uses_legacy_fallback_when_primary_is_missing(
+def test_load_model_requires_primary_storage_when_default_paths_are_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Loader should fall back to legacy repo path when primary path is missing."""
-    classifier = _build_classifier()
+    """Loader should fail closed when no primary artifacts exist."""
     primary_model_path = tmp_path / "runtime" / "models" / "ser_model.pkl"
-    legacy_model_folder = tmp_path / "ser" / "models"
-    legacy_model_folder.mkdir(parents=True, exist_ok=True)
-    legacy_model_path = legacy_model_folder / "ser_model.pkl"
-    with legacy_model_path.open("wb") as handle:
-        pickle.dump(classifier, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     _set_model_settings(monkeypatch, model_path=primary_model_path)
-    monkeypatch.setattr(em, "LEGACY_MODEL_FOLDER", legacy_model_folder)
-
-    loaded = em.load_model()
-
-    assert isinstance(loaded.model, MLPClassifier)
-    assert loaded.expected_feature_size is None
+    with pytest.raises(FileNotFoundError, match="Train it first"):
+        em.load_model()
 
 
 def test_load_model_rejects_unknown_artifact_version(
@@ -220,7 +189,9 @@ def test_load_model_falls_back_to_pickle_when_secure_loader_fails(
         secure_model_path=secure_model_path,
     )
     monkeypatch.setattr(
-        em, "_load_secure_model", lambda _candidate: (_ for _ in ()).throw(ValueError)
+        em,
+        "_load_secure_model",
+        lambda _candidate, _settings: (_ for _ in ()).throw(ValueError),
     )
     monkeypatch.setattr(
         em,
@@ -234,6 +205,135 @@ def test_load_model_falls_back_to_pickle_when_secure_loader_fails(
 
     assert isinstance(loaded.model, MLPClassifier)
     assert loaded.expected_feature_size == 5
+
+
+def test_load_model_selects_compatible_profile_artifact_from_models_folder(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Profile-filtered loads should skip incompatible artifacts and select matches."""
+    models_folder = tmp_path / "models"
+    models_folder.mkdir(parents=True, exist_ok=True)
+    primary_path = models_folder / "ser_model.pkl"
+    medium_path = models_folder / "ser_model_medium_full.pkl"
+
+    fast_artifact = {
+        "artifact_version": em.MODEL_ARTIFACT_VERSION,
+        "model": _build_classifier(),
+        "metadata": {
+            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "feature_vector_size": 2,
+            "training_samples": 4,
+            "labels": ["happy", "sad"],
+            "backend_id": "handcrafted",
+            "profile": "fast",
+            "feature_dim": 2,
+            "frame_size_seconds": 3.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean",
+        },
+    }
+    medium_artifact = {
+        "artifact_version": em.MODEL_ARTIFACT_VERSION,
+        "model": _build_classifier(),
+        "metadata": {
+            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "feature_vector_size": 2,
+            "training_samples": 4,
+            "labels": ["happy", "sad"],
+            "backend_id": "hf_xlsr",
+            "profile": "medium",
+            "feature_dim": 2,
+            "frame_size_seconds": 1.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean_std",
+        },
+    }
+
+    with primary_path.open("wb") as handle:
+        pickle.dump(fast_artifact, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with medium_path.open("wb") as handle:
+        pickle.dump(medium_artifact, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    _set_model_settings(monkeypatch, model_path=primary_path)
+    loaded = em.load_model(
+        expected_backend_id="hf_xlsr",
+        expected_profile="medium",
+    )
+
+    assert isinstance(loaded.model, MLPClassifier)
+    assert loaded.artifact_metadata is not None
+    assert loaded.artifact_metadata["backend_id"] == "hf_xlsr"
+    assert loaded.artifact_metadata["profile"] == "medium"
+
+
+def test_load_model_filters_by_backend_model_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Model loader should honor backend_model_id compatibility filter."""
+    models_folder = tmp_path / "models"
+    models_folder.mkdir(parents=True, exist_ok=True)
+    small_path = models_folder / "ser_model_medium_small.pkl"
+    large_path = models_folder / "ser_model_medium_large.pkl"
+
+    small_artifact = {
+        "artifact_version": em.MODEL_ARTIFACT_VERSION,
+        "model": _build_classifier(),
+        "metadata": {
+            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "feature_vector_size": 2,
+            "training_samples": 4,
+            "labels": ["happy", "sad"],
+            "backend_id": "hf_xlsr",
+            "profile": "medium",
+            "feature_dim": 2,
+            "frame_size_seconds": 1.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean_std",
+            "backend_model_id": "unit-test/xlsr-small",
+        },
+    }
+    large_artifact = {
+        "artifact_version": em.MODEL_ARTIFACT_VERSION,
+        "model": _build_classifier(),
+        "metadata": {
+            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "feature_vector_size": 2,
+            "training_samples": 4,
+            "labels": ["happy", "sad"],
+            "backend_id": "hf_xlsr",
+            "profile": "medium",
+            "feature_dim": 2,
+            "frame_size_seconds": 1.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean_std",
+            "backend_model_id": "unit-test/xlsr-large",
+        },
+    }
+    with small_path.open("wb") as handle:
+        pickle.dump(small_artifact, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with large_path.open("wb") as handle:
+        pickle.dump(large_artifact, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    _set_model_settings(monkeypatch, model_path=small_path)
+    loaded = em.load_model(
+        expected_backend_id="hf_xlsr",
+        expected_profile="medium",
+        expected_backend_model_id="unit-test/xlsr-large",
+    )
+
+    assert isinstance(loaded.model, MLPClassifier)
+    assert loaded.artifact_metadata is not None
+    assert loaded.artifact_metadata["backend_model_id"] == "unit-test/xlsr-large"
 
 
 def test_read_training_report_feature_size(
@@ -328,6 +428,57 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
     }
 
 
+def test_build_training_report_includes_optional_data_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report should include optional data-controls block when provided."""
+    monkeypatch.setattr(
+        em,
+        "get_settings",
+        lambda: SimpleNamespace(dataset=SimpleNamespace(glob_pattern="unused")),
+    )
+    monkeypatch.setattr(em.glob, "glob", lambda _pattern: ["file_0.wav"])
+
+    report = em._build_training_report(
+        accuracy=0.5,
+        macro_f1=0.5,
+        ser_metrics={
+            "labels": ["happy", "sad"],
+            "uar": 0.5,
+            "macro_f1": 0.5,
+            "per_class_recall": {"happy": 0.5, "sad": 0.5},
+            "confusion_matrix": [[1, 1], [1, 1]],
+        },
+        train_samples=2,
+        test_samples=2,
+        feature_vector_size=4,
+        labels=["happy", "sad", "happy", "sad"],
+        artifacts=em.PersistedArtifacts(
+            pickle_path=Path("ser_model.pkl"),
+            secure_path=None,
+        ),
+        artifact_metadata={
+            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_schema_version": "v2",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "feature_vector_size": 4,
+            "training_samples": 2,
+            "labels": ["happy", "sad"],
+            "backend_id": "hf_xlsr",
+            "profile": "medium",
+            "feature_dim": 4,
+            "frame_size_seconds": 1.0,
+            "frame_stride_seconds": 1.0,
+            "pooling_strategy": "mean_std",
+        },
+        data_controls={"medium_noise_controls": {"min_window_std": 0.1}},
+    )
+
+    assert report["data_controls"] == {
+        "medium_noise_controls": {"min_window_std": 0.1}
+    }
+
+
 def test_predict_emotions_detailed_uses_predict_proba(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,7 +501,6 @@ def test_predict_emotions_detailed_uses_predict_proba(
         classes=["happy", "sad"],
     )
 
-    monkeypatch.setattr(em, "Halo", DummyHalo)
     monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
     monkeypatch.setattr(
         em,
@@ -396,7 +546,6 @@ def test_predict_emotions_detailed_falls_back_without_predict_proba(
     ]
     model = PredictOnlyModel(predictions=["neutral", "neutral"])
 
-    monkeypatch.setattr(em, "Halo", DummyHalo)
     monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
     monkeypatch.setattr(
         em,

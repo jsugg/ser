@@ -14,19 +14,41 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import fmean
-from typing import Any, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple, cast
 
 import numpy as np
-from halo import Halo
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from ser.config import LEGACY_MODEL_FOLDER, get_settings
-from ser.data import load_data
+from ser.config import AppConfig, get_settings
+from ser.data import (
+    EmbeddingCache,
+    LabeledAudioSample,
+    load_data,
+    load_labeled_audio_paths,
+)
+from ser.data.data_loader import extract_ravdess_speaker_id_from_path
+from ser.data.embedding_cache import EmbeddingCacheEntry
 from ser.domain import EmotionSegment
 from ser.features import extract_feature_frames
+from ser.license_check import (
+    build_provenance_metadata,
+    ensure_backend_access,
+    load_persisted_backend_consents,
+    parse_allowed_restricted_backends_env,
+)
+from ser.pool import mean_std_pool, temporal_pooling_windows
+from ser.repr import (
+    Emotion2VecBackend,
+    EncodedSequence,
+    FeatureBackend,
+    PoolingWindow,
+    WhisperBackend,
+    XLSRBackend,
+)
 from ser.runtime.schema import (
     ARTIFACT_SCHEMA_VERSION,
     OUTPUT_SCHEMA_VERSION,
@@ -35,7 +57,9 @@ from ser.runtime.schema import (
     SegmentPrediction,
     to_legacy_emotion_segments,
 )
+from ser.train.eval import grouped_train_test_split
 from ser.train.metrics import compute_ser_metrics
+from ser.utils.audio_utils import read_audio_file
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
@@ -46,8 +70,60 @@ DEFAULT_PROFILE_ID = "fast"
 DEFAULT_FRAME_SIZE_SECONDS = 3.0
 DEFAULT_FRAME_STRIDE_SECONDS = 1.0
 DEFAULT_POOLING_STRATEGY = "mean"
+MEDIUM_BACKEND_ID = "hf_xlsr"
+MEDIUM_PROFILE_ID = "medium"
+MEDIUM_MODEL_ID = "facebook/wav2vec2-xls-r-300m"
+MEDIUM_FRAME_SIZE_SECONDS = 1.0
+MEDIUM_FRAME_STRIDE_SECONDS = 1.0
+MEDIUM_POOLING_STRATEGY = "mean_std"
+ACCURATE_BACKEND_ID = "hf_whisper"
+ACCURATE_PROFILE_ID = "accurate"
+ACCURATE_MODEL_ID = "openai/whisper-large-v3"
+ACCURATE_POOLING_STRATEGY = "mean_std"
+ACCURATE_RESEARCH_BACKEND_ID = "emotion2vec"
+ACCURATE_RESEARCH_PROFILE_ID = "accurate-research"
+ACCURATE_RESEARCH_MODEL_ID = "iic/emotion2vec_plus_large"
 type EmotionClassifier = MLPClassifier | Pipeline
 type ArtifactFormat = Literal["pickle", "skops"]
+
+
+def resolve_medium_model_id(settings: AppConfig | None = None) -> str:
+    """Resolves the medium XLS-R model id from settings with safe fallback."""
+    active_settings: AppConfig = settings if settings is not None else get_settings()
+    configured_model_id = getattr(
+        getattr(active_settings, "models", None),
+        "medium_model_id",
+        MEDIUM_MODEL_ID,
+    )
+    if not isinstance(configured_model_id, str) or not configured_model_id.strip():
+        return MEDIUM_MODEL_ID
+    return configured_model_id.strip()
+
+
+def resolve_accurate_model_id(settings: AppConfig | None = None) -> str:
+    """Resolves the accurate Whisper model id from settings with safe fallback."""
+    active_settings: AppConfig = settings if settings is not None else get_settings()
+    configured_model_id = getattr(
+        getattr(active_settings, "models", None),
+        "accurate_model_id",
+        ACCURATE_MODEL_ID,
+    )
+    if not isinstance(configured_model_id, str) or not configured_model_id.strip():
+        return ACCURATE_MODEL_ID
+    return configured_model_id.strip()
+
+
+def resolve_accurate_research_model_id(settings: AppConfig | None = None) -> str:
+    """Resolves the accurate-research model id from settings with safe fallback."""
+    active_settings: AppConfig = settings if settings is not None else get_settings()
+    configured_model_id = getattr(
+        getattr(active_settings, "models", None),
+        "accurate_research_model_id",
+        ACCURATE_RESEARCH_MODEL_ID,
+    )
+    if not isinstance(configured_model_id, str) or not configured_model_id.strip():
+        return ACCURATE_RESEARCH_MODEL_ID
+    return configured_model_id.strip()
 
 
 class LoadedModel(NamedTuple):
@@ -59,11 +135,10 @@ class LoadedModel(NamedTuple):
 
 
 class ModelCandidate(NamedTuple):
-    """A candidate model artifact path and its source."""
+    """A candidate model artifact path and serialization format."""
 
     path: Path
     artifact_format: ArtifactFormat
-    origin: Literal["primary", "legacy"]
 
 
 @dataclass(frozen=True)
@@ -72,6 +147,29 @@ class PersistedArtifacts:
 
     pickle_path: Path
     secure_path: Path | None
+
+
+@dataclass(frozen=True)
+class MediumNoiseControlStats:
+    """Window-level filtering statistics for medium training traceability."""
+
+    total_windows: int = 0
+    kept_windows: int = 0
+    dropped_low_std_windows: int = 0
+    dropped_cap_windows: int = 0
+    forced_keep_windows: int = 0
+
+
+@dataclass(frozen=True)
+class MediumSplitMetadata:
+    """Split diagnostics persisted for grouped-evaluation traceability."""
+
+    split_strategy: str
+    speaker_grouped: bool
+    speaker_id_coverage: float
+    train_unique_speakers: int
+    test_unique_speakers: int
+    speaker_overlap_count: int
 
 
 def _read_positive_int(metadata: dict[str, object], field_name: str) -> int:
@@ -87,7 +185,7 @@ def _read_positive_int(metadata: dict[str, object], field_name: str) -> int:
 def _read_positive_float(metadata: dict[str, object], field_name: str) -> float:
     """Returns a required positive float field from metadata."""
     raw_value = metadata.get(field_name)
-    if not isinstance(raw_value, (int, float)) or float(raw_value) <= 0.0:
+    if not isinstance(raw_value, int | float) or float(raw_value) <= 0.0:
         raise ValueError(
             f"Model artifact metadata contains invalid {field_name!r} value."
         )
@@ -119,6 +217,56 @@ def _read_labels(metadata: dict[str, object]) -> list[str]:
     return sorted(set(labels))
 
 
+def _normalize_provenance_metadata(raw_value: object) -> dict[str, object]:
+    """Validates optional provenance metadata, defaulting to an empty payload."""
+    if raw_value is None:
+        return {}
+    if not isinstance(raw_value, dict):
+        raise ValueError("Model artifact metadata contains invalid 'provenance' value.")
+
+    allowed_text_fields = (
+        "code_revision",
+        "dependency_manifest_fingerprint",
+        "backend_id",
+        "backend_license_id",
+        "profile",
+        "dataset_glob_pattern",
+        "backend_access_source",
+        "restricted_backend_consent_source",
+        "restricted_backend_consent_accepted_at_utc",
+        "restricted_backend_policy_fingerprint",
+        "license_source_url",
+    )
+    normalized: dict[str, object] = {}
+    for field_name in allowed_text_fields:
+        field_value = raw_value.get(field_name)
+        if field_value is None:
+            continue
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise ValueError(
+                "Model artifact metadata contains invalid provenance field "
+                f"{field_name!r}."
+            )
+        normalized[field_name] = field_value
+
+    allowed_bool_fields = (
+        "runtime_restricted_backends_enabled",
+        "backend_is_restricted",
+        "backend_access_allowed",
+    )
+    for field_name in allowed_bool_fields:
+        field_value = raw_value.get(field_name)
+        if field_value is None:
+            continue
+        if not isinstance(field_value, bool):
+            raise ValueError(
+                "Model artifact metadata contains invalid provenance field "
+                f"{field_name!r}."
+            )
+        normalized[field_name] = field_value
+    return normalized
+
+
 def _normalize_v2_artifact_metadata(metadata: dict[str, object]) -> dict[str, object]:
     """Validates and normalizes artifact metadata to v2 shape."""
     artifact_version = _read_positive_int(metadata, "artifact_version")
@@ -132,7 +280,7 @@ def _normalize_v2_artifact_metadata(metadata: dict[str, object]) -> dict[str, ob
         raise ValueError(
             "Model artifact metadata 'feature_dim' must match 'feature_vector_size'."
         )
-    return {
+    normalized: dict[str, object] = {
         "artifact_version": MODEL_ARTIFACT_VERSION,
         "artifact_schema_version": _read_non_empty_text(
             metadata, "artifact_schema_version"
@@ -147,27 +295,16 @@ def _normalize_v2_artifact_metadata(metadata: dict[str, object]) -> dict[str, ob
         "frame_size_seconds": _read_positive_float(metadata, "frame_size_seconds"),
         "frame_stride_seconds": _read_positive_float(metadata, "frame_stride_seconds"),
         "pooling_strategy": _read_non_empty_text(metadata, "pooling_strategy"),
+        "provenance": _normalize_provenance_metadata(metadata.get("provenance")),
     }
-
-
-def _upgrade_v1_artifact_metadata(metadata: dict[str, object]) -> dict[str, object]:
-    """Upgrades legacy v1 metadata to normalized v2 metadata."""
-    return _normalize_v2_artifact_metadata(
-        {
-            "artifact_version": MODEL_ARTIFACT_VERSION,
-            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
-            "created_at_utc": _read_non_empty_text(metadata, "created_at_utc"),
-            "feature_vector_size": _read_positive_int(metadata, "feature_vector_size"),
-            "training_samples": _read_positive_int(metadata, "training_samples"),
-            "labels": _read_labels(metadata),
-            "backend_id": DEFAULT_BACKEND_ID,
-            "profile": DEFAULT_PROFILE_ID,
-            "feature_dim": _read_positive_int(metadata, "feature_vector_size"),
-            "frame_size_seconds": DEFAULT_FRAME_SIZE_SECONDS,
-            "frame_stride_seconds": DEFAULT_FRAME_STRIDE_SECONDS,
-            "pooling_strategy": DEFAULT_POOLING_STRATEGY,
-        }
-    )
+    backend_model_id = metadata.get("backend_model_id")
+    if backend_model_id is not None:
+        if not isinstance(backend_model_id, str) or not backend_model_id.strip():
+            raise ValueError(
+                "Model artifact metadata contains invalid 'backend_model_id' value."
+            )
+        normalized["backend_model_id"] = backend_model_id.strip()
+    return normalized
 
 
 def _build_v2_artifact_metadata(
@@ -175,24 +312,41 @@ def _build_v2_artifact_metadata(
     feature_vector_size: int,
     training_samples: int,
     labels: list[str],
+    backend_id: str = DEFAULT_BACKEND_ID,
+    profile: str = DEFAULT_PROFILE_ID,
+    feature_dim: int | None = None,
+    frame_size_seconds: float = DEFAULT_FRAME_SIZE_SECONDS,
+    frame_stride_seconds: float = DEFAULT_FRAME_STRIDE_SECONDS,
+    pooling_strategy: str = DEFAULT_POOLING_STRATEGY,
+    backend_model_id: str | None = None,
+    provenance: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Builds normalized v2 artifact metadata for persisted model envelopes."""
-    return _normalize_v2_artifact_metadata(
-        {
-            "artifact_version": MODEL_ARTIFACT_VERSION,
-            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
-            "created_at_utc": datetime.now(tz=UTC).isoformat(),
-            "feature_vector_size": feature_vector_size,
-            "training_samples": training_samples,
-            "labels": labels,
-            "backend_id": DEFAULT_BACKEND_ID,
-            "profile": DEFAULT_PROFILE_ID,
-            "feature_dim": feature_vector_size,
-            "frame_size_seconds": DEFAULT_FRAME_SIZE_SECONDS,
-            "frame_stride_seconds": DEFAULT_FRAME_STRIDE_SECONDS,
-            "pooling_strategy": DEFAULT_POOLING_STRATEGY,
-        }
-    )
+    resolved_feature_dim = feature_vector_size if feature_dim is None else feature_dim
+    payload: dict[str, object] = {
+        "artifact_version": MODEL_ARTIFACT_VERSION,
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "created_at_utc": datetime.now(tz=UTC).isoformat(),
+        "feature_vector_size": feature_vector_size,
+        "training_samples": training_samples,
+        "labels": labels,
+        "backend_id": backend_id,
+        "profile": profile,
+        "feature_dim": resolved_feature_dim,
+        "frame_size_seconds": frame_size_seconds,
+        "frame_stride_seconds": frame_stride_seconds,
+        "pooling_strategy": pooling_strategy,
+    }
+    if provenance is not None:
+        payload["provenance"] = provenance
+    if backend_model_id is not None:
+        resolved_backend_model_id = backend_model_id.strip()
+        if not resolved_backend_model_id:
+            raise ValueError(
+                "Model artifact metadata contains invalid 'backend_model_id' value."
+            )
+        payload["backend_model_id"] = resolved_backend_model_id
+    return _normalize_v2_artifact_metadata(payload)
 
 
 def _create_classifier() -> EmotionClassifier:
@@ -220,12 +374,28 @@ def _build_model_artifact(
     feature_vector_size: int,
     training_samples: int,
     labels: list[str],
+    backend_id: str = DEFAULT_BACKEND_ID,
+    profile: str = DEFAULT_PROFILE_ID,
+    feature_dim: int | None = None,
+    frame_size_seconds: float = DEFAULT_FRAME_SIZE_SECONDS,
+    frame_stride_seconds: float = DEFAULT_FRAME_STRIDE_SECONDS,
+    pooling_strategy: str = DEFAULT_POOLING_STRATEGY,
+    backend_model_id: str | None = None,
+    provenance: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Constructs a versioned model artifact envelope for safer loading."""
     metadata = _build_v2_artifact_metadata(
         feature_vector_size=feature_vector_size,
         training_samples=training_samples,
         labels=labels,
+        backend_id=backend_id,
+        profile=profile,
+        feature_dim=feature_dim,
+        frame_size_seconds=frame_size_seconds,
+        frame_stride_seconds=frame_stride_seconds,
+        pooling_strategy=pooling_strategy,
+        backend_model_id=backend_model_id,
+        provenance=provenance,
     )
     return {
         "artifact_version": MODEL_ARTIFACT_VERSION,
@@ -235,32 +405,23 @@ def _build_model_artifact(
 
 
 def _deserialize_model_artifact(payload: object) -> LoadedModel:
-    """Validates and unwraps persisted model payloads, including legacy formats."""
-    if isinstance(payload, (MLPClassifier, Pipeline)):
-        logger.warning(
-            "Loaded legacy model artifact without metadata validation envelope."
-        )
-        return LoadedModel(
-            model=payload,
-            expected_feature_size=None,
-            artifact_metadata=None,
-        )
-
+    """Validates and unwraps persisted model payloads."""
     if not isinstance(payload, dict):
         raise ValueError(
-            "Unexpected model artifact payload type: "
-            f"{type(payload).__name__}. Expected dict envelope."
+            "Model artifact payload must be a versioned dictionary envelope "
+            f"(received {type(payload).__name__})."
         )
 
     artifact_version = payload.get("artifact_version")
-    if not isinstance(artifact_version, int):
+    if artifact_version != MODEL_ARTIFACT_VERSION:
         raise ValueError(
             "Unsupported model artifact version "
-            f"{artifact_version!r}; expected {MODEL_ARTIFACT_VERSION}."
+            f"{artifact_version!r}; expected {MODEL_ARTIFACT_VERSION}. "
+            "Regenerate artifacts with current training code."
         )
 
     model = payload.get("model")
-    if not isinstance(model, (MLPClassifier, Pipeline)):
+    if not isinstance(model, MLPClassifier | Pipeline):
         raise ValueError(
             "Unexpected model object type in artifact envelope: "
             f"{type(model).__name__}."
@@ -269,17 +430,7 @@ def _deserialize_model_artifact(payload: object) -> LoadedModel:
     metadata_obj = payload.get("metadata")
     if not isinstance(metadata_obj, dict):
         raise ValueError("Model artifact metadata is missing or invalid.")
-    metadata: dict[str, object] = metadata_obj
-
-    if artifact_version == 1:
-        normalized_metadata = _upgrade_v1_artifact_metadata(metadata)
-    elif artifact_version == MODEL_ARTIFACT_VERSION:
-        normalized_metadata = _normalize_v2_artifact_metadata(metadata)
-    else:
-        raise ValueError(
-            "Unsupported model artifact version "
-            f"{artifact_version!r}; expected {MODEL_ARTIFACT_VERSION}."
-        )
+    normalized_metadata = _normalize_v2_artifact_metadata(metadata_obj)
     expected_feature_size = _read_positive_int(
         normalized_metadata,
         "feature_vector_size",
@@ -392,6 +543,8 @@ def _build_training_report(
     labels: list[str],
     artifacts: PersistedArtifacts,
     artifact_metadata: dict[str, object],
+    data_controls: dict[str, object] | None = None,
+    provenance: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Builds a structured report for training quality and artifact traceability."""
     settings = get_settings()
@@ -402,7 +555,7 @@ def _build_training_report(
     if artifacts.secure_path is not None:
         model_artifacts["secure"] = str(artifacts.secure_path)
 
-    return {
+    report: dict[str, object] = {
         "artifact_version": MODEL_ARTIFACT_VERSION,
         "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
         "created_at_utc": datetime.now(tz=UTC).isoformat(),
@@ -421,6 +574,11 @@ def _build_training_report(
         "artifact_metadata": artifact_metadata,
         "model_artifacts": model_artifacts,
     }
+    if data_controls is not None:
+        report["data_controls"] = data_controls
+    if provenance is not None:
+        report["provenance"] = provenance
+    return report
 
 
 def _persist_model_artifacts(
@@ -439,19 +597,42 @@ def _persist_model_artifacts(
     )
 
 
-def _model_load_candidates() -> tuple[ModelCandidate, ...]:
-    """Returns model artifacts in preferred load order with legacy fallback."""
-    settings = get_settings()
-    primary_secure = settings.models.secure_model_file
-    primary_pickle = settings.models.model_file
-    legacy_secure = LEGACY_MODEL_FOLDER / settings.models.secure_model_file_name
-    legacy_pickle = LEGACY_MODEL_FOLDER / settings.models.model_file_name
+def _discover_model_candidates(
+    folder: Path,
+) -> list[ModelCandidate]:
+    """Discovers model artifacts in a folder using SER naming conventions."""
+    if not folder.exists():
+        return []
+
+    discovered: list[ModelCandidate] = []
+    for pattern, artifact_format in (
+        ("ser_model*.skops", "skops"),
+        ("ser_model*.pkl", "pickle"),
+    ):
+        for path in sorted(folder.glob(pattern)):
+            if path.is_file():
+                discovered.append(
+                    ModelCandidate(
+                        path=path,
+                        artifact_format=cast(ArtifactFormat, artifact_format),
+                    )
+                )
+    return discovered
+
+
+def _model_load_candidates(
+    settings: AppConfig | None = None,
+) -> tuple[ModelCandidate, ...]:
+    """Returns model artifacts in preferred load order from primary storage."""
+    active_settings = settings if settings is not None else get_settings()
+    primary_secure = active_settings.models.secure_model_file
+    primary_pickle = active_settings.models.model_file
+    discovered_primary = _discover_model_candidates(active_settings.models.folder)
 
     ordered = (
-        ModelCandidate(primary_secure, "skops", "primary"),
-        ModelCandidate(primary_pickle, "pickle", "primary"),
-        ModelCandidate(legacy_secure, "skops", "legacy"),
-        ModelCandidate(legacy_pickle, "pickle", "legacy"),
+        ModelCandidate(primary_secure, "skops"),
+        ModelCandidate(primary_pickle, "pickle"),
+        *discovered_primary,
     )
 
     deduped: list[ModelCandidate] = []
@@ -468,7 +649,7 @@ def _model_load_candidates() -> tuple[ModelCandidate, ...]:
     return tuple(deduped)
 
 
-def _load_secure_model(candidate: ModelCandidate) -> LoadedModel:
+def _load_secure_model(candidate: ModelCandidate, settings: AppConfig) -> LoadedModel:
     """Loads a secure artifact when `skops` is available and trusted."""
     assert candidate.artifact_format == "skops"
     try:
@@ -486,14 +667,13 @@ def _load_secure_model(candidate: ModelCandidate) -> LoadedModel:
         )
 
     payload = skops_io.load(str(candidate.path), trusted=[])
-    if not isinstance(payload, (MLPClassifier, Pipeline)):
+    if not isinstance(payload, MLPClassifier | Pipeline):
         raise ValueError(
             "Unexpected secure model payload type: "
             f"{type(payload).__name__}. Expected sklearn classifier/pipeline."
         )
 
-    settings = get_settings()
-    feature_size = _read_training_report_feature_size(
+    feature_size: int | None = _read_training_report_feature_size(
         settings.models.training_report_file
     )
     return LoadedModel(model=payload, expected_feature_size=feature_size)
@@ -509,10 +689,52 @@ def _load_pickle_model(candidate: ModelCandidate) -> LoadedModel:
     return _deserialize_model_artifact(payload)
 
 
-def _resolve_model_for_loading() -> tuple[ModelCandidate, LoadedModel]:
+def _artifact_matches_expected_profile(
+    loaded_model: LoadedModel,
+    *,
+    expected_backend_id: str | None,
+    expected_profile: str | None,
+    expected_backend_model_id: str | None,
+) -> bool:
+    """Checks whether loaded artifact metadata matches expected backend/profile."""
+    if (
+        expected_backend_id is None
+        and expected_profile is None
+        and expected_backend_model_id is None
+    ):
+        return True
+
+    metadata = loaded_model.artifact_metadata
+    if not isinstance(metadata, dict):
+        return False
+    if (
+        expected_backend_id is not None
+        and metadata.get("backend_id") != expected_backend_id
+    ):
+        return False
+    if expected_profile is not None and metadata.get("profile") != expected_profile:
+        return False
+    if expected_backend_model_id is not None:
+        backend_model_id = metadata.get("backend_model_id")
+        if (
+            not isinstance(backend_model_id, str)
+            or backend_model_id.strip() != expected_backend_model_id
+        ):
+            return False
+    return True
+
+
+def _resolve_model_for_loading(
+    settings: AppConfig | None = None,
+    *,
+    expected_backend_id: str | None = None,
+    expected_profile: str | None = None,
+    expected_backend_model_id: str | None = None,
+) -> tuple[ModelCandidate, LoadedModel]:
     """Finds and loads the first valid model artifact candidate."""
-    candidates = _model_load_candidates()
-    existing_candidates = [
+    active_settings = settings if settings is not None else get_settings()
+    candidates: tuple[ModelCandidate, ...] = _model_load_candidates(active_settings)
+    existing_candidates: list[ModelCandidate] = [
         candidate for candidate in candidates if candidate.path.exists()
     ]
     if not existing_candidates:
@@ -523,14 +745,30 @@ def _resolve_model_for_loading() -> tuple[ModelCandidate, LoadedModel]:
         )
 
     last_error: Exception | None = None
+    rejected_candidates: list[str] = []
     for candidate in existing_candidates:
         try:
-            loaded_model = (
-                _load_secure_model(candidate)
+            loaded_model: LoadedModel = (
+                _load_secure_model(candidate, active_settings)
                 if candidate.artifact_format == "skops"
                 else _load_pickle_model(candidate)
             )
-            return candidate, loaded_model
+            if _artifact_matches_expected_profile(
+                loaded_model,
+                expected_backend_id=expected_backend_id,
+                expected_profile=expected_profile,
+                expected_backend_model_id=expected_backend_model_id,
+            ):
+                return candidate, loaded_model
+            rejected_candidates.append(str(candidate.path))
+            # logger.info(
+            #     "Skipping model artifact at %s: incompatible metadata for "
+            #     "expected backend/profile/model-id (%s, %s, %s).",
+            #     candidate.path,
+            #     expected_backend_id,
+            #     expected_profile,
+            #     expected_backend_model_id,
+            # )
         except Exception as err:
             last_error = err
             logger.warning(
@@ -540,10 +778,724 @@ def _resolve_model_for_loading() -> tuple[ModelCandidate, LoadedModel]:
                 err,
             )
 
+    if rejected_candidates:
+        expected_constraints: list[str] = []
+        if expected_backend_id is not None:
+            expected_constraints.append(f"backend_id={expected_backend_id!r}")
+        if expected_profile is not None:
+            expected_constraints.append(f"profile={expected_profile!r}")
+        if expected_backend_model_id is not None:
+            expected_constraints.append(
+                f"backend_model_id={expected_backend_model_id!r}"
+            )
+        constraint_text = ", ".join(expected_constraints)
+        checked = ", ".join(rejected_candidates)
+        raise FileNotFoundError(
+            "No compatible model artifact is available for "
+            f"{constraint_text}. Checked: {checked}. "
+            "Train/select a matching artifact and retry."
+        )
+
     candidate_list = ", ".join(str(candidate.path) for candidate in existing_candidates)
     raise ValueError(
         f"Failed to deserialize model from any candidate path: {candidate_list}."
     ) from last_error
+
+
+def _split_labeled_audio_samples(
+    samples: list[LabeledAudioSample],
+) -> tuple[list[LabeledAudioSample], list[LabeledAudioSample], MediumSplitMetadata]:
+    """Splits labeled files with grouped-speaker preference and traceable metadata."""
+    settings: AppConfig = get_settings()
+    if len(samples) < 2:
+        raise RuntimeError("Medium training requires at least two labeled audio files.")
+
+    indices: np.ndarray = np.arange(len(samples), dtype=np.int64)
+    labels: list[str] = [label for _, label in samples]
+    raw_speaker_ids: list[str | None] = [
+        extract_ravdess_speaker_id_from_path(audio_path) for audio_path, _ in samples
+    ]
+    resolved_speaker_ids = [item for item in raw_speaker_ids if item is not None]
+    speaker_coverage = float(len(resolved_speaker_ids)) / float(len(samples))
+
+    split_strategy = "stratified_shuffle_split"
+    train_idx = np.empty(0, dtype=np.int64)
+    test_idx = np.empty(0, dtype=np.int64)
+    can_group_by_speaker = (
+        len(resolved_speaker_ids) == len(samples)
+        and len(set(resolved_speaker_ids)) >= 2
+    )
+    if can_group_by_speaker:
+        grouped_features = np.zeros((len(samples), 1), dtype=np.float64)
+        try:
+            grouped_split = grouped_train_test_split(
+                grouped_features,
+                labels,
+                [str(item) for item in resolved_speaker_ids],
+                test_size=settings.training.test_size,
+                random_state=settings.training.random_state,
+            )
+            train_idx = grouped_split.train_indices
+            test_idx = grouped_split.test_indices
+            split_strategy = "group_shuffle_split"
+        except ValueError as err:
+            logger.warning(
+                "Medium grouped split failed (%s); falling back to stratified split.",
+                err,
+            )
+            can_group_by_speaker = False
+
+    if not can_group_by_speaker:
+        split_strategy = "stratified_shuffle_split_fallback"
+        stratify_labels: list[str] | None = (
+            labels if settings.training.stratify_split else None
+        )
+        try:
+            train_idx_raw, test_idx_raw = train_test_split(
+                indices,
+                test_size=settings.training.test_size,
+                random_state=settings.training.random_state,
+                stratify=stratify_labels,
+            )
+            train_idx = np.asarray(train_idx_raw, dtype=np.int64)
+            test_idx = np.asarray(test_idx_raw, dtype=np.int64)
+        except ValueError as err:
+            logger.warning(
+                "Medium stratified split failed (%s); falling back to non-stratified split.",
+                err,
+            )
+            train_idx_raw, test_idx_raw = train_test_split(
+                indices,
+                test_size=settings.training.test_size,
+                random_state=settings.training.random_state,
+                stratify=None,
+            )
+            train_idx = np.asarray(train_idx_raw, dtype=np.int64)
+            test_idx = np.asarray(test_idx_raw, dtype=np.int64)
+
+    train_samples: list[LabeledAudioSample] = [
+        samples[int(index)] for index in train_idx
+    ]
+    test_samples: list[LabeledAudioSample] = [samples[int(index)] for index in test_idx]
+    if train_idx.size == 0 or test_idx.size == 0:
+        raise RuntimeError(
+            "Medium training split failed to produce deterministic index partitions."
+        )
+    if not train_samples or not test_samples:
+        raise RuntimeError(
+            "Medium training split produced an empty partition; adjust test_size."
+        )
+
+    train_speakers = {
+        raw_speaker_ids[int(index)]
+        for index in train_idx.tolist()
+        if raw_speaker_ids[int(index)] is not None
+    }
+    test_speakers = {
+        raw_speaker_ids[int(index)]
+        for index in test_idx.tolist()
+        if raw_speaker_ids[int(index)] is not None
+    }
+    speaker_overlap_count = len(train_speakers.intersection(test_speakers))
+    if split_strategy == "group_shuffle_split" and speaker_overlap_count > 0:
+        raise RuntimeError(
+            "Grouped medium split produced overlapping speakers in train/test."
+        )
+
+    return (
+        train_samples,
+        test_samples,
+        MediumSplitMetadata(
+            split_strategy=split_strategy,
+            speaker_grouped=split_strategy == "group_shuffle_split",
+            speaker_id_coverage=speaker_coverage,
+            train_unique_speakers=len(train_speakers),
+            test_unique_speakers=len(test_speakers),
+            speaker_overlap_count=speaker_overlap_count,
+        ),
+    )
+
+
+def _pooling_windows_from_encoded_frames(
+    encoded: EncodedSequence,
+) -> list[PoolingWindow]:
+    """Creates medium temporal pooling windows from configured window policy."""
+    settings: AppConfig = get_settings()
+    return temporal_pooling_windows(
+        encoded,
+        window_size_seconds=settings.medium_runtime.pool_window_size_seconds,
+        window_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+    )
+
+
+def _encode_medium_sequence(
+    *,
+    audio_path: str,
+    backend: XLSRBackend,
+    cache: EmbeddingCache,
+    model_id: str | None = None,
+) -> EncodedSequence:
+    """Encodes one file with cache reuse for medium training."""
+    settings: AppConfig = get_settings()
+    resolved_model_id = (
+        model_id.strip() if isinstance(model_id, str) and model_id.strip() else None
+    )
+    if resolved_model_id is None:
+        resolved_model_id = resolve_medium_model_id(settings)
+
+    def _compute_sequence() -> EncodedSequence:
+        audio, sample_rate = read_audio_file(audio_path)
+        audio_array = np.asarray(audio, dtype=np.float32)
+        return backend.encode_sequence(audio_array, sample_rate)
+
+    cache_entry: EmbeddingCacheEntry = cache.get_or_compute(
+        audio_path=audio_path,
+        backend_id=MEDIUM_BACKEND_ID,
+        model_id=resolved_model_id,
+        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
+        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        compute=_compute_sequence,
+    )
+    logger.debug(
+        "Medium embedding cache %s for %s (%s).",
+        "hit" if cache_entry.cache_hit else "miss",
+        audio_path,
+        cache_entry.cache_key[:12],
+    )
+    return cache_entry.encoded
+
+
+def _build_medium_feature_dataset(
+    *,
+    samples: list[LabeledAudioSample],
+    backend: XLSRBackend,
+    cache: EmbeddingCache,
+    model_id: str | None = None,
+) -> tuple[np.ndarray, list[str], MediumNoiseControlStats]:
+    """Builds frame-pooled medium feature matrix from labeled audio files."""
+    feature_blocks: list[np.ndarray] = []
+    labels: list[str] = []
+    aggregate_stats = MediumNoiseControlStats()
+    for audio_path, emotion_label in samples:
+        encoded = _encode_medium_sequence(
+            audio_path=audio_path,
+            backend=backend,
+            cache=cache,
+            model_id=model_id,
+        )
+        windows = _pooling_windows_from_encoded_frames(encoded)
+        pooled = mean_std_pool(encoded, windows)
+        filtered, stats = _apply_medium_noise_controls(
+            np.asarray(pooled, dtype=np.float64)
+        )
+        feature_blocks.append(filtered)
+        labels.extend([emotion_label] * int(filtered.shape[0]))
+        aggregate_stats = _merge_medium_noise_stats(aggregate_stats, stats)
+
+    if not feature_blocks:
+        raise RuntimeError("Medium training produced no feature vectors.")
+    feature_matrix = np.vstack(feature_blocks).astype(np.float64, copy=False)
+    if int(feature_matrix.shape[0]) != len(labels):
+        raise RuntimeError("Medium feature/label row mismatch during dataset build.")
+    return feature_matrix, labels, aggregate_stats
+
+
+def _encode_accurate_sequence(
+    *,
+    audio_path: str,
+    backend: FeatureBackend,
+    cache: EmbeddingCache,
+    model_id: str | None = None,
+    backend_id: str = ACCURATE_BACKEND_ID,
+) -> EncodedSequence:
+    """Encodes one file with cache reuse for accurate training."""
+    settings: AppConfig = get_settings()
+    resolved_model_id = (
+        model_id.strip() if isinstance(model_id, str) and model_id.strip() else None
+    )
+    if resolved_model_id is None:
+        resolved_model_id = (
+            resolve_accurate_model_id(settings)
+            if backend_id == ACCURATE_BACKEND_ID
+            else resolve_accurate_research_model_id(settings)
+        )
+
+    def _compute_sequence() -> EncodedSequence:
+        audio, sample_rate = read_audio_file(audio_path)
+        audio_array = np.asarray(audio, dtype=np.float32)
+        return backend.encode_sequence(audio_array, sample_rate)
+
+    cache_entry: EmbeddingCacheEntry = cache.get_or_compute(
+        audio_path=audio_path,
+        backend_id=backend_id,
+        model_id=resolved_model_id,
+        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
+        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        compute=_compute_sequence,
+    )
+    logger.debug(
+        "Accurate backend %s embedding cache %s for %s (%s).",
+        backend_id,
+        "hit" if cache_entry.cache_hit else "miss",
+        audio_path,
+        cache_entry.cache_key[:12],
+    )
+    return cache_entry.encoded
+
+
+def _build_accurate_feature_dataset(
+    *,
+    samples: list[LabeledAudioSample],
+    backend: FeatureBackend,
+    cache: EmbeddingCache,
+    model_id: str | None = None,
+    backend_id: str = ACCURATE_BACKEND_ID,
+) -> tuple[np.ndarray, list[str]]:
+    """Builds frame-pooled accurate feature matrix from labeled audio files."""
+    feature_blocks: list[np.ndarray] = []
+    labels: list[str] = []
+    for audio_path, emotion_label in samples:
+        encoded = _encode_accurate_sequence(
+            audio_path=audio_path,
+            backend=backend,
+            cache=cache,
+            model_id=model_id,
+            backend_id=backend_id,
+        )
+        windows = _pooling_windows_from_encoded_frames(encoded)
+        pooled = mean_std_pool(encoded, windows)
+        feature_blocks.append(np.asarray(pooled, dtype=np.float64))
+        labels.extend([emotion_label] * int(pooled.shape[0]))
+
+    if not feature_blocks:
+        raise RuntimeError("Accurate training produced no feature vectors.")
+    feature_matrix = np.vstack(feature_blocks).astype(np.float64, copy=False)
+    if int(feature_matrix.shape[0]) != len(labels):
+        raise RuntimeError("Accurate feature/label row mismatch during dataset build.")
+    return feature_matrix, labels
+
+
+def _merge_medium_noise_stats(
+    base: MediumNoiseControlStats,
+    incoming: MediumNoiseControlStats,
+) -> MediumNoiseControlStats:
+    """Aggregates per-clip medium noise-control counters."""
+    return MediumNoiseControlStats(
+        total_windows=base.total_windows + incoming.total_windows,
+        kept_windows=base.kept_windows + incoming.kept_windows,
+        dropped_low_std_windows=(
+            base.dropped_low_std_windows + incoming.dropped_low_std_windows
+        ),
+        dropped_cap_windows=base.dropped_cap_windows + incoming.dropped_cap_windows,
+        forced_keep_windows=base.forced_keep_windows + incoming.forced_keep_windows,
+    )
+
+
+def _apply_medium_noise_controls(
+    pooled_features: np.ndarray,
+) -> tuple[np.ndarray, MediumNoiseControlStats]:
+    """Applies deterministic label-noise controls to pooled medium features."""
+    if pooled_features.ndim != 2 or int(pooled_features.shape[1]) <= 0:
+        raise RuntimeError("Medium pooled features must be a non-empty 2D matrix.")
+    total_windows = int(pooled_features.shape[0])
+    if total_windows == 0:
+        raise RuntimeError("Medium pooled feature matrix contains zero rows.")
+    feature_width = int(pooled_features.shape[1])
+    if feature_width % 2 != 0:
+        raise RuntimeError(
+            "Medium pooled feature width must be even (mean+std concatenation)."
+        )
+
+    settings = get_settings()
+    min_window_std = settings.medium_training.min_window_std
+    max_windows_per_clip = settings.medium_training.max_windows_per_clip
+
+    std_components = pooled_features[:, feature_width // 2 :]
+    std_scores = np.linalg.norm(std_components, axis=1) / np.sqrt(feature_width / 2.0)
+
+    keep_mask = np.ones(total_windows, dtype=np.bool_)
+    dropped_low_std_windows = 0
+    forced_keep_windows = 0
+    if min_window_std > 0.0:
+        keep_mask = std_scores >= min_window_std
+        if not np.any(keep_mask):
+            keep_mask[int(np.argmax(std_scores))] = True
+            forced_keep_windows = 1
+        dropped_low_std_windows = total_windows - int(np.sum(keep_mask))
+
+    filtered = np.asarray(pooled_features[keep_mask], dtype=np.float64)
+    dropped_cap_windows = 0
+    if max_windows_per_clip > 0 and int(filtered.shape[0]) > max_windows_per_clip:
+        selected_indices = np.linspace(
+            0,
+            int(filtered.shape[0]) - 1,
+            num=max_windows_per_clip,
+            dtype=np.int64,
+        )
+        dropped_cap_windows = int(filtered.shape[0]) - max_windows_per_clip
+        filtered = np.asarray(filtered[selected_indices], dtype=np.float64)
+
+    return filtered, MediumNoiseControlStats(
+        total_windows=total_windows,
+        kept_windows=int(filtered.shape[0]),
+        dropped_low_std_windows=dropped_low_std_windows,
+        dropped_cap_windows=dropped_cap_windows,
+        forced_keep_windows=forced_keep_windows,
+    )
+
+
+def train_medium_model() -> None:
+    """Trains and persists medium-profile model artifacts with XLS-R metadata."""
+    settings = get_settings()
+    samples = load_labeled_audio_paths()
+    if samples is None:
+        logger.error("Dataset not loaded. Please load the dataset first.")
+        raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    train_samples, test_samples, split_metadata = _split_labeled_audio_samples(samples)
+    medium_model_id = resolve_medium_model_id(settings)
+    backend = XLSRBackend(
+        model_id=medium_model_id,
+        cache_dir=settings.models.huggingface_cache_root,
+    )
+    cache = EmbeddingCache(settings.tmp_folder / "medium_embeddings")
+    x_train, y_train, train_noise_stats = _build_medium_feature_dataset(
+        samples=train_samples,
+        backend=backend,
+        cache=cache,
+        model_id=medium_model_id,
+    )
+    x_test, y_test, test_noise_stats = _build_medium_feature_dataset(
+        samples=test_samples,
+        backend=backend,
+        cache=cache,
+        model_id=medium_model_id,
+    )
+    model: EmotionClassifier = _create_classifier()
+    logger.info(
+        "Medium dataset loaded successfully (train_files=%s, test_files=%s, split=%s).",
+        len(train_samples),
+        len(test_samples),
+        split_metadata.split_strategy,
+    )
+
+    model.fit(x_train, y_train)
+    logger.info("Medium model trained with %s pooled samples", len(x_train))
+
+    y_pred = [str(item) for item in model.predict(x_test)]
+    accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
+    macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
+    ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    uar = ser_metrics.get("uar")
+    if not isinstance(uar, float):
+        raise RuntimeError("SER metrics payload missing float 'uar'.")
+    logger.info(msg=f"Medium accuracy: {accuracy * 100:.2f}%")
+    logger.info(msg=f"Medium macro F1 score: {macro_f1:.4f}")
+    logger.info(msg=f"Medium UAR: {uar:.4f}")
+
+    provenance = build_provenance_metadata(
+        settings=settings,
+        backend_id=MEDIUM_BACKEND_ID,
+        profile=MEDIUM_PROFILE_ID,
+    )
+    artifact = _build_model_artifact(
+        model=model,
+        feature_vector_size=int(x_train.shape[1]),
+        training_samples=int(x_train.shape[0]),
+        labels=y_train,
+        backend_id=MEDIUM_BACKEND_ID,
+        profile=MEDIUM_PROFILE_ID,
+        feature_dim=int(x_train.shape[1]),
+        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
+        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        pooling_strategy=MEDIUM_POOLING_STRATEGY,
+        backend_model_id=medium_model_id,
+        provenance=provenance,
+    )
+    artifact_metadata_obj = artifact.get("metadata")
+    if not isinstance(artifact_metadata_obj, dict):
+        raise RuntimeError("Model artifact metadata is missing before persistence.")
+    artifact_metadata = _normalize_v2_artifact_metadata(artifact_metadata_obj)
+    persisted_artifacts = _persist_model_artifacts(model=model, artifact=artifact)
+    logger.info("Medium model saved to %s", persisted_artifacts.pickle_path)
+    if persisted_artifacts.secure_path is not None:
+        logger.info(
+            "Medium secure model saved to %s",
+            persisted_artifacts.secure_path,
+        )
+
+    report = _build_training_report(
+        accuracy=accuracy,
+        macro_f1=macro_f1,
+        ser_metrics=ser_metrics,
+        train_samples=int(x_train.shape[0]),
+        test_samples=int(x_test.shape[0]),
+        feature_vector_size=int(x_train.shape[1]),
+        labels=[*y_train, *y_test],
+        artifacts=persisted_artifacts,
+        artifact_metadata=artifact_metadata,
+        provenance=provenance,
+        data_controls={
+            "medium_noise_controls": {
+                "min_window_std": settings.medium_training.min_window_std,
+                "max_windows_per_clip": settings.medium_training.max_windows_per_clip,
+                "train": {
+                    "total_windows": train_noise_stats.total_windows,
+                    "kept_windows": train_noise_stats.kept_windows,
+                    "dropped_low_std_windows": train_noise_stats.dropped_low_std_windows,
+                    "dropped_cap_windows": train_noise_stats.dropped_cap_windows,
+                    "forced_keep_windows": train_noise_stats.forced_keep_windows,
+                },
+                "test": {
+                    "total_windows": test_noise_stats.total_windows,
+                    "kept_windows": test_noise_stats.kept_windows,
+                    "dropped_low_std_windows": test_noise_stats.dropped_low_std_windows,
+                    "dropped_cap_windows": test_noise_stats.dropped_cap_windows,
+                    "forced_keep_windows": test_noise_stats.forced_keep_windows,
+                },
+            },
+            "medium_grouped_evaluation": {
+                "split_strategy": split_metadata.split_strategy,
+                "speaker_grouped": split_metadata.speaker_grouped,
+                "speaker_id_coverage": split_metadata.speaker_id_coverage,
+                "train_unique_speakers": split_metadata.train_unique_speakers,
+                "test_unique_speakers": split_metadata.test_unique_speakers,
+                "speaker_overlap_count": split_metadata.speaker_overlap_count,
+            },
+        },
+    )
+    _persist_training_report(report, settings.models.training_report_file)
+    logger.info(
+        "Medium training report saved to %s", settings.models.training_report_file
+    )
+
+
+def train_accurate_model() -> None:
+    """Trains and persists accurate-profile model artifacts with Whisper metadata."""
+    settings = get_settings()
+    samples = load_labeled_audio_paths()
+    if samples is None:
+        logger.error("Dataset not loaded. Please load the dataset first.")
+        raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    train_samples, test_samples, split_metadata = _split_labeled_audio_samples(samples)
+    accurate_model_id = resolve_accurate_model_id(settings)
+    backend = WhisperBackend(
+        model_id=accurate_model_id,
+        cache_dir=settings.models.huggingface_cache_root,
+    )
+    cache = EmbeddingCache(settings.tmp_folder / "accurate_embeddings")
+    x_train, y_train = _build_accurate_feature_dataset(
+        samples=train_samples,
+        backend=backend,
+        cache=cache,
+        model_id=accurate_model_id,
+        backend_id=ACCURATE_BACKEND_ID,
+    )
+    x_test, y_test = _build_accurate_feature_dataset(
+        samples=test_samples,
+        backend=backend,
+        cache=cache,
+        model_id=accurate_model_id,
+        backend_id=ACCURATE_BACKEND_ID,
+    )
+    model: EmotionClassifier = _create_classifier()
+    logger.info(
+        "Accurate dataset loaded successfully (train_files=%s, test_files=%s, split=%s).",
+        len(train_samples),
+        len(test_samples),
+        split_metadata.split_strategy,
+    )
+
+    model.fit(x_train, y_train)
+    logger.info("Accurate model trained with %s pooled samples", len(x_train))
+
+    y_pred = [str(item) for item in model.predict(x_test)]
+    accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
+    macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
+    ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    uar = ser_metrics.get("uar")
+    if not isinstance(uar, float):
+        raise RuntimeError("SER metrics payload missing float 'uar'.")
+    logger.info(msg=f"Accurate accuracy: {accuracy * 100:.2f}%")
+    logger.info(msg=f"Accurate macro F1 score: {macro_f1:.4f}")
+    logger.info(msg=f"Accurate UAR: {uar:.4f}")
+
+    provenance = build_provenance_metadata(
+        settings=settings,
+        backend_id=ACCURATE_BACKEND_ID,
+        profile=ACCURATE_PROFILE_ID,
+    )
+    artifact = _build_model_artifact(
+        model=model,
+        feature_vector_size=int(x_train.shape[1]),
+        training_samples=int(x_train.shape[0]),
+        labels=y_train,
+        backend_id=ACCURATE_BACKEND_ID,
+        profile=ACCURATE_PROFILE_ID,
+        feature_dim=int(x_train.shape[1]),
+        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
+        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        pooling_strategy=ACCURATE_POOLING_STRATEGY,
+        backend_model_id=accurate_model_id,
+        provenance=provenance,
+    )
+    artifact_metadata_obj = artifact.get("metadata")
+    if not isinstance(artifact_metadata_obj, dict):
+        raise RuntimeError("Model artifact metadata is missing before persistence.")
+    artifact_metadata = _normalize_v2_artifact_metadata(artifact_metadata_obj)
+    persisted_artifacts = _persist_model_artifacts(model=model, artifact=artifact)
+    logger.info("Accurate model saved to %s", persisted_artifacts.pickle_path)
+    if persisted_artifacts.secure_path is not None:
+        logger.info(
+            "Accurate secure model saved to %s",
+            persisted_artifacts.secure_path,
+        )
+
+    report = _build_training_report(
+        accuracy=accuracy,
+        macro_f1=macro_f1,
+        ser_metrics=ser_metrics,
+        train_samples=int(x_train.shape[0]),
+        test_samples=int(x_test.shape[0]),
+        feature_vector_size=int(x_train.shape[1]),
+        labels=[*y_train, *y_test],
+        artifacts=persisted_artifacts,
+        artifact_metadata=artifact_metadata,
+        provenance=provenance,
+        data_controls={
+            "accurate_grouped_evaluation": {
+                "split_strategy": split_metadata.split_strategy,
+                "speaker_grouped": split_metadata.speaker_grouped,
+                "speaker_id_coverage": split_metadata.speaker_id_coverage,
+                "train_unique_speakers": split_metadata.train_unique_speakers,
+                "test_unique_speakers": split_metadata.test_unique_speakers,
+                "speaker_overlap_count": split_metadata.speaker_overlap_count,
+            }
+        },
+    )
+    _persist_training_report(report, settings.models.training_report_file)
+    logger.info(
+        "Accurate training report saved to %s", settings.models.training_report_file
+    )
+
+
+def train_accurate_research_model() -> None:
+    """Trains and persists accurate-research model artifacts with emotion2vec metadata."""
+    settings = get_settings()
+    allowed_restricted_backends = parse_allowed_restricted_backends_env()
+    persisted_consents = load_persisted_backend_consents(settings=settings)
+    ensure_backend_access(
+        backend_id=ACCURATE_RESEARCH_BACKEND_ID,
+        restricted_backends_enabled=settings.runtime_flags.restricted_backends,
+        allowed_restricted_backends=allowed_restricted_backends,
+        persisted_consents=persisted_consents,
+    )
+    samples = load_labeled_audio_paths()
+    if samples is None:
+        logger.error("Dataset not loaded. Please load the dataset first.")
+        raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    train_samples, test_samples, split_metadata = _split_labeled_audio_samples(samples)
+    accurate_research_model_id = resolve_accurate_research_model_id(settings)
+    backend = Emotion2VecBackend(
+        model_id=accurate_research_model_id,
+        modelscope_cache_root=settings.models.modelscope_cache_root,
+        huggingface_cache_root=settings.models.huggingface_cache_root,
+    )
+    cache = EmbeddingCache(settings.tmp_folder / "accurate_research_embeddings")
+    x_train, y_train = _build_accurate_feature_dataset(
+        samples=train_samples,
+        backend=backend,
+        cache=cache,
+        model_id=accurate_research_model_id,
+        backend_id=ACCURATE_RESEARCH_BACKEND_ID,
+    )
+    x_test, y_test = _build_accurate_feature_dataset(
+        samples=test_samples,
+        backend=backend,
+        cache=cache,
+        model_id=accurate_research_model_id,
+        backend_id=ACCURATE_RESEARCH_BACKEND_ID,
+    )
+    model: EmotionClassifier = _create_classifier()
+    logger.info(
+        "Accurate-research dataset loaded successfully "
+        "(train_files=%s, test_files=%s, split=%s).",
+        len(train_samples),
+        len(test_samples),
+        split_metadata.split_strategy,
+    )
+
+    model.fit(x_train, y_train)
+    logger.info("Accurate-research model trained with %s pooled samples", len(x_train))
+
+    y_pred = [str(item) for item in model.predict(x_test)]
+    accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
+    macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
+    ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    uar = ser_metrics.get("uar")
+    if not isinstance(uar, float):
+        raise RuntimeError("SER metrics payload missing float 'uar'.")
+    logger.info(msg=f"Accurate-research accuracy: {accuracy * 100:.2f}%")
+    logger.info(msg=f"Accurate-research macro F1 score: {macro_f1:.4f}")
+    logger.info(msg=f"Accurate-research UAR: {uar:.4f}")
+
+    provenance = build_provenance_metadata(
+        settings=settings,
+        backend_id=ACCURATE_RESEARCH_BACKEND_ID,
+        profile=ACCURATE_RESEARCH_PROFILE_ID,
+    )
+    artifact = _build_model_artifact(
+        model=model,
+        feature_vector_size=int(x_train.shape[1]),
+        training_samples=int(x_train.shape[0]),
+        labels=y_train,
+        backend_id=ACCURATE_RESEARCH_BACKEND_ID,
+        profile=ACCURATE_RESEARCH_PROFILE_ID,
+        feature_dim=int(x_train.shape[1]),
+        frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
+        frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        pooling_strategy=ACCURATE_POOLING_STRATEGY,
+        backend_model_id=accurate_research_model_id,
+        provenance=provenance,
+    )
+    artifact_metadata_obj = artifact.get("metadata")
+    if not isinstance(artifact_metadata_obj, dict):
+        raise RuntimeError("Model artifact metadata is missing before persistence.")
+    artifact_metadata = _normalize_v2_artifact_metadata(artifact_metadata_obj)
+    persisted_artifacts = _persist_model_artifacts(model=model, artifact=artifact)
+    logger.info("Accurate-research model saved to %s", persisted_artifacts.pickle_path)
+    if persisted_artifacts.secure_path is not None:
+        logger.info(
+            "Accurate-research secure model saved to %s",
+            persisted_artifacts.secure_path,
+        )
+
+    report = _build_training_report(
+        accuracy=accuracy,
+        macro_f1=macro_f1,
+        ser_metrics=ser_metrics,
+        train_samples=int(x_train.shape[0]),
+        test_samples=int(x_test.shape[0]),
+        feature_vector_size=int(x_train.shape[1]),
+        labels=[*y_train, *y_test],
+        artifacts=persisted_artifacts,
+        artifact_metadata=artifact_metadata,
+        provenance=provenance,
+        data_controls={
+            "accurate_grouped_evaluation": {
+                "split_strategy": split_metadata.split_strategy,
+                "speaker_grouped": split_metadata.speaker_grouped,
+                "speaker_id_coverage": split_metadata.speaker_id_coverage,
+                "train_unique_speakers": split_metadata.train_unique_speakers,
+                "test_unique_speakers": split_metadata.test_unique_speakers,
+                "speaker_overlap_count": split_metadata.speaker_overlap_count,
+            }
+        },
+    )
+    _persist_training_report(report, settings.models.training_report_file)
+    logger.info(
+        "Accurate-research training report saved to %s",
+        settings.models.training_report_file,
+    )
 
 
 def train_model() -> None:
@@ -553,24 +1505,21 @@ def train_model() -> None:
         RuntimeError: If no training data could be loaded from the dataset path.
     """
     settings = get_settings()
-    with Halo(text="Loading dataset... ", spinner="dots", text_color="green"):
-        if data := load_data(test_size=settings.training.test_size):
-            x_train, x_test, y_train, y_test = data
-            model: EmotionClassifier = _create_classifier()
-            logger.info(msg="Dataset loaded successfully.")
-        else:
-            logger.error("Dataset not loaded. Please load the dataset first.")
-            raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    if data := load_data(test_size=settings.training.test_size):
+        x_train, x_test, y_train, y_test = data
+        model: EmotionClassifier = _create_classifier()
+        logger.info(msg="Dataset loaded successfully.")
+    else:
+        logger.error("Dataset not loaded. Please load the dataset first.")
+        raise RuntimeError("Dataset not loaded. Please load the dataset first.")
 
-    with Halo(text="Training the model... ", spinner="dots", text_color="green"):
-        model.fit(x_train, y_train)
+    model.fit(x_train, y_train)
     logger.info(msg=f"Model trained with {len(x_train)} samples")
 
-    with Halo(text="Measuring accuracy... ", spinner="dots", text_color="green"):
-        y_pred = [str(item) for item in model.predict(x_test)]
-        accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
-        macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
-        ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    y_pred = [str(item) for item in model.predict(x_test)]
+    accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
+    macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
+    ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
     uar = ser_metrics.get("uar")
     if not isinstance(uar, float):
         raise RuntimeError("SER metrics payload missing float 'uar'.")
@@ -578,18 +1527,23 @@ def train_model() -> None:
     logger.info(msg=f"Macro F1 score: {macro_f1:.4f}")
     logger.info(msg=f"UAR: {uar:.4f}")
 
-    with Halo(text="Saving the model... ", spinner="dots", text_color="green"):
-        artifact = _build_model_artifact(
-            model=model,
-            feature_vector_size=int(x_train.shape[1]),
-            training_samples=int(x_train.shape[0]),
-            labels=y_train,
-        )
-        artifact_metadata_obj = artifact.get("metadata")
-        if not isinstance(artifact_metadata_obj, dict):
-            raise RuntimeError("Model artifact metadata is missing before persistence.")
-        artifact_metadata = _normalize_v2_artifact_metadata(artifact_metadata_obj)
-        persisted_artifacts = _persist_model_artifacts(model=model, artifact=artifact)
+    provenance = build_provenance_metadata(
+        settings=settings,
+        backend_id=DEFAULT_BACKEND_ID,
+        profile=DEFAULT_PROFILE_ID,
+    )
+    artifact = _build_model_artifact(
+        model=model,
+        feature_vector_size=int(x_train.shape[1]),
+        training_samples=int(x_train.shape[0]),
+        labels=y_train,
+        provenance=provenance,
+    )
+    artifact_metadata_obj = artifact.get("metadata")
+    if not isinstance(artifact_metadata_obj, dict):
+        raise RuntimeError("Model artifact metadata is missing before persistence.")
+    artifact_metadata = _normalize_v2_artifact_metadata(artifact_metadata_obj)
+    persisted_artifacts = _persist_model_artifacts(model=model, artifact=artifact)
     logger.info(msg=f"Model saved to {persisted_artifacts.pickle_path}")
     if persisted_artifacts.secure_path is not None:
         logger.info(msg=f"Secure model saved to {persisted_artifacts.secure_path}")
@@ -604,13 +1558,26 @@ def train_model() -> None:
         labels=[*y_train, *y_test],
         artifacts=persisted_artifacts,
         artifact_metadata=artifact_metadata,
+        provenance=provenance,
     )
     _persist_training_report(report, settings.models.training_report_file)
     logger.info(msg=f"Training report saved to {settings.models.training_report_file}")
 
 
-def load_model() -> LoadedModel:
+def load_model(
+    settings: AppConfig | None = None,
+    *,
+    expected_backend_id: str | None = None,
+    expected_profile: str | None = None,
+    expected_backend_model_id: str | None = None,
+) -> LoadedModel:
     """Loads the serialized SER model from disk.
+
+    Args:
+        settings: Optional settings snapshot used to resolve model/report paths.
+        expected_backend_id: Optional backend-id compatibility filter.
+        expected_profile: Optional profile compatibility filter.
+        expected_backend_model_id: Optional backend-model-id compatibility filter.
 
     Returns:
         The loaded model plus expected feature-vector size.
@@ -620,21 +1587,13 @@ def load_model() -> LoadedModel:
         ValueError: If model artifacts exist but none can be deserialized.
     """
     try:
-        with Halo(
-            text="Loading SER model... ",
-            spinner="dots",
-            text_color="green",
-        ):
-            candidate, loaded_model = _resolve_model_for_loading()
-
-        if candidate.origin == "legacy":
-            settings = get_settings()
-            logger.warning(
-                "Primary model not found under %s; using legacy model path %s. "
-                "Set SER_MODELS_DIR to migrate location explicitly.",
-                settings.models.folder,
-                candidate.path,
-            )
+        active_settings = settings if settings is not None else get_settings()
+        candidate, loaded_model = _resolve_model_for_loading(
+            active_settings,
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
+            expected_backend_model_id=expected_backend_model_id,
+        )
 
         logger.info(
             "Model loaded from %s (%s).",
@@ -666,7 +1625,7 @@ def _frame_confidence_and_probabilities(
         return fallback_confidence, fallback_probabilities
 
     classes_attr = getattr(model, "classes_", None)
-    if not isinstance(classes_attr, (list, tuple, np.ndarray)):
+    if not isinstance(classes_attr, list | tuple | np.ndarray):
         logger.warning(
             "Loaded model predict_proba path missing classes_; using confidence fallback."
         )
@@ -714,7 +1673,9 @@ def _aggregate_probabilities(
     if first is None:
         return None
     labels = list(first.keys())
-    if any(item is None or set(item.keys()) != set(labels) for item in probabilities[1:]):
+    if any(
+        item is None or set(item.keys()) != set(labels) for item in probabilities[1:]
+    ):
         return None
 
     aggregates: dict[str, float] = {}
@@ -772,55 +1733,56 @@ def _segment_predictions(
     return segments
 
 
-def predict_emotions_detailed(file: str) -> InferenceResult:
-    """Runs inference and returns detailed frame + segment predictions."""
-    loaded_model: LoadedModel = load_model()
+def _predict_emotions_detailed_with_model(
+    file: str,
+    *,
+    loaded_model: LoadedModel,
+) -> InferenceResult:
+    """Runs inference with a preloaded model and returns detailed predictions."""
     model = loaded_model.model
 
-    with Halo(
-        text="Inferring Emotions from Audio File... ",
-        spinner="dots",
-        text_color="green",
-    ):
-        feature_frames = extract_feature_frames(file)
-        if not feature_frames:
-            logger.warning("No features extracted for file %s.", file)
-            return InferenceResult(
-                schema_version=OUTPUT_SCHEMA_VERSION,
-                segments=[],
-                frames=[],
-            )
-
-        feature_vectors: list[np.ndarray] = [frame.features for frame in feature_frames]
-        if loaded_model.expected_feature_size is not None:
-            invalid_sizes = {
-                vector.shape[0]
-                for vector in feature_vectors
-                if vector.shape[0] != loaded_model.expected_feature_size
-            }
-            if invalid_sizes:
-                raise ValueError(
-                    "Feature vector size mismatch for loaded model. "
-                    f"Expected {loaded_model.expected_feature_size}, "
-                    f"got {sorted(invalid_sizes)}."
-                )
-
-        feature_matrix = np.asarray(feature_vectors, dtype=np.float64)
-        predicted_emotions: list[str] = [
-            str(item) for item in model.predict(feature_matrix)
-        ]
-        if len(predicted_emotions) != len(feature_frames):
-            raise RuntimeError(
-                "Frame/prediction length mismatch. "
-                f"Got {len(feature_frames)} frames and {len(predicted_emotions)} predictions."
-            )
-        confidences, probabilities = _frame_confidence_and_probabilities(
-            model=model,
-            feature_matrix=feature_matrix,
-            frame_count=len(feature_frames),
+    feature_frames = extract_feature_frames(file)
+    if not feature_frames:
+        logger.warning("No features extracted for file %s.", file)
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
         )
 
-    logger.info(msg="Emotion inference completed.")
+    feature_vectors: list[np.ndarray] = [frame.features for frame in feature_frames]
+    if loaded_model.expected_feature_size is not None:
+        invalid_sizes = {
+            vector.shape[0]
+            for vector in feature_vectors
+            if vector.shape[0] != loaded_model.expected_feature_size
+        }
+        if invalid_sizes:
+            raise ValueError(
+                "Feature vector size mismatch for loaded model. "
+                f"Expected {loaded_model.expected_feature_size}, "
+                f"got {sorted(invalid_sizes)}."
+            )
+
+    feature_matrix = np.asarray(feature_vectors, dtype=np.float64)
+    predicted_emotions: list[str] = [
+        str(item) for item in model.predict(feature_matrix)
+    ]
+    if len(predicted_emotions) != len(feature_frames):
+        raise RuntimeError(
+            "Frame/prediction length mismatch. "
+            f"Got {len(feature_frames)} frames and {len(predicted_emotions)} predictions."
+        )
+    confidences, probabilities = _frame_confidence_and_probabilities(
+        model=model,
+        feature_matrix=feature_matrix,
+        frame_count=len(feature_frames),
+    )
+
+    logger.debug(
+        "Emotion model prediction completed for %d frames.",
+        len(predicted_emotions),
+    )
     if not predicted_emotions:
         logger.warning("No emotions predicted for file %s.", file)
         return InferenceResult(
@@ -839,8 +1801,12 @@ def predict_emotions_detailed(file: str) -> InferenceResult:
         )
         for idx in range(len(feature_frames))
     ]
+    logger.debug("Timestamp extraction started.")
     segment_predictions = _segment_predictions(frame_predictions)
-    logger.info("Emotion prediction and timestamp extraction completed.")
+    logger.debug(
+        "Timestamp extraction completed for %d segments.",
+        len(segment_predictions),
+    )
     return InferenceResult(
         schema_version=OUTPUT_SCHEMA_VERSION,
         segments=segment_predictions,
@@ -848,6 +1814,31 @@ def predict_emotions_detailed(file: str) -> InferenceResult:
     )
 
 
-def predict_emotions(file: str) -> list[EmotionSegment]:
+def predict_emotions_detailed(
+    file: str,
+    *,
+    loaded_model: LoadedModel | None = None,
+) -> InferenceResult:
+    """Runs inference and returns detailed frame + segment predictions."""
+    active_loaded_model = loaded_model if loaded_model is not None else load_model()
+    return _predict_emotions_detailed_with_model(
+        file,
+        loaded_model=active_loaded_model,
+    )
+
+
+def predict_emotions(
+    file: str,
+    *,
+    loaded_model: LoadedModel | None = None,
+) -> list[EmotionSegment]:
     """Compatibility wrapper returning legacy emotion segments."""
-    return to_legacy_emotion_segments(predict_emotions_detailed(file))
+    inference = (
+        predict_emotions_detailed(file)
+        if loaded_model is None
+        else predict_emotions_detailed(
+            file,
+            loaded_model=loaded_model,
+        )
+    )
+    return to_legacy_emotion_segments(inference)

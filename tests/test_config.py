@@ -22,6 +22,7 @@ def test_reload_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("DEFAULT_LANGUAGE", "es")
     monkeypatch.setenv("SER_CACHE_DIR", "custom/cache")
     monkeypatch.setenv("SER_DATA_DIR", "custom/data")
+    monkeypatch.setenv("SER_MODEL_CACHE_DIR", "custom/model-cache")
     monkeypatch.setenv("SER_TMP_DIR", "custom/tmp")
     monkeypatch.setenv("SER_MODELS_DIR", "custom/models")
     monkeypatch.setenv("SER_TRANSCRIPTS_DIR", "custom/transcripts")
@@ -44,6 +45,17 @@ def test_reload_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.models.num_cores == 4
     assert settings.tmp_folder == Path("custom/tmp")
     assert settings.models.folder == Path("custom/models")
+    assert settings.models.model_cache_dir == Path("custom/model-cache")
+    assert settings.models.huggingface_cache_root == Path(
+        "custom/model-cache/huggingface"
+    )
+    assert settings.models.modelscope_cache_root == Path(
+        "custom/model-cache/modelscope/hub"
+    )
+    assert settings.models.whisper_download_root == Path(
+        "custom/model-cache/OpenAI/whisper"
+    )
+    assert settings.models.torch_cache_root == Path("custom/model-cache/torch")
     assert settings.timeline.folder == Path("custom/transcripts")
     assert settings.models.model_file == Path("custom/models/custom_model.pkl")
     assert settings.models.secure_model_file == Path("custom/models/custom_model.skops")

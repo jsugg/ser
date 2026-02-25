@@ -1,4 +1,4 @@
-.PHONY: help setup fmt lint type test check ci train predict prepush clean
+.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush clean
 
 .DEFAULT_GOAL := help
 
@@ -6,7 +6,8 @@ FILE ?= $(if $(wildcard sample.wav),sample.wav,$(error sample.wav not found; run
 
 help:
 	@echo "Targets:"
-	@echo "  setup    - install dev deps"
+	@echo "  setup    - platform-aware setup (full runtime + dev tools)"
+	@echo "  setup-runtime - platform-aware setup (runtime deps only)"
 	@echo "  fmt      - format code"
 	@echo "  lint     - run linters"
 	@echo "  type     - run type checks"
@@ -15,10 +16,15 @@ help:
 	@echo "  prepush  - run pre-commit pre-push hooks"
 	@echo "  train    - train model"
 	@echo "  predict  - run prediction (set FILE=sample.wav)"
+	@echo "  optin-all-restricted - persist consent for all known restricted backends"
+	@echo "  quality-gate-full - run full-dataset quality gate suite"
 	@echo "  clean    - remove caches"
 
 setup:
-	uv sync --extra dev
+	./scripts/setup_compatible_env.sh
+
+setup-runtime:
+	SER_SETUP_INCLUDE_DEV=false ./scripts/setup_compatible_env.sh
 
 fmt:
 	uv run ruff check --fix ser tests
@@ -47,6 +53,12 @@ train:
 
 predict:
 	uv run ser --file $(FILE)
+
+optin-all-restricted:
+	uv run ser --accept-all-restricted-backends
+
+quality-gate-full:
+	./scripts/run_full_dataset_quality_gate.sh
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +

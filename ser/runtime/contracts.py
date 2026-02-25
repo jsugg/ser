@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import ProfileName
@@ -32,6 +32,7 @@ class InferenceExecution:
     used_backend_path: bool = False
     timeline_csv_path: str | None = None
     detailed_result: InferenceResult | None = None
+    phase_timings_seconds: dict[str, float] = field(default_factory=dict)
 
 
 type BackendInferenceCallable = Callable[[InferenceRequest], InferenceResult]
