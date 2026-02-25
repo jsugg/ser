@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   darwin-intel-full-profile-smoke:
-    runs-on: macos-13
+    runs-on: macos-15-intel
     timeout-minutes: 180
 
     steps:
@@ -53,6 +53,9 @@ jobs:
 
       - name: Setup compatible environment
         run: ./scripts/setup_compatible_env.sh --python 3.12
+
+      - name: Build synthetic RAVDESS smoke dataset
+        run: python ./scripts/build_synthetic_ravdess_dataset.py
 
       - name: Fast profile train and predict
         run: |

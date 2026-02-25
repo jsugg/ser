@@ -54,8 +54,10 @@ jobs:
 
       - name: Ensure ffmpeg is available
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
           ffmpeg -version
 
       - name: Cache uv
@@ -68,6 +70,9 @@ jobs:
 
       - name: Sync all dependency groups (Python 3.13)
         run: uv sync --frozen --python 3.13 --all-extras
+
+      - name: Build synthetic RAVDESS smoke dataset
+        run: python ./scripts/build_synthetic_ravdess_dataset.py
 
       - name: Fast profile train and predict
         run: |
