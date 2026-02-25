@@ -126,7 +126,9 @@ def build_synthetic_dataset(args: argparse.Namespace) -> int:
     for actor_id in args.actors:
         actor_dir = output_root / f"Actor_{actor_id:02d}"
         for emotion_code in args.emotion_codes:
-            frequency_hz = 180.0 + (float(emotion_code) * 22.0) + (float(actor_id) * 7.0)
+            frequency_hz = (
+                180.0 + (float(emotion_code) * 22.0) + (float(actor_id) * 7.0)
+            )
             pcm_frames = _sine_pcm16_frames(
                 sample_rate=args.sample_rate,
                 duration_seconds=args.duration_seconds,
