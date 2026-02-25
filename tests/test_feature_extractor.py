@@ -1,0 +1,192 @@
+"""Behavior tests for in-memory feature extraction paths."""
+
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+from ser.features import feature_extractor as fe
+from ser.repr import EncodedSequence
+
+
+def test_extract_feature_from_signal_combines_enabled_components(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All enabled feature blocks should be concatenated into one vector."""
+    monkeypatch.setattr(
+        fe,
+        "get_settings",
+        lambda: SimpleNamespace(
+            feature_flags=SimpleNamespace(
+                mfcc=True,
+                chroma=True,
+                mel=True,
+                contrast=True,
+                tonnetz=True,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        fe.librosa, "stft", lambda _audio, n_fft: np.ones((n_fft // 2 + 1, 4))
+    )
+    monkeypatch.setattr(
+        fe.librosa, "power_to_db", lambda array, ref=None: np.asarray(array)
+    )
+    monkeypatch.setattr(
+        fe.librosa.feature, "mfcc", lambda **_kwargs: np.ones((40, 4), dtype=np.float32)
+    )
+    monkeypatch.setattr(
+        fe.librosa.feature,
+        "chroma_stft",
+        lambda **_kwargs: np.ones((12, 4), dtype=np.float32),
+    )
+    monkeypatch.setattr(
+        fe.librosa.feature,
+        "melspectrogram",
+        lambda **_kwargs: np.ones((128, 4), dtype=np.float32),
+    )
+    monkeypatch.setattr(
+        fe.librosa.feature,
+        "spectral_contrast",
+        lambda **_kwargs: np.ones((7, 4), dtype=np.float32),
+    )
+    monkeypatch.setattr(fe.librosa.effects, "harmonic", lambda audio: audio)
+    monkeypatch.setattr(
+        fe.librosa.feature,
+        "tonnetz",
+        lambda **_kwargs: np.ones((6, 4), dtype=np.float32),
+    )
+
+    feature_vector = fe.extract_feature_from_signal(
+        np.ones(1024, dtype=np.float32), sample_rate=16000
+    )
+
+    assert feature_vector.shape == (193,)
+
+
+def test_extract_feature_from_signal_rejects_empty_audio() -> None:
+    """Empty buffers must fail with a clear validation error."""
+    with pytest.raises(ValueError, match="no samples"):
+        fe.extract_feature_from_signal(
+            np.asarray([], dtype=np.float32), sample_rate=16000
+        )
+
+
+def test_extended_extract_feature_uses_in_memory_frames(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frame extraction should avoid temporary files and process in-memory slices."""
+    monkeypatch.setattr(
+        fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
+    )
+    monkeypatch.setattr(
+        fe,
+        "extract_feature_from_signal",
+        lambda audio, _sample_rate: np.asarray([float(audio.size)], dtype=np.float64),
+    )
+
+    features = fe.extended_extract_feature("sample.wav", frame_size=2, frame_stride=1)
+
+    assert [int(item[0]) for item in features] == [4, 4, 4, 4, 2]
+
+
+def test_extract_feature_delegates_to_handcrafted_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Single-vector feature extraction should route through backend abstraction."""
+    monkeypatch.setattr(
+        fe, "read_audio_file", lambda _path: (np.arange(6, dtype=np.float32), 2)
+    )
+    calls: dict[str, object] = {}
+
+    class FakeBackend:
+        def extract_vector(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
+            calls["args"] = (audio.size, sample_rate)
+            return np.asarray([11.0, 22.0], dtype=np.float64)
+
+    monkeypatch.setattr(fe, "HandcraftedBackend", FakeBackend)
+
+    result = fe.extract_feature("sample.wav")
+
+    assert calls["args"] == (6, 2)
+    np.testing.assert_allclose(result, np.asarray([11.0, 22.0], dtype=np.float64))
+
+
+def test_extract_feature_frames_exposes_frame_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frame extractor should expose exact start/end bounds per frame."""
+    monkeypatch.setattr(
+        fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
+    )
+    monkeypatch.setattr(
+        fe,
+        "extract_feature_from_signal",
+        lambda audio, _sample_rate: np.asarray([float(audio.size)], dtype=np.float64),
+    )
+
+    frames = fe.extract_feature_frames("sample.wav", frame_size=2, frame_stride=1)
+
+    assert [round(frame.start_seconds, 3) for frame in frames] == [
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+    ]
+    assert [round(frame.end_seconds, 3) for frame in frames] == [
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        5.0,
+    ]
+    assert [int(frame.features[0]) for frame in frames] == [4, 4, 4, 4, 2]
+
+
+def test_extract_feature_frames_uses_handcrafted_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Frame extraction should delegate to handcrafted backend encoding."""
+    monkeypatch.setattr(
+        fe, "read_audio_file", lambda _path: (np.arange(4, dtype=np.float32), 2)
+    )
+    calls: dict[str, object] = {}
+
+    class FakeBackend:
+        def __init__(
+            self,
+            *,
+            frame_size_seconds: int,
+            frame_stride_seconds: int,
+        ) -> None:
+            calls["window"] = (frame_size_seconds, frame_stride_seconds)
+
+        def encode_sequence(
+            self,
+            audio: np.ndarray,
+            sample_rate: int,
+        ) -> EncodedSequence:
+            calls["encode_args"] = (audio.size, sample_rate)
+            return EncodedSequence(
+                embeddings=np.asarray([[10.0], [20.0]], dtype=np.float32),
+                frame_start_seconds=np.asarray([0.0, 1.0], dtype=np.float64),
+                frame_end_seconds=np.asarray([1.0, 2.0], dtype=np.float64),
+                backend_id="handcrafted",
+            )
+
+    monkeypatch.setattr(fe, "HandcraftedBackend", FakeBackend)
+
+    frames = fe.extract_feature_frames("sample.wav", frame_size=2, frame_stride=1)
+
+    assert calls["window"] == (2, 1)
+    assert calls["encode_args"] == (4, 2)
+    assert [float(item.features[0]) for item in frames] == [10.0, 20.0]
+
+
+def test_extended_extract_feature_rejects_invalid_window_arguments() -> None:
+    """Frame size and stride must be positive."""
+    with pytest.raises(ValueError, match="frame_size"):
+        fe.extended_extract_feature("sample.wav", frame_size=0, frame_stride=1)
+    with pytest.raises(ValueError, match="frame_stride"):
+        fe.extended_extract_feature("sample.wav", frame_size=1, frame_stride=0)

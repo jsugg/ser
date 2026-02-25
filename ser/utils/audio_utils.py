@@ -3,13 +3,14 @@
 import logging
 import time
 import warnings
+from pathlib import Path
 
 import librosa
 import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
-from ser.config import get_settings
+from ser.config import AppConfig, get_settings
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
@@ -25,6 +26,31 @@ def _normalize_audio(audiofile: NDArray[np.float32]) -> NDArray[np.float32]:
     return audiofile / max_abs_value
 
 
+def _to_mono(audiofile: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Converts multi-channel audio to mono while preserving sample order."""
+    if audiofile.ndim == 1:
+        return audiofile
+
+    if audiofile.ndim == 2:
+        # `soundfile` returns shape `(frames, channels)`.
+        if audiofile.shape[1] == 0:
+            return np.array([], dtype=np.float32)
+        mixed = np.mean(audiofile, axis=1, dtype=np.float32)
+        return np.asarray(mixed, dtype=np.float32)
+
+    raise OSError(f"Unsupported audio shape: {audiofile.shape}")
+
+
+def _prepare_audio_buffer(raw_audio: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Normalizes and validates decoded audio samples for downstream DSP."""
+    prepared = np.asarray(raw_audio, dtype=np.float32)
+    prepared = np.nan_to_num(prepared, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+    prepared = _to_mono(prepared)
+    if prepared.size == 0:
+        raise OSError("Audio file contains no samples.")
+    return _normalize_audio(prepared)
+
+
 def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
     """Reads an audio file and normalizes amplitude to [-1, 1].
 
@@ -34,45 +60,55 @@ def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
     Returns:
         A tuple of `(audio_samples, sample_rate)`.
     """
-    settings = get_settings()
+    settings: AppConfig = get_settings()
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Audio file not found: {file_path}")
+    if not path.is_file():
+        raise OSError(f"Path is not a regular file: {file_path}")
+
     logger.debug(msg=f"Starting to read audio file: {file_path}")
     for attempt in range(settings.audio_read.max_retries):
         logger.debug(msg=f"Attempt {attempt + 1} to read audio file using librosa.")
         try:
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore")
-                audiofile, current_sample_rate = librosa.load(file_path, sr=None)
-            audiofile = np.asarray(audiofile, dtype=np.float32)
-            audiofile = _normalize_audio(audiofile)
+                warnings.filterwarnings(
+                    "ignore", category=UserWarning, module="librosa"
+                )
+                audiofile, current_sample_rate = librosa.load(str(path), sr=None)
+            normalized_audio = _prepare_audio_buffer(
+                np.asarray(audiofile, dtype=np.float32)
+            )
 
             logger.debug(msg=f"Successfully read audio file using librosa: {file_path}")
-            return audiofile, int(current_sample_rate)
+            return normalized_audio, int(current_sample_rate)
 
         except Exception as err:
             logger.warning(msg=f"Librosa failed to read audio file: {err}")
             logger.warning(msg="Falling back to soundfile...")
             try:
-                with sf.SoundFile(file_path) as sound_file:
-                    audiofile = np.asarray(
+                with sf.SoundFile(str(path)) as sound_file:
+                    raw_audio = np.asarray(
                         sound_file.read(dtype="float32"), dtype=np.float32
                     )
                     current_sample_rate = int(sound_file.samplerate)
-                audiofile = _normalize_audio(audiofile)
+                normalized_audio = _prepare_audio_buffer(raw_audio)
 
                 logger.debug(
                     msg=(f"Successfully read audio file using soundfile: {file_path}")
                 )
-                return audiofile, current_sample_rate
+                return normalized_audio, current_sample_rate
 
             except Exception as err:
                 logger.warning(msg=f"Soundfile also failed: {err}")
-                logger.info(
-                    msg=(
-                        "Retrying with librosa in "
-                        f"{settings.audio_read.retry_delay_seconds} seconds..."
+                if attempt < settings.audio_read.max_retries - 1:
+                    logger.info(
+                        msg=(
+                            "Retrying with librosa in "
+                            f"{settings.audio_read.retry_delay_seconds} seconds..."
+                        )
                     )
-                )
-                time.sleep(settings.audio_read.retry_delay_seconds)
+                    time.sleep(settings.audio_read.retry_delay_seconds)
 
     logger.error(
         msg=(
