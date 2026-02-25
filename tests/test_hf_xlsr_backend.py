@@ -9,7 +9,9 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+import ser.repr.hf_xlsr as hf_xlsr_module
 from ser.repr import EncodedSequence, PoolingWindow, XLSRBackend
+from ser.utils.torch_inference import TorchRuntime
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,18 @@ class _FakeModel:
         ).reshape(frame_count, self.config.hidden_size)
         offset = float(len(self.call_sizes) - 1) * 100.0
         return _FakeModelOutput(last_hidden_state=np.expand_dims(base + offset, axis=0))
+
+
+class _NaNThenFiniteModel(_FakeModel):
+    """Model stub that returns NaN output once, then finite output."""
+
+    def __call__(self, **kwargs: object) -> _FakeModelOutput:
+        output = super().__call__(**kwargs)
+        if len(self.call_sizes) == 1:
+            hidden = np.asarray(output.last_hidden_state, dtype=np.float32)
+            hidden.fill(np.nan)
+            return _FakeModelOutput(last_hidden_state=hidden)
+        return output
 
 
 def test_xlsr_backend_feature_dim_is_resolved_from_model_config() -> None:
@@ -180,3 +194,58 @@ def test_xlsr_backend_rejects_invalid_audio_contracts() -> None:
         backend.encode_sequence(np.ones((2, 2), dtype=np.float32), sample_rate=4)
     with pytest.raises(ValueError, match="at least one sample"):
         backend.encode_sequence(np.asarray([], dtype=np.float32), sample_rate=4)
+
+
+def test_xlsr_backend_retries_non_finite_chunk_in_float32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backend should rerun one chunk in float32 when half precision returns NaN/Inf."""
+    fp16_runtime = TorchRuntime(
+        device=object(),
+        dtype=object(),
+        device_spec="cuda:0",
+        device_type="cuda",
+        dtype_name="float16",
+    )
+    fp32_runtime = TorchRuntime(
+        device=object(),
+        dtype=object(),
+        device_spec="cuda:0",
+        device_type="cuda",
+        dtype_name="float32",
+    )
+    model_move_dtypes: list[str] = []
+
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: fp16_runtime,
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "runtime_with_dtype",
+        lambda runtime, *, dtype: fp32_runtime,
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "move_inputs_to_runtime",
+        lambda inputs, runtime, *, dtype_keys: dict(inputs),
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "move_model_to_runtime",
+        lambda model, runtime: model_move_dtypes.append(runtime.dtype_name),
+    )
+
+    backend = XLSRBackend(
+        model_id="unit-test/xlsr",
+        device="auto",
+        dtype="auto",
+        feature_extractor=_FakeFeatureExtractor(),
+        model=_NaNThenFiniteModel(hidden_size=2),
+    )
+
+    encoded = backend.encode_sequence(np.ones(4, dtype=np.float32), sample_rate=4)
+
+    assert np.all(np.isfinite(encoded.embeddings))
+    assert model_move_dtypes == ["float32"]

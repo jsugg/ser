@@ -9,7 +9,9 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+import ser.repr.hf_whisper as hf_whisper_module
 from ser.repr import EncodedSequence, PoolingWindow, WhisperBackend
+from ser.utils.torch_inference import TorchRuntime
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,18 @@ class _FakeEncoder:
         return _FakeEncoderOutput(
             last_hidden_state=np.expand_dims(base + offset, axis=0)
         )
+
+
+class _NaNThenFiniteEncoder(_FakeEncoder):
+    """Encoder stub that returns NaN output once, then finite output."""
+
+    def __call__(self, **kwargs: object) -> _FakeEncoderOutput:
+        output = super().__call__(**kwargs)
+        if len(self.call_sizes) == 1:
+            hidden = np.asarray(output.last_hidden_state, dtype=np.float32)
+            hidden.fill(np.nan)
+            return _FakeEncoderOutput(last_hidden_state=hidden)
+        return output
 
 
 class _FakeModel:
@@ -213,3 +227,60 @@ def test_whisper_backend_rejects_invalid_audio_contracts() -> None:
         backend.encode_sequence(np.ones((2, 2), dtype=np.float32), sample_rate=4)
     with pytest.raises(ValueError, match="at least one sample"):
         backend.encode_sequence(np.asarray([], dtype=np.float32), sample_rate=4)
+
+
+def test_whisper_backend_retries_non_finite_chunk_in_float32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backend should rerun one chunk in float32 when half precision returns NaN/Inf."""
+    fp16_runtime = TorchRuntime(
+        device=object(),
+        dtype=object(),
+        device_spec="cuda:0",
+        device_type="cuda",
+        dtype_name="float16",
+    )
+    fp32_runtime = TorchRuntime(
+        device=object(),
+        dtype=object(),
+        device_spec="cuda:0",
+        device_type="cuda",
+        dtype_name="float32",
+    )
+    model_move_dtypes: list[str] = []
+
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: fp16_runtime,
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "runtime_with_dtype",
+        lambda runtime, *, dtype: fp32_runtime,
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "move_inputs_to_runtime",
+        lambda inputs, runtime, *, dtype_keys: dict(inputs),
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "move_model_to_runtime",
+        lambda model, runtime: model_move_dtypes.append(runtime.dtype_name),
+    )
+
+    model = _FakeModel(hidden_size=2)
+    model.encoder = _NaNThenFiniteEncoder(hidden_size=2)
+    backend = WhisperBackend(
+        model_id="unit-test/whisper",
+        device="auto",
+        dtype="auto",
+        feature_extractor=_FakeFeatureExtractor(),
+        model=model,
+    )
+
+    encoded = backend.encode_sequence(np.ones(4, dtype=np.float32), sample_rate=4)
+
+    assert np.all(np.isfinite(encoded.embeddings))
+    assert model_move_dtypes == ["float32"]
