@@ -1,0 +1,37 @@
+LICENSE-THIRD-PARTY
+===================
+
+This project source code is licensed under MIT (see LICENSE).
+Third-party dependencies and runtime model backends are governed by their own
+licenses and terms.
+
+Core/runtime dependencies (representative)
+-----------------------------------------
+- librosa: ISC
+- scikit-learn: BSD-3-Clause
+- numpy: BSD-3-Clause
+- scipy: BSD-3-Clause
+- soundfile: BSD-3-Clause
+- torch: BSD-3-Clause
+- transformers: Apache-2.0
+- openai-whisper: MIT
+- stable-ts: MIT
+
+Runtime model backends
+----------------------
+- handcrafted (`handcrafted`): librosa feature stack (ISC/BSD dependencies)
+- XLS-R (`hf_xlsr`): Apache-2.0 model family
+  Source: https://huggingface.co/facebook/wav2vec2-xls-r-300m
+- Whisper (`hf_whisper`): MIT model family
+  Source: https://github.com/openai/whisper/blob/main/LICENSE
+- emotion2vec (`emotion2vec`): custom model license (`other`)
+  Source: https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE
+  Status: restricted, explicit opt-in required via
+  `SER_ENABLE_RESTRICTED_BACKENDS=true`.
+
+Notes
+-----
+- This project does not bundle third-party model weights in package artifacts.
+- Training data licenses can impose additional constraints on derived artifacts.
+- See runtime policy helpers in `ser/license_check.py` for enforced backend
+  license gates and provenance fields.

@@ -1,0 +1,127 @@
+name: Linux Python 3.13 CLI Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_accurate_research:
+        description: "Run accurate-research profile train/predict smoke."
+        required: true
+        default: false
+        type: boolean
+      accurate_model_id:
+        description: "Whisper model id used by accurate profile smoke."
+        required: true
+        default: "openai/whisper-tiny"
+        type: string
+      accurate_research_model_id:
+        description: "Model id used by accurate-research profile smoke."
+        required: true
+        default: "iic/emotion2vec_plus_large"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  linux-py313-profile-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure runtime directories
+        run: |
+          echo "SER_MAX_WORKERS=1" >> "$GITHUB_ENV"
+          echo "SER_MODELS_DIR=$RUNNER_TEMP/ser-models" >> "$GITHUB_ENV"
+          echo "SER_DATA_DIR=$RUNNER_TEMP/ser-data" >> "$GITHUB_ENV"
+          echo "SER_CACHE_DIR=$RUNNER_TEMP/ser-cache" >> "$GITHUB_ENV"
+          echo "SER_TRANSCRIPTS_DIR=$RUNNER_TEMP/ser-transcripts" >> "$GITHUB_ENV"
+          mkdir -p \
+            "$RUNNER_TEMP/ser-models" \
+            "$RUNNER_TEMP/ser-data" \
+            "$RUNNER_TEMP/ser-cache" \
+            "$RUNNER_TEMP/ser-transcripts"
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Ensure ffmpeg is available
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-linux-py313-cli-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-linux-py313-cli-
+
+      - name: Sync all dependency groups (Python 3.13)
+        run: uv sync --frozen --python 3.13 --all-extras
+
+      - name: Fast profile train and predict
+        run: |
+          uv run --python 3.13 ser --train --profile fast
+          uv run --python 3.13 ser --file sample.wav --profile fast
+
+      - name: Medium profile train and predict
+        run: |
+          SER_MODEL_FILE_NAME=ser_model_medium_linux_py313.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_linux_py313.json \
+          uv run --python 3.13 --extra medium ser --train --profile medium
+
+          SER_MODEL_FILE_NAME=ser_model_medium_linux_py313.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_linux_py313.json \
+          uv run --python 3.13 --extra medium ser --file sample.wav --profile medium
+
+      - name: Accurate profile train and predict (compatibility smoke)
+        run: |
+          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
+          SER_MODEL_FILE_NAME=ser_model_accurate_linux_py313.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_linux_py313.json \
+          uv run --python 3.13 --extra medium ser --train --profile accurate
+
+          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
+          SER_MODEL_FILE_NAME=ser_model_accurate_linux_py313.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_linux_py313.json \
+          uv run --python 3.13 --extra medium ser --file sample.wav --profile accurate
+
+      - name: Accurate-research profile train and predict (compatibility smoke)
+        if: ${{ inputs.run_accurate_research }}
+        run: |
+          SER_ENABLE_RESTRICTED_BACKENDS=true \
+          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
+          SER_MODEL_FILE_NAME=ser_model_accurate_research_linux_py313.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_linux_py313.json \
+          uv run --python 3.13 --extra full ser --train --profile accurate-research
+
+          SER_ENABLE_RESTRICTED_BACKENDS=true \
+          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
+          SER_MODEL_FILE_NAME=ser_model_accurate_research_linux_py313.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_linux_py313.json \
+          uv run --python 3.13 --extra full ser --file sample.wav --profile accurate-research
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-python-3_13-cli-validation-artifacts
+          path: |
+            ${{ runner.temp }}/ser-models/*
+            ${{ runner.temp }}/ser-transcripts/*
