@@ -195,6 +195,11 @@ def run_medium_inference(
                 active_loaded_model,
                 expected_backend_model_id=expected_backend_model_id,
             )
+            _warn_on_runtime_selector_mismatch(
+                loaded_model=active_loaded_model,
+                settings=settings,
+                profile="medium",
+            )
             audio, sample_rate = read_audio_file(request.file_path)
             audio_array = np.asarray(audio, dtype=np.float32)
             active_backend = (
@@ -203,6 +208,8 @@ def run_medium_inference(
                 else XLSRBackend(
                     model_id=expected_backend_model_id,
                     cache_dir=settings.models.huggingface_cache_root,
+                    device=settings.torch_runtime.device,
+                    dtype=settings.torch_runtime.dtype,
                 )
             )
         except Exception:
@@ -641,11 +648,18 @@ def _prepare_process_operation(
         loaded_model,
         expected_backend_model_id=payload.expected_backend_model_id,
     )
+    _warn_on_runtime_selector_mismatch(
+        loaded_model=loaded_model,
+        settings=settings,
+        profile="medium",
+    )
     audio, sample_rate = read_audio_file(payload.request.file_path)
     audio_array = np.asarray(audio, dtype=np.float32)
     backend = XLSRBackend(
         model_id=payload.expected_backend_model_id,
         cache_dir=settings.models.huggingface_cache_root,
+        device=settings.torch_runtime.device,
+        dtype=settings.torch_runtime.dtype,
     )
     _prepare_medium_backend_runtime(backend=backend)
     return _PreparedMediumOperation(
@@ -802,6 +816,49 @@ def _ensure_medium_compatible_model(
             "No medium-profile model artifact is available. "
             f"Found backend_model_id={backend_model_id!r}; "
             f"expected {expected_backend_model_id!r}."
+        )
+
+
+def _warn_on_runtime_selector_mismatch(
+    *,
+    loaded_model: LoadedModel,
+    settings: AppConfig,
+    profile: str,
+) -> None:
+    """Warns when artifact runtime selectors differ from current runtime settings."""
+    metadata = loaded_model.artifact_metadata
+    if not isinstance(metadata, dict):
+        return
+
+    artifact_torch_device = metadata.get("torch_device")
+    artifact_torch_dtype = metadata.get("torch_dtype")
+    if not isinstance(artifact_torch_device, str) or not isinstance(
+        artifact_torch_dtype, str
+    ):
+        return
+
+    normalized_artifact_device = artifact_torch_device.strip().lower()
+    normalized_artifact_dtype = artifact_torch_dtype.strip().lower()
+    if not normalized_artifact_device or not normalized_artifact_dtype:
+        return
+
+    runtime_device = settings.torch_runtime.device.strip().lower()
+    runtime_dtype = settings.torch_runtime.dtype.strip().lower()
+    mismatch_components: list[str] = []
+    if normalized_artifact_device != runtime_device:
+        mismatch_components.append(
+            f"device artifact={normalized_artifact_device!r} runtime={runtime_device!r}"
+        )
+    if normalized_artifact_dtype != runtime_dtype:
+        mismatch_components.append(
+            f"dtype artifact={normalized_artifact_dtype!r} runtime={runtime_dtype!r}"
+        )
+    if mismatch_components:
+        logger.warning(
+            "Artifact torch runtime selectors differ from current settings for %s "
+            "profile (%s); embedding distribution may shift.",
+            profile,
+            ", ".join(mismatch_components),
         )
 
 

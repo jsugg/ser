@@ -270,9 +270,18 @@ def test_run_medium_inference_uses_configured_medium_model_id(
     )
 
     class _BackendStub:
-        def __init__(self, *, model_id: str, cache_dir: Path) -> None:
+        def __init__(
+            self,
+            *,
+            model_id: str,
+            cache_dir: Path,
+            device: str = "auto",
+            dtype: str = "auto",
+        ) -> None:
             captured["model_id"] = model_id
             captured["cache_dir"] = cache_dir
+            captured["device"] = device
+            captured["dtype"] = dtype
 
     monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", _BackendStub)
     monkeypatch.setattr(
@@ -295,6 +304,8 @@ def test_run_medium_inference_uses_configured_medium_model_id(
 
     assert captured["model_id"] == "unit-test/xlsr"
     assert captured["cache_dir"] == settings.models.huggingface_cache_root
+    assert captured["device"] == settings.torch_runtime.device
+    assert captured["dtype"] == settings.torch_runtime.dtype
 
 
 def test_run_medium_inference_requires_backend_model_id_metadata(
@@ -325,6 +336,55 @@ def test_run_medium_inference_requires_backend_model_id_metadata(
             ),
             settings,
         )
+
+
+def test_run_medium_inference_warns_on_torch_runtime_metadata_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime should warn when artifact and runtime torch selectors differ."""
+    monkeypatch.setenv("SER_TORCH_DEVICE", "cpu")
+    monkeypatch.setenv("SER_TORCH_DTYPE", "float32")
+    settings = config.reload_settings()
+    metadata = _medium_metadata(backend_model_id=settings.models.medium_model_id)
+    metadata["torch_device"] = "cuda:0"
+    metadata["torch_dtype"] = "float16"
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.logger.warning",
+        lambda msg, *args: warnings.append(msg % args),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.load_model",
+        lambda **_kwargs: emotion_model.LoadedModel(
+            model=_PredictModel(
+                predictions=["happy", "happy", "happy"],
+                probabilities=[[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+                classes=["happy", "sad"],
+            ),
+            expected_feature_size=4,
+            artifact_metadata=metadata,
+        ),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.read_audio_file",
+        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.XLSRBackend",
+        lambda **_kwargs: _FakeBackend(),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_timeout",
+        lambda operation, timeout_seconds: operation(),
+    )
+
+    run_medium_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        settings,
+    )
+
+    assert warnings
+    assert "torch runtime selectors differ" in warnings[0]
 
 
 def test_medium_single_flight_serializes_same_profile_model_calls(

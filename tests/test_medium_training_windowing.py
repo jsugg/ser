@@ -49,7 +49,11 @@ def test_medium_train_and_infer_share_configured_temporal_window_policy(
     runtime_config = config.get_settings().medium_runtime
 
     encoded = _encoded_sequence()
-    train_windows = emotion_model._pooling_windows_from_encoded_frames(encoded)
+    train_windows = emotion_model._pooling_windows_from_encoded_frames(
+        encoded,
+        window_size_seconds=runtime_config.pool_window_size_seconds,
+        window_stride_seconds=runtime_config.pool_window_stride_seconds,
+    )
     infer_windows = medium_inference._pooling_windows_from_encoded_frames(
         encoded,
         runtime_config=runtime_config,
