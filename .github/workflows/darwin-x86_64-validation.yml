@@ -10,16 +10,23 @@ jobs:
   darwin-intel-full-profile-smoke:
     runs-on: macos-13
     timeout-minutes: 180
-    env:
-      SER_MAX_WORKERS: "1"
-      SER_MODELS_DIR: ${{ runner.temp }}/ser-models
-      SER_DATA_DIR: ${{ runner.temp }}/ser-data
-      SER_CACHE_DIR: ${{ runner.temp }}/ser-cache
-      SER_TRANSCRIPTS_DIR: ${{ runner.temp }}/ser-transcripts
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure runtime directories
+        run: |
+          echo "SER_MAX_WORKERS=1" >> "$GITHUB_ENV"
+          echo "SER_MODELS_DIR=$RUNNER_TEMP/ser-models" >> "$GITHUB_ENV"
+          echo "SER_DATA_DIR=$RUNNER_TEMP/ser-data" >> "$GITHUB_ENV"
+          echo "SER_CACHE_DIR=$RUNNER_TEMP/ser-cache" >> "$GITHUB_ENV"
+          echo "SER_TRANSCRIPTS_DIR=$RUNNER_TEMP/ser-transcripts" >> "$GITHUB_ENV"
+          mkdir -p \
+            "$RUNNER_TEMP/ser-models" \
+            "$RUNNER_TEMP/ser-data" \
+            "$RUNNER_TEMP/ser-cache" \
+            "$RUNNER_TEMP/ser-transcripts"
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

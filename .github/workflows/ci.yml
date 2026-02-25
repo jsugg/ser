@@ -162,7 +162,7 @@ jobs:
 
       - name: Validate license/provenance policy contracts
         run: >
-          uv run pytest -q
+          uv run --frozen --python 3.12 --all-extras pytest -q
           tests/test_license_gates.py
           tests/test_provenance_metadata.py
 
