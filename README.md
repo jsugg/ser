@@ -117,8 +117,8 @@ predict exits with an explicit mismatch error.
 
 If a non-fast artifact is missing `backend_model_id` metadata, retrain with current
 code before predicting.
-
 </details>
+
 ```mermaid
 graph TD;
     A[Data Loading] --> B[Data Splitting];
