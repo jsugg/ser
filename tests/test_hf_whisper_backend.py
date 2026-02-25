@@ -62,7 +62,9 @@ class _FakeEncoder:
             dtype=np.float32,
         ).reshape(frame_count, self.hidden_size)
         offset = float(len(self.call_sizes) - 1) * 100.0
-        return _FakeEncoderOutput(last_hidden_state=np.expand_dims(base + offset, axis=0))
+        return _FakeEncoderOutput(
+            last_hidden_state=np.expand_dims(base + offset, axis=0)
+        )
 
 
 class _FakeModel:

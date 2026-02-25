@@ -1625,13 +1625,18 @@ def _frame_confidence_and_probabilities(
         return fallback_confidence, fallback_probabilities
 
     classes_attr = getattr(model, "classes_", None)
-    if not isinstance(classes_attr, list | tuple | np.ndarray):
+    class_values: list[object] | None = None
+    if isinstance(classes_attr, np.ndarray):
+        class_values = list(classes_attr.tolist())
+    elif isinstance(classes_attr, list | tuple):
+        class_values = list(classes_attr)
+    if class_values is None:
         logger.warning(
             "Loaded model predict_proba path missing classes_; using confidence fallback."
         )
         return fallback_confidence, fallback_probabilities
 
-    class_labels = [str(item) for item in classes_attr]
+    class_labels = [str(item) for item in class_values]
     raw_probabilities = np.asarray(predict_proba(feature_matrix), dtype=np.float64)
     if raw_probabilities.ndim != 2:
         logger.warning(

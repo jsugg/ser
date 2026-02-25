@@ -14,7 +14,9 @@ def _fixture_grouped_samples() -> tuple[np.ndarray, list[str], list[str]]:
     """Returns deterministic sample matrix + labels + speaker IDs."""
     features = np.asarray([[float(index), float(index + 1)] for index in range(12)])
     labels = ["happy", "sad"] * 6
-    speaker_ids = [speaker for speaker in ("01", "02", "03", "04", "05", "06") for _ in range(2)]
+    speaker_ids = [
+        speaker for speaker in ("01", "02", "03", "04", "05", "06") for _ in range(2)
+    ]
     return features, labels, speaker_ids
 
 

@@ -253,9 +253,7 @@ def _build_grouped_evaluation_summary(
 
     overlap_counts: list[int] = []
     for train_indices, test_indices in folds:
-        train_speakers = {
-            speaker_ids[int(index)] for index in train_indices.tolist()
-        }
+        train_speakers = {speaker_ids[int(index)] for index in train_indices.tolist()}
         test_speakers = {speaker_ids[int(index)] for index in test_indices.tolist()}
         overlap_count = len(train_speakers.intersection(test_speakers))
         if overlap_count > 0:
@@ -397,7 +395,9 @@ def _evaluate_profile(
                 normalized_segments,
                 unknown_label=unknown_label,
             )
-            segments_per_minute, durations = _clip_stability_metrics(normalized_segments)
+            segments_per_minute, durations = _clip_stability_metrics(
+                normalized_segments
+            )
             segment_counts_per_minute.append(segments_per_minute)
             segment_durations.extend(durations)
             y_true.append(expected_label)
@@ -427,12 +427,14 @@ def _evaluate_profile(
         p95_seconds=_percentile(latencies, 0.95),
     )
     temporal_stability = TemporalStabilitySummary(
-        segment_count_per_minute=float(statistics.fmean(segment_counts_per_minute))
-        if segment_counts_per_minute
-        else 0.0,
-        median_segment_duration_seconds=float(statistics.median(segment_durations))
-        if segment_durations
-        else 0.0,
+        segment_count_per_minute=(
+            float(statistics.fmean(segment_counts_per_minute))
+            if segment_counts_per_minute
+            else 0.0
+        ),
+        median_segment_duration_seconds=(
+            float(statistics.median(segment_durations)) if segment_durations else 0.0
+        ),
     )
     return ProfileQualitySummary(
         profile=profile_name,
@@ -468,9 +470,7 @@ def _validate_thresholds(thresholds: QualityGateThresholds) -> None:
         if thresholds.maximum_medium_segments_per_minute <= 0.0:
             raise ValueError("maximum_medium_segments_per_minute must be positive.")
     if thresholds.minimum_medium_median_segment_duration_seconds is not None:
-        if not math.isfinite(
-            thresholds.minimum_medium_median_segment_duration_seconds
-        ):
+        if not math.isfinite(thresholds.minimum_medium_median_segment_duration_seconds):
             raise ValueError(
                 "minimum_medium_median_segment_duration_seconds must be finite."
             )
@@ -621,9 +621,7 @@ def evaluate_profile_quality_gate(
 @contextmanager
 def _temporary_env(overrides: Mapping[str, str]) -> Iterator[None]:
     """Temporarily applies environment overrides and refreshes runtime settings."""
-    previous_values: dict[str, str | None] = {
-        key: os.getenv(key) for key in overrides
-    }
+    previous_values: dict[str, str | None] = {key: os.getenv(key) for key in overrides}
     for key, value in overrides.items():
         os.environ[key] = value
     config.reload_settings()

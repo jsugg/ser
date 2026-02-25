@@ -192,7 +192,9 @@ class Emotion2VecBackend:
         chunk_ends: list[NDArray[np.float64]] = []
 
         for start_index in range(0, int(normalized_audio.size), chunk_size_samples):
-            end_index = min(start_index + chunk_size_samples, int(normalized_audio.size))
+            end_index = min(
+                start_index + chunk_size_samples, int(normalized_audio.size)
+            )
             audio_chunk = normalized_audio[start_index:end_index]
             if audio_chunk.size == 0:
                 continue
@@ -219,7 +221,9 @@ class Emotion2VecBackend:
 
         return EncodedSequence(
             embeddings=np.vstack(chunk_embeddings).astype(np.float32, copy=False),
-            frame_start_seconds=np.concatenate(chunk_starts).astype(np.float64, copy=False),
+            frame_start_seconds=np.concatenate(chunk_starts).astype(
+                np.float64, copy=False
+            ),
             frame_end_seconds=np.concatenate(chunk_ends).astype(np.float64, copy=False),
             backend_id=self.backend_id,
         )
@@ -524,9 +528,13 @@ class Emotion2VecBackend:
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Builds monotonic frame start/end timestamps for one encoded chunk."""
         if frame_count <= 0:
-            raise RuntimeError("Emotion2Vec backend cannot map timestamps for zero frames.")
+            raise RuntimeError(
+                "Emotion2Vec backend cannot map timestamps for zero frames."
+            )
         if not np.isfinite(chunk_duration_seconds) or chunk_duration_seconds <= 0.0:
-            raise RuntimeError("Emotion2Vec backend received non-positive chunk duration.")
+            raise RuntimeError(
+                "Emotion2Vec backend received non-positive chunk duration."
+            )
 
         frame_duration = chunk_duration_seconds / float(frame_count)
         starts = chunk_start_seconds + (

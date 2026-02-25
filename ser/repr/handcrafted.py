@@ -93,7 +93,9 @@ class HandcraftedBackend(FeatureBackend):
             ends.append(float(end_index) / float(sample_rate))
 
         if not frame_embeddings:
-            raise ValueError("Could not extract handcrafted features from provided audio.")
+            raise ValueError(
+                "Could not extract handcrafted features from provided audio."
+            )
 
         return EncodedSequence(
             embeddings=np.vstack(frame_embeddings).astype(np.float32, copy=False),

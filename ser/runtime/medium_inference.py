@@ -221,7 +221,9 @@ def run_medium_inference(
     ):
         if not use_process_isolation:
             if active_backend is None:
-                raise RuntimeError("Medium backend is missing for in-process inference.")
+                raise RuntimeError(
+                    "Medium backend is missing for in-process inference."
+                )
             try:
                 _prepare_medium_backend_runtime(backend=active_backend)
             except Exception:
@@ -275,6 +277,7 @@ def run_medium_inference(
                         sample_rate=sample_rate,
                         runtime_config=runtime_config,
                     )
+
                 try:
                     result = _run_with_timeout(
                         timeout_operation,
@@ -551,8 +554,7 @@ def _recv_worker_message(
         raw_message = connection.recv()
     except EOFError as err:
         raise MediumInferenceExecutionError(
-            "Medium inference worker exited before sending "
-            f"{stage} payload."
+            f"Medium inference worker exited before sending {stage} payload."
         ) from err
     if not isinstance(raw_message, tuple) or not raw_message:
         raise MediumInferenceExecutionError(
@@ -617,7 +619,9 @@ def _worker_entry(
         connection.close()
 
 
-def _prepare_process_operation(payload: MediumProcessPayload) -> _PreparedMediumOperation:
+def _prepare_process_operation(
+    payload: MediumProcessPayload,
+) -> _PreparedMediumOperation:
     """Performs untimed setup for one process-isolated medium operation."""
     settings = payload.settings
     try:
@@ -851,7 +855,12 @@ def _confidence_and_probabilities(
         return fallback_confidence, fallback_probabilities
 
     classes_attr = getattr(model, "classes_", None)
-    if not isinstance(classes_attr, list | tuple | np.ndarray):
+    class_values: list[object] | None = None
+    if isinstance(classes_attr, np.ndarray):
+        class_values = list(classes_attr.tolist())
+    elif isinstance(classes_attr, list | tuple):
+        class_values = list(classes_attr)
+    if class_values is None:
         logger.warning(
             "Medium model classes_ metadata is unavailable; using confidence fallback."
         )
@@ -879,7 +888,7 @@ def _confidence_and_probabilities(
         )
         return fallback_confidence, fallback_probabilities
 
-    class_labels = [str(item) for item in classes_attr]
+    class_labels = [str(item) for item in class_values]
     if int(raw_probabilities.shape[1]) != len(class_labels):
         logger.warning(
             "Medium model predict_proba class mismatch (classes=%s, probs=%s); using fallback.",

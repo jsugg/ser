@@ -174,7 +174,9 @@ class WhisperBackend:
         chunk_ends: list[NDArray[np.float64]] = []
 
         for start_index in range(0, int(normalized_audio.size), chunk_size_samples):
-            end_index = min(start_index + chunk_size_samples, int(normalized_audio.size))
+            end_index = min(
+                start_index + chunk_size_samples, int(normalized_audio.size)
+            )
             audio_chunk = normalized_audio[start_index:end_index]
             if audio_chunk.size == 0:
                 continue
@@ -201,7 +203,9 @@ class WhisperBackend:
 
         return EncodedSequence(
             embeddings=np.vstack(chunk_embeddings).astype(np.float32, copy=False),
-            frame_start_seconds=np.concatenate(chunk_starts).astype(np.float64, copy=False),
+            frame_start_seconds=np.concatenate(chunk_starts).astype(
+                np.float64, copy=False
+            ),
             frame_end_seconds=np.concatenate(chunk_ends).astype(np.float64, copy=False),
             backend_id=self.backend_id,
         )
@@ -250,7 +254,9 @@ class WhisperBackend:
 
         self._ensure_dependencies_available()
         transformers_module = importlib.import_module("transformers")
-        auto_feature_extractor = getattr(transformers_module, "AutoFeatureExtractor", None)
+        auto_feature_extractor = getattr(
+            transformers_module, "AutoFeatureExtractor", None
+        )
         auto_model = getattr(transformers_module, "AutoModelForSpeechSeq2Seq", None)
         if auto_feature_extractor is None or auto_model is None:
             raise RuntimeError(

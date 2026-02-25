@@ -77,7 +77,9 @@ def test_scoped_dependency_log_policy_hides_demoted_logs_at_info_level(
 ) -> None:
     """Demoted dependency DEBUG entries should stay hidden in INFO-level runs."""
     dependency_logger = logging.getLogger("faster_whisper")
-    policy = logger_utils.DependencyLogPolicy(logger_prefixes=frozenset({"faster_whisper"}))
+    policy = logger_utils.DependencyLogPolicy(
+        logger_prefixes=frozenset({"faster_whisper"})
+    )
 
     with caplog.at_level(logging.INFO):
         with logger_utils.scoped_dependency_log_policy(
@@ -94,7 +96,9 @@ def test_scoped_dependency_log_policy_keeps_demoted_logs_at_debug_level(
 ) -> None:
     """Demoted dependency entries should remain visible when DEBUG is enabled."""
     dependency_logger = logging.getLogger("faster_whisper")
-    policy = logger_utils.DependencyLogPolicy(logger_prefixes=frozenset({"faster_whisper"}))
+    policy = logger_utils.DependencyLogPolicy(
+        logger_prefixes=frozenset({"faster_whisper"})
+    )
 
     with caplog.at_level(logging.DEBUG):
         with logger_utils.scoped_dependency_log_policy(

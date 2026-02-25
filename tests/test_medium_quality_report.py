@@ -43,7 +43,9 @@ def test_medium_split_prefers_grouped_strategy_when_speaker_ids_are_available(
         (_sample_path(4, "04"), "sad"),
     ]
 
-    train_samples, test_samples, split_metadata = em._split_labeled_audio_samples(samples)
+    train_samples, test_samples, split_metadata = em._split_labeled_audio_samples(
+        samples
+    )
 
     assert train_samples
     assert test_samples

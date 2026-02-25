@@ -22,7 +22,9 @@ from ser.runtime.profile_quality_gate import (
 type LabeledAudioSample = tuple[str, str]
 
 
-def _sample_path(*, actor_id: int, emotion_code: str, statement_code: str = "01") -> str:
+def _sample_path(
+    *, actor_id: int, emotion_code: str, statement_code: str = "01"
+) -> str:
     """Builds deterministic RAVDESS-like file path for grouped split tests."""
     return (
         "ser/dataset/ravdess/"
@@ -30,7 +32,9 @@ def _sample_path(*, actor_id: int, emotion_code: str, statement_code: str = "01"
     )
 
 
-def _segments(label: str, *, start: float = 0.0, end: float = 1.0) -> list[EmotionSegment]:
+def _segments(
+    label: str, *, start: float = 0.0, end: float = 1.0
+) -> list[EmotionSegment]:
     """Builds one deterministic segment with chosen label."""
     return [EmotionSegment(label, start, end)]
 
@@ -190,9 +194,12 @@ def test_profile_quality_gate_canonicalizes_overlap_for_temporal_metrics() -> No
         random_state=17,
     )
 
-    assert report.fast.temporal_stability.segment_count_per_minute == pytest.approx(40.0)
-    assert report.fast.temporal_stability.median_segment_duration_seconds == pytest.approx(
-        1.5
+    assert report.fast.temporal_stability.segment_count_per_minute == pytest.approx(
+        40.0
+    )
+    assert (
+        report.fast.temporal_stability.median_segment_duration_seconds
+        == pytest.approx(1.5)
     )
     assert report.medium.temporal_stability.segment_count_per_minute == pytest.approx(
         40.0

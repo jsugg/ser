@@ -26,6 +26,7 @@ class AttrFunction(Protocol):
 
     def __call__(self, name: str) -> str: ...
 
+
 attr_fn: AttrFunction | None
 bg_fn: ColorFunction | None
 fg_fn: ColorFunction | None
@@ -140,7 +141,9 @@ def build_timeline(
             end_ms = start_ms + 1
         emotion_segments.append((emotion.emotion, start_ms, end_ms))
 
-    terminal_emotion_timestamps = {emotion_segments[-1][2]} if emotion_segments else set()
+    terminal_emotion_timestamps = (
+        {emotion_segments[-1][2]} if emotion_segments else set()
+    )
 
     all_timestamps: list[int] = sorted(
         set(words_by_timestamp.keys())
@@ -152,7 +155,9 @@ def build_timeline(
     logger.debug(msg=f"Text with timestamps: {text_with_timestamps}")
     logger.debug(msg=f"Emotion with timestamps: {emotion_with_timestamps}")
 
-    emotion_lookup: dict[int, str] = _emotion_lookup_by_timestamp(all_timestamps, emotion_segments)
+    emotion_lookup: dict[int, str] = _emotion_lookup_by_timestamp(
+        all_timestamps, emotion_segments
+    )
     timeline: list[TimelineEntry] = []
     for timestamp_ms in all_timestamps:
         text: str = " ".join(words_by_timestamp.get(timestamp_ms, [])).strip()

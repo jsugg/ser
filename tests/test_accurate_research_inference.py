@@ -62,7 +62,9 @@ def test_run_accurate_research_inference_uses_configured_model_id(
         captured["expected_backend_id"] = expected_backend_id
         captured["expected_profile"] = expected_profile
         captured["expected_backend_model_id"] = expected_backend_model_id
-        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+        )
 
     monkeypatch.setattr(
         "ser.runtime.accurate_research_inference.run_accurate_inference",
@@ -88,7 +90,9 @@ def test_run_accurate_research_inference_uses_injected_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Injected backend should be forwarded unchanged to shared accurate runner."""
-    settings = SimpleNamespace(models=SimpleNamespace(accurate_research_model_id="ignored"))
+    settings = SimpleNamespace(
+        models=SimpleNamespace(accurate_research_model_id="ignored")
+    )
     backend = object()
     captured: dict[str, object] = {}
 
@@ -109,7 +113,9 @@ def test_run_accurate_research_inference_uses_injected_backend(
         captured["expected_backend_id"] = expected_backend_id
         captured["expected_profile"] = expected_profile
         captured["expected_backend_model_id"] = expected_backend_model_id
-        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+        )
 
     monkeypatch.setattr(
         "ser.runtime.accurate_research_inference.run_accurate_inference",

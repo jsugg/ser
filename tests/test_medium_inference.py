@@ -154,9 +154,7 @@ def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
     assert result.segments[0].probabilities == pytest.approx(
         {"happy": 0.825, "sad": 0.175}
     )
-    assert result.segments[1].probabilities == pytest.approx(
-        {"happy": 0.2, "sad": 0.8}
-    )
+    assert result.segments[1].probabilities == pytest.approx({"happy": 0.2, "sad": 0.8})
     assert model.last_features is not None
     np.testing.assert_allclose(
         model.last_features,
@@ -322,7 +320,9 @@ def test_run_medium_inference_requires_backend_model_id_metadata(
 
     with pytest.raises(MediumModelUnavailableError, match="backend_model_id"):
         run_medium_inference(
-            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            InferenceRequest(
+                file_path="sample.wav", language="en", save_transcript=False
+            ),
             settings,
         )
 
@@ -369,7 +369,9 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
         time.sleep(0.05)
         with counter_lock:
             counters["active"] -= 1
-        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+        )
 
     monkeypatch.setattr(
         "ser.runtime.medium_inference._run_medium_inference_once",
@@ -377,12 +379,16 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
     )
 
     errors: list[Exception] = []
-    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    request = InferenceRequest(
+        file_path="sample.wav", language="en", save_transcript=False
+    )
 
     def invoke() -> None:
         try:
             run_medium_inference(request, settings)
-        except Exception as err:  # pragma: no cover - defensive capture for assertion clarity
+        except (
+            Exception
+        ) as err:  # pragma: no cover - defensive capture for assertion clarity
             errors.append(err)
 
     first = threading.Thread(target=invoke)

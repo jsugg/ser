@@ -91,7 +91,9 @@ def process_file(
 
         return ProcessFileResult(sample=(features, emotion), error=None)
     except Exception as err:
-        return ProcessFileResult(sample=None, error=f"Failed to process file {file}: {err}")
+        return ProcessFileResult(
+            sample=None, error=f"Failed to process file {file}: {err}"
+        )
 
 
 def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
@@ -107,7 +109,9 @@ def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
     observed_emotions: set[str] = set(settings.emotions.values())
     files: list[str] = sorted(glob.glob(settings.dataset.glob_pattern))
     if not files:
-        logger.warning("No dataset files found for pattern: %s", settings.dataset.glob_pattern)
+        logger.warning(
+            "No dataset files found for pattern: %s", settings.dataset.glob_pattern
+        )
         return None
 
     samples: list[LabeledAudioSample] = []
@@ -117,7 +121,8 @@ def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
         emotion_code: str | None = _extract_emotion_code(file_name)
         if emotion_code is None:
             parse_errors.append(
-                "Skipping file with unexpected name format " f"(missing emotion code): {file_name}"
+                "Skipping file with unexpected name format "
+                f"(missing emotion code): {file_name}"
             )
             continue
         emotion: str | None = settings.emotions.get(emotion_code)
@@ -166,7 +171,9 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
     """
     settings: AppConfig = get_settings()
     observed_emotions: set[str] = set(settings.emotions.values())
-    resolved_test_size: float = settings.training.test_size if test_size is None else test_size
+    resolved_test_size: float = (
+        settings.training.test_size if test_size is None else test_size
+    )
     if not 0.0 < resolved_test_size < 1.0:
         raise ValueError("test_size must be between 0 and 1.")
 
@@ -193,7 +200,9 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
     else:
         chunk_size: int = max(1, len(files) // (worker_count * 4))
         with mp.Pool(worker_count) as pool:
-            raw_data = list(pool.imap_unordered(process_fn, files, chunksize=chunk_size))
+            raw_data = list(
+                pool.imap_unordered(process_fn, files, chunksize=chunk_size)
+            )
 
     errors: list[str] = [item.error for item in raw_data if item.error is not None]
     if errors:
@@ -232,7 +241,9 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
         logger.warning("At least two emotion classes are required to train the model.")
         return None
 
-    stratify_labels: list[str] | None = labels_list if settings.training.stratify_split else None
+    stratify_labels: list[str] | None = (
+        labels_list if settings.training.stratify_split else None
+    )
     split: list[Any | list[Any]]
     try:
         split = train_test_split(

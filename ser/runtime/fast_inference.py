@@ -126,6 +126,7 @@ def run_fast_inference(
         setup_started_at = None
 
     with _single_flight_lock(profile="fast", backend_model_id=None):
+
         def operation() -> InferenceResult:
             if enforce_timeout:
                 if use_process_isolation:
