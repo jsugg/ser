@@ -40,20 +40,18 @@ def _mps_is_available(torch_module: object) -> bool:
     mps = getattr(backends, "mps", None)
     is_available = getattr(mps, "is_available", None)
     is_built = getattr(mps, "is_built", None)
-    available = bool(is_available()) if callable(is_available) else False
-    built = bool(is_built()) if callable(is_built) else False
+    available: bool = bool(is_available()) if callable(is_available) else False
+    built: bool = bool(is_built()) if callable(is_built) else False
     return available and built
 
 
 def _resolve_device_spec(torch_module: object, requested_device: str) -> str:
     """Resolves runtime device selector from one requested device string."""
-    normalized = requested_device.strip().lower()
+    normalized: str = requested_device.strip().lower()
     if normalized == "auto":
         if _cuda_is_available(torch_module):
             return "cuda"
-        if _mps_is_available(torch_module):
-            return "mps"
-        return "cpu"
+        return "mps" if _mps_is_available(torch_module) else "cpu"
     if normalized.startswith("cuda"):
         if not _cuda_is_available(torch_module):
             raise RuntimeError(
@@ -62,7 +60,9 @@ def _resolve_device_spec(torch_module: object, requested_device: str) -> str:
         return normalized
     if normalized == "mps":
         if not _mps_is_available(torch_module):
-            raise RuntimeError("SER_TORCH_DEVICE requested MPS, but MPS is unavailable.")
+            raise RuntimeError(
+                "SER_TORCH_DEVICE requested MPS, but MPS is unavailable."
+            )
         return "mps"
     return "cpu"
 
@@ -74,7 +74,7 @@ def _resolve_dtype_name(
     device_type: str,
 ) -> str:
     """Resolves runtime dtype selector from requested dtype and device type."""
-    normalized = requested_dtype.strip().lower()
+    normalized: str = requested_dtype.strip().lower()
     if normalized not in {"auto", "float32", "float16", "bfloat16"}:
         raise RuntimeError(f"Unsupported torch dtype selector {requested_dtype!r}.")
 
@@ -84,12 +84,16 @@ def _resolve_dtype_name(
         raise RuntimeError("CPU runtime only supports SER_TORCH_DTYPE=float32.")
 
     if normalized == "auto":
-        if device_type == "cuda" and _cuda_bf16_is_supported(torch_module):
-            if getattr(torch_module, "bfloat16", None) is not None:
-                return "bfloat16"
-        return "float16"
-
-    if normalized == "bfloat16":
+        return (
+            "bfloat16"
+            if (
+                device_type == "cuda"
+                and _cuda_bf16_is_supported(torch_module)
+                and getattr(torch_module, "bfloat16", None) is not None
+            )
+            else "float16"
+        )
+    elif normalized == "bfloat16":
         if device_type == "mps":
             raise RuntimeError("SER_TORCH_DTYPE=bfloat16 is unsupported for MPS.")
         if device_type == "cuda" and not _cuda_bf16_is_supported(torch_module):
@@ -112,13 +116,13 @@ def maybe_resolve_torch_runtime(
     except ModuleNotFoundError:
         return None
 
-    resolved_device_spec = _resolve_device_spec(torch_module, device)
-    resolved_device_type = (
+    resolved_device_spec: str = _resolve_device_spec(torch_module, device)
+    resolved_device_type: str = (
         "cuda"
         if resolved_device_spec.startswith("cuda")
         else ("mps" if resolved_device_spec == "mps" else "cpu")
     )
-    resolved_dtype_name = _resolve_dtype_name(
+    resolved_dtype_name: str = _resolve_dtype_name(
         torch_module,
         requested_dtype=dtype,
         device_type=resolved_device_type,
@@ -188,4 +192,3 @@ def inference_context() -> AbstractContextManager[object]:
     if callable(no_grad):
         return cast(AbstractContextManager[object], no_grad())
     return nullcontext()
-
