@@ -1,30 +1,12 @@
 """Behavior tests for in-memory feature extraction paths."""
 
-from types import SimpleNamespace, TracebackType
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from ser.features import feature_extractor as fe
 from ser.repr import EncodedSequence
-
-
-class DummyHalo:
-    """No-op replacement for spinner context manager during tests."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        pass
-
-    def __enter__(self) -> "DummyHalo":
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _tb: TracebackType | None,
-    ) -> None:
-        return None
 
 
 def test_extract_feature_from_signal_combines_enabled_components(
@@ -97,7 +79,6 @@ def test_extended_extract_feature_uses_in_memory_frames(
     monkeypatch.setattr(
         fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
     )
-    monkeypatch.setattr(fe, "Halo", DummyHalo)
     monkeypatch.setattr(
         fe,
         "extract_feature_from_signal",
@@ -138,7 +119,6 @@ def test_extract_feature_frames_exposes_frame_boundaries(
     monkeypatch.setattr(
         fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
     )
-    monkeypatch.setattr(fe, "Halo", DummyHalo)
     monkeypatch.setattr(
         fe,
         "extract_feature_from_signal",
@@ -159,7 +139,6 @@ def test_extract_feature_frames_uses_handcrafted_backend(
     monkeypatch.setattr(
         fe, "read_audio_file", lambda _path: (np.arange(4, dtype=np.float32), 2)
     )
-    monkeypatch.setattr(fe, "Halo", DummyHalo)
     calls: dict[str, object] = {}
 
     class FakeBackend:

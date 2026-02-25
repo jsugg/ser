@@ -1,0 +1,157 @@
+schema_version: 1
+profiles:
+  fast:
+    description: Current CPU-first handcrafted pipeline.
+    backend_id: handcrafted
+    required_modules: []
+    enable_flag: null
+    enabled_by_default: true
+    model:
+      env_var: null
+      default_model_id: null
+    transcription_defaults:
+      model_name: turbo
+      use_demucs: true
+      use_vad: true
+    runtime_defaults:
+      timeout_seconds: 0.0
+      max_timeout_retries: 0
+      max_transient_retries: 0
+      retry_backoff_seconds: 0.0
+      pool_window_size_seconds: 1.0
+      pool_window_stride_seconds: 1.0
+      post_smoothing_window_frames: 3
+      post_hysteresis_enter_confidence: 0.60
+      post_hysteresis_exit_confidence: 0.45
+      post_min_segment_duration_seconds: 0.40
+      process_isolation: false
+    runtime_env:
+      timeout_seconds: SER_FAST_TIMEOUT_SECONDS
+      max_timeout_retries: SER_FAST_MAX_TIMEOUT_RETRIES
+      max_transient_retries: SER_FAST_MAX_TRANSIENT_RETRIES
+      retry_backoff_seconds: SER_FAST_RETRY_BACKOFF_SECONDS
+      pool_window_size_seconds: SER_FAST_POOL_WINDOW_SIZE_SECONDS
+      pool_window_stride_seconds: SER_FAST_POOL_WINDOW_STRIDE_SECONDS
+      post_smoothing_window_frames: SER_FAST_POST_SMOOTHING_WINDOW_FRAMES
+      post_hysteresis_enter_confidence: SER_FAST_POST_HYSTERESIS_ENTER_CONFIDENCE
+      post_hysteresis_exit_confidence: SER_FAST_POST_HYSTERESIS_EXIT_CONFIDENCE
+      post_min_segment_duration_seconds: SER_FAST_POST_MIN_SEGMENT_DURATION_SECONDS
+      process_isolation: SER_FAST_PROCESS_ISOLATION
+  medium:
+    description: SSL medium-latency pipeline profile.
+    backend_id: hf_xlsr
+    required_modules:
+      - torch
+      - transformers
+    enable_flag: SER_ENABLE_MEDIUM_PROFILE
+    enabled_by_default: false
+    model:
+      env_var: SER_MEDIUM_MODEL_ID
+      default_model_id: facebook/wav2vec2-xls-r-300m
+    transcription_defaults:
+      model_name: turbo
+      use_demucs: true
+      use_vad: true
+    runtime_defaults:
+      timeout_seconds: 60.0
+      max_timeout_retries: 1
+      max_transient_retries: 1
+      retry_backoff_seconds: 0.25
+      pool_window_size_seconds: 1.0
+      pool_window_stride_seconds: 1.0
+      post_smoothing_window_frames: 3
+      post_hysteresis_enter_confidence: 0.60
+      post_hysteresis_exit_confidence: 0.45
+      post_min_segment_duration_seconds: 0.40
+      process_isolation: true
+    runtime_env:
+      timeout_seconds: SER_MEDIUM_TIMEOUT_SECONDS
+      max_timeout_retries: SER_MEDIUM_MAX_TIMEOUT_RETRIES
+      max_transient_retries: SER_MEDIUM_MAX_TRANSIENT_RETRIES
+      retry_backoff_seconds: SER_MEDIUM_RETRY_BACKOFF_SECONDS
+      pool_window_size_seconds: SER_MEDIUM_POOL_WINDOW_SIZE_SECONDS
+      pool_window_stride_seconds: SER_MEDIUM_POOL_WINDOW_STRIDE_SECONDS
+      post_smoothing_window_frames: SER_MEDIUM_POST_SMOOTHING_WINDOW_FRAMES
+      post_hysteresis_enter_confidence: SER_MEDIUM_POST_HYSTERESIS_ENTER_CONFIDENCE
+      post_hysteresis_exit_confidence: SER_MEDIUM_POST_HYSTERESIS_EXIT_CONFIDENCE
+      post_min_segment_duration_seconds: SER_MEDIUM_POST_MIN_SEGMENT_DURATION_SECONDS
+      process_isolation: SER_MEDIUM_PROCESS_ISOLATION
+  accurate:
+    description: Highest-accuracy Whisper embeddings profile.
+    backend_id: hf_whisper
+    required_modules:
+      - torch
+      - transformers
+    enable_flag: SER_ENABLE_ACCURATE_PROFILE
+    enabled_by_default: false
+    model:
+      env_var: SER_ACCURATE_MODEL_ID
+      default_model_id: openai/whisper-large-v3
+    transcription_defaults:
+      model_name: large
+      use_demucs: true
+      use_vad: true
+    runtime_defaults:
+      timeout_seconds: 120.0
+      max_timeout_retries: 0
+      max_transient_retries: 1
+      retry_backoff_seconds: 0.25
+      pool_window_size_seconds: 1.0
+      pool_window_stride_seconds: 1.0
+      post_smoothing_window_frames: 3
+      post_hysteresis_enter_confidence: 0.60
+      post_hysteresis_exit_confidence: 0.45
+      post_min_segment_duration_seconds: 0.40
+      process_isolation: true
+    runtime_env:
+      timeout_seconds: SER_ACCURATE_TIMEOUT_SECONDS
+      max_timeout_retries: SER_ACCURATE_MAX_TIMEOUT_RETRIES
+      max_transient_retries: SER_ACCURATE_MAX_TRANSIENT_RETRIES
+      retry_backoff_seconds: SER_ACCURATE_RETRY_BACKOFF_SECONDS
+      pool_window_size_seconds: SER_ACCURATE_POOL_WINDOW_SIZE_SECONDS
+      pool_window_stride_seconds: SER_ACCURATE_POOL_WINDOW_STRIDE_SECONDS
+      post_smoothing_window_frames: SER_ACCURATE_POST_SMOOTHING_WINDOW_FRAMES
+      post_hysteresis_enter_confidence: SER_ACCURATE_POST_HYSTERESIS_ENTER_CONFIDENCE
+      post_hysteresis_exit_confidence: SER_ACCURATE_POST_HYSTERESIS_EXIT_CONFIDENCE
+      post_min_segment_duration_seconds: SER_ACCURATE_POST_MIN_SEGMENT_DURATION_SECONDS
+      process_isolation: SER_ACCURATE_PROCESS_ISOLATION
+  accurate-research:
+    description: Research-grade accurate profile with restricted backend policy.
+    backend_id: emotion2vec
+    required_modules:
+      - torch
+      - funasr
+      - modelscope
+    enable_flag: SER_ENABLE_ACCURATE_RESEARCH_PROFILE
+    enabled_by_default: false
+    model:
+      env_var: SER_ACCURATE_RESEARCH_MODEL_ID
+      default_model_id: iic/emotion2vec_plus_large
+    transcription_defaults:
+      model_name: large
+      use_demucs: true
+      use_vad: true
+    runtime_defaults:
+      timeout_seconds: 120.0
+      max_timeout_retries: 0
+      max_transient_retries: 1
+      retry_backoff_seconds: 0.25
+      pool_window_size_seconds: 1.0
+      pool_window_stride_seconds: 1.0
+      post_smoothing_window_frames: 3
+      post_hysteresis_enter_confidence: 0.60
+      post_hysteresis_exit_confidence: 0.45
+      post_min_segment_duration_seconds: 0.40
+      process_isolation: true
+    runtime_env:
+      timeout_seconds: SER_ACCURATE_RESEARCH_TIMEOUT_SECONDS
+      max_timeout_retries: SER_ACCURATE_RESEARCH_MAX_TIMEOUT_RETRIES
+      max_transient_retries: SER_ACCURATE_RESEARCH_MAX_TRANSIENT_RETRIES
+      retry_backoff_seconds: SER_ACCURATE_RESEARCH_RETRY_BACKOFF_SECONDS
+      pool_window_size_seconds: SER_ACCURATE_RESEARCH_POOL_WINDOW_SIZE_SECONDS
+      pool_window_stride_seconds: SER_ACCURATE_RESEARCH_POOL_WINDOW_STRIDE_SECONDS
+      post_smoothing_window_frames: SER_ACCURATE_RESEARCH_POST_SMOOTHING_WINDOW_FRAMES
+      post_hysteresis_enter_confidence: SER_ACCURATE_RESEARCH_POST_HYSTERESIS_ENTER_CONFIDENCE
+      post_hysteresis_exit_confidence: SER_ACCURATE_RESEARCH_POST_HYSTERESIS_EXIT_CONFIDENCE
+      post_min_segment_duration_seconds: SER_ACCURATE_RESEARCH_POST_MIN_SEGMENT_DURATION_SECONDS
+      process_isolation: SER_ACCURATE_RESEARCH_PROCESS_ISOLATION

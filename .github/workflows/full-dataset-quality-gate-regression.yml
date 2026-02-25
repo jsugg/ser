@@ -1,0 +1,70 @@
+name: Full-Dataset Quality Gate Regression
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_training:
+        description: "Re-train fast and medium artifacts before running the gate."
+        required: true
+        default: true
+        type: boolean
+      dataset_glob:
+        description: "Dataset glob used by the full-dataset gate command."
+        required: true
+        default: "ser/dataset/ravdess/Actor_*/*.wav"
+        type: string
+      out_file:
+        description: "Path for the generated JSON report artifact."
+        required: true
+        default: "profile_quality_gate_report_full.json"
+        type: string
+      progress_every:
+        description: "Emit gate progress every N clips per profile."
+        required: true
+        default: "120"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  full_dataset_quality_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-full-gate-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-full-gate-
+
+      - name: Run full-dataset quality gate suite (opt-in)
+        env:
+          SER_FULL_GATE_RUN_TRAINING: ${{ inputs.run_training && 'true' || 'false' }}
+          SER_FULL_GATE_DATASET_GLOB: ${{ inputs.dataset_glob }}
+          SER_FULL_GATE_REPORT_PATH: ${{ inputs.out_file }}
+          SER_FULL_GATE_PROGRESS_EVERY: ${{ inputs.progress_every }}
+          SER_FULL_GATE_ARCHIVE_REPORT: "false"
+        run: ./scripts/run_full_dataset_quality_gate.sh
+
+      - name: Upload full-dataset gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-dataset-quality-gate-report
+          path: ${{ inputs.out_file }}
+          if-no-files-found: warn

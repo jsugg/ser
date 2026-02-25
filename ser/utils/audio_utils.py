@@ -10,7 +10,7 @@ import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
-from ser.config import get_settings
+from ser.config import AppConfig, get_settings
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
@@ -60,7 +60,7 @@ def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
     Returns:
         A tuple of `(audio_samples, sample_rate)`.
     """
-    settings = get_settings()
+    settings: AppConfig = get_settings()
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")

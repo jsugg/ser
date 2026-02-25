@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 from dataclasses import dataclass
-from typing import Literal
 
 from ser.config import AppConfig
-from ser.profiles import ProfileName, resolve_profile_name
+from ser.profiles import (
+    ProfileEnableFlag,
+    ProfileName,
+    get_profile_catalog,
+    resolve_profile_name,
+)
 
 
 class UnsupportedProfileError(RuntimeError):
@@ -41,25 +45,10 @@ def _missing_optional_modules(required_modules: tuple[str, ...]) -> tuple[str, .
 
 def _profile_requirements(
     profile: ProfileName,
-) -> tuple[
-    str,
-    tuple[str, ...],
-    Literal["SER_ENABLE_MEDIUM_PROFILE", "SER_ENABLE_ACCURATE_PROFILE"] | None,
-]:
+) -> tuple[str, tuple[str, ...], ProfileEnableFlag | None]:
     """Returns backend id, optional dependencies, and controlling flag name."""
-    if profile == "fast":
-        return ("handcrafted", (), None)
-    if profile == "medium":
-        return (
-            "hf_xlsr",
-            ("torch", "transformers"),
-            "SER_ENABLE_MEDIUM_PROFILE",
-        )
-    return (
-        "hf_whisper",
-        ("torch", "transformers"),
-        "SER_ENABLE_ACCURATE_PROFILE",
-    )
+    entry = get_profile_catalog()[profile]
+    return (entry.backend_id, entry.required_modules, entry.enable_flag)
 
 
 def resolve_runtime_capability(
@@ -70,14 +59,14 @@ def resolve_runtime_capability(
     """Maps configured profile selection to runtime backend capability."""
     profile = resolve_profile_name(settings)
     backend_id, required_modules, profile_flag = _profile_requirements(profile)
-    resolved_backend_hooks = (
+    resolved_backend_hooks: frozenset[str] = (
         available_backend_hooks
         if available_backend_hooks is not None
         else DEFAULT_IMPLEMENTED_BACKENDS
     )
-    implementation_ready = backend_id in resolved_backend_hooks
-    missing_modules = _missing_optional_modules(required_modules)
-    available = implementation_ready and not missing_modules
+    implementation_ready: bool = backend_id in resolved_backend_hooks
+    missing_modules: tuple[str, ...] = _missing_optional_modules(required_modules)
+    available: bool = implementation_ready and not missing_modules
     if available:
         return RuntimeCapability(
             profile=profile,
@@ -89,10 +78,8 @@ def resolve_runtime_capability(
         )
 
     if missing_modules:
-        dependency_list = ", ".join(missing_modules)
-        disable_hint = (
-            f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
-        )
+        dependency_list: str = ", ".join(missing_modules)
+        disable_hint = f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
         return RuntimeCapability(
             profile=profile,
             backend_id=backend_id,
@@ -107,9 +94,7 @@ def resolve_runtime_capability(
             ),
         )
 
-    disable_hint = (
-        f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
-    )
+    disable_hint = f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
     return RuntimeCapability(
         profile=profile,
         backend_id=backend_id,

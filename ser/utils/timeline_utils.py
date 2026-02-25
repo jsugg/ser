@@ -4,34 +4,15 @@ import csv
 import logging
 from collections import defaultdict
 from pathlib import Path
-from types import TracebackType
-from typing import Protocol, cast
+from typing import Protocol
 
-from ser.config import get_settings
+from ser.config import AppConfig, get_settings
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.utils.common_utils import display_elapsed_time
 from ser.utils.logger import get_logger
+from ser.utils.segment_canonicalization import canonicalize_segments
 
 logger: logging.Logger = get_logger(__name__)
-
-
-class HaloContext(Protocol):
-    """Runtime protocol for the context manager returned by `halo.Halo`."""
-
-    def __enter__(self) -> object: ...
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _tb: TracebackType | None,
-    ) -> bool | None: ...
-
-
-class HaloFactory(Protocol):
-    """Callable protocol for constructing spinner context managers."""
-
-    def __call__(self, *args: object, **kwargs: object) -> HaloContext: ...
 
 
 class ColorFunction(Protocol):
@@ -44,17 +25,6 @@ class AttrFunction(Protocol):
     """Callable protocol for terminal attribute formatter helpers."""
 
     def __call__(self, name: str) -> str: ...
-
-
-halo_factory: HaloFactory | None
-halo_factory = None
-try:
-    from halo import Halo as _Halo
-except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
-    pass
-else:
-    # `halo` constructor typing is narrower than this generic runtime factory.
-    halo_factory = cast(HaloFactory, _Halo)
 
 attr_fn: AttrFunction | None
 bg_fn: ColorFunction | None
@@ -82,33 +52,23 @@ def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
     Returns:
         The generated CSV path.
     """
-    if halo_factory is None:
-        raise RuntimeError(
-            "Missing timeline output dependency 'halo'. Install project dependencies."
-        )
-
-    settings = get_settings()
+    settings: AppConfig = get_settings()
     logger.info(msg="Starting to save timeline to CSV.")
     output_folder: Path = settings.timeline.folder
     output_folder.mkdir(parents=True, exist_ok=True)
     output_path: Path = output_folder / f"{Path(file_name).stem}.csv"
 
-    with halo_factory(
-        text=f"Saving transcript to {output_path}",
-        spinner="dots",
-        text_color="green",
-    ):
-        with open(output_path, mode="w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow(["Time (s)", "Emotion", "Speech"])
-            logger.debug("Header written to CSV file.")
+    with open(output_path, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Time (s)", "Emotion", "Speech"])
+        logger.debug("Header written to CSV file.")
 
-            for entry in timeline:
-                rounded_time = round(float(entry.timestamp_seconds), 2)
-                writer.writerow([rounded_time, entry.emotion, entry.speech])
-                logger.debug(
-                    msg=f"Written row: {[rounded_time, entry.emotion, entry.speech]}"
-                )
+        for entry in timeline:
+            rounded_time: float = round(float(entry.timestamp_seconds), 2)
+            writer.writerow([rounded_time, entry.emotion, entry.speech])
+            logger.debug(
+                msg=f"Written row: {[rounded_time, entry.emotion, entry.speech]}"
+            )
 
     logger.info(msg=f"Timeline successfully saved to {output_path}")
     return str(output_path)
@@ -160,9 +120,9 @@ def build_timeline(
     Returns:
         Timeline rows keyed on observed starts.
     """
-    logger.info("Building timeline from text and emotion data.")
+    logger.debug("Building timeline from text and emotion data.")
     if not text_with_timestamps and not emotion_with_timestamps:
-        logger.info("No transcript or emotion timestamps provided.")
+        logger.debug("No transcript or emotion timestamps provided.")
         return []
 
     words_by_timestamp: dict[int, list[str]] = defaultdict(list)
@@ -171,34 +131,28 @@ def build_timeline(
             word.word.strip()
         )
 
+    canonical_emotions = canonicalize_segments(emotion_with_timestamps)
     emotion_segments: list[tuple[str, int, int]] = []
-    for emotion in sorted(emotion_with_timestamps, key=lambda item: item.start_seconds):
-        start_ms: int = _to_milliseconds(float(emotion.start_seconds))
-        end_ms: int = _to_milliseconds(float(emotion.end_seconds))
-
-        if end_ms < start_ms:
-            logger.warning(
-                "Skipping invalid emotion segment with end < start: %s (%s -> %s)",
-                emotion.emotion,
-                emotion.start_seconds,
-                emotion.end_seconds,
-            )
-            continue
-        if end_ms == start_ms:
-            end_ms += 1
-
+    for emotion in canonical_emotions:
+        start_ms = _to_milliseconds(float(emotion.start_seconds))
+        end_ms = _to_milliseconds(float(emotion.end_seconds))
+        if end_ms <= start_ms:
+            end_ms = start_ms + 1
         emotion_segments.append((emotion.emotion, start_ms, end_ms))
+
+    terminal_emotion_timestamps = {emotion_segments[-1][2]} if emotion_segments else set()
 
     all_timestamps: list[int] = sorted(
         set(words_by_timestamp.keys())
         | {start_ms for _, start_ms, _ in emotion_segments}
+        | terminal_emotion_timestamps
     )
 
     logger.debug(msg=f"All timestamps: {all_timestamps}")
     logger.debug(msg=f"Text with timestamps: {text_with_timestamps}")
     logger.debug(msg=f"Emotion with timestamps: {emotion_with_timestamps}")
 
-    emotion_lookup = _emotion_lookup_by_timestamp(all_timestamps, emotion_segments)
+    emotion_lookup: dict[int, str] = _emotion_lookup_by_timestamp(all_timestamps, emotion_segments)
     timeline: list[TimelineEntry] = []
     for timestamp_ms in all_timestamps:
         text: str = " ".join(words_by_timestamp.get(timestamp_ms, [])).strip()
@@ -211,7 +165,7 @@ def build_timeline(
             )
         )
 
-    logger.info("Timeline built with %s entries.", len(timeline))
+    logger.debug("Timeline built with %s entries.", len(timeline))
     return timeline
 
 
@@ -244,10 +198,10 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
     Args:
         timeline: Sequence of timeline row objects.
     """
-    logger.info(msg=f"Printing timeline with {len(timeline)} entries.")
+    logger.debug(msg=f"Printing timeline with {len(timeline)} entries.")
     if not timeline:
         print("No timeline data available.")
-        logger.info(msg="No timeline entries to print.")
+        logger.debug(msg="No timeline entries to print.")
         return
 
     max_time_width: int = max(

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Generator
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -17,7 +20,7 @@ from ser.runtime.medium_inference import (
     MediumModelUnavailableError,
     run_medium_inference,
 )
-from ser.runtime.schema import OUTPUT_SCHEMA_VERSION
+from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
 
 class _PredictModel(MLPClassifier):
@@ -80,9 +83,13 @@ def _reset_settings() -> Generator[None, None, None]:
     config.reload_settings()
 
 
-def _medium_metadata(feature_vector_size: int = 4) -> dict[str, object]:
+def _medium_metadata(
+    feature_vector_size: int = 4,
+    *,
+    backend_model_id: str | None = emotion_model.MEDIUM_MODEL_ID,
+) -> dict[str, object]:
     """Builds minimal medium-profile artifact metadata for loader tests."""
-    return {
+    metadata: dict[str, object] = {
         "artifact_version": emotion_model.MODEL_ARTIFACT_VERSION,
         "artifact_schema_version": "v2",
         "created_at_utc": "2026-02-19T00:00:00+00:00",
@@ -96,6 +103,9 @@ def _medium_metadata(feature_vector_size: int = 4) -> dict[str, object]:
         "frame_stride_seconds": 1.0,
         "pooling_strategy": "mean_std",
     }
+    if backend_model_id is not None:
+        metadata["backend_model_id"] = backend_model_id
+    return metadata
 
 
 def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
@@ -112,10 +122,12 @@ def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
         "ser.runtime.medium_inference.read_audio_file",
         lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
     )
-    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", lambda: backend)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
+    )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.load_model",
-        lambda: emotion_model.LoadedModel(
+        lambda **_kwargs: emotion_model.LoadedModel(
             model=model,
             expected_feature_size=4,
             artifact_metadata=_medium_metadata(),
@@ -169,10 +181,12 @@ def test_run_medium_inference_fails_fast_for_non_medium_artifact(
         probabilities=[[1.0, 0.0]],
         classes=["happy", "sad"],
     )
-    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", lambda: backend)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
+    )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.load_model",
-        lambda: emotion_model.LoadedModel(
+        lambda **_kwargs: emotion_model.LoadedModel(
             model=model,
             expected_feature_size=4,
             artifact_metadata={
@@ -209,10 +223,12 @@ def test_run_medium_inference_rejects_feature_size_mismatch(
         "ser.runtime.medium_inference.read_audio_file",
         lambda _file_path: (np.ones(8, dtype=np.float32), 4),
     )
-    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", lambda: backend)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
+    )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.load_model",
-        lambda: emotion_model.LoadedModel(
+        lambda **_kwargs: emotion_model.LoadedModel(
             model=model,
             expected_feature_size=8,
             artifact_metadata=_medium_metadata(feature_vector_size=8),
@@ -229,3 +245,152 @@ def test_run_medium_inference_rejects_feature_size_mismatch(
             config.reload_settings(),
         )
     assert backend.encode_calls == 1
+
+
+def test_run_medium_inference_uses_configured_medium_model_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Medium runtime should initialize XLSR backend with configured model id."""
+    monkeypatch.setenv("SER_MEDIUM_MODEL_ID", "unit-test/xlsr")
+    settings = config.reload_settings()
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.load_model",
+        lambda **_kwargs: emotion_model.LoadedModel(
+            model=_PredictModel(
+                predictions=["happy"],
+                probabilities=[[1.0, 0.0]],
+                classes=["happy", "sad"],
+            ),
+            expected_feature_size=4,
+            artifact_metadata=_medium_metadata(backend_model_id="unit-test/xlsr"),
+        ),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.read_audio_file",
+        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+    )
+
+    class _BackendStub:
+        def __init__(self, *, model_id: str, cache_dir: Path) -> None:
+            captured["model_id"] = model_id
+            captured["cache_dir"] = cache_dir
+
+    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", _BackendStub)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_timeout",
+        lambda operation, timeout_seconds: operation(),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_inference_once",
+        lambda **_kwargs: InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        ),
+    )
+
+    run_medium_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        settings,
+    )
+
+    assert captured["model_id"] == "unit-test/xlsr"
+    assert captured["cache_dir"] == settings.models.huggingface_cache_root
+
+
+def test_run_medium_inference_requires_backend_model_id_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Medium runtime should reject artifacts missing backend_model_id metadata."""
+    monkeypatch.setenv("SER_MEDIUM_MODEL_ID", "unit-test/xlsr")
+    settings = config.reload_settings()
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.load_model",
+        lambda **_kwargs: emotion_model.LoadedModel(
+            model=_PredictModel(
+                predictions=["happy"],
+                probabilities=[[1.0, 0.0]],
+                classes=["happy", "sad"],
+            ),
+            expected_feature_size=4,
+            artifact_metadata=_medium_metadata(
+                backend_model_id=None,
+            ),
+        ),
+    )
+
+    with pytest.raises(MediumModelUnavailableError, match="backend_model_id"):
+        run_medium_inference(
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+            settings,
+        )
+
+
+def test_medium_single_flight_serializes_same_profile_model_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Concurrent medium calls should execute one-at-a-time for one profile/model tuple."""
+    settings = config.reload_settings()
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.load_model",
+        lambda **_kwargs: emotion_model.LoadedModel(
+            model=_PredictModel(
+                predictions=["happy"],
+                probabilities=[[1.0, 0.0]],
+                classes=["happy", "sad"],
+            ),
+            expected_feature_size=4,
+            artifact_metadata=_medium_metadata(
+                backend_model_id=settings.models.medium_model_id
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.read_audio_file",
+        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.XLSRBackend",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_timeout",
+        lambda operation, timeout_seconds: operation(),
+    )
+
+    counters = {"active": 0, "max_active": 0}
+    counter_lock = threading.Lock()
+
+    def fake_attempt(**_kwargs: object) -> InferenceResult:
+        with counter_lock:
+            counters["active"] += 1
+            counters["max_active"] = max(counters["max_active"], counters["active"])
+        time.sleep(0.05)
+        with counter_lock:
+            counters["active"] -= 1
+        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_inference_once",
+        fake_attempt,
+    )
+
+    errors: list[Exception] = []
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+
+    def invoke() -> None:
+        try:
+            run_medium_inference(request, settings)
+        except Exception as err:  # pragma: no cover - defensive capture for assertion clarity
+            errors.append(err)
+
+    first = threading.Thread(target=invoke)
+    second = threading.Thread(target=invoke)
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert errors == []
+    assert counters["max_active"] == 1

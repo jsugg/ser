@@ -1,7 +1,5 @@
 """Timestamp boundary semantics for emotion segmentation."""
 
-from types import TracebackType
-
 import numpy as np
 import pytest
 from sklearn.neural_network import MLPClassifier
@@ -9,24 +7,6 @@ from sklearn.neural_network import MLPClassifier
 from ser.domain import EmotionSegment
 from ser.features import FeatureFrame
 from ser.models import emotion_model as em
-
-
-class DummyHalo:
-    """No-op replacement for spinner context manager during tests."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        pass
-
-    def __enter__(self) -> "DummyHalo":
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _tb: TracebackType | None,
-    ) -> None:
-        return None
 
 
 class StaticModel(MLPClassifier):
@@ -59,7 +39,6 @@ def test_predict_emotions_uses_explicit_frame_boundaries(
         _frame(2.0, 4.4, 3.0),
     ]
 
-    monkeypatch.setattr(em, "Halo", DummyHalo)
     monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
     monkeypatch.setattr(
         em,
@@ -84,7 +63,6 @@ def test_predict_emotions_single_frame_bounds_are_preserved(
     """Single-frame inference should preserve that frame's start and end."""
     frame = _frame(0.25, 0.75, 1.0)
 
-    monkeypatch.setattr(em, "Halo", DummyHalo)
     monkeypatch.setattr(em, "extract_feature_frames", lambda _file: [frame])
     monkeypatch.setattr(
         em,
@@ -106,7 +84,6 @@ def test_predict_emotions_rejects_frame_prediction_length_mismatch(
     """Mismatch between frame count and prediction count should fail clearly."""
     frames = [_frame(0.0, 1.0, 1.0), _frame(1.0, 2.0, 2.0)]
 
-    monkeypatch.setattr(em, "Halo", DummyHalo)
     monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
     monkeypatch.setattr(
         em,

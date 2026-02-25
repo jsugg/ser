@@ -5,11 +5,11 @@ from dataclasses import dataclass
 
 import librosa
 import numpy as np
-from halo import Halo
 from numpy.typing import NDArray
 
-from ser.config import get_settings
+from ser.config import AppConfig, FeatureFlags, get_settings
 from ser.repr import HandcraftedBackend
+from ser.repr.backend import EncodedSequence
 from ser.utils.audio_utils import read_audio_file
 from ser.utils.logger import get_logger
 
@@ -33,7 +33,7 @@ def _pad_audio_for_fft(
     """Pads short clips so spectral features can be computed safely."""
     if audio.size >= minimum_window:
         return audio
-    pad_width = minimum_window - audio.size
+    pad_width: int = minimum_window - audio.size
     return np.pad(audio, (0, pad_width), mode="constant")
 
 
@@ -59,17 +59,24 @@ def extract_feature_from_signal(
     if audio.size == 0:
         raise ValueError("Audio contains no samples.")
 
-    settings = get_settings()
-    feature_flags = settings.feature_flags
-    prepared_audio = _pad_audio_for_fft(np.asarray(audio, dtype=np.float32))
+    settings: AppConfig = get_settings()
+    feature_flags: FeatureFlags = settings.feature_flags
+    prepared_audio: NDArray[np.float32] = _pad_audio_for_fft(
+        np.asarray(audio, dtype=np.float32)
+    )
+    if not bool(np.all(np.isfinite(prepared_audio))):
+        raise ValueError("Audio buffer is not finite everywhere.")
     n_fft: int = min(prepared_audio.size, 2048)
-    stft_magnitude = np.abs(librosa.stft(prepared_audio, n_fft=n_fft))
-    stft_power_db = librosa.power_to_db(np.square(stft_magnitude), ref=np.max)
+    stft_magnitude: NDArray[np.float32] = np.abs(librosa.stft(prepared_audio, n_fft=n_fft))
+    stft_power_db: NDArray[np.float32] = librosa.power_to_db(
+        np.square(stft_magnitude),
+        ref=np.max,
+    )
 
     feature_parts: list[NDArray[np.float64]] = []
     try:
         if feature_flags.mfcc:
-            mfccs = np.mean(
+            mfccs: NDArray[np.float64] = np.mean(
                 librosa.feature.mfcc(
                     y=prepared_audio, sr=sample_rate, n_mfcc=40, n_fft=n_fft
                 ),
@@ -78,7 +85,7 @@ def extract_feature_from_signal(
             feature_parts.append(np.asarray(mfccs, dtype=np.float64))
 
         if feature_flags.chroma:
-            chroma = np.mean(
+            chroma: NDArray[np.float64] = np.mean(
                 librosa.feature.chroma_stft(
                     S=stft_magnitude, sr=sample_rate, n_fft=n_fft
                 ),
@@ -87,7 +94,7 @@ def extract_feature_from_signal(
             feature_parts.append(np.asarray(chroma, dtype=np.float64))
 
         if feature_flags.mel:
-            mel = np.mean(
+            mel: NDArray[np.float64] = np.mean(
                 librosa.feature.melspectrogram(
                     y=prepared_audio, sr=sample_rate, n_fft=n_fft
                 ),
@@ -96,7 +103,7 @@ def extract_feature_from_signal(
             feature_parts.append(np.asarray(mel, dtype=np.float64))
 
         if feature_flags.contrast:
-            spectral_contrast = np.mean(
+            spectral_contrast: NDArray[np.float64] = np.mean(
                 librosa.feature.spectral_contrast(
                     S=stft_power_db,
                     sr=sample_rate,
@@ -107,14 +114,14 @@ def extract_feature_from_signal(
             feature_parts.append(np.asarray(spectral_contrast, dtype=np.float64))
 
         if feature_flags.tonnetz:
-            harmonic = librosa.effects.harmonic(prepared_audio)
-            tonnetz = np.mean(
+            harmonic: NDArray[np.float32] = librosa.effects.harmonic(prepared_audio)
+            tonnetz: NDArray[np.float64] = np.mean(
                 librosa.feature.tonnetz(y=harmonic, sr=sample_rate),
                 axis=1,
             )
             feature_parts.append(np.asarray(tonnetz, dtype=np.float64))
     except Exception as err:
-        logger.error(msg=f"Error extracting features from signal: {err}", exc_info=True)
+        logger.warning("Error extracting features from signal: %s", err)
         raise
 
     if not feature_parts:
@@ -155,7 +162,7 @@ def extended_extract_feature(
     Returns:
         A list of feature vectors, one for each extracted frame.
     """
-    frames = extract_feature_frames(
+    frames: list[FeatureFrame] = extract_feature_frames(
         audiofile=audiofile,
         frame_size=frame_size,
         frame_stride=frame_stride,
@@ -181,8 +188,7 @@ def extract_feature_frames(
         frame_size_seconds=frame_size,
         frame_stride_seconds=frame_stride,
     )
-    with Halo(text="Processing", spinner="dots", text_color="green"):
-        encoded = backend.encode_sequence(audio=audio, sample_rate=sample_rate)
+    encoded: EncodedSequence = backend.encode_sequence(audio=audio, sample_rate=sample_rate)
 
     return [
         FeatureFrame(

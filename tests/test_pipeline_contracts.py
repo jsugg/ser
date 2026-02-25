@@ -61,35 +61,29 @@ def test_cli_train_exit_code_contract(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_model_load_candidate_order_and_uniqueness(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Model load candidate order remains secure-first with deduplicated entries."""
+    primary_dir = tmp_path / "primary"
     monkeypatch.setattr(
         emotion_model,
         "get_settings",
         lambda: SimpleNamespace(
             models=SimpleNamespace(
-                secure_model_file=Path("/tmp/primary/ser_model.skops"),
-                model_file=Path("/tmp/primary/ser_model.pkl"),
+                folder=primary_dir,
+                secure_model_file=primary_dir / "ser_model.skops",
+                model_file=primary_dir / "ser_model.pkl",
                 secure_model_file_name="ser_model.skops",
                 model_file_name="ser_model.pkl",
             )
         ),
     )
-    monkeypatch.setattr(emotion_model, "LEGACY_MODEL_FOLDER", Path("/tmp/legacy"))
 
     candidates = emotion_model._model_load_candidates()
 
     assert [candidate.artifact_format for candidate in candidates] == [
         "skops",
         "pickle",
-        "skops",
-        "pickle",
-    ]
-    assert [candidate.origin for candidate in candidates] == [
-        "primary",
-        "primary",
-        "legacy",
-        "legacy",
     ]
     keys = {(str(candidate.path), candidate.artifact_format) for candidate in candidates}
     assert len(keys) == len(candidates)

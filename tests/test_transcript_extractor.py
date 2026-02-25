@@ -1,6 +1,8 @@
 """Behavior tests for transcript extraction error handling."""
 
-from types import SimpleNamespace, TracebackType
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Never, cast
 
 import pytest
@@ -10,24 +12,6 @@ from ser.transcript import transcript_extractor as te
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult
-
-
-class DummyHalo:
-    """No-op replacement for terminal spinners in tests."""
-
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
-        pass
-
-    def __enter__(self) -> "DummyHalo":
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _tb: TracebackType | None,
-    ) -> None:
-        return None
 
 
 class FailingModel:
@@ -51,7 +35,6 @@ def test_extract_transcript_raises_transcription_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Operational failures should propagate as TranscriptionError."""
-    monkeypatch.setattr(te, "Halo", DummyHalo)
     monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: FailingModel())
 
     with pytest.raises(te.TranscriptionError, match="Failed to transcribe audio"):
@@ -62,7 +45,6 @@ def test_extract_transcript_returns_empty_list_for_successful_empty_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A successful call with no words should return an empty transcript."""
-    monkeypatch.setattr(te, "Halo", DummyHalo)
     monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
     monkeypatch.setattr(
         te,
@@ -77,7 +59,6 @@ def test_extract_transcript_formats_word_timestamps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Word-level timestamps should be preserved in formatted output."""
-    monkeypatch.setattr(te, "Halo", DummyHalo)
     monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
     monkeypatch.setattr(
         te,
@@ -97,3 +78,46 @@ def test_format_transcript_raises_for_invalid_result() -> None:
     with pytest.raises(te.TranscriptionError, match="Invalid Whisper result object"):
         invalid_result = cast("WhisperResult", object())
         te.format_transcript(invalid_result)
+
+
+def test_load_whisper_model_routes_downloads_to_model_cache_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Whisper and torch-hub assets should route to SER model cache roots."""
+    download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
+    torch_cache_root = tmp_path / "model-cache" / "torch"
+    settings = SimpleNamespace(
+        models=SimpleNamespace(
+            whisper_download_root=download_root,
+            torch_cache_root=torch_cache_root,
+        )
+    )
+    captured: dict[str, object] = {}
+    fake_model = object()
+
+    def _fake_load_model(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return fake_model
+
+    monkeypatch.setattr(te, "get_settings", lambda: settings)
+    monkeypatch.setitem(
+        sys.modules,
+        "stable_whisper",
+        SimpleNamespace(load_model=_fake_load_model),
+    )
+    monkeypatch.delenv("TORCH_HOME", raising=False)
+
+    loaded = te.load_whisper_model(
+        profile=te.TranscriptionProfile(
+            model_name="tiny",
+            use_demucs=False,
+            use_vad=False,
+        )
+    )
+
+    assert loaded is fake_model
+    assert captured["download_root"] == str(download_root)
+    assert te.os.environ["TORCH_HOME"] == str(torch_cache_root)
+    assert download_root.is_dir()
+    assert torch_cache_root.is_dir()

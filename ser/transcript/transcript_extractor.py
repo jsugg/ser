@@ -7,11 +7,19 @@ import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
 from typing import TYPE_CHECKING, Protocol, cast
 
 from ser.config import AppConfig, get_settings
 from ser.domain import TranscriptWord
+from ser.runtime.phase_contract import (
+    PHASE_TRANSCRIPTION,
+    PHASE_TRANSCRIPTION_MODEL_LOAD,
+)
+from ser.runtime.phase_timing import (
+    log_phase_completed,
+    log_phase_failed,
+    log_phase_started,
+)
 from ser.utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -19,37 +27,6 @@ if TYPE_CHECKING:
     from whisper.model import Whisper
 
 logger: logging.Logger = get_logger(__name__)
-
-
-class HaloContext(Protocol):
-    """Runtime protocol for the context manager returned by `halo.Halo`."""
-
-    def __enter__(self) -> object: ...
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc: BaseException | None,
-        _tb: TracebackType | None,
-    ) -> bool | None: ...
-
-
-class HaloFactory(Protocol):
-    """Callable protocol for constructing spinner context managers."""
-
-    def __call__(self, *args: object, **kwargs: object) -> HaloContext: ...
-
-
-Halo: HaloFactory | None
-Halo = None
-try:
-    from halo import Halo as _Halo
-except ModuleNotFoundError:  # pragma: no cover - exercised in lightweight CI envs.
-    pass
-else:
-    # `halo` does not provide precise typing for this constructor shape, while
-    # this module intentionally treats it as a generic context-manager factory.
-    Halo = cast(HaloFactory, _Halo)
 
 
 class TranscriptionError(RuntimeError):
@@ -104,7 +81,10 @@ def load_whisper_model(profile: TranscriptionProfile | None = None) -> Whisper:
     active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
     try:
         download_root: Path = settings.models.whisper_download_root
+        torch_cache_root: Path = settings.models.torch_cache_root
         os.makedirs(download_root, exist_ok=True)
+        os.makedirs(torch_cache_root, exist_ok=True)
+        os.environ["TORCH_HOME"] = str(torch_cache_root)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module="stable_whisper")
             model: Whisper = stable_whisper.load_model(
@@ -145,38 +125,52 @@ def _extract_transcript(
     profile: TranscriptionProfile | None = None,
 ) -> list[TranscriptWord]:
     """Internal transcript workflow with model loading and formatting."""
-    if Halo is None:
-        raise TranscriptionError(
-            "Missing transcription dependency 'halo'. Ensure project dependencies are installed."
-        )
-
-    with Halo(
-        text="Loading the Whisper model...",
-        spinner="dots",
-        text_color="green",
-    ):
+    model_load_started_at = log_phase_started(
+        logger,
+        phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+    )
+    try:
         model: Whisper = load_whisper_model(profile)
+    except Exception:
+        log_phase_failed(
+            logger,
+            phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+            started_at=model_load_started_at,
+        )
+        raise
+    log_phase_completed(
+        logger,
+        phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+        started_at=model_load_started_at,
+    )
 
-    logger.info(msg="Whisper model loaded successfully.")
-
-    with Halo(
-        text="Transcribing the audio file...",
-        spinner="dots",
-        text_color="green",
-    ):
+    transcription_started_at = log_phase_started(
+        logger,
+        phase_name=PHASE_TRANSCRIPTION,
+    )
+    try:
         transcript: WhisperResult = (
             __transcribe_file(model, language, file_path)
             if profile is None
             else _transcribe_file_with_profile(model, language, file_path, profile)
         )
-    logger.info(msg="Audio file transcription process completed.")
+    except Exception:
+        log_phase_failed(
+            logger,
+            phase_name=PHASE_TRANSCRIPTION,
+            started_at=transcription_started_at,
+        )
+        raise
+    log_phase_completed(
+        logger,
+        phase_name=PHASE_TRANSCRIPTION,
+        started_at=transcription_started_at,
+    )
 
     formatted_transcript: list[TranscriptWord] = format_transcript(transcript)
     if not formatted_transcript:
         logger.info(msg="Transcript extraction succeeded but returned no words.")
     logger.debug(msg="Transcript output formatted successfully.")
-
-    logger.info("Transcript extraction process completed successfully.")
     return formatted_transcript
 
 
@@ -214,7 +208,7 @@ def _transcribe_file_with_profile(
     if isinstance(raw_transcript, WhisperResult):
         return raw_transcript
 
-    if isinstance(raw_transcript, (dict, list, str)):
+    if isinstance(raw_transcript, dict | list | str):
         return WhisperResult(raw_transcript)
 
     logger.error(

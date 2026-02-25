@@ -6,6 +6,7 @@ import importlib
 import importlib.util
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
+from pathlib import Path
 from typing import Protocol, cast
 
 import numpy as np
@@ -78,6 +79,7 @@ class XLSRBackend:
         *,
         model_id: str = "facebook/wav2vec2-xls-r-300m",
         max_chunk_seconds: float = 30.0,
+        cache_dir: Path | None = None,
         feature_extractor: _FeatureExtractor | None = None,
         model: _EncoderModel | None = None,
     ) -> None:
@@ -86,6 +88,7 @@ class XLSRBackend:
         Args:
             model_id: Hugging Face model id for XLS-R backbone loading.
             max_chunk_seconds: Maximum chunk duration for bounded-memory encoding.
+            cache_dir: Optional Hugging Face cache root for model/processor downloads.
             feature_extractor: Optional injected feature extractor for deterministic tests.
             model: Optional injected model for deterministic tests.
 
@@ -102,6 +105,7 @@ class XLSRBackend:
             )
         self._model_id = model_id
         self._max_chunk_seconds = max_chunk_seconds
+        self._cache_dir = cache_dir
         self._feature_extractor = feature_extractor
         self._model = model
 
@@ -120,6 +124,10 @@ class XLSRBackend:
                 "XLSR model configuration is missing a valid positive hidden_size."
             )
         return hidden_size
+
+    def prepare_runtime(self) -> None:
+        """Preloads model runtime components before timed inference compute."""
+        self._ensure_runtime_components()
 
     def encode_sequence(
         self,
@@ -237,11 +245,35 @@ class XLSRBackend:
                 "transformers package does not expose AutoFeatureExtractor/AutoModel."
             )
 
+        cache_kwargs: dict[str, str] = {}
+        if self._cache_dir is not None:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_kwargs["cache_dir"] = str(self._cache_dir)
+
         feature_extractor = cast(
             _FeatureExtractor,
-            auto_feature_extractor.from_pretrained(self._model_id),
+            auto_feature_extractor.from_pretrained(self._model_id, **cache_kwargs),
         )
-        model = cast(_EncoderModel, auto_model.from_pretrained(self._model_id))
+        try:
+            model = cast(
+                _EncoderModel,
+                auto_model.from_pretrained(
+                    self._model_id,
+                    use_safetensors=True,
+                    **cache_kwargs,
+                ),
+            )
+        except TypeError:
+            model = cast(
+                _EncoderModel,
+                auto_model.from_pretrained(self._model_id, **cache_kwargs),
+            )
+        except Exception as err:
+            raise RuntimeError(
+                "Failed to load XLSR model with safetensors-only policy. "
+                "Use a model revision that publishes safetensors weights, or "
+                "upgrade torch to >=2.6 for legacy checkpoint loading."
+            ) from err
         model.eval()
         self._feature_extractor = feature_extractor
         self._model = model

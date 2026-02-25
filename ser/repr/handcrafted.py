@@ -56,6 +56,10 @@ class HandcraftedBackend(FeatureBackend):
             feature_size += 6
         return feature_size
 
+    def prepare_runtime(self) -> None:
+        """No-op warmup hook for runtime contract parity with other backends."""
+        return None
+
     def encode_sequence(
         self,
         audio: NDArray[np.float32],

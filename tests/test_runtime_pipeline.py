@@ -12,6 +12,7 @@ from ser.runtime.pipeline import RuntimePipeline, create_runtime_pipeline
 from ser.runtime.registry import RuntimeCapability, UnsupportedProfileError
 from ser.runtime.schema import (
     OUTPUT_SCHEMA_VERSION,
+    FramePrediction,
     InferenceResult,
     SegmentPrediction,
 )
@@ -45,6 +46,7 @@ def _build_test_pipeline(
     build_timeline: BuildTimelineCallable,
     print_timeline: PrintTimelineCallable,
     save_timeline_to_csv: SaveTimelineCallable,
+    backend_inference: Callable[[InferenceRequest], InferenceResult] | None = None,
 ) -> RuntimePipeline:
     """Creates a runtime pipeline with injected deterministic dependencies."""
     return RuntimePipeline(
@@ -61,6 +63,7 @@ def _build_test_pipeline(
         train_model=train_model,
         predict_emotions=predict_emotions,
         predict_emotions_detailed=predict_emotions_detailed,
+        backend_inference=backend_inference,
         extract_transcript=extract_transcript,
         build_timeline=build_timeline,
         print_timeline=print_timeline,
@@ -187,6 +190,69 @@ def test_run_inference_skips_save_when_flag_is_disabled() -> None:
     assert execution.timeline_csv_path is None
 
 
+def test_run_inference_uses_backend_hook_for_fast_when_available() -> None:
+    """Pipeline fast profile should route inference through backend hook when present."""
+    backend_result = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[
+            SegmentPrediction(
+                emotion="happy",
+                start_seconds=0.0,
+                end_seconds=1.0,
+                confidence=1.0,
+                probabilities=None,
+            )
+        ],
+        frames=[
+            FramePrediction(
+                start_seconds=0.0,
+                end_seconds=1.0,
+                emotion="happy",
+                confidence=1.0,
+                probabilities=None,
+            )
+        ],
+    )
+    calls: dict[str, object] = {}
+    transcript = [TranscriptWord("hi", 0.0, 0.5)]
+    timeline = [TimelineEntry(0.0, "happy", "hi")]
+
+    def fake_backend_hook(request: InferenceRequest) -> InferenceResult:
+        calls["request"] = request
+        return backend_result
+
+    pipeline = _build_test_pipeline(
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError(
+                "Legacy predict path should not run when backend hook exists."
+            )
+        ),
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError(
+                "Detailed legacy path should not run when backend hook exists."
+            )
+        ),
+        extract_transcript=lambda _file_path, _language: transcript,
+        build_timeline=lambda _transcript, _emotions: timeline,
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+        backend_inference=fake_backend_hook,
+    )
+
+    execution = pipeline.run_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    )
+
+    assert calls["request"] == InferenceRequest(
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+    )
+    assert execution.used_backend_path is True
+    assert execution.detailed_result == backend_result
+
+
 def test_create_runtime_pipeline_uses_resolved_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,6 +297,276 @@ def test_create_runtime_pipeline_marks_medium_available_when_hook_registry_is_re
     assert pipeline.capability.profile == "medium"
     assert pipeline.capability.available is True
     assert pipeline.backend_inference is fake_medium_hook
+
+
+def test_create_runtime_pipeline_marks_accurate_available_when_hook_registry_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Factory should treat accurate as available when hook registry is populated."""
+    monkeypatch.setenv("SER_ENABLE_ACCURATE_PROFILE", "true")
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+
+    def fake_accurate_hook(_request: InferenceRequest) -> InferenceResult:
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        )
+
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {"hf_whisper": fake_accurate_hook},
+    )
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+
+    assert pipeline.profile.name == "accurate"
+    assert pipeline.capability.profile == "accurate"
+    assert pipeline.capability.available is True
+    assert pipeline.backend_inference is fake_accurate_hook
+
+
+def test_create_runtime_pipeline_marks_accurate_research_available_when_hook_registry_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Factory should treat accurate-research as available when hook is ready."""
+    monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
+    monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+
+    def fake_accurate_research_hook(_request: InferenceRequest) -> InferenceResult:
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        )
+
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {"emotion2vec": fake_accurate_research_hook},
+    )
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+
+    assert pipeline.profile.name == "accurate-research"
+    assert pipeline.capability.profile == "accurate-research"
+    assert pipeline.capability.available is True
+    assert pipeline.backend_inference is fake_accurate_research_hook
+
+
+@pytest.mark.parametrize(
+    ("env", "backend_id", "expected_model_name"),
+    [
+        ({}, "handcrafted", "turbo"),
+        ({"SER_ENABLE_MEDIUM_PROFILE": "true"}, "hf_xlsr", "turbo"),
+        ({"SER_ENABLE_ACCURATE_PROFILE": "true"}, "hf_whisper", "large"),
+        (
+            {
+                "SER_ENABLE_ACCURATE_PROFILE": "true",
+                "SER_ENABLE_ACCURATE_RESEARCH_PROFILE": "true",
+            },
+            "emotion2vec",
+            "large",
+        ),
+    ],
+)
+def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    env: dict[str, str],
+    backend_id: str,
+    expected_model_name: str,
+) -> None:
+    """Factory should bind transcript extraction to selected profile defaults."""
+    monkeypatch.delenv("WHISPER_MODEL", raising=False)
+    monkeypatch.delenv("WHISPER_DEMUCS", raising=False)
+    monkeypatch.delenv("WHISPER_VAD", raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {
+            backend_id: lambda _request: InferenceResult(
+                schema_version=OUTPUT_SCHEMA_VERSION,
+                segments=[],
+                frames=[],
+            )
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_extract(
+        _file_path: str,
+        _language: str | None,
+        profile: object | None = None,
+    ) -> list[TranscriptWord]:
+        captured["profile"] = profile
+        return []
+
+    monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+
+    pipeline.run_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    )
+
+    from ser.transcript import TranscriptionProfile
+
+    profile = captured["profile"]
+    assert isinstance(profile, TranscriptionProfile)
+    assert profile.model_name == expected_model_name
+    assert profile.use_demucs is True
+    assert profile.use_vad is True
+
+
+def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Medium profile should route training through medium training entrypoint."""
+    monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+
+    def fake_medium_hook(_request: InferenceRequest) -> InferenceResult:
+        return InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        )
+
+    called = {"fast": False, "medium": False}
+
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {"hf_xlsr": fake_medium_hook},
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_model",
+        lambda: called.__setitem__("fast", True),
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_medium_model",
+        lambda: called.__setitem__("medium", True),
+    )
+
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+    pipeline.run_training()
+
+    assert pipeline.profile.name == "medium"
+    assert called["medium"] is True
+    assert called["fast"] is False
+
+
+def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accurate profile should route training through accurate training entrypoint."""
+    monkeypatch.setenv("SER_ENABLE_ACCURATE_PROFILE", "true")
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+
+    called = {"fast": False, "medium": False, "accurate": False}
+
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {
+            "hf_whisper": lambda _request: InferenceResult(
+                schema_version=OUTPUT_SCHEMA_VERSION,
+                segments=[],
+                frames=[],
+            )
+        },
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_model",
+        lambda: called.__setitem__("fast", True),
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_medium_model",
+        lambda: called.__setitem__("medium", True),
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_accurate_model",
+        lambda: called.__setitem__("accurate", True),
+    )
+
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+    pipeline.run_training()
+
+    assert called["fast"] is False
+    assert called["medium"] is False
+    assert called["accurate"] is True
+
+
+def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accurate-research profile should route to dedicated training entrypoint."""
+    monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
+    monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+
+    called = {
+        "fast": False,
+        "medium": False,
+        "accurate": False,
+        "accurate_research": False,
+    }
+
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {
+            "emotion2vec": lambda _request: InferenceResult(
+                schema_version=OUTPUT_SCHEMA_VERSION,
+                segments=[],
+                frames=[],
+            )
+        },
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_model",
+        lambda: called.__setitem__("fast", True),
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_medium_model",
+        lambda: called.__setitem__("medium", True),
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_accurate_model",
+        lambda: called.__setitem__("accurate", True),
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_accurate_research_model",
+        lambda: called.__setitem__("accurate_research", True),
+    )
+
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+    pipeline.run_training()
+
+    assert called["fast"] is False
+    assert called["medium"] is False
+    assert called["accurate"] is False
+    assert called["accurate_research"] is True
 
 
 def test_run_inference_uses_detailed_schema_when_enabled(
@@ -297,7 +633,9 @@ def test_run_inference_uses_detailed_schema_when_enabled(
 
 def test_run_inference_uses_backend_hook_for_supported_medium_profile() -> None:
     """Medium profile should route through backend hook when capability is ready."""
-    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    request = InferenceRequest(
+        file_path="sample.wav", language="en", save_transcript=False
+    )
     calls: dict[str, object] = {}
     detailed = InferenceResult(
         schema_version=OUTPUT_SCHEMA_VERSION,
@@ -352,6 +690,67 @@ def test_run_inference_uses_backend_hook_for_supported_medium_profile() -> None:
     assert execution.used_backend_path is True
     assert execution.detailed_result == detailed
     assert execution.emotions == [EmotionSegment("happy", 0.0, 1.0)]
+
+
+def test_run_inference_uses_backend_hook_for_supported_accurate_profile() -> None:
+    """Accurate profile should route through backend hook when capability is ready."""
+    request = InferenceRequest(
+        file_path="sample.wav", language="en", save_transcript=False
+    )
+    calls: dict[str, object] = {}
+    detailed = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[
+            SegmentPrediction(
+                emotion="sad",
+                start_seconds=0.0,
+                end_seconds=1.0,
+                confidence=0.92,
+                probabilities={"sad": 0.92, "neutral": 0.08},
+            )
+        ],
+        frames=[],
+    )
+
+    def fake_backend_inference(inference_request: InferenceRequest) -> InferenceResult:
+        calls["request"] = inference_request
+        return detailed
+
+    pipeline = RuntimePipeline(
+        settings=config.reload_settings(),
+        profile=RuntimeProfile(name="accurate", description="Accurate test profile"),
+        capability=RuntimeCapability(
+            profile="accurate",
+            backend_id="hf_whisper",
+            available=True,
+        ),
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Legacy predict path should not run for backend hook flow.")
+        ),
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Detailed legacy path should not run for backend hook flow.")
+        ),
+        extract_transcript=lambda _file_path, _language: [
+            TranscriptWord("oi", 0.0, 0.5)
+        ],
+        build_timeline=lambda _transcript, emotions: [
+            TimelineEntry(0.0, emotions[0].emotion, "oi")
+        ],
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+        backend_inference=fake_backend_inference,
+    )
+
+    execution = pipeline.run_inference(request)
+
+    assert calls["request"] == request
+    assert execution.profile == "accurate"
+    assert execution.output_schema_version == OUTPUT_SCHEMA_VERSION
+    assert execution.backend_id == "hf_whisper"
+    assert execution.used_backend_path is True
+    assert execution.detailed_result == detailed
+    assert execution.emotions == [EmotionSegment("sad", 0.0, 1.0)]
 
 
 def test_run_inference_raises_for_unsupported_profile_capability() -> None:
