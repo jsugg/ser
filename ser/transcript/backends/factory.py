@@ -9,7 +9,9 @@ from ser.transcript.backends.base import TranscriptionBackendAdapter
 from ser.transcript.backends.faster_whisper import FasterWhisperAdapter
 from ser.transcript.backends.stable_whisper import StableWhisperAdapter
 
-_TRANSCRIPTION_ADAPTERS: Final[dict[TranscriptionBackendId, TranscriptionBackendAdapter]] = {
+_TRANSCRIPTION_ADAPTERS: Final[
+    dict[TranscriptionBackendId, TranscriptionBackendAdapter]
+] = {
     "stable_whisper": StableWhisperAdapter(),
     "faster_whisper": FasterWhisperAdapter(),
 }

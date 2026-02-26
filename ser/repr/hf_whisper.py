@@ -100,6 +100,9 @@ class _PretrainedLoader(Protocol):
         ...
 
 
+type _LoadingInfo = Mapping[str, object]
+
+
 class WhisperBackend:
     """Whisper backend with bounded chunked encoding and deterministic pooling."""
 
@@ -389,18 +392,16 @@ class WhisperBackend:
     ) -> _EncoderModel:
         """Loads one model with safetensors-first policy and robust fallback."""
         try:
-            model = cast(
-                _EncoderModel,
-                loader.from_pretrained(
-                    self._model_id,
-                    use_safetensors=True,
-                    **cache_kwargs,
-                ),
+            model, loading_info = self._load_model_with_loading_info(
+                loader=loader,
+                cache_kwargs=cache_kwargs,
+                use_safetensors=True,
             )
         except TypeError:
-            model = cast(
-                _EncoderModel,
-                loader.from_pretrained(self._model_id, **cache_kwargs),
+            model, loading_info = self._load_model_with_loading_info(
+                loader=loader,
+                cache_kwargs=cache_kwargs,
+                use_safetensors=False,
             )
         except Exception as err:
             raise RuntimeError(
@@ -408,8 +409,81 @@ class WhisperBackend:
                 "Use a model revision that publishes safetensors weights, or "
                 "upgrade torch to >=2.6 for legacy checkpoint loading."
             ) from err
+        if loading_info is not None:
+            self._validate_loading_info(
+                loader_name=loader_name,
+                loading_info=loading_info,
+            )
         model.eval()
         return model
+
+    def _load_model_with_loading_info(
+        self,
+        *,
+        loader: _PretrainedLoader,
+        cache_kwargs: Mapping[str, str],
+        use_safetensors: bool,
+    ) -> tuple[_EncoderModel, _LoadingInfo | None]:
+        """Loads one model and returns optional transformers loading diagnostics."""
+        load_kwargs: dict[str, object] = {
+            "output_loading_info": True,
+            **cache_kwargs,
+        }
+        if use_safetensors:
+            load_kwargs["use_safetensors"] = True
+
+        loaded = loader.from_pretrained(self._model_id, **load_kwargs)
+        if isinstance(loaded, tuple) and len(loaded) == 2:
+            model_obj, loading_info_obj = loaded
+            if isinstance(loading_info_obj, Mapping):
+                return cast(_EncoderModel, model_obj), cast(
+                    _LoadingInfo, loading_info_obj
+                )
+        return cast(_EncoderModel, loaded), None
+
+    def _validate_loading_info(
+        self,
+        *,
+        loader_name: str,
+        loading_info: _LoadingInfo,
+    ) -> None:
+        """Fails fast when transformers reports incomplete checkpoint load."""
+        missing_keys = self._normalize_key_list(loading_info.get("missing_keys"))
+        mismatched_keys = self._normalize_mismatched_keys(
+            loading_info.get("mismatched_keys")
+        )
+        if not missing_keys and not mismatched_keys:
+            return
+
+        samples: list[str] = []
+        if missing_keys:
+            samples.append(f"missing sample={missing_keys[:3]}")
+        if mismatched_keys:
+            samples.append(f"mismatched sample={mismatched_keys[:3]}")
+        raise RuntimeError(
+            f"{loader_name} produced an incomplete checkpoint load for "
+            f"{self._model_id!r} (missing={len(missing_keys)}, "
+            f"mismatched={len(mismatched_keys)}; {'; '.join(samples)})."
+        )
+
+    def _normalize_key_list(self, raw_keys: object) -> list[str]:
+        """Normalizes transformers key-list payloads into string keys."""
+        if not isinstance(raw_keys, list):
+            return []
+        return [item for item in raw_keys if isinstance(item, str)]
+
+    def _normalize_mismatched_keys(self, raw_keys: object) -> list[str]:
+        """Normalizes mismatched-key payloads into canonical key names."""
+        if not isinstance(raw_keys, list):
+            return []
+        keys: list[str] = []
+        for item in raw_keys:
+            if isinstance(item, str):
+                keys.append(item)
+                continue
+            if isinstance(item, tuple) and item and isinstance(item[0], str):
+                keys.append(item[0])
+        return keys
 
     def _get_torch_runtime(self) -> TorchRuntime | None:
         """Lazily resolves optional torch runtime selectors."""

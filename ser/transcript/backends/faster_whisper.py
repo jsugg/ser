@@ -170,9 +170,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
             ) from err
         whisper_model = getattr(faster_whisper_module, "WhisperModel", None)
         if whisper_model is None:
-            raise RuntimeError(
-                "faster-whisper package does not expose WhisperModel."
-            )
+            raise RuntimeError("faster-whisper package does not expose WhisperModel.")
         download_root: Path = settings.models.whisper_download_root
         os.makedirs(download_root, exist_ok=True)
         return whisper_model(
@@ -223,7 +221,10 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                 )
         except Exception as err:
             raise RuntimeError("Failed to transcribe audio.") from err
-        if not isinstance(raw_transcribe_result, tuple) or len(raw_transcribe_result) != 2:
+        if (
+            not isinstance(raw_transcribe_result, tuple)
+            or len(raw_transcribe_result) != 2
+        ):
             raise RuntimeError(
                 "Unexpected result envelope returned by faster-whisper transcribe()."
             )

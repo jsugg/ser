@@ -38,12 +38,10 @@ _INVALID_ESCAPE_POLICY_ID = "stable_whisper.invalid_escape_sequence"
 _INVALID_ESCAPE_MESSAGE_REGEX = r"^invalid escape sequence '\\,'$"
 _INVALID_ESCAPE_MODULE_REGEX = r"^stable_whisper\.result$"
 _FP16_CPU_WARNING_POLICY_ID = "stable_whisper.fp16_cpu_fallback_warning"
-_FP16_CPU_WARNING_MESSAGE_REGEX = (
-    r"^FP16 is not supported on CPU; using FP32 instead$"
-)
+_FP16_CPU_WARNING_MESSAGE_REGEX = r"^FP16 is not supported on CPU; using FP32 instead$"
 _DEMUCS_DEPRECATED_POLICY_ID = "stable_whisper.demucs_deprecated_warning"
 _DEMUCS_DEPRECATED_MESSAGE_REGEX = (
-    r'^``demucs`` is deprecated and will be removed in future versions\. '
+    r"^``demucs`` is deprecated and will be removed in future versions\. "
     r'Use ``denoiser="demucs"`` instead\.$'
 )
 _TRANSCRIBE_WARNING_MODULE_REGEX = (
