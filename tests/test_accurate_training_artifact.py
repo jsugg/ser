@@ -11,13 +11,17 @@ from sklearn.dummy import DummyClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.models import emotion_model as em
 
 
 def _settings_stub(tmp_path: Path) -> SimpleNamespace:
     """Builds minimal settings stub required by accurate training helpers."""
     return SimpleNamespace(
-        dataset=SimpleNamespace(glob_pattern=str(tmp_path / "*.wav")),
+        dataset=SimpleNamespace(
+            glob_pattern=str(tmp_path / "*.wav"),
+            manifest_paths=(),
+        ),
         tmp_folder=tmp_path / "tmp",
         models=SimpleNamespace(
             folder=tmp_path / "models",
@@ -44,6 +48,23 @@ def _settings_stub(tmp_path: Path) -> SimpleNamespace:
     )
 
 
+def _utterances_from_samples(samples: list[tuple[str, str]]) -> list[Utterance]:
+    utterances: list[Utterance] = []
+    for index, (audio_path, label) in enumerate(samples):
+        utterances.append(
+            Utterance(
+                schema_version=MANIFEST_SCHEMA_VERSION,
+                sample_id=f"ravdess:{index}:{audio_path}",
+                corpus="ravdess",
+                audio_path=Path(audio_path),
+                label=label,
+                speaker_id=f"ravdess:{index // 2}",
+                language="en",
+            )
+        )
+    return utterances
+
+
 def _dummy_classifier() -> Pipeline:
     """Creates deterministic classifier for artifact-persistence tests."""
     return Pipeline(
@@ -60,7 +81,7 @@ def test_train_accurate_model_requires_labeled_dataset(
 ) -> None:
     """Accurate training should fail fast when dataset loading returns no samples."""
     monkeypatch.setattr(em, "get_settings", lambda: _settings_stub(tmp_path))
-    monkeypatch.setattr(em, "load_labeled_audio_paths", lambda: None)
+    monkeypatch.setattr(em, "load_utterances", lambda: None)
 
     with pytest.raises(RuntimeError, match="Dataset not loaded"):
         em.train_accurate_model()
@@ -101,17 +122,20 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     )
     y_test = ["happy", "sad"]
     captured: dict[str, object] = {}
+    all_utterances = _utterances_from_samples([*train_samples, *test_samples])
+    train_utterances = all_utterances[: len(train_samples)]
+    test_utterances = all_utterances[len(train_samples) :]
 
     monkeypatch.setattr(em, "get_settings", lambda: settings)
     monkeypatch.setattr(
         em,
-        "load_labeled_audio_paths",
-        lambda: [*train_samples, *test_samples],
+        "load_utterances",
+        lambda: all_utterances,
     )
     monkeypatch.setattr(
         em,
-        "_split_labeled_audio_samples",
-        lambda _samples: (train_samples, test_samples, split_metadata),
+        "_split_utterances",
+        lambda _samples: (train_utterances, test_utterances, split_metadata),
     )
 
     def _build_dataset(
@@ -226,6 +250,9 @@ def test_train_accurate_model_uses_configured_model_id(
     x_test = np.asarray([[0.3, 0.4], [0.4, 0.5]], dtype=np.float64)
     y_test = ["happy", "sad"]
     captured: dict[str, object] = {"dataset_model_ids": []}
+    all_utterances = _utterances_from_samples([*train_samples, *test_samples])
+    train_utterances = all_utterances[: len(train_samples)]
+    test_utterances = all_utterances[len(train_samples) :]
 
     class _BackendStub:
         def __init__(
@@ -245,13 +272,13 @@ def test_train_accurate_model_uses_configured_model_id(
     monkeypatch.setattr(em, "get_settings", lambda: settings)
     monkeypatch.setattr(
         em,
-        "load_labeled_audio_paths",
-        lambda: [*train_samples, *test_samples],
+        "load_utterances",
+        lambda: all_utterances,
     )
     monkeypatch.setattr(
         em,
-        "_split_labeled_audio_samples",
-        lambda _samples: (train_samples, test_samples, split_metadata),
+        "_split_utterances",
+        lambda _samples: (train_utterances, test_utterances, split_metadata),
     )
 
     def _build_dataset(
@@ -336,6 +363,9 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     x_test = np.asarray([[0.3, 0.4], [0.4, 0.5]], dtype=np.float64)
     y_test = ["happy", "sad"]
     captured: dict[str, object] = {"dataset_model_ids": []}
+    all_utterances = _utterances_from_samples([*train_samples, *test_samples])
+    train_utterances = all_utterances[: len(train_samples)]
+    test_utterances = all_utterances[len(train_samples) :]
 
     class _BackendStub:
         def __init__(
@@ -353,13 +383,13 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     monkeypatch.setattr(em, "get_settings", lambda: settings)
     monkeypatch.setattr(
         em,
-        "load_labeled_audio_paths",
-        lambda: [*train_samples, *test_samples],
+        "load_utterances",
+        lambda: all_utterances,
     )
     monkeypatch.setattr(
         em,
-        "_split_labeled_audio_samples",
-        lambda _samples: (train_samples, test_samples, split_metadata),
+        "_split_utterances",
+        lambda _samples: (train_utterances, test_utterances, split_metadata),
     )
 
     def _build_dataset(
