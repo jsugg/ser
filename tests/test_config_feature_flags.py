@@ -93,6 +93,7 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.models.model_file_name == "ser_model.pkl"
     assert settings.models.secure_model_file_name == "ser_model.skops"
     assert settings.models.training_report_file_name == "training_report.json"
+    assert settings.dataset.manifest_paths == ()
 
 
 def test_runtime_flags_and_schema_env_overrides(
@@ -144,6 +145,10 @@ def test_runtime_flags_and_schema_env_overrides(
     monkeypatch.setenv("SER_ARTIFACT_SCHEMA_VERSION", "v3")
     monkeypatch.setenv("SER_TORCH_DEVICE", "cuda:0")
     monkeypatch.setenv("SER_TORCH_DTYPE", "bfloat16")
+    monkeypatch.setenv(
+        "SER_DATASET_MANIFESTS",
+        "unit-test/manifest_a.jsonl,unit-test/manifest_b.jsonl",
+    )
     monkeypatch.setenv("SER_MODEL_CACHE_DIR", "unit-test/model-cache")
     monkeypatch.setenv("SER_MEDIUM_MODEL_ID", "unit-test/xlsr")
     monkeypatch.setenv("SER_ACCURATE_MODEL_ID", "unit-test/whisper-tiny")
@@ -207,6 +212,10 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.schema.artifact_schema_version == "v3"
     assert settings.torch_runtime.device == "cuda:0"
     assert settings.torch_runtime.dtype == "bfloat16"
+    assert settings.dataset.manifest_paths == (
+        Path("unit-test/manifest_a.jsonl"),
+        Path("unit-test/manifest_b.jsonl"),
+    )
     assert settings.models.model_cache_dir == Path("unit-test/model-cache")
     assert settings.models.huggingface_cache_root == Path(
         "unit-test/model-cache/huggingface"

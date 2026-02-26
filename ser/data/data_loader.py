@@ -6,13 +6,18 @@ import multiprocessing as mp
 import os
 from collections.abc import Collection
 from functools import partial
-from typing import Any, NamedTuple
+from pathlib import Path
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.model_selection import train_test_split
 
 from ser.config import AppConfig, get_settings
+from ser.data.adapters.ravdess import build_ravdess_utterances
+from ser.data.manifest import Utterance
+from ser.data.manifest_jsonl import load_manifest_jsonl
+from ser.data.ontology import LabelOntology, UnknownLabelPolicy, normalize_label
 from ser.features import extract_feature
 from ser.utils.logger import get_logger
 
@@ -23,6 +28,88 @@ type FeatureMatrix = NDArray[np.float64]
 type LabelList = list[str]
 type DataSplit = tuple[FeatureMatrix, FeatureMatrix, LabelList, LabelList]
 type LabeledAudioSample = tuple[str, str]
+
+
+def _read_unknown_label_policy_env() -> UnknownLabelPolicy:
+    raw = os.getenv("SER_UNKNOWN_LABEL_POLICY", "drop").strip().lower()
+    if raw in {"drop", "error", "map_to_other"}:
+        return cast(UnknownLabelPolicy, raw)
+    return "drop"
+
+
+def _resolve_label_ontology(settings: AppConfig) -> LabelOntology:
+    ontology_id = os.getenv("SER_LABEL_ONTOLOGY_ID", "default_v1").strip()
+    if not ontology_id:
+        ontology_id = "default_v1"
+    allowed_labels_raw = os.getenv("SER_ALLOWED_LABELS", "").strip()
+    if allowed_labels_raw:
+        allowed_labels = {
+            normalize_label(item)
+            for item in allowed_labels_raw.split(",")
+            if normalize_label(item)
+        }
+    else:
+        allowed_labels = {
+            normalize_label(label) for label in settings.emotions.values()
+        }
+    if not allowed_labels:
+        raise RuntimeError(
+            "Resolved label ontology contains zero allowed labels. "
+            "Check SER_ALLOWED_LABELS or configured emotion mapping."
+        )
+    other_label_raw = os.getenv("SER_OTHER_LABEL", "other").strip()
+    other_label = normalize_label(other_label_raw) if other_label_raw else "other"
+    return LabelOntology(
+        ontology_id=ontology_id,
+        allowed_labels=frozenset(allowed_labels),
+        unknown_label_policy=_read_unknown_label_policy_env(),
+        other_label=other_label,
+    )
+
+
+def load_utterances() -> list[Utterance] | None:
+    """Loads utterances from manifests or from the legacy RAVDESS adapter path."""
+    settings: AppConfig = get_settings()
+    ontology = _resolve_label_ontology(settings)
+    manifest_paths: tuple[Path, ...] = settings.dataset.manifest_paths
+    if manifest_paths:
+        utterances: list[Utterance] = []
+        for manifest_path in manifest_paths:
+            utterances.extend(
+                load_manifest_jsonl(Path(manifest_path), ontology=ontology)
+            )
+        if not utterances:
+            logger.warning("No utterances loaded from configured manifests.")
+            return None
+        seen_sample_ids: set[str] = set()
+        duplicate_sample_ids: set[str] = set()
+        for utterance in utterances:
+            if utterance.sample_id in seen_sample_ids:
+                duplicate_sample_ids.add(utterance.sample_id)
+            seen_sample_ids.add(utterance.sample_id)
+        if duplicate_sample_ids:
+            raise RuntimeError(
+                "Duplicate sample_id values across manifests: "
+                + ", ".join(sorted(duplicate_sample_ids))
+            )
+        labels = [utterance.label for utterance in utterances]
+        if len(set(labels)) < 2:
+            logger.warning(
+                "At least two emotion classes are required to train the model."
+            )
+            return None
+        return utterances
+
+    dataset_folder = settings.dataset.folder
+    default_language = settings.default_language
+    return build_ravdess_utterances(
+        dataset_root=dataset_folder,
+        dataset_glob_pattern=settings.dataset.glob_pattern,
+        emotion_code_map=dict(settings.emotions),
+        default_language=default_language,
+        ontology=ontology,
+        max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
+    )
 
 
 class ProcessFileResult(NamedTuple):
@@ -105,53 +192,13 @@ def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
     Raises:
         RuntimeError: If filename-format failures exceed configured threshold.
     """
-    settings: AppConfig = get_settings()
-    observed_emotions: set[str] = set(settings.emotions.values())
-    files: list[str] = sorted(glob.glob(settings.dataset.glob_pattern))
-    if not files:
-        logger.warning(
-            "No dataset files found for pattern: %s", settings.dataset.glob_pattern
-        )
+    utterances = load_utterances()
+    if utterances is None:
         return None
 
-    samples: list[LabeledAudioSample] = []
-    parse_errors: list[str] = []
-    for file_path in files:
-        file_name: str = os.path.basename(file_path)
-        emotion_code: str | None = _extract_emotion_code(file_name)
-        if emotion_code is None:
-            parse_errors.append(
-                "Skipping file with unexpected name format "
-                f"(missing emotion code): {file_name}"
-            )
-            continue
-        emotion: str | None = settings.emotions.get(emotion_code)
-        if not emotion or emotion not in observed_emotions:
-            continue
-        samples.append((file_path, emotion))
-
-    if parse_errors:
-        logger.warning(
-            "Skipped %s/%s files while resolving labels.",
-            len(parse_errors),
-            len(files),
-        )
-        for error in parse_errors[:5]:
-            logger.warning("%s", error)
-
-    failure_ratio: float = len(parse_errors) / float(len(files))
-    if failure_ratio > settings.data_loader.max_failed_file_ratio:
-        raise RuntimeError(
-            "Aborting data load: "
-            f"{failure_ratio * 100.0:.1f}% file failures exceeded configured "
-            "limit "
-            f"{settings.data_loader.max_failed_file_ratio * 100.0:.1f}%."
-        )
-
-    if not samples:
-        logger.warning("No labeled audio samples matched configured emotions.")
-        return None
-
+    samples: list[LabeledAudioSample] = [
+        (str(utterance.audio_path), utterance.label) for utterance in utterances
+    ]
     labels: list[str] = [label for _, label in samples]
     if len(set(labels)) < 2:
         logger.warning("At least two emotion classes are required to train the model.")
