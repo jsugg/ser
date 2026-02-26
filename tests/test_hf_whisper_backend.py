@@ -315,6 +315,73 @@ def test_whisper_backend_falls_back_to_seq2seq_when_backbone_load_fails(
     assert calls["seq2seq"] == 1
 
 
+def test_whisper_backend_rejects_incomplete_checkpoint_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loader should fail when transformers reports missing/mismatched keys."""
+    calls = {"backbone": 0, "seq2seq": 0}
+
+    class _FeatureExtractorLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeFeatureExtractor:
+            del model_id, kwargs
+            return _FakeFeatureExtractor()
+
+    class _BackboneLoader:
+        @staticmethod
+        def from_pretrained(
+            model_id: str, **kwargs: object
+        ) -> tuple[_FakeModel, dict[str, object]]:
+            del model_id, kwargs
+            calls["backbone"] += 1
+            return _FakeModel(hidden_size=9), {
+                "missing_keys": ["encoder.layers.0.self_attn.q_proj.weight"],
+                "mismatched_keys": [],
+            }
+
+    class _Seq2SeqLoader:
+        @staticmethod
+        def from_pretrained(
+            model_id: str, **kwargs: object
+        ) -> tuple[_FakeModel, dict[str, object]]:
+            del model_id, kwargs
+            calls["seq2seq"] += 1
+            return _FakeModel(hidden_size=11), {
+                "missing_keys": [],
+                "mismatched_keys": [("model.encoder.conv1.weight", (1,), (2,))],
+            }
+
+    class _TransformersModule:
+        AutoFeatureExtractor = _FeatureExtractorLoader
+        AutoModel = _BackboneLoader
+        AutoModelForSpeechSeq2Seq = _Seq2SeqLoader
+
+    def fake_import_module(module_name: str) -> object:
+        if module_name == "transformers":
+            return _TransformersModule()
+        raise AssertionError(f"Unexpected import requested: {module_name!r}")
+
+    monkeypatch.setattr(
+        hf_whisper_module.importlib, "import_module", fake_import_module
+    )
+    monkeypatch.setattr(
+        hf_whisper_module.WhisperBackend,
+        "_ensure_dependencies_available",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: None,
+    )
+
+    backend = WhisperBackend(model_id="unit-test/whisper")
+    with pytest.raises(RuntimeError, match="incomplete checkpoint load"):
+        _ = backend.feature_dim
+    assert calls["backbone"] == 1
+    assert calls["seq2seq"] == 1
+
+
 def test_whisper_backend_missing_dependency_error_is_actionable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
