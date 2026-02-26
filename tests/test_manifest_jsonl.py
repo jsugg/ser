@@ -87,8 +87,14 @@ def test_remap_label_honors_unknown_policy() -> None:
         unknown_label_policy="error",
     )
 
-    assert remap_label(raw_label="03", mapping={"03": "happy"}, ontology=ontology_drop) == "happy"
-    assert remap_label(raw_label="99", mapping={"03": "happy"}, ontology=ontology_drop) is None
+    assert (
+        remap_label(raw_label="03", mapping={"03": "happy"}, ontology=ontology_drop)
+        == "happy"
+    )
+    assert (
+        remap_label(raw_label="99", mapping={"03": "happy"}, ontology=ontology_drop)
+        is None
+    )
     assert (
         remap_label(raw_label="99", mapping={"03": "happy"}, ontology=ontology_other)
         == "other"

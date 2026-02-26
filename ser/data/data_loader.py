@@ -49,7 +49,9 @@ def _resolve_label_ontology(settings: AppConfig) -> LabelOntology:
             if normalize_label(item)
         }
     else:
-        allowed_labels = {normalize_label(label) for label in settings.emotions.values()}
+        allowed_labels = {
+            normalize_label(label) for label in settings.emotions.values()
+        }
     if not allowed_labels:
         raise RuntimeError(
             "Resolved label ontology contains zero allowed labels. "
@@ -73,7 +75,9 @@ def load_utterances() -> list[Utterance] | None:
     if manifest_paths:
         utterances: list[Utterance] = []
         for manifest_path in manifest_paths:
-            utterances.extend(load_manifest_jsonl(Path(manifest_path), ontology=ontology))
+            utterances.extend(
+                load_manifest_jsonl(Path(manifest_path), ontology=ontology)
+            )
         if not utterances:
             logger.warning("No utterances loaded from configured manifests.")
             return None
@@ -90,7 +94,9 @@ def load_utterances() -> list[Utterance] | None:
             )
         labels = [utterance.label for utterance in utterances]
         if len(set(labels)) < 2:
-            logger.warning("At least two emotion classes are required to train the model.")
+            logger.warning(
+                "At least two emotion classes are required to train the model."
+            )
             return None
         return utterances
 
