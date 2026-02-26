@@ -70,9 +70,16 @@ cd ser
 <details>
 <summary>Advanced compatibility/setup notes (library users and contributors)</summary>
 
-- Intel macOS (`x86_64`): full-profile support uses Python `3.12`; `./scripts/setup_compatible_env.sh` auto-selects it and installs the required extras for fast/medium/accurate train+inference.
+- Intel macOS (`x86_64`) + Python `3.13` is currently **partial compatibility** (fast-profile oriented) and is **not** an officially supported full runtime lane.
+- Intel macOS (`x86_64`) non-fast runtime (`medium`, `accurate`, `accurate-research`) depends on optional `torch`/`transformers` wheels that are not currently published for the platform tag in Python `3.13`; use Python `3.12` (or Linux `3.13` workflows) for those smoke paths.
+- GitHub Darwin validation remains a Python `3.12` smoke lane (`.github/workflows/darwin-x86_64-validation.yml`) for hosted-runner parity.
 - Non-fast profile predict paths (`medium`, `accurate`, `accurate-research`) require profile-compatible model artifacts; they fail closed on backend/profile metadata mismatch.
 - `accurate-research` uses the FunASR/ModelScope `emotion2vec` runtime path and requires `--extra full`.
+- Runtime policy: `fast` is the default profile. `medium`, `accurate`, and `accurate-research` remain opt-in lanes.
+
+Current Darwin Intel policy shorthand:
+`darwin-x86_64-macos13-python3.12` -> full-profile support.
+`darwin-x86_64-macos13-python3.13` -> partial (fast-profile only), not officially supported as a full runtime lane.
 
 Platform-aware setup overrides:
 - `SER_SETUP_PYTHON` to force a specific Python version.

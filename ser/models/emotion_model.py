@@ -12,6 +12,7 @@ import warnings
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha1
 from pathlib import Path
 from statistics import fmean
 from typing import Any, Literal, NamedTuple, cast
@@ -27,8 +28,9 @@ from ser.config import AppConfig, ProfileRuntimeConfig, get_settings
 from ser.data import (
     EmbeddingCache,
     LabeledAudioSample,
+    Utterance,
     load_data,
-    load_labeled_audio_paths,
+    load_utterances,
 )
 from ser.data.data_loader import extract_ravdess_speaker_id_from_path
 from ser.data.embedding_cache import EmbeddingCacheEntry
@@ -950,6 +952,219 @@ def _split_labeled_audio_samples(
     )
 
 
+def _resolve_corpus_scoped_speaker_id(utterance: Utterance) -> str | None:
+    """Resolves corpus-scoped speaker id with RAVDESS fallback extraction."""
+    if utterance.speaker_id is not None:
+        return utterance.speaker_id
+    if utterance.corpus != "ravdess":
+        return None
+    speaker_raw = extract_ravdess_speaker_id_from_path(str(utterance.audio_path))
+    if speaker_raw is None:
+        return None
+    return f"{utterance.corpus}:{speaker_raw}"
+
+
+def _hash_for_split(sample_id: str, *, salt: str) -> int:
+    digest = sha1(f"{salt}|{sample_id}".encode()).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=False)
+
+
+def _hash_stratified_split(
+    samples: list[Utterance],
+    *,
+    test_size: float,
+    salt: str,
+) -> tuple[list[Utterance], list[Utterance]]:
+    by_label: dict[str, list[Utterance]] = {}
+    for utterance in samples:
+        by_label.setdefault(utterance.label, []).append(utterance)
+
+    train_split: list[Utterance] = []
+    test_split: list[Utterance] = []
+    for _, group in sorted(by_label.items(), key=lambda item: item[0]):
+        sorted_group = sorted(
+            group,
+            key=lambda utterance: _hash_for_split(utterance.sample_id, salt=salt),
+        )
+        if len(sorted_group) < 2:
+            train_split.extend(sorted_group)
+            continue
+        n_test = int(round(test_size * len(sorted_group)))
+        if n_test <= 0:
+            n_test = 1
+        if n_test >= len(sorted_group):
+            n_test = len(sorted_group) - 1
+        test_split.extend(sorted_group[:n_test])
+        train_split.extend(sorted_group[n_test:])
+
+    if not test_split and train_split:
+        sorted_train = sorted(
+            train_split,
+            key=lambda utterance: _hash_for_split(utterance.sample_id, salt=salt),
+        )
+        test_split.append(sorted_train.pop(0))
+        train_split = sorted_train
+    if not train_split and test_split:
+        sorted_test = sorted(
+            test_split,
+            key=lambda utterance: _hash_for_split(utterance.sample_id, salt=salt),
+        )
+        train_split.append(sorted_test.pop(0))
+        test_split = sorted_test
+    return train_split, test_split
+
+
+def _split_utterances(
+    samples: list[Utterance],
+) -> tuple[list[Utterance], list[Utterance], MediumSplitMetadata]:
+    """Splits utterances using manifest, grouped-speaker, then hash fallback."""
+    settings: AppConfig = get_settings()
+    if len(samples) < 2:
+        raise RuntimeError("Training requires at least two labeled audio files.")
+
+    labels: list[str] = [utterance.label for utterance in samples]
+    speaker_ids: list[str | None] = [
+        _resolve_corpus_scoped_speaker_id(utterance) for utterance in samples
+    ]
+    resolved_speaker_ids = [item for item in speaker_ids if item is not None]
+    speaker_coverage = float(len(resolved_speaker_ids)) / float(len(samples))
+
+    has_manifest_split = all(utterance.split is not None for utterance in samples)
+    if has_manifest_split:
+        train_split = [
+            utterance for utterance in samples if utterance.split in {"train", "dev"}
+        ]
+        test_split = [utterance for utterance in samples if utterance.split == "test"]
+        if train_split and test_split:
+            train_ids = {item.sample_id for item in train_split}
+            test_ids = {item.sample_id for item in test_split}
+            train_speakers = {
+                speaker
+                for utterance, speaker in zip(samples, speaker_ids, strict=False)
+                if utterance.sample_id in train_ids and speaker is not None
+            }
+            test_speakers = {
+                speaker
+                for utterance, speaker in zip(samples, speaker_ids, strict=False)
+                if utterance.sample_id in test_ids and speaker is not None
+            }
+            return (
+                train_split,
+                test_split,
+                MediumSplitMetadata(
+                    split_strategy="manifest_split",
+                    speaker_grouped=False,
+                    speaker_id_coverage=speaker_coverage,
+                    train_unique_speakers=len(train_speakers),
+                    test_unique_speakers=len(test_speakers),
+                    speaker_overlap_count=len(train_speakers.intersection(test_speakers)),
+                ),
+            )
+
+    can_group_by_speaker = (
+        len(resolved_speaker_ids) == len(samples)
+        and len(set(resolved_speaker_ids)) >= 2
+    )
+    if can_group_by_speaker:
+        grouped_features = np.zeros((len(samples), 1), dtype=np.float64)
+        try:
+            grouped_split = grouped_train_test_split(
+                grouped_features,
+                labels,
+                [str(item) for item in resolved_speaker_ids],
+                test_size=settings.training.test_size,
+                random_state=settings.training.random_state,
+            )
+            train_idx = grouped_split.train_indices
+            test_idx = grouped_split.test_indices
+            train_split = [samples[int(index)] for index in train_idx]
+            test_split = [samples[int(index)] for index in test_idx]
+            train_speakers = {
+                cast(str, speaker_ids[int(index)])
+                for index in train_idx.tolist()
+                if speaker_ids[int(index)] is not None
+            }
+            test_speakers = {
+                cast(str, speaker_ids[int(index)])
+                for index in test_idx.tolist()
+                if speaker_ids[int(index)] is not None
+            }
+            overlap = len(train_speakers.intersection(test_speakers))
+            if overlap > 0:
+                raise RuntimeError(
+                    "Grouped split produced overlapping speakers in train/test."
+                )
+            return (
+                train_split,
+                test_split,
+                MediumSplitMetadata(
+                    split_strategy="group_shuffle_split",
+                    speaker_grouped=True,
+                    speaker_id_coverage=speaker_coverage,
+                    train_unique_speakers=len(train_speakers),
+                    test_unique_speakers=len(test_speakers),
+                    speaker_overlap_count=overlap,
+                ),
+            )
+        except ValueError as err:
+            logger.warning(
+                "Grouped split failed (%s); falling back to deterministic hash split.",
+                err,
+            )
+
+    salt = os.getenv("SER_SPLIT_SALT", f"ser:{settings.training.random_state}").strip()
+    train_split, test_split = _hash_stratified_split(
+        samples,
+        test_size=settings.training.test_size,
+        salt=salt,
+    )
+    if not train_split or not test_split:
+        raise RuntimeError("Deterministic split produced an empty partition.")
+    train_ids = {item.sample_id for item in train_split}
+    test_ids = {item.sample_id for item in test_split}
+    train_speakers = {
+        speaker
+        for utterance, speaker in zip(samples, speaker_ids, strict=False)
+        if utterance.sample_id in train_ids and speaker is not None
+    }
+    test_speakers = {
+        speaker
+        for utterance, speaker in zip(samples, speaker_ids, strict=False)
+        if utterance.sample_id in test_ids and speaker is not None
+    }
+    return (
+        train_split,
+        test_split,
+        MediumSplitMetadata(
+            split_strategy="hash_stratified_split",
+            speaker_grouped=False,
+            speaker_id_coverage=speaker_coverage,
+            train_unique_speakers=len(train_speakers),
+            test_unique_speakers=len(test_speakers),
+            speaker_overlap_count=len(train_speakers.intersection(test_speakers)),
+        ),
+    )
+
+
+def _utterances_to_labeled_samples(
+    utterances: list[Utterance],
+) -> list[LabeledAudioSample]:
+    return [(str(utterance.audio_path), utterance.label) for utterance in utterances]
+
+
+def _build_dataset_controls(utterances: list[Utterance]) -> dict[str, object]:
+    settings = get_settings()
+    return {
+        "mode": "manifest" if settings.dataset.manifest_paths else "glob",
+        "manifest_paths": [str(path) for path in settings.dataset.manifest_paths],
+        "utterance_count": len(utterances),
+        "corpus_counts": dict(Counter(item.corpus for item in utterances)),
+        "language_counts": dict(
+            Counter((item.language or "unknown") for item in utterances)
+        ),
+    }
+
+
 def _pooling_windows_from_encoded_frames(
     encoded: EncodedSequence,
     *,
@@ -1208,11 +1423,13 @@ def _apply_medium_noise_controls(
 def train_medium_model() -> None:
     """Trains and persists medium-profile model artifacts with XLS-R metadata."""
     settings = get_settings()
-    samples = load_labeled_audio_paths()
-    if samples is None:
+    utterances = load_utterances()
+    if utterances is None:
         logger.error("Dataset not loaded. Please load the dataset first.")
         raise RuntimeError("Dataset not loaded. Please load the dataset first.")
-    train_samples, test_samples, split_metadata = _split_labeled_audio_samples(samples)
+    train_utterances, test_utterances, split_metadata = _split_utterances(utterances)
+    train_samples = _utterances_to_labeled_samples(train_utterances)
+    test_samples = _utterances_to_labeled_samples(test_utterances)
     medium_model_id = resolve_medium_model_id(settings)
     backend = XLSRBackend(
         model_id=medium_model_id,
@@ -1300,6 +1517,7 @@ def train_medium_model() -> None:
         artifact_metadata=artifact_metadata,
         provenance=provenance,
         data_controls={
+            "dataset": _build_dataset_controls(utterances),
             "medium_noise_controls": {
                 "min_window_std": settings.medium_training.min_window_std,
                 "max_windows_per_clip": settings.medium_training.max_windows_per_clip,
@@ -1337,11 +1555,13 @@ def train_medium_model() -> None:
 def train_accurate_model() -> None:
     """Trains and persists accurate-profile model artifacts with Whisper metadata."""
     settings = get_settings()
-    samples = load_labeled_audio_paths()
-    if samples is None:
+    utterances = load_utterances()
+    if utterances is None:
         logger.error("Dataset not loaded. Please load the dataset first.")
         raise RuntimeError("Dataset not loaded. Please load the dataset first.")
-    train_samples, test_samples, split_metadata = _split_labeled_audio_samples(samples)
+    train_utterances, test_utterances, split_metadata = _split_utterances(utterances)
+    train_samples = _utterances_to_labeled_samples(train_utterances)
+    test_samples = _utterances_to_labeled_samples(test_utterances)
     accurate_model_id = resolve_accurate_model_id(settings)
     backend = WhisperBackend(
         model_id=accurate_model_id,
@@ -1431,6 +1651,7 @@ def train_accurate_model() -> None:
         artifact_metadata=artifact_metadata,
         provenance=provenance,
         data_controls={
+            "dataset": _build_dataset_controls(utterances),
             "accurate_grouped_evaluation": {
                 "split_strategy": split_metadata.split_strategy,
                 "speaker_grouped": split_metadata.speaker_grouped,
@@ -1458,11 +1679,13 @@ def train_accurate_research_model() -> None:
         allowed_restricted_backends=allowed_restricted_backends,
         persisted_consents=persisted_consents,
     )
-    samples = load_labeled_audio_paths()
-    if samples is None:
+    utterances = load_utterances()
+    if utterances is None:
         logger.error("Dataset not loaded. Please load the dataset first.")
         raise RuntimeError("Dataset not loaded. Please load the dataset first.")
-    train_samples, test_samples, split_metadata = _split_labeled_audio_samples(samples)
+    train_utterances, test_utterances, split_metadata = _split_utterances(utterances)
+    train_samples = _utterances_to_labeled_samples(train_utterances)
+    test_samples = _utterances_to_labeled_samples(test_utterances)
     accurate_research_model_id = resolve_accurate_research_model_id(settings)
     backend = Emotion2VecBackend(
         model_id=accurate_research_model_id,
@@ -1556,6 +1779,7 @@ def train_accurate_research_model() -> None:
         artifact_metadata=artifact_metadata,
         provenance=provenance,
         data_controls={
+            "dataset": _build_dataset_controls(utterances),
             "accurate_grouped_evaluation": {
                 "split_strategy": split_metadata.split_strategy,
                 "speaker_grouped": split_metadata.speaker_grouped,
