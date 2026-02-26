@@ -1,4 +1,4 @@
-"""Dataset adapters that emit manifest-compatible utterances."""
+"""Dataset adapters for building training manifests."""
 
 from __future__ import annotations
 

@@ -953,7 +953,7 @@ def _split_labeled_audio_samples(
 
 
 def _resolve_corpus_scoped_speaker_id(utterance: Utterance) -> str | None:
-    """Resolves corpus-scoped speaker id with RAVDESS fallback extraction."""
+    """Returns speaker id with fallback extraction for known RAVDESS layouts."""
     if utterance.speaker_id is not None:
         return utterance.speaker_id
     if utterance.corpus != "ravdess":
@@ -979,45 +979,45 @@ def _hash_stratified_split(
     for utterance in samples:
         by_label.setdefault(utterance.label, []).append(utterance)
 
-    train_split: list[Utterance] = []
-    test_split: list[Utterance] = []
+    train: list[Utterance] = []
+    test: list[Utterance] = []
     for _, group in sorted(by_label.items(), key=lambda item: item[0]):
-        sorted_group = sorted(
+        group_sorted = sorted(
             group,
             key=lambda utterance: _hash_for_split(utterance.sample_id, salt=salt),
         )
-        if len(sorted_group) < 2:
-            train_split.extend(sorted_group)
+        if len(group_sorted) < 2:
+            train.extend(group_sorted)
             continue
-        n_test = int(round(test_size * len(sorted_group)))
+        n_test = int(round(test_size * len(group_sorted)))
         if n_test <= 0:
             n_test = 1
-        if n_test >= len(sorted_group):
-            n_test = len(sorted_group) - 1
-        test_split.extend(sorted_group[:n_test])
-        train_split.extend(sorted_group[n_test:])
+        if n_test >= len(group_sorted):
+            n_test = len(group_sorted) - 1
+        test.extend(group_sorted[:n_test])
+        train.extend(group_sorted[n_test:])
 
-    if not test_split and train_split:
-        sorted_train = sorted(
-            train_split,
+    if not test and train:
+        train_sorted = sorted(
+            train,
             key=lambda utterance: _hash_for_split(utterance.sample_id, salt=salt),
         )
-        test_split.append(sorted_train.pop(0))
-        train_split = sorted_train
-    if not train_split and test_split:
-        sorted_test = sorted(
-            test_split,
+        test.append(train_sorted.pop(0))
+        train = train_sorted
+    if not train and test:
+        test_sorted = sorted(
+            test,
             key=lambda utterance: _hash_for_split(utterance.sample_id, salt=salt),
         )
-        train_split.append(sorted_test.pop(0))
-        test_split = sorted_test
-    return train_split, test_split
+        train.append(test_sorted.pop(0))
+        test = test_sorted
+    return train, test
 
 
 def _split_utterances(
     samples: list[Utterance],
 ) -> tuple[list[Utterance], list[Utterance], MediumSplitMetadata]:
-    """Splits utterances using manifest, grouped-speaker, then hash fallback."""
+    """Splits utterances deterministically with manifest/speaker/hash policy."""
     settings: AppConfig = get_settings()
     if len(samples) < 2:
         raise RuntimeError("Training requires at least two labeled audio files.")
@@ -1036,17 +1036,15 @@ def _split_utterances(
         ]
         test_split = [utterance for utterance in samples if utterance.split == "test"]
         if train_split and test_split:
-            train_ids = {item.sample_id for item in train_split}
-            test_ids = {item.sample_id for item in test_split}
             train_speakers = {
                 speaker
                 for utterance, speaker in zip(samples, speaker_ids, strict=False)
-                if utterance.sample_id in train_ids and speaker is not None
+                if utterance in train_split and speaker is not None
             }
             test_speakers = {
                 speaker
                 for utterance, speaker in zip(samples, speaker_ids, strict=False)
-                if utterance.sample_id in test_ids and speaker is not None
+                if utterance in test_split and speaker is not None
             }
             return (
                 train_split,
@@ -1082,14 +1080,14 @@ def _split_utterances(
             train_split = [samples[int(index)] for index in train_idx]
             test_split = [samples[int(index)] for index in test_idx]
             train_speakers = {
-                cast(str, speaker_ids[int(index)])
+                speaker
                 for index in train_idx.tolist()
-                if speaker_ids[int(index)] is not None
+                if (speaker := speaker_ids[int(index)]) is not None
             }
             test_speakers = {
-                cast(str, speaker_ids[int(index)])
+                speaker
                 for index in test_idx.tolist()
-                if speaker_ids[int(index)] is not None
+                if (speaker := speaker_ids[int(index)]) is not None
             }
             overlap = len(train_speakers.intersection(test_speakers))
             if overlap > 0:
@@ -1121,18 +1119,18 @@ def _split_utterances(
         salt=salt,
     )
     if not train_split or not test_split:
-        raise RuntimeError("Deterministic split produced an empty partition.")
-    train_ids = {item.sample_id for item in train_split}
-    test_ids = {item.sample_id for item in test_split}
+        raise RuntimeError(
+            "Deterministic split produced an empty partition; adjust test_size."
+        )
     train_speakers = {
         speaker
         for utterance, speaker in zip(samples, speaker_ids, strict=False)
-        if utterance.sample_id in train_ids and speaker is not None
+        if utterance in train_split and speaker is not None
     }
     test_speakers = {
         speaker
         for utterance, speaker in zip(samples, speaker_ids, strict=False)
-        if utterance.sample_id in test_ids and speaker is not None
+        if utterance in test_split and speaker is not None
     }
     return (
         train_split,
@@ -1156,15 +1154,18 @@ def _utterances_to_labeled_samples(
 
 def _build_dataset_controls(utterances: list[Utterance]) -> dict[str, object]:
     settings = get_settings()
-    return {
+    corpus_counts = dict(Counter(utterance.corpus for utterance in utterances))
+    language_counts = dict(
+        Counter((utterance.language or "unknown") for utterance in utterances)
+    )
+    controls: dict[str, object] = {
         "mode": "manifest" if settings.dataset.manifest_paths else "glob",
         "manifest_paths": [str(path) for path in settings.dataset.manifest_paths],
         "utterance_count": len(utterances),
-        "corpus_counts": dict(Counter(item.corpus for item in utterances)),
-        "language_counts": dict(
-            Counter((item.language or "unknown") for item in utterances)
-        ),
+        "corpus_counts": corpus_counts,
+        "language_counts": language_counts,
     }
+    return controls
 
 
 def _pooling_windows_from_encoded_frames(

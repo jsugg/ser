@@ -1,6 +1,7 @@
 """Behavior tests for transcript extraction error handling."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import pytest
 
 from ser.domain import TranscriptWord
 from ser.transcript import transcript_extractor as te
+from ser.transcript.backends import faster_whisper as faster_whisper_adapter
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult
@@ -117,7 +119,7 @@ def test_load_whisper_model_routes_downloads_to_model_cache_root(
 
     assert loaded is fake_model
     assert captured["download_root"] == str(download_root)
-    assert te.os.environ["TORCH_HOME"] == str(torch_cache_root)
+    assert os.environ["TORCH_HOME"] == str(torch_cache_root)
     assert download_root.is_dir()
     assert torch_cache_root.is_dir()
 
@@ -375,7 +377,7 @@ def test_faster_whisper_setup_required_when_cache_missing(
         raise RuntimeError("cache miss")
 
     monkeypatch.setattr(
-        te.importlib,
+        faster_whisper_adapter.importlib,
         "import_module",
         lambda name: (
             SimpleNamespace(download_model=_fake_download_model)
@@ -423,7 +425,7 @@ def test_faster_whisper_prepare_transcription_assets_downloads(
         return str(tmp_path / "snapshot")
 
     monkeypatch.setattr(
-        te.importlib,
+        faster_whisper_adapter.importlib,
         "import_module",
         lambda name: (
             SimpleNamespace(download_model=_fake_download_model)

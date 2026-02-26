@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import random
+import re
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -66,6 +67,23 @@ _TERMINATE_GRACE_SECONDS = 0.5
 _KILL_GRACE_SECONDS = 0.5
 _SINGLE_FLIGHT_LOCKS: dict[tuple[str, str], Lock] = {}
 _SINGLE_FLIGHT_GUARD = Lock()
+_MPS_OOM_SIGNATURE = "mps backend out of memory"
+_MPS_ALLOCATED_PATTERN = re.compile(
+    r"mps allocated:\s*([0-9]+(?:\.[0-9]+)?)\s*(kb|mb|gb|tb)",
+    flags=re.IGNORECASE,
+)
+_MPS_OTHER_ALLOC_PATTERN = re.compile(
+    r"other allocations:\s*([0-9]+(?:\.[0-9]+)?)\s*(kb|mb|gb|tb)",
+    flags=re.IGNORECASE,
+)
+_MPS_MAX_ALLOWED_PATTERN = re.compile(
+    r"max allowed:\s*([0-9]+(?:\.[0-9]+)?)\s*(kb|mb|gb|tb)",
+    flags=re.IGNORECASE,
+)
+_MPS_REQUIRED_PATTERN = re.compile(
+    r"tried to allocate\s*([0-9]+(?:\.[0-9]+)?)\s*(kb|mb|gb|tb)",
+    flags=re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -251,6 +269,8 @@ def run_accurate_inference(
         profile=expected_profile,
         backend_model_id=resolved_expected_backend_model_id,
     ):
+        cpu_fallback_applied = False
+
         if not use_process_isolation:
             if active_backend is None:
                 raise RuntimeError(
@@ -367,6 +387,69 @@ def run_accurate_inference(
             )
             return result
 
+        def on_transient_failure(
+            err: Exception,
+            _attempt: int,
+            _transient_failures: int,
+        ) -> None:
+            nonlocal active_backend, process_payload, cpu_fallback_applied
+            if cpu_fallback_applied:
+                return
+            if expected_backend_id != "hf_whisper":
+                return
+            if not _is_mps_out_of_memory_error(err):
+                return
+            if not use_process_isolation and backend is not None:
+                logger.info(
+                    "Accurate inference detected MPS OOM but cannot switch "
+                    "to CPU when a custom backend instance is injected."
+                )
+                return
+
+            current_device = (
+                process_payload.settings.torch_runtime.device
+                if use_process_isolation and process_payload is not None
+                else settings.torch_runtime.device
+            )
+            normalized_device = current_device.strip().lower()
+            if normalized_device not in {"auto", "mps"}:
+                return
+            memory_summary = _summarize_mps_oom_memory(str(err))
+            logger.info(
+                "Accurate inference will retry on CPU after MPS OOM (%s).",
+                memory_summary,
+            )
+            cpu_fallback_applied = True
+            try:
+                if use_process_isolation:
+                    if process_payload is None:
+                        raise RuntimeError(
+                            "Accurate process payload is missing for CPU fallback."
+                        )
+                    process_payload = replace(
+                        process_payload,
+                        settings=_settings_with_torch_device(
+                            process_payload.settings,
+                            device="cpu",
+                        ),
+                    )
+                    return
+
+                cpu_settings = _settings_with_torch_device(settings, device="cpu")
+                active_backend = _build_backend_for_profile(
+                    expected_backend_id=expected_backend_id,
+                    expected_backend_model_id=resolved_expected_backend_model_id,
+                    settings=cpu_settings,
+                )
+                _prepare_accurate_backend_runtime(backend=active_backend)
+            except Exception as swap_err:
+                cpu_fallback_applied = False
+                logger.warning(
+                    "Accurate inference CPU fallback setup failed; "
+                    "continuing with existing retry policy: %s",
+                    swap_err,
+                )
+
         try:
             return run_with_retry_policy(
                 operation=operation,
@@ -380,6 +463,7 @@ def run_accurate_inference(
                 ),
                 retry_delay_seconds=_retry_delay_seconds,
                 logger=logger,
+                on_transient_failure=on_transient_failure,
             )
         except AccurateRuntimeDependencyError:
             raise
@@ -711,7 +795,19 @@ def _run_process_operation(prepared: _PreparedAccurateOperation) -> InferenceRes
 
 def _build_process_settings_snapshot(settings: AppConfig) -> AppConfig:
     """Builds a process-safe settings snapshot for spawn-based workers."""
-    return replace(settings, emotions=dict(settings.emotions))
+    return _settings_with_torch_device(
+        settings,
+        device=settings.torch_runtime.device,
+    )
+
+
+def _settings_with_torch_device(settings: AppConfig, *, device: str) -> AppConfig:
+    """Returns process-safe settings with one normalized torch device selector."""
+    return replace(
+        settings,
+        emotions=dict(settings.emotions),
+        torch_runtime=replace(settings.torch_runtime, device=device),
+    )
 
 
 def _runtime_config_for_profile(
@@ -821,6 +917,61 @@ def _retry_delay_seconds(*, base_delay: float, attempt: int) -> float:
         return 0.0
     jitter = random.uniform(0.0, base_delay * 0.1)
     return (base_delay * float(attempt)) + jitter
+
+
+def _is_mps_out_of_memory_error(err: Exception) -> bool:
+    """Returns whether one error message indicates MPS out-of-memory pressure."""
+    return _MPS_OOM_SIGNATURE in str(err).strip().lower()
+
+
+def _summarize_mps_oom_memory(message: str) -> str:
+    """Builds a compact required/available memory summary for MPS OOM logs."""
+    required_mib = _extract_memory_mib(message, _MPS_REQUIRED_PATTERN)
+    allocated_mib = _extract_memory_mib(message, _MPS_ALLOCATED_PATTERN)
+    other_allocated_mib = _extract_memory_mib(message, _MPS_OTHER_ALLOC_PATTERN) or 0.0
+    max_allowed_mib = _extract_memory_mib(message, _MPS_MAX_ALLOWED_PATTERN)
+    if (
+        required_mib is not None
+        and allocated_mib is not None
+        and max_allowed_mib is not None
+    ):
+        available_mib = max(max_allowed_mib - allocated_mib - other_allocated_mib, 0.0)
+        return (
+            f"required={_format_memory_mib(required_mib)} "
+            f"available={_format_memory_mib(available_mib)}"
+        )
+    if required_mib is not None:
+        return f"required={_format_memory_mib(required_mib)}"
+    return "memory headroom exhausted"
+
+
+def _extract_memory_mib(message: str, pattern: re.Pattern[str]) -> float | None:
+    """Extracts one memory quantity from message text and converts it to MiB."""
+    match = pattern.search(message)
+    if match is None:
+        return None
+    amount_text, unit_text = match.groups()
+    try:
+        amount = float(amount_text)
+    except ValueError:
+        return None
+    unit = unit_text.lower()
+    if unit == "kb":
+        return amount / 1024.0
+    if unit == "mb":
+        return amount
+    if unit == "gb":
+        return amount * 1024.0
+    if unit == "tb":
+        return amount * 1024.0 * 1024.0
+    return None
+
+
+def _format_memory_mib(memory_mib: float) -> str:
+    """Formats one MiB value into a compact MB/GB string for one-line logs."""
+    if memory_mib >= 1024.0:
+        return f"{memory_mib / 1024.0:.2f}GB"
+    return f"{memory_mib:.1f}MB"
 
 
 def _is_dependency_error(err: RuntimeError) -> bool:
