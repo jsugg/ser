@@ -22,8 +22,7 @@ def _sample_utterance(
 ) -> Utterance:
     """Builds deterministic RAVDESS-like utterances."""
     path = Path(
-        "ser/dataset/ravdess/"
-        f"Actor_{actor_id:02d}/03-01-03-01-01-01-{actor_id:02d}.wav"
+        f"ser/dataset/ravdess/Actor_{actor_id:02d}/03-01-03-01-01-01-{actor_id:02d}.wav"
     )
     resolved_speaker = speaker_id
     if speaker_id == "auto":

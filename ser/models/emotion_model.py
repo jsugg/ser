@@ -1057,7 +1057,9 @@ def _split_utterances(
                     speaker_id_coverage=speaker_coverage,
                     train_unique_speakers=len(train_speakers),
                     test_unique_speakers=len(test_speakers),
-                    speaker_overlap_count=len(train_speakers.intersection(test_speakers)),
+                    speaker_overlap_count=len(
+                        train_speakers.intersection(test_speakers)
+                    ),
                 ),
             )
 
@@ -1659,7 +1661,7 @@ def train_accurate_model() -> None:
                 "train_unique_speakers": split_metadata.train_unique_speakers,
                 "test_unique_speakers": split_metadata.test_unique_speakers,
                 "speaker_overlap_count": split_metadata.speaker_overlap_count,
-            }
+            },
         },
     )
     _persist_training_report(report, settings.models.training_report_file)
@@ -1787,7 +1789,7 @@ def train_accurate_research_model() -> None:
                 "train_unique_speakers": split_metadata.train_unique_speakers,
                 "test_unique_speakers": split_metadata.test_unique_speakers,
                 "speaker_overlap_count": split_metadata.speaker_overlap_count,
-            }
+            },
         },
     )
     _persist_training_report(report, settings.models.training_report_file)
