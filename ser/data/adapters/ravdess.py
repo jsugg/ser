@@ -1,4 +1,4 @@
-"""RAVDESS adapter that emits manifest-compatible utterances."""
+"""RAVDESS adapter for building manifest-compatible utterances."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser.data.manifest import Utterance
 from ser.data.ontology import LabelOntology, remap_label
 from ser.utils.logger import get_logger
 
@@ -38,7 +38,22 @@ def build_ravdess_utterances(
     ontology: LabelOntology,
     max_failed_file_ratio: float,
 ) -> list[Utterance] | None:
-    """Builds utterances from a RAVDESS-style folder layout."""
+    """Builds utterances from a RAVDESS-style dataset folder layout.
+
+    Args:
+        dataset_root: Root folder used to create stable sample_id values.
+        dataset_glob_pattern: Glob used to discover audio files.
+        emotion_code_map: Mapping from RAVDESS emotion code to canonical label.
+        default_language: Language tag for created utterances.
+        ontology: Canonical label ontology.
+        max_failed_file_ratio: Maximum fraction of filename parse failures.
+
+    Returns:
+        A list of utterances or ``None`` when no usable samples exist.
+
+    Raises:
+        RuntimeError: When parse failures exceed the configured threshold.
+    """
     files = sorted(glob.glob(dataset_glob_pattern))
     if not files:
         logger.warning("No dataset files found for pattern: %s", dataset_glob_pattern)
@@ -70,13 +85,13 @@ def build_ravdess_utterances(
             f"{RAVDESS_CORPUS_ID}:{speaker_raw}" if speaker_raw is not None else None
         )
         try:
-            rel_path = audio_path.relative_to(root).as_posix()
-            sample_id = f"{RAVDESS_CORPUS_ID}:{rel_path}"
-        except ValueError:
+            rel = audio_path.relative_to(root)
+            sample_id = f"{RAVDESS_CORPUS_ID}:{rel.as_posix()}"
+        except Exception:
             sample_id = f"{RAVDESS_CORPUS_ID}:{audio_path.name}"
         utterances.append(
             Utterance(
-                schema_version=MANIFEST_SCHEMA_VERSION,
+                schema_version=1,
                 sample_id=sample_id,
                 corpus=RAVDESS_CORPUS_ID,
                 audio_path=audio_path,
@@ -84,6 +99,7 @@ def build_ravdess_utterances(
                 raw_label=emotion_code,
                 speaker_id=speaker_id,
                 language=default_language,
+                split=None,
             )
         )
 

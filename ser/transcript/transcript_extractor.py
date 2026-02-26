@@ -2,16 +2,9 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
-import os
-import warnings
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
-from urllib.parse import urlparse
 
 from ser.config import AppConfig, get_settings
 from ser.domain import TranscriptWord
@@ -26,34 +19,21 @@ from ser.runtime.phase_timing import (
     log_phase_failed,
     log_phase_started,
 )
-from ser.utils.logger import (
-    DependencyLogPolicy,
-    get_logger,
-    scoped_dependency_log_policy,
+from ser.transcript.backends import (
+    BackendRuntimeRequest,
+    CompatibilityReport,
+    resolve_transcription_backend_adapter,
 )
+from ser.utils.logger import get_logger
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult
-    from whisper.model import Whisper
 
 logger: logging.Logger = get_logger(__name__)
-_NOISY_FASTER_WHISPER_POLICY = DependencyLogPolicy(
-    logger_prefixes=frozenset({"faster_whisper"})
-)
 
 
 class TranscriptionError(RuntimeError):
     """Raised when transcript extraction fails for operational reasons."""
-
-
-@contextmanager
-def _demote_faster_whisper_info_logs() -> Iterator[None]:
-    """Demotes faster-whisper INFO records to DEBUG for one transcription call."""
-    with scoped_dependency_log_policy(
-        policy=_NOISY_FASTER_WHISPER_POLICY,
-        keep_demoted=True,
-    ):
-        yield
 
 
 class WhisperWord(Protocol):
@@ -62,20 +42,6 @@ class WhisperWord(Protocol):
     word: str
     start: float | None
     end: float | None
-
-
-class FasterWhisperWord(Protocol):
-    """Protocol for faster-whisper word-level transcript entries."""
-
-    word: str
-    start: float | None
-    end: float | None
-
-
-class FasterWhisperSegment(Protocol):
-    """Protocol for faster-whisper segment objects with word payloads."""
-
-    words: list[FasterWhisperWord] | tuple[FasterWhisperWord, ...] | None
 
 
 @dataclass(frozen=True)
@@ -113,72 +79,52 @@ def resolve_transcription_profile(
     )
 
 
-def _stable_whisper_download_target(
+def _runtime_request_from_profile(
+    active_profile: TranscriptionProfile,
+) -> BackendRuntimeRequest:
+    """Builds one backend runtime request from transcription profile settings."""
+    return BackendRuntimeRequest(
+        model_name=active_profile.model_name,
+        use_demucs=active_profile.use_demucs,
+        use_vad=active_profile.use_vad,
+    )
+
+
+def _check_adapter_compatibility(
     *,
     active_profile: TranscriptionProfile,
     settings: AppConfig,
-) -> Path | None:
-    """Returns stable-whisper checkpoint path for registry-backed model ids."""
-    if active_profile.backend_id != "stable_whisper":
-        return None
-    model_name = active_profile.model_name.strip()
-    if not model_name:
-        raise TranscriptionError("Transcription model name must be a non-empty string.")
-    if Path(model_name).is_file():
-        return None
-    try:
-        whisper_module = importlib.import_module("whisper")
-    except ModuleNotFoundError:
-        return None
-    model_registry = getattr(whisper_module, "_MODELS", None)
-    if not isinstance(model_registry, dict):
-        return None
-    model_url = model_registry.get(model_name)
-    if not isinstance(model_url, str):
-        return None
-    filename = Path(urlparse(model_url).path).name
-    if not filename:
-        return None
-    return settings.models.whisper_download_root / filename
-
-
-def _faster_whisper_setup_required(
-    *,
-    active_profile: TranscriptionProfile,
-    settings: AppConfig,
-) -> bool:
-    """Returns whether faster-whisper assets are missing from local cache."""
-    if active_profile.backend_id != "faster_whisper":
-        return False
-    model_name = active_profile.model_name.strip()
-    if not model_name:
-        raise TranscriptionError("Transcription model name must be a non-empty string.")
-    if Path(model_name).is_dir():
-        return False
-    try:
-        fw_utils = importlib.import_module("faster_whisper.utils")
-    except ModuleNotFoundError:
-        return False
-    download_model = getattr(fw_utils, "download_model", None)
-    if not callable(download_model):
-        return False
-    try:
-        model_path = download_model(
-            model_name,
-            local_files_only=True,
-            cache_dir=str(settings.models.whisper_download_root),
+) -> CompatibilityReport:
+    """Validates backend compatibility and logs non-blocking compatibility issues."""
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    runtime_request = _runtime_request_from_profile(active_profile)
+    report = adapter.check_compatibility(
+        runtime_request=runtime_request,
+        settings=settings,
+    )
+    if report.noise_issues:
+        for issue in report.noise_issues:
+            logger.debug(
+                "Transcription backend '%s' noise issue [%s]: %s",
+                active_profile.backend_id,
+                issue.code,
+                issue.message,
+            )
+    if report.operational_issues:
+        for issue in report.operational_issues:
+            logger.warning(
+                "Transcription backend '%s' operational issue [%s]: %s",
+                active_profile.backend_id,
+                issue.code,
+                issue.message,
+            )
+    if report.has_blocking_issues:
+        details = (
+            "; ".join(issue.message for issue in report.functional_issues)
+            or "backend compatibility validation failed"
         )
-    except Exception:
-        return True
-    if isinstance(model_path, str):
-        return not Path(model_path).is_dir()
-    path_getter = getattr(model_path, "__fspath__", None)
-    if not callable(path_getter):
-        return False
-    resolved_path = path_getter()
-    if not isinstance(resolved_path, str):
-        return False
-    return not Path(resolved_path).is_dir()
+        raise TranscriptionError(details)
+    return report
 
 
 def _transcription_setup_required(
@@ -187,14 +133,13 @@ def _transcription_setup_required(
     settings: AppConfig,
 ) -> bool:
     """Returns whether a setup/download phase is needed before model load."""
-    stable_target_path = _stable_whisper_download_target(
+    _check_adapter_compatibility(
         active_profile=active_profile,
         settings=settings,
     )
-    if stable_target_path is not None:
-        return not stable_target_path.is_file()
-    return _faster_whisper_setup_required(
-        active_profile=active_profile,
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    return adapter.setup_required(
+        runtime_request=_runtime_request_from_profile(active_profile),
         settings=settings,
     )
 
@@ -205,104 +150,14 @@ def _prepare_transcription_assets(
     settings: AppConfig,
 ) -> None:
     """Ensures required stable-whisper model assets are present locally."""
-    target_path = _stable_whisper_download_target(
+    _check_adapter_compatibility(
         active_profile=active_profile,
         settings=settings,
     )
-    if target_path is None or target_path.is_file():
-        if active_profile.backend_id != "faster_whisper":
-            return
-        model_name = active_profile.model_name.strip()
-        if not model_name or Path(model_name).is_dir():
-            return
-        try:
-            fw_utils = importlib.import_module("faster_whisper.utils")
-        except ModuleNotFoundError:
-            return
-        download_model = getattr(fw_utils, "download_model", None)
-        if not callable(download_model):
-            return
-        os.makedirs(settings.models.whisper_download_root, exist_ok=True)
-        download_model(
-            model_name,
-            local_files_only=False,
-            cache_dir=str(settings.models.whisper_download_root),
-        )
-        return
-    try:
-        whisper_module = importlib.import_module("whisper")
-    except ModuleNotFoundError:
-        return
-    model_registry = getattr(whisper_module, "_MODELS", None)
-    download_fn = getattr(whisper_module, "_download", None)
-    if not isinstance(model_registry, dict) or not callable(download_fn):
-        return
-    model_url = model_registry.get(active_profile.model_name)
-    if not isinstance(model_url, str):
-        return
-    os.makedirs(settings.models.whisper_download_root, exist_ok=True)
-    download_fn(
-        model_url,
-        str(settings.models.whisper_download_root),
-        False,
-    )
-
-
-def _load_stable_whisper_model(
-    *,
-    active_profile: TranscriptionProfile,
-    settings: AppConfig,
-) -> Whisper:
-    """Loads one stable-whisper model for CPU inference."""
-    try:
-        import stable_whisper
-    except ModuleNotFoundError as err:
-        raise TranscriptionError(
-            "Missing stable-whisper dependencies. Ensure project dependencies are installed."
-        ) from err
-
-    download_root: Path = settings.models.whisper_download_root
-    torch_cache_root: Path = settings.models.torch_cache_root
-    os.makedirs(download_root, exist_ok=True)
-    os.makedirs(torch_cache_root, exist_ok=True)
-    os.environ["TORCH_HOME"] = str(torch_cache_root)
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", module="stable_whisper")
-        model: Whisper = stable_whisper.load_model(
-            name=active_profile.model_name,
-            device="cpu",
-            dq=False,
-            download_root=str(download_root),
-            in_memory=True,
-        )
-    return model
-
-
-def _load_faster_whisper_model(
-    *,
-    active_profile: TranscriptionProfile,
-    settings: AppConfig,
-) -> object:
-    """Loads one faster-whisper model for CPU inference."""
-    try:
-        faster_whisper_module = importlib.import_module("faster_whisper")
-    except ModuleNotFoundError as err:
-        raise TranscriptionError(
-            "Missing faster-whisper dependencies for transcription backend "
-            "'faster_whisper'. Install faster-whisper (for example, "
-            "`uv sync --extra full`) or switch to `stable_whisper`."
-        ) from err
-    whisper_model = getattr(faster_whisper_module, "WhisperModel", None)
-    if whisper_model is None:
-        raise TranscriptionError("faster-whisper package does not expose WhisperModel.")
-
-    download_root: Path = settings.models.whisper_download_root
-    os.makedirs(download_root, exist_ok=True)
-    return whisper_model(
-        active_profile.model_name,
-        device="cpu",
-        compute_type="int8",
-        download_root=str(download_root),
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    adapter.prepare_assets(
+        runtime_request=_runtime_request_from_profile(active_profile),
+        settings=settings,
     )
 
 
@@ -315,13 +170,13 @@ def load_whisper_model(profile: TranscriptionProfile | None = None) -> object:
     settings: AppConfig = get_settings()
     active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
     try:
-        if active_profile.backend_id == "stable_whisper":
-            return _load_stable_whisper_model(
-                active_profile=active_profile,
-                settings=settings,
-            )
-        return _load_faster_whisper_model(
+        _check_adapter_compatibility(
             active_profile=active_profile,
+            settings=settings,
+        )
+        adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+        return adapter.load_model(
+            runtime_request=_runtime_request_from_profile(active_profile),
             settings=settings,
         )
     except Exception as err:
@@ -443,113 +298,6 @@ def __transcribe_file(
     return _transcribe_file_with_profile(model, language, file_path, profile=None)
 
 
-def _normalize_stable_whisper_result(raw_transcript: object) -> WhisperResult:
-    """Normalizes raw stable-whisper outputs to a WhisperResult instance."""
-    from stable_whisper.result import WhisperResult
-
-    if isinstance(raw_transcript, WhisperResult):
-        return raw_transcript
-    if isinstance(raw_transcript, dict | list | str):
-        return WhisperResult(raw_transcript)
-    logger.error(
-        "Unexpected transcription result type from stable-whisper: %s",
-        type(raw_transcript).__name__,
-    )
-    raise TranscriptionError(
-        "Unexpected transcription result type from stable-whisper."
-    )
-
-
-def _transcribe_with_stable_whisper(
-    model: object,
-    *,
-    language: str,
-    file_path: str,
-    active_profile: TranscriptionProfile,
-) -> list[TranscriptWord]:
-    """Executes one transcription call through stable-whisper."""
-    transcribe = getattr(model, "transcribe", None)
-    if not callable(transcribe):
-        raise TranscriptionError(
-            "Loaded stable-whisper model does not expose a callable transcribe()."
-        )
-    try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            raw_transcript = transcribe(
-                audio=file_path,
-                language=language,
-                verbose=False,
-                word_timestamps=True,
-                no_speech_threshold=None,
-                demucs=active_profile.use_demucs,
-                vad=active_profile.use_vad,
-            )
-    except Exception as err:
-        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
-        raise TranscriptionError("Failed to transcribe audio.") from err
-    return format_transcript(_normalize_stable_whisper_result(raw_transcript))
-
-
-def _transcribe_with_faster_whisper(
-    model: object,
-    *,
-    language: str,
-    file_path: str,
-    active_profile: TranscriptionProfile,
-) -> list[TranscriptWord]:
-    """Executes one transcription call through faster-whisper."""
-    transcribe = getattr(model, "transcribe", None)
-    if not callable(transcribe):
-        raise TranscriptionError(
-            "Loaded faster-whisper model does not expose a callable transcribe()."
-        )
-    if active_profile.use_demucs:
-        logger.warning(
-            "faster-whisper backend does not support demucs preprocessing; "
-            "demucs flag is ignored."
-        )
-    try:
-        with _demote_faster_whisper_info_logs():
-            raw_transcribe_result = transcribe(
-                file_path,
-                language=language,
-                word_timestamps=True,
-                vad_filter=active_profile.use_vad,
-                beam_size=5,
-            )
-    except Exception as err:
-        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
-        raise TranscriptionError("Failed to transcribe audio.") from err
-    if not isinstance(raw_transcribe_result, tuple) or len(raw_transcribe_result) != 2:
-        raise TranscriptionError(
-            "Unexpected result envelope returned by faster-whisper transcribe()."
-        )
-    segments = raw_transcribe_result[0]
-
-    if not isinstance(segments, Iterable):
-        raise TranscriptionError(
-            "Unexpected segment stream type returned by faster-whisper."
-        )
-
-    transcript_words: list[TranscriptWord] = []
-    for segment in cast(Iterable[object], segments):
-        words = cast(FasterWhisperSegment, segment).words
-        if not isinstance(words, list | tuple):
-            continue
-        for word in words:
-            if word.start is None or word.end is None:
-                continue
-            transcript_words.append(
-                TranscriptWord(
-                    word=str(word.word),
-                    start_seconds=float(word.start),
-                    end_seconds=float(word.end),
-                )
-            )
-    return transcript_words
-
-
 def _transcribe_file_with_profile(
     model: object,
     language: str,
@@ -557,24 +305,26 @@ def _transcribe_file_with_profile(
     profile: TranscriptionProfile | None,
 ) -> list[TranscriptWord]:
     """Runs a Whisper transcription call using an explicit runtime profile."""
+    settings: AppConfig = get_settings()
     active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
-    if active_profile.backend_id == "stable_whisper":
-        return _transcribe_with_stable_whisper(
-            model,
-            language=language,
-            file_path=file_path,
-            active_profile=active_profile,
-        )
-    if active_profile.backend_id == "faster_whisper":
-        return _transcribe_with_faster_whisper(
-            model,
-            language=language,
-            file_path=file_path,
-            active_profile=active_profile,
-        )
-    raise TranscriptionError(
-        f"Unsupported transcription backend id: {active_profile.backend_id}."
+    _check_adapter_compatibility(
+        active_profile=active_profile,
+        settings=settings,
     )
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    try:
+        return adapter.transcribe(
+            model=model,
+            runtime_request=_runtime_request_from_profile(active_profile),
+            file_path=file_path,
+            language=language,
+            settings=settings,
+        )
+    except TranscriptionError:
+        raise
+    except Exception as err:
+        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
+        raise TranscriptionError("Failed to transcribe audio.") from err
 
 
 def transcribe_with_model(

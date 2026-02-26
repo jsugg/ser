@@ -678,6 +678,64 @@ def test_accurate_profile_pipeline_uses_process_timeout_runner(
     assert calls["sleep"] == 1
 
 
+def test_accurate_profile_pipeline_retries_on_cpu_after_mps_oom(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Process-mode accurate retries should demote to CPU after one MPS OOM failure."""
+    monkeypatch.setenv("SER_ENABLE_PROFILE_PIPELINE", "true")
+    monkeypatch.setenv("SER_ACCURATE_MAX_TRANSIENT_RETRIES", "1")
+    monkeypatch.setenv("SER_ACCURATE_RETRY_BACKOFF_SECONDS", "0")
+    settings = config.reload_settings()
+
+    devices: list[str] = []
+    infos: list[str] = []
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
+    oom_message = (
+        "MPS backend out of memory (MPS allocated: 3.13 GB, other allocations: "
+        "220.17 MB, max allowed: 3.40 GB). Tried to allocate 85.83 MB on private pool."
+    )
+
+    def fail_if_called(**_kwargs: object) -> object:
+        raise AssertionError(
+            "In-process load_model path should not run in process mode."
+        )
+
+    def fake_process_runner(
+        payload: accurate_inference.AccurateProcessPayload,
+        *,
+        timeout_seconds: float,
+    ) -> InferenceResult:
+        del timeout_seconds
+        devices.append(payload.settings.torch_runtime.device)
+        if len(devices) == 1:
+            raise AccurateTransientBackendError(oom_message)
+        return expected
+
+    monkeypatch.setattr("ser.runtime.accurate_inference.load_model", fail_if_called)
+    monkeypatch.setattr(
+        "ser.runtime.accurate_inference._run_with_process_timeout",
+        fake_process_runner,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.accurate_inference.logger.info",
+        lambda msg, *args: infos.append(msg % args),
+    )
+
+    result = run_accurate_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        settings,
+    )
+
+    assert result == expected
+    assert devices == [settings.torch_runtime.device, "cpu"]
+    assert any(
+        "retry on CPU after MPS OOM (required=85.8MB available=" in message
+        for message in infos
+    )
+
+
 def test_accurate_profile_pipeline_allows_timeout_disable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

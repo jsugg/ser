@@ -11,7 +11,7 @@ type UnknownLabelPolicy = Literal["drop", "error", "map_to_other"]
 
 @dataclass(frozen=True)
 class LabelOntology:
-    """Defines canonical labels and unknown-label behavior for adapters/loaders."""
+    """Defines the canonical label space and unknown-label behavior."""
 
     ontology_id: str
     allowed_labels: frozenset[str]
@@ -20,12 +20,12 @@ class LabelOntology:
 
 
 def normalize_label(label: str) -> str:
-    """Normalizes labels for stable cross-corpus comparisons."""
+    """Normalizes label strings for stable comparisons."""
     return label.strip().lower()
 
 
 def ensure_label_allowed(*, label: str, ontology: LabelOntology) -> None:
-    """Raises when a label is not part of the configured ontology."""
+    """Raises when a label is not part of the canonical ontology."""
     if label not in ontology.allowed_labels:
         raise ValueError(
             f"Label {label!r} is not part of ontology {ontology.ontology_id!r}."
@@ -38,9 +38,22 @@ def remap_label(
     mapping: Mapping[str, str] | None,
     ontology: LabelOntology,
 ) -> str | None:
-    """Maps one raw corpus label into the configured canonical ontology."""
-    source = raw_label.strip()
-    mapped = mapping.get(source, "") if mapping is not None else source
+    """Remaps a raw dataset label into the canonical ontology.
+
+    Args:
+        raw_label: Raw label string from a dataset.
+        mapping: Optional mapping of raw labels to canonical labels.
+        ontology: Canonical ontology definition.
+
+    Returns:
+        Canonical label when allowed by the ontology or ``None`` when dropped.
+
+    Raises:
+        ValueError: When the ontology policy is ``error`` and the label is unknown.
+    """
+
+    raw = raw_label.strip()
+    mapped = mapping.get(raw, "") if mapping is not None else raw
     canonical = normalize_label(mapped) if mapped else ""
     if canonical and canonical in ontology.allowed_labels:
         return canonical
