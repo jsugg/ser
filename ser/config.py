@@ -179,6 +179,7 @@ class DatasetConfig:
     folder: Path
     subfolder_prefix: str = "Actor_*"
     extension: str = "*.wav"
+    manifest_paths: tuple[Path, ...] = ()
 
     @property
     def glob_pattern(self) -> str:
@@ -669,6 +670,14 @@ def _build_settings() -> AppConfig:
         }
     )
     dataset_folder: Path = Path(os.getenv("DATASET_FOLDER", "ser/dataset/ravdess"))
+    dataset_manifests_raw = os.getenv("SER_DATASET_MANIFESTS", "").strip()
+    manifest_paths: tuple[Path, ...] = ()
+    if dataset_manifests_raw:
+        manifest_paths = tuple(
+            Path(item.strip()).expanduser()
+            for item in dataset_manifests_raw.split(",")
+            if item.strip()
+        )
     default_language: str = os.getenv("DEFAULT_LANGUAGE", "en")
     max_workers: int = _read_int_env("SER_MAX_WORKERS", 8, minimum=1)
     max_failed_file_ratio: float = _read_float_env(
@@ -794,7 +803,7 @@ def _build_settings() -> AppConfig:
         emotions=emotions,
         tmp_folder=tmp_folder,
         nn=NeuralNetConfig(random_state=random_state),
-        dataset=DatasetConfig(folder=dataset_folder),
+        dataset=DatasetConfig(folder=dataset_folder, manifest_paths=manifest_paths),
         data_loader=DataLoaderConfig(
             max_workers=max_workers,
             max_failed_file_ratio=max_failed_file_ratio,

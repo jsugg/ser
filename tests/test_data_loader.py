@@ -1,18 +1,24 @@
 """Behavior tests for resilient dataset loading."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from ser.data import data_loader as dl
+from ser.data.manifest import MANIFEST_SCHEMA_VERSION
 
 
 def _build_settings(max_failed_file_ratio: float = 0.5) -> SimpleNamespace:
     """Returns a minimal settings object for data-loader tests."""
     return SimpleNamespace(
         emotions={"03": "happy", "04": "sad"},
-        dataset=SimpleNamespace(glob_pattern="unused"),
+        dataset=SimpleNamespace(
+            glob_pattern="unused",
+            folder=Path("unused"),
+            manifest_paths=(),
+        ),
         models=SimpleNamespace(num_cores=1),
         data_loader=SimpleNamespace(
             max_workers=1,
@@ -23,6 +29,7 @@ def _build_settings(max_failed_file_ratio: float = 0.5) -> SimpleNamespace:
             random_state=42,
             stratify_split=True,
         ),
+        default_language="en",
     )
 
 
@@ -152,3 +159,61 @@ def test_load_data_returns_split_for_valid_samples(
     assert x_train.shape[1] == 2
     assert x_test.shape[1] == 2
     assert len(y_train) + len(y_test) == 4
+
+
+def test_load_utterances_prefers_manifest_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Manifest mode should load utterances and preserve canonical labels."""
+    manifest_path = tmp_path / "dataset.jsonl"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                (
+                    '{"schema_version": 1, "sample_id": "ravdess:a.wav", '
+                    '"corpus": "ravdess", "audio_path": "a.wav", '
+                    '"label": "happy", "speaker_id": "ravdess:1", "split": "train"}'
+                ),
+                (
+                    '{"schema_version": 1, "sample_id": "ravdess:b.wav", '
+                    '"corpus": "ravdess", "audio_path": "b.wav", '
+                    '"label": "sad", "speaker_id": "ravdess:2", "split": "test"}'
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = _build_settings(max_failed_file_ratio=1.0)
+    settings.dataset.manifest_paths = (manifest_path,)
+    settings.dataset.folder = tmp_path
+    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+
+    utterances = dl.load_utterances()
+
+    assert utterances is not None
+    assert [item.sample_id for item in utterances] == ["ravdess:a.wav", "ravdess:b.wav"]
+    assert all(item.schema_version == MANIFEST_SCHEMA_VERSION for item in utterances)
+    assert all(item.audio_path.is_absolute() for item in utterances)
+
+
+def test_load_utterances_rejects_duplicate_sample_ids_across_manifests(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Duplicate sample ids across manifest files should fail closed."""
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    payload = (
+        '{"schema_version": 1, "sample_id": "dup:1", "corpus": "ravdess", '
+        '"audio_path": "a.wav", "label": "happy", "speaker_id": "ravdess:1"}\n'
+    )
+    first.write_text(payload, encoding="utf-8")
+    second.write_text(payload, encoding="utf-8")
+    settings = _build_settings(max_failed_file_ratio=1.0)
+    settings.dataset.manifest_paths = (first, second)
+    settings.dataset.folder = tmp_path
+    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+
+    with pytest.raises(RuntimeError, match="Duplicate sample_id"):
+        dl.load_utterances()

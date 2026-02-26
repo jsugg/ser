@@ -57,9 +57,6 @@ done
 os_name="$(uname -s)"
 arch_name="$(uname -m)"
 default_python="3.13"
-if [[ "$os_name" == "Darwin" && "$arch_name" == "x86_64" ]]; then
-  default_python="3.12"
-fi
 
 python_version="${SER_SETUP_PYTHON:-$default_python}"
 include_dev="$(normalize_bool "${SER_SETUP_INCLUDE_DEV:-true}" "SER_SETUP_INCLUDE_DEV")"
@@ -100,14 +97,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$os_name" == "Darwin" && "$arch_name" == "x86_64" ]]; then
-  if [[ "$python_version" != "3.12" && "$python_version" != 3.12.* ]]; then
-    printf 'Unsupported combination for full-profile SER support: Darwin x86_64 + Python %s\n' "$python_version" >&2
-    printf 'Use Python 3.12 for setup + train + inference on fast/medium/accurate.\n' >&2
-    exit 2
-  fi
-fi
-
 sync_args=(--python "$python_version" --extra full)
 if [[ "$include_dev" == "true" ]]; then
   sync_args+=(--extra dev)
@@ -117,6 +106,13 @@ printf '[setup] platform: %s/%s\n' "$os_name" "$arch_name"
 printf '[setup] python: %s\n' "$python_version"
 printf '[setup] include dev tools: %s\n' "$include_dev"
 printf '[setup] ffmpeg check: %s\n' "$check_ffmpeg"
+
+if [[ "$os_name" == "Darwin" && "$arch_name" == "x86_64" ]]; then
+  if [[ "$python_version" == "3.13" || "$python_version" == 3.13.* ]]; then
+    printf '[setup] note: Darwin x86_64 + Python 3.13 is currently partial (fast-profile oriented) and not an officially supported full runtime lane.\n'
+    printf '[setup] note: medium/accurate/accurate-research runtime requires torch/transformers wheels not currently published for this platform tag.\n'
+  fi
+fi
 
 run_cmd uv python install "$python_version"
 run_cmd uv sync "${sync_args[@]}"
