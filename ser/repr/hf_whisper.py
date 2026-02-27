@@ -91,6 +91,18 @@ class _EncoderModel(Protocol):
         ...
 
 
+class _PretrainedLoader(Protocol):
+    """Runtime protocol for model classes exposing from_pretrained."""
+
+    @staticmethod
+    def from_pretrained(model_id: str, **kwargs: object) -> object:
+        """Loads a pretrained model object from one model id."""
+        ...
+
+
+type _LoadingInfo = Mapping[str, object]
+
+
 class WhisperBackend:
     """Whisper backend with bounded chunked encoding and deterministic pooling."""
 
@@ -310,11 +322,18 @@ class WhisperBackend:
         auto_feature_extractor = getattr(
             transformers_module, "AutoFeatureExtractor", None
         )
-        auto_model = getattr(transformers_module, "AutoModelForSpeechSeq2Seq", None)
-        if auto_feature_extractor is None or auto_model is None:
+        auto_model = getattr(transformers_module, "AutoModel", None)
+        auto_seq2seq_model = getattr(
+            transformers_module, "AutoModelForSpeechSeq2Seq", None
+        )
+        if auto_feature_extractor is None:
             raise RuntimeError(
-                "transformers package does not expose AutoFeatureExtractor/"
-                "AutoModelForSpeechSeq2Seq."
+                "transformers package does not expose AutoFeatureExtractor."
+            )
+        if auto_model is None and auto_seq2seq_model is None:
+            raise RuntimeError(
+                "transformers package does not expose AutoModel or "
+                "AutoModelForSpeechSeq2Seq for Whisper loading."
             )
 
         cache_kwargs: dict[str, str] = {}
@@ -326,33 +345,145 @@ class WhisperBackend:
             _FeatureExtractor,
             auto_feature_extractor.from_pretrained(self._model_id, **cache_kwargs),
         )
-        try:
-            model = cast(
-                _EncoderModel,
-                auto_model.from_pretrained(
+        loaded_model: _EncoderModel | None = None
+        if auto_model is not None:
+            try:
+                loaded_model = self._load_pretrained_model(
+                    loader=cast(_PretrainedLoader, auto_model),
+                    loader_name="Whisper backbone model",
+                    cache_kwargs=cache_kwargs,
+                )
+            except RuntimeError as err:
+                logger.info(
+                    "Whisper backbone load failed for %s; falling back to "
+                    "seq2seq loader (%s).",
                     self._model_id,
-                    use_safetensors=True,
-                    **cache_kwargs,
-                ),
+                    err,
+                )
+        if loaded_model is None:
+            if auto_seq2seq_model is None:
+                raise RuntimeError(
+                    "Whisper backbone load failed and seq2seq loader is unavailable."
+                )
+            loaded_model = self._load_pretrained_model(
+                loader=cast(_PretrainedLoader, auto_seq2seq_model),
+                loader_name="Whisper seq2seq model",
+                cache_kwargs=cache_kwargs,
             )
-        except TypeError:
-            model = cast(
-                _EncoderModel,
-                auto_model.from_pretrained(self._model_id, **cache_kwargs),
-            )
-        except Exception as err:
-            raise RuntimeError(
-                "Failed to load Whisper model with safetensors-only policy. "
-                "Use a model revision that publishes safetensors weights, or "
-                "upgrade torch to >=2.6 for legacy checkpoint loading."
-            ) from err
-        model.eval()
+        model = self._extract_encoder_only_model(loaded_model)
         runtime = self._get_torch_runtime()
         if runtime is not None:
             move_model_to_runtime(model, runtime)
         self._feature_extractor = feature_extractor
         self._model = model
         return feature_extractor, model
+
+    def _extract_encoder_only_model(self, model: _EncoderModel) -> _EncoderModel:
+        """Extracts one encoder module from a loaded Whisper model family object."""
+        encoder = self._resolve_encoder(model)
+        return cast(_EncoderModel, encoder)
+
+    def _load_pretrained_model(
+        self,
+        *,
+        loader: _PretrainedLoader,
+        loader_name: str,
+        cache_kwargs: Mapping[str, str],
+    ) -> _EncoderModel:
+        """Loads one model with safetensors-first policy and robust fallback."""
+        try:
+            model, loading_info = self._load_model_with_loading_info(
+                loader=loader,
+                cache_kwargs=cache_kwargs,
+                use_safetensors=True,
+            )
+        except TypeError:
+            model, loading_info = self._load_model_with_loading_info(
+                loader=loader,
+                cache_kwargs=cache_kwargs,
+                use_safetensors=False,
+            )
+        except Exception as err:
+            raise RuntimeError(
+                f"Failed to load {loader_name} with safetensors-only policy. "
+                "Use a model revision that publishes safetensors weights, or "
+                "upgrade torch to >=2.6 for legacy checkpoint loading."
+            ) from err
+        if loading_info is not None:
+            self._validate_loading_info(
+                loader_name=loader_name,
+                loading_info=loading_info,
+            )
+        model.eval()
+        return model
+
+    def _load_model_with_loading_info(
+        self,
+        *,
+        loader: _PretrainedLoader,
+        cache_kwargs: Mapping[str, str],
+        use_safetensors: bool,
+    ) -> tuple[_EncoderModel, _LoadingInfo | None]:
+        """Loads one model and returns optional transformers loading diagnostics."""
+        load_kwargs: dict[str, object] = {
+            "output_loading_info": True,
+            **cache_kwargs,
+        }
+        if use_safetensors:
+            load_kwargs["use_safetensors"] = True
+
+        loaded = loader.from_pretrained(self._model_id, **load_kwargs)
+        if isinstance(loaded, tuple) and len(loaded) == 2:
+            model_obj, loading_info_obj = loaded
+            if isinstance(loading_info_obj, Mapping):
+                return cast(_EncoderModel, model_obj), cast(
+                    _LoadingInfo, loading_info_obj
+                )
+        return cast(_EncoderModel, loaded), None
+
+    def _validate_loading_info(
+        self,
+        *,
+        loader_name: str,
+        loading_info: _LoadingInfo,
+    ) -> None:
+        """Fails fast when transformers reports incomplete checkpoint load."""
+        missing_keys = self._normalize_key_list(loading_info.get("missing_keys"))
+        mismatched_keys = self._normalize_mismatched_keys(
+            loading_info.get("mismatched_keys")
+        )
+        if not missing_keys and not mismatched_keys:
+            return
+
+        samples: list[str] = []
+        if missing_keys:
+            samples.append(f"missing sample={missing_keys[:3]}")
+        if mismatched_keys:
+            samples.append(f"mismatched sample={mismatched_keys[:3]}")
+        raise RuntimeError(
+            f"{loader_name} produced an incomplete checkpoint load for "
+            f"{self._model_id!r} (missing={len(missing_keys)}, "
+            f"mismatched={len(mismatched_keys)}; {'; '.join(samples)})."
+        )
+
+    def _normalize_key_list(self, raw_keys: object) -> list[str]:
+        """Normalizes transformers key-list payloads into string keys."""
+        if not isinstance(raw_keys, list):
+            return []
+        return [item for item in raw_keys if isinstance(item, str)]
+
+    def _normalize_mismatched_keys(self, raw_keys: object) -> list[str]:
+        """Normalizes mismatched-key payloads into canonical key names."""
+        if not isinstance(raw_keys, list):
+            return []
+        keys: list[str] = []
+        for item in raw_keys:
+            if isinstance(item, str):
+                keys.append(item)
+                continue
+            if isinstance(item, tuple) and item and isinstance(item[0], str):
+                keys.append(item[0])
+        return keys
 
     def _get_torch_runtime(self) -> TorchRuntime | None:
         """Lazily resolves optional torch runtime selectors."""
@@ -383,6 +514,9 @@ class WhisperBackend:
         nested_encoder = getattr(nested_model, "encoder", None)
         if callable(nested_encoder):
             return cast(_EncoderModule, nested_encoder)
+
+        if callable(model):
+            return cast(_EncoderModule, model)
 
         raise RuntimeError(
             "Whisper model does not expose an encoder module for sequence encoding."

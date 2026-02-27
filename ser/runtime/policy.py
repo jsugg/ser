@@ -10,6 +10,7 @@ from ser.config import ProfileRuntimeConfig
 
 type RetryDelaySeconds = Callable[..., float]
 type TransientErrorFactory = Callable[[Exception], Exception]
+type TransientFailureHook = Callable[[Exception, int, int], None]
 
 
 def run_with_retry_policy[ResultT](
@@ -23,6 +24,7 @@ def run_with_retry_policy[ResultT](
     transient_exhausted_error: TransientErrorFactory,
     retry_delay_seconds: RetryDelaySeconds,
     logger: logging.Logger,
+    on_transient_failure: TransientFailureHook | None = None,
 ) -> ResultT:
     """Runs one profile operation with split retry budgets by error type."""
     timeout_failures = 0
@@ -58,10 +60,13 @@ def run_with_retry_policy[ResultT](
                 runtime_config.max_transient_retries + 1,
                 err,
             )
-            if (
-                not allow_retries
-                or transient_failures > runtime_config.max_transient_retries
-            ):
+            should_retry = (
+                allow_retries
+                and transient_failures <= runtime_config.max_transient_retries
+            )
+            if should_retry and on_transient_failure is not None:
+                on_transient_failure(err, attempt, transient_failures)
+            if not should_retry:
                 raise transient_exhausted_error(err) from err
 
         delay_seconds = retry_delay_seconds(

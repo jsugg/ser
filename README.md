@@ -338,7 +338,7 @@ uv run ruff check ser
 uv run black --check ser
 uv run isort --check-only ser
 uv run mypy ser tests
-uv run pyright ser tests
+uv run pyright --pythonversion 3.12 ser tests
 ```
 
 ### Git Hooks

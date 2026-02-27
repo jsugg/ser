@@ -1,6 +1,7 @@
 """Unit tests for log-level resolution and logging configuration."""
 
 import logging
+import warnings
 
 import pytest
 
@@ -108,3 +109,78 @@ def test_scoped_dependency_log_policy_keeps_demoted_logs_at_debug_level(
             dependency_logger.info("dependency info")
 
     assert "dependency info" in caplog.text
+
+
+def test_scoped_dependency_log_policy_respects_context_scope(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Policy demotion should activate only when context selectors match."""
+    dependency_logger = logging.getLogger("faster_whisper")
+    policy = logger_utils.DependencyLogPolicy(
+        logger_prefixes=frozenset({"faster_whisper"}),
+        phase_names=frozenset({"transcription"}),
+    )
+
+    with caplog.at_level(logging.INFO):
+        with logger_utils.scoped_dependency_log_policy(
+            policy=policy,
+            keep_demoted=True,
+            context=logger_utils.DependencyPolicyContext(
+                phase_name="emotion_inference"
+            ),
+        ):
+            dependency_logger.info("outside-scope")
+        with logger_utils.scoped_dependency_log_policy(
+            policy=policy,
+            keep_demoted=True,
+            context=logger_utils.DependencyPolicyContext(phase_name="transcription"),
+        ):
+            dependency_logger.info("inside-scope")
+
+    assert "outside-scope" in caplog.text
+    assert "inside-scope" not in caplog.text
+
+
+def test_scoped_dependency_log_policy_applies_warning_policy_by_context() -> None:
+    """Warning policy should only suppress warnings when context selectors match."""
+    warning_policy = logger_utils.WarningPolicy(
+        policy_id="test.invalid_escape",
+        action="ignore",
+        message_regex=r"^invalid escape sequence '\\,'$",
+        module_regex=r"^stable_whisper\.result$",
+        category=SyntaxWarning,
+        phase_names=frozenset({"transcription"}),
+    )
+    policy = logger_utils.DependencyLogPolicy(
+        logger_prefixes=frozenset(),
+        warning_policies=(warning_policy,),
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with logger_utils.scoped_dependency_log_policy(
+            policy=policy,
+            context=logger_utils.DependencyPolicyContext(
+                phase_name="emotion_inference"
+            ),
+        ):
+            warnings.warn_explicit(
+                message="invalid escape sequence '\\,'",
+                category=SyntaxWarning,
+                filename="stable_whisper/result.py",
+                lineno=1,
+                module="stable_whisper.result",
+            )
+        with logger_utils.scoped_dependency_log_policy(
+            policy=policy,
+            context=logger_utils.DependencyPolicyContext(phase_name="transcription"),
+        ):
+            warnings.warn_explicit(
+                message="invalid escape sequence '\\,'",
+                category=SyntaxWarning,
+                filename="stable_whisper/result.py",
+                lineno=1,
+                module="stable_whisper.result",
+            )
+
+    assert [str(item.message) for item in caught] == ["invalid escape sequence '\\,'"]

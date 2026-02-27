@@ -6,7 +6,6 @@ import multiprocessing as mp
 import os
 from collections.abc import Collection
 from functools import partial
-from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 import numpy as np
@@ -38,59 +37,53 @@ def _read_unknown_label_policy_env() -> UnknownLabelPolicy:
 
 
 def _resolve_label_ontology(settings: AppConfig) -> LabelOntology:
-    ontology_id = os.getenv("SER_LABEL_ONTOLOGY_ID", "default_v1").strip()
-    if not ontology_id:
-        ontology_id = "default_v1"
+    ontology_id = (
+        os.getenv("SER_LABEL_ONTOLOGY_ID", "default_v1").strip() or "default_v1"
+    )
     allowed_labels_raw = os.getenv("SER_ALLOWED_LABELS", "").strip()
     if allowed_labels_raw:
-        allowed_labels = {
+        allowed = {
             normalize_label(item)
             for item in allowed_labels_raw.split(",")
             if normalize_label(item)
         }
     else:
-        allowed_labels = {
-            normalize_label(label) for label in settings.emotions.values()
-        }
-    if not allowed_labels:
+        allowed = {normalize_label(label) for label in settings.emotions.values()}
+    if not allowed:
         raise RuntimeError(
-            "Resolved label ontology contains zero allowed labels. "
-            "Check SER_ALLOWED_LABELS or configured emotion mapping."
+            "Resolved SER label ontology contains zero allowed labels. "
+            "Check SER_ALLOWED_LABELS / configured emotion mapping."
         )
-    other_label_raw = os.getenv("SER_OTHER_LABEL", "other").strip()
-    other_label = normalize_label(other_label_raw) if other_label_raw else "other"
+    other_label = os.getenv("SER_OTHER_LABEL", "other").strip() or "other"
     return LabelOntology(
         ontology_id=ontology_id,
-        allowed_labels=frozenset(allowed_labels),
+        allowed_labels=frozenset(allowed),
         unknown_label_policy=_read_unknown_label_policy_env(),
-        other_label=other_label,
+        other_label=normalize_label(other_label),
     )
 
 
 def load_utterances() -> list[Utterance] | None:
-    """Loads utterances from manifests or from the legacy RAVDESS adapter path."""
+    """Loads manifest utterances when configured, otherwise defaults to RAVDESS discovery."""
     settings: AppConfig = get_settings()
     ontology = _resolve_label_ontology(settings)
-    manifest_paths: tuple[Path, ...] = settings.dataset.manifest_paths
-    if manifest_paths:
+    if settings.dataset.manifest_paths:
         utterances: list[Utterance] = []
-        for manifest_path in manifest_paths:
-            utterances.extend(
-                load_manifest_jsonl(Path(manifest_path), ontology=ontology)
-            )
+        for manifest_path in settings.dataset.manifest_paths:
+            utterances.extend(load_manifest_jsonl(manifest_path, ontology=ontology))
         if not utterances:
-            logger.warning("No utterances loaded from configured manifests.")
+            logger.warning("No manifest utterances loaded.")
             return None
-        seen_sample_ids: set[str] = set()
-        duplicate_sample_ids: set[str] = set()
+        seen: set[str] = set()
+        duplicates: set[str] = set()
         for utterance in utterances:
-            if utterance.sample_id in seen_sample_ids:
-                duplicate_sample_ids.add(utterance.sample_id)
-            seen_sample_ids.add(utterance.sample_id)
-        if duplicate_sample_ids:
+            if utterance.sample_id in seen:
+                duplicates.add(utterance.sample_id)
+            seen.add(utterance.sample_id)
+        if duplicates:
             raise RuntimeError(
                 "Duplicate sample_id values across manifests: "
-                + ", ".join(sorted(duplicate_sample_ids))
+                + ", ".join(sorted(duplicates))
             )
         labels = [utterance.label for utterance in utterances]
         if len(set(labels)) < 2:
@@ -100,13 +93,11 @@ def load_utterances() -> list[Utterance] | None:
             return None
         return utterances
 
-    dataset_folder = settings.dataset.folder
-    default_language = settings.default_language
     return build_ravdess_utterances(
-        dataset_root=dataset_folder,
+        dataset_root=settings.dataset.folder,
         dataset_glob_pattern=settings.dataset.glob_pattern,
         emotion_code_map=dict(settings.emotions),
-        default_language=default_language,
+        default_language=settings.default_language,
         ontology=ontology,
         max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
     )

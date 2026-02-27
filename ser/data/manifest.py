@@ -28,29 +28,23 @@ def _read_float_field(record: Mapping[str, object], field: str) -> float | None:
     return None
 
 
-def _resolve_audio_path(path_text: str, *, base_dir: Path) -> Path:
+def _resolve_audio_path(path_text: str, base_dir: Path) -> Path:
     candidate = Path(path_text).expanduser()
     if candidate.is_absolute():
         return candidate
     return (base_dir / candidate).expanduser()
 
 
-def _to_optional_split(value: str | None) -> SplitName | None:
-    if value in {"train", "dev", "test"}:
-        return cast(SplitName, value)
-    return None
-
-
-def _maybe_relative(path: Path, *, base_dir: Path) -> Path:
+def _maybe_relative(path: Path, base_dir: Path) -> Path:
     try:
         return path.relative_to(base_dir)
-    except ValueError:
+    except Exception:
         return path
 
 
 @dataclass(frozen=True)
 class Utterance:
-    """One training/inference-ready supervised utterance record."""
+    """One supervised SER training record."""
 
     schema_version: int
     sample_id: str
@@ -68,7 +62,7 @@ class Utterance:
     source_url: str | None = None
 
     def validate(self, *, ontology: LabelOntology) -> None:
-        """Validates record invariants for robust multi-corpus loading."""
+        """Validates record fields for stability across adapters."""
         if self.schema_version != MANIFEST_SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported manifest schema version {self.schema_version!r}; "
@@ -102,7 +96,7 @@ class Utterance:
         base_dir: Path,
         ontology: LabelOntology,
     ) -> Utterance:
-        """Builds one validated utterance from a JSON-like manifest record."""
+        """Builds an Utterance from a parsed manifest record."""
         schema_version_raw = record.get("schema_version", MANIFEST_SCHEMA_VERSION)
         schema_version = (
             int(schema_version_raw)
@@ -115,25 +109,40 @@ class Utterance:
             record, "path"
         )
         label_text = _read_text_field(record, "label")
-        if sample_id is None or corpus is None or audio_path_text is None:
+        if (
+            sample_id is None
+            or corpus is None
+            or audio_path_text is None
+            or label_text is None
+        ):
             raise ValueError(
-                "Manifest record must include sample_id, corpus, and audio_path."
+                "Manifest record must include sample_id, corpus, audio_path, and label fields."
             )
-        if label_text is None:
-            raise ValueError("Manifest record must include a non-empty label.")
+
+        label = normalize_label(label_text)
+        speaker_id = _read_text_field(record, "speaker_id")
+        language = _read_text_field(record, "language")
+        split_raw = _read_text_field(record, "split")
+        split: SplitName | None = (
+            cast(SplitName, split_raw)
+            if split_raw in {"train", "dev", "test"}
+            else None
+        )
+        start_seconds = _read_float_field(record, "start_seconds")
+        duration_seconds = _read_float_field(record, "duration_seconds")
 
         utterance = Utterance(
             schema_version=schema_version,
             sample_id=sample_id,
             corpus=corpus,
-            audio_path=_resolve_audio_path(audio_path_text, base_dir=base_dir),
-            label=normalize_label(label_text),
+            audio_path=_resolve_audio_path(audio_path_text, base_dir),
+            label=label,
             raw_label=_read_text_field(record, "raw_label"),
-            speaker_id=_read_text_field(record, "speaker_id"),
-            language=_read_text_field(record, "language"),
-            split=_to_optional_split(_read_text_field(record, "split")),
-            start_seconds=_read_float_field(record, "start_seconds"),
-            duration_seconds=_read_float_field(record, "duration_seconds"),
+            speaker_id=speaker_id,
+            language=language,
+            split=split,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
             dataset_policy_id=_read_text_field(record, "dataset_policy_id"),
             dataset_license_id=_read_text_field(record, "dataset_license_id"),
             source_url=_read_text_field(record, "source_url"),
@@ -142,9 +151,9 @@ class Utterance:
         return utterance
 
     def to_record(self, *, base_dir: Path | None = None) -> dict[str, object]:
-        """Serializes one utterance into a JSON-compatible dictionary."""
-        path_value = (
-            str(_maybe_relative(self.audio_path, base_dir=base_dir))
+        """Serializes record for JSONL persistence."""
+        path = (
+            str(_maybe_relative(self.audio_path, base_dir))
             if base_dir is not None
             else str(self.audio_path)
         )
@@ -152,7 +161,7 @@ class Utterance:
             "schema_version": self.schema_version,
             "sample_id": self.sample_id,
             "corpus": self.corpus,
-            "audio_path": path_value,
+            "audio_path": path,
             "label": self.label,
         }
         optional_fields: dict[str, object | None] = {

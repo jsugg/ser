@@ -1,4 +1,4 @@
-"""JSONL helpers for multi-corpus SER manifest files."""
+"""JSONL loader for SER training manifests."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ def load_manifest_jsonl(
     ontology: LabelOntology,
     base_dir: Path | None = None,
 ) -> list[Utterance]:
-    """Loads one manifest JSONL file into validated utterances."""
-    resolved_base_dir = base_dir if base_dir is not None else path.parent
+    """Loads a JSONL manifest into validated utterance records."""
+    resolved_base = base_dir if base_dir is not None else path.parent
     utterances: list[Utterance] = []
-    seen_sample_ids: set[str] = set()
+    seen_ids: set[str] = set()
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             raw = line.strip()
@@ -38,14 +38,14 @@ def load_manifest_jsonl(
                 )
             utterance = Utterance.from_record(
                 cast(dict[str, object], payload),
-                base_dir=resolved_base_dir,
+                base_dir=resolved_base,
                 ontology=ontology,
             )
-            if utterance.sample_id in seen_sample_ids:
+            if utterance.sample_id in seen_ids:
                 raise ValueError(
                     f"Duplicate sample_id {utterance.sample_id!r} in manifest {path}."
                 )
-            seen_sample_ids.add(utterance.sample_id)
+            seen_ids.add(utterance.sample_id)
             utterances.append(utterance)
     return utterances
 
@@ -56,10 +56,11 @@ def write_manifest_jsonl(
     *,
     base_dir: Path | None = None,
 ) -> None:
-    """Writes utterances to deterministic JSONL records."""
-    resolved_base_dir = base_dir if base_dir is not None else path.parent
+    """Writes utterances to a deterministic JSONL manifest."""
+    resolved_base = base_dir if base_dir is not None else path.parent
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for utterance in utterances:
-            handle.write(json.dumps(utterance.to_record(base_dir=resolved_base_dir)))
+            record = utterance.to_record(base_dir=resolved_base)
+            handle.write(json.dumps(record, sort_keys=True))
             handle.write("\n")

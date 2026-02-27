@@ -53,6 +53,7 @@ class _FakeEncoder:
 
     def __init__(self, hidden_size: int) -> None:
         self.hidden_size = hidden_size
+        self.config = _FakeModelConfig(hidden_size=hidden_size)
         self.call_sizes: list[int] = []
 
     def __call__(self, **kwargs: object) -> _FakeEncoderOutput:
@@ -88,6 +89,20 @@ class _FakeModel:
         self.config = _FakeModelConfig(hidden_size=hidden_size)
         self.model = self
         self.encoder = _FakeEncoder(hidden_size=hidden_size)
+
+    def eval(self) -> None:
+        """No-op eval mode for protocol compatibility."""
+
+
+class _FakeEncoderOnlyModel:
+    """Deterministic encoder-only model stub with callable forward contract."""
+
+    def __init__(self, hidden_size: int) -> None:
+        self.config = _FakeModelConfig(hidden_size=hidden_size)
+        self._encoder = _FakeEncoder(hidden_size=hidden_size)
+
+    def __call__(self, **kwargs: object) -> _FakeEncoderOutput:
+        return self._encoder(**kwargs)
 
     def eval(self) -> None:
         """No-op eval mode for protocol compatibility."""
@@ -173,6 +188,198 @@ def test_whisper_backend_pool_is_deterministic_for_overlap_windows() -> None:
         pooled,
         np.asarray([[2.0, 3.0], [4.0, 5.0]], dtype=np.float64),
     )
+
+
+def test_whisper_backend_accepts_callable_encoder_only_model() -> None:
+    """Encoder-only callable models should be supported by encoder resolution."""
+    backend = WhisperBackend(
+        feature_extractor=_FakeFeatureExtractor(),
+        model=_FakeEncoderOnlyModel(hidden_size=3),
+    )
+
+    encoded = backend.encode_sequence(np.arange(8, dtype=np.float32), sample_rate=4)
+
+    assert encoded.embeddings.shape[1] == 3
+    assert np.all(np.diff(encoded.frame_start_seconds) >= 0.0)
+
+
+def test_whisper_backend_prefers_encoder_only_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime loader should select AutoModel backbone before seq2seq fallback."""
+    calls = {"backbone": 0, "seq2seq": 0}
+
+    class _FeatureExtractorLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeFeatureExtractor:
+            del model_id, kwargs
+            return _FakeFeatureExtractor()
+
+    class _BackboneLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeModel:
+            del model_id, kwargs
+            calls["backbone"] += 1
+            return _FakeModel(hidden_size=9)
+
+    class _Seq2SeqLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeModel:
+            del model_id, kwargs
+            calls["seq2seq"] += 1
+            return _FakeModel(hidden_size=11)
+
+    class _TransformersModule:
+        AutoFeatureExtractor = _FeatureExtractorLoader
+        AutoModel = _BackboneLoader
+        AutoModelForSpeechSeq2Seq = _Seq2SeqLoader
+
+    def fake_import_module(module_name: str) -> object:
+        if module_name == "transformers":
+            return _TransformersModule()
+        raise AssertionError(f"Unexpected import requested: {module_name!r}")
+
+    monkeypatch.setattr(
+        hf_whisper_module.importlib, "import_module", fake_import_module
+    )
+    monkeypatch.setattr(
+        hf_whisper_module.WhisperBackend,
+        "_ensure_dependencies_available",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: None,
+    )
+
+    backend = WhisperBackend(model_id="unit-test/whisper")
+    assert backend.feature_dim == 9
+    assert calls["backbone"] == 1
+    assert calls["seq2seq"] == 0
+
+
+def test_whisper_backend_falls_back_to_seq2seq_when_backbone_load_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime loader should fallback to seq2seq when AutoModel init fails."""
+    calls = {"backbone": 0, "seq2seq": 0}
+
+    class _FeatureExtractorLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeFeatureExtractor:
+            del model_id, kwargs
+            return _FakeFeatureExtractor()
+
+    class _BackboneLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeModel:
+            del model_id, kwargs
+            calls["backbone"] += 1
+            raise RuntimeError("backbone loader unavailable")
+
+    class _Seq2SeqLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeModel:
+            del model_id, kwargs
+            calls["seq2seq"] += 1
+            return _FakeModel(hidden_size=7)
+
+    class _TransformersModule:
+        AutoFeatureExtractor = _FeatureExtractorLoader
+        AutoModel = _BackboneLoader
+        AutoModelForSpeechSeq2Seq = _Seq2SeqLoader
+
+    def fake_import_module(module_name: str) -> object:
+        if module_name == "transformers":
+            return _TransformersModule()
+        raise AssertionError(f"Unexpected import requested: {module_name!r}")
+
+    monkeypatch.setattr(
+        hf_whisper_module.importlib, "import_module", fake_import_module
+    )
+    monkeypatch.setattr(
+        hf_whisper_module.WhisperBackend,
+        "_ensure_dependencies_available",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: None,
+    )
+
+    backend = WhisperBackend(model_id="unit-test/whisper")
+    assert backend.feature_dim == 7
+    assert calls["backbone"] == 1
+    assert calls["seq2seq"] == 1
+
+
+def test_whisper_backend_rejects_incomplete_checkpoint_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Loader should fail when transformers reports missing/mismatched keys."""
+    calls = {"backbone": 0, "seq2seq": 0}
+
+    class _FeatureExtractorLoader:
+        @staticmethod
+        def from_pretrained(model_id: str, **kwargs: object) -> _FakeFeatureExtractor:
+            del model_id, kwargs
+            return _FakeFeatureExtractor()
+
+    class _BackboneLoader:
+        @staticmethod
+        def from_pretrained(
+            model_id: str, **kwargs: object
+        ) -> tuple[_FakeModel, dict[str, object]]:
+            del model_id, kwargs
+            calls["backbone"] += 1
+            return _FakeModel(hidden_size=9), {
+                "missing_keys": ["encoder.layers.0.self_attn.q_proj.weight"],
+                "mismatched_keys": [],
+            }
+
+    class _Seq2SeqLoader:
+        @staticmethod
+        def from_pretrained(
+            model_id: str, **kwargs: object
+        ) -> tuple[_FakeModel, dict[str, object]]:
+            del model_id, kwargs
+            calls["seq2seq"] += 1
+            return _FakeModel(hidden_size=11), {
+                "missing_keys": [],
+                "mismatched_keys": [("model.encoder.conv1.weight", (1,), (2,))],
+            }
+
+    class _TransformersModule:
+        AutoFeatureExtractor = _FeatureExtractorLoader
+        AutoModel = _BackboneLoader
+        AutoModelForSpeechSeq2Seq = _Seq2SeqLoader
+
+    def fake_import_module(module_name: str) -> object:
+        if module_name == "transformers":
+            return _TransformersModule()
+        raise AssertionError(f"Unexpected import requested: {module_name!r}")
+
+    monkeypatch.setattr(
+        hf_whisper_module.importlib, "import_module", fake_import_module
+    )
+    monkeypatch.setattr(
+        hf_whisper_module.WhisperBackend,
+        "_ensure_dependencies_available",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        hf_whisper_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: None,
+    )
+
+    backend = WhisperBackend(model_id="unit-test/whisper")
+    with pytest.raises(RuntimeError, match="incomplete checkpoint load"):
+        _ = backend.feature_dim
+    assert calls["backbone"] == 1
+    assert calls["seq2seq"] == 1
 
 
 def test_whisper_backend_missing_dependency_error_is_actionable(
