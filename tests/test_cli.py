@@ -209,6 +209,44 @@ def test_cli_prediction_passes_language_and_saves_transcript(
     assert calls["saved"] == (timeline, "sample.wav")
 
 
+def test_cli_prediction_with_no_transcript_skips_transcript_in_legacy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy prediction should skip transcript extraction when --no-transcript is set."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys, "argv", ["ser", "--file", "sample.wav", "--no-transcript"]
+    )
+
+    emotions = [EmotionSegment("happy", 0.0, 1.0)]
+    monkeypatch.setattr(emotion_model, "predict_emotions", lambda _file: emotions)
+    transcript_called = {"value": False}
+    build_calls: dict[str, object] = {}
+
+    def _fake_extract(_file_path: str, _language: str | None) -> list[TranscriptWord]:
+        transcript_called["value"] = True
+        return [TranscriptWord("ignored", 0.0, 0.1)]
+
+    monkeypatch.setattr(transcript_module, "extract_transcript", _fake_extract)
+
+    def _fake_build(
+        text_rows: list[TranscriptWord],
+        emotion_rows: list[EmotionSegment],
+    ) -> list[TimelineEntry]:
+        build_calls["text_rows"] = text_rows
+        build_calls["emotion_rows"] = emotion_rows
+        return [TimelineEntry(0.0, "happy", "")]
+
+    monkeypatch.setattr(timeline_utils, "build_timeline", _fake_build)
+    monkeypatch.setattr(timeline_utils, "print_timeline", lambda _timeline: None)
+
+    cli.main()
+
+    assert transcript_called["value"] is False
+    assert build_calls["text_rows"] == []
+    assert build_calls["emotion_rows"] == emotions
+
+
 def test_cli_prediction_does_not_save_when_flag_is_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -316,6 +354,49 @@ def test_cli_prediction_uses_runtime_pipeline_when_enabled(
     assert request.file_path == "sample.wav"
     assert request.language == "pt"
     assert request.save_transcript is True
+    assert request.include_transcript is True
+
+
+def test_cli_prediction_pipeline_honors_no_transcript_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline request should disable transcript extraction when --no-transcript is set."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "reload_settings",
+        lambda: SimpleNamespace(
+            default_language="en",
+            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        ),
+    )
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--language", "pt", "--no-transcript"],
+    )
+
+    calls: dict[str, object] = {}
+
+    class FakePipeline:
+        def run_training(self) -> None:
+            raise AssertionError("Training path should not run for prediction command.")
+
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path=None)
+
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
+
+    cli.main()
+
+    request = cast(InferenceRequest, calls["request"])
+    assert request.file_path == "sample.wav"
+    assert request.language == "pt"
+    assert request.save_transcript is False
+    assert request.include_transcript is False
 
 
 def test_cli_prediction_pipeline_unsupported_profile_exits_two(
@@ -529,6 +610,7 @@ def test_cli_profile_option_routes_prediction_with_selected_profile(
     assert request.file_path == "sample.wav"
     assert request.language == "en"
     assert request.save_transcript is False
+    assert request.include_transcript is True
     assert captured["profile_pipeline"] is True
     assert captured["medium_profile"] is True
     assert captured["accurate_profile"] is False
@@ -797,3 +879,225 @@ def test_cli_interactive_restricted_backend_prompt_persists_consent(
     persisted = cli.load_persisted_backend_consents(settings=settings)
     assert "emotion2vec" in persisted
     assert persisted["emotion2vec"].consent_source == "interactive_prompt"
+
+
+def test_cli_dispatches_configure_subcommand_with_global_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dataset configure subcommand should dispatch after pre-arg parsing."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--log-level", "DEBUG", "configure", "--show"],
+    )
+    captured: dict[str, object] = {}
+
+    def _run_configure_command(argv: list[str]) -> int:
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(
+        "ser.data.cli.run_configure_command",
+        _run_configure_command,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert captured["argv"] == ["--show"]
+
+
+def test_cli_dispatches_data_subcommand_after_global_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dataset data subcommand should dispatch when global flags appear first."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--log-level", "INFO", "data", "download", "--dataset", "ravdess"],
+    )
+    captured: dict[str, object] = {}
+
+    def _run_data_command(argv: list[str]) -> int:
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(
+        "ser.data.cli.run_data_command",
+        _run_data_command,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert captured["argv"] == ["download", "--dataset", "ravdess"]
+
+
+def test_cli_dataset_workflow_configure_download_and_registry_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """End-to-end dataset workflow should persist consent and load registry manifests."""
+    import ser.data.cli as data_cli_module
+    import ser.data.data_loader as data_loader_module
+    from ser.data.dataset_consents import load_persisted_dataset_consents
+    from ser.data.dataset_registry import load_dataset_registry
+
+    dataset_root = tmp_path / "datasets" / "ravdess"
+    (dataset_root / "Actor_01").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "Actor_02").mkdir(parents=True, exist_ok=True)
+    (dataset_root / "Actor_01" / "03-01-03-01-01-01-01.wav").write_bytes(b"")
+    (dataset_root / "Actor_02" / "03-01-04-01-01-01-02.wav").write_bytes(b"")
+    manifest_path = tmp_path / "manifests" / "ravdess.jsonl"
+
+    settings = cast(
+        config_module.AppConfig,
+        SimpleNamespace(
+            default_language="en",
+            emotions={"03": "happy", "04": "sad"},
+            dataset=SimpleNamespace(
+                folder=dataset_root,
+                subfolder_prefix="Actor_*",
+                extension="*.wav",
+                manifest_paths=(),
+                glob_pattern=str(dataset_root / "Actor_*" / "*.wav"),
+            ),
+            models=SimpleNamespace(
+                folder=tmp_path / "data" / "models",
+                num_cores=1,
+            ),
+            data_loader=SimpleNamespace(
+                max_failed_file_ratio=1.0,
+                max_workers=1,
+            ),
+        ),
+    )
+
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "configure_logging", lambda _level=None: 0)
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(data_cli_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(data_loader_module, "get_settings", lambda: settings)
+
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "ser",
+            "configure",
+            "--accept-dataset-policy",
+            "noncommercial",
+            "--accept-dataset-license",
+            "cc-by-nc-sa-4.0",
+            "--persist",
+        ],
+    )
+    with pytest.raises(SystemExit) as configure_exit:
+        cli.main()
+    assert configure_exit.value.code == 0
+
+    persisted_consents = load_persisted_dataset_consents(settings=settings)
+    assert persisted_consents.policy_consents["noncommercial"] == "ser configure"
+    assert persisted_consents.license_consents["cc-by-nc-sa-4.0"] == "ser configure"
+
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "ser",
+            "--log-level",
+            "INFO",
+            "data",
+            "download",
+            "--dataset",
+            "ravdess",
+            "--dataset-root",
+            str(dataset_root),
+            "--manifest-path",
+            str(manifest_path),
+            "--skip-download",
+        ],
+    )
+    with pytest.raises(SystemExit) as download_exit:
+        cli.main()
+    assert download_exit.value.code == 0
+    assert manifest_path.is_file()
+
+    registry = load_dataset_registry(settings=settings)
+    assert "ravdess" in registry
+    assert registry["ravdess"].manifest_path == manifest_path
+
+    loaded = data_loader_module.load_utterances()
+    assert loaded is not None
+    assert [item.label for item in loaded] == ["happy", "sad"]
+    assert all(item.corpus == "ravdess" for item in loaded)
+
+
+def test_cli_help_lists_dataset_commands_and_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Top-level help should advertise dataset workflow commands and key flags."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "ser configure --show" in help_text
+    assert "ser data download --dataset" in help_text
+    assert "--accept-dataset-policy" in help_text
+    assert "--accept-dataset-license" in help_text
+    assert "--persist" in help_text
+    assert "--no-transcript" in help_text
+    assert "--labels-csv-path" in help_text
+    assert "--audio-base-dir" in help_text
+    assert "--skip-download" in help_text
+    assert "--accept-license" in help_text
+
+
+def test_cli_dataset_subcommand_help_includes_configure_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`ser configure --help` should expose dataset consent flags."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "configure", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--accept-dataset-policy" in help_text
+    assert "--accept-dataset-license" in help_text
+    assert "--persist" in help_text
+    assert "--show" in help_text
+
+
+def test_cli_dataset_subcommand_help_includes_download_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`ser data download --help` should expose dataset preparation flags."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "data", "download", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--dataset" in help_text
+    assert "--dataset-root" in help_text
+    assert "--manifest-path" in help_text
+    assert "--labels-csv-path" in help_text
+    assert "--audio-base-dir" in help_text
+    assert "--skip-download" in help_text
+    assert "--accept-license" in help_text

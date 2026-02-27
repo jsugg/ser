@@ -1,8 +1,7 @@
-"""RAVDESS adapter for building manifest-compatible utterances."""
+"""CREMA-D adapter for building manifest-compatible utterances."""
 
 from __future__ import annotations
 
-import glob
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -14,26 +13,29 @@ from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-RAVDESS_CORPUS_ID = "ravdess"
-RAVDESS_DATASET_POLICY_ID = "noncommercial"
-RAVDESS_DATASET_LICENSE_ID = "cc-by-nc-sa-4.0"
-RAVDESS_SOURCE_URL = "https://zenodo.org/records/1188976"
+CREMA_D_CORPUS_ID = "crema-d"
+CREMA_D_DATASET_POLICY_ID = "share_alike"
+CREMA_D_DATASET_LICENSE_ID = "odbl-1.0"
+CREMA_D_SOURCE_URL = "https://github.com/CheyneyComputerScience/CREMA-D"
+
+
+def _extract_actor_id(file_name: str) -> str | None:
+    parts = file_name.split("_")
+    if len(parts) < 3:
+        return None
+    actor = parts[0].strip()
+    return actor or None
 
 
 def _extract_emotion_code(file_name: str) -> str | None:
-    parts = file_name.split("-")
-    return None if len(parts) < 3 else parts[2]
-
-
-def _extract_speaker_id(file_name: str) -> str | None:
-    parts = file_name.split("-")
-    if len(parts) < 7:
+    parts = file_name.split("_")
+    if len(parts) < 3:
         return None
-    speaker_id = parts[6].split(".")[0].strip()
-    return speaker_id or None
+    code = parts[2].split(".")[0].strip()
+    return code or None
 
 
-def build_ravdess_utterances(
+def build_crema_d_utterances(
     *,
     dataset_root: Path,
     dataset_glob_pattern: str,
@@ -42,23 +44,21 @@ def build_ravdess_utterances(
     ontology: LabelOntology,
     max_failed_file_ratio: float,
 ) -> list[Utterance] | None:
-    """Builds utterances from a RAVDESS-style dataset folder layout.
+    """Builds utterances from a CREMA-D folder layout.
 
     Args:
         dataset_root: Root folder used to create stable sample_id values.
         dataset_glob_pattern: Glob used to discover audio files.
-        emotion_code_map: Mapping from RAVDESS emotion code to canonical label.
+        emotion_code_map: Mapping from CREMA-D emotion code to canonical label.
         default_language: Language tag for created utterances.
         ontology: Canonical label ontology.
         max_failed_file_ratio: Maximum fraction of filename parse failures.
 
     Returns:
         A list of utterances or ``None`` when no usable samples exist.
-
-    Raises:
-        RuntimeError: When parse failures exceed the configured threshold.
     """
-    files = sorted(glob.glob(dataset_glob_pattern))
+
+    files = sorted(dataset_root.glob(dataset_glob_pattern))
     if not files:
         logger.warning("No dataset files found for pattern: %s", dataset_glob_pattern)
         return None
@@ -66,8 +66,10 @@ def build_ravdess_utterances(
     utterances: list[Utterance] = []
     parse_errors: list[str] = []
     root = dataset_root.expanduser()
-    for file_path in files:
-        file_name = os.path.basename(file_path)
+    for audio_path in files:
+        if audio_path.is_dir():
+            continue
+        file_name = os.path.basename(str(audio_path))
         emotion_code = _extract_emotion_code(file_name)
         if emotion_code is None:
             parse_errors.append(
@@ -83,30 +85,30 @@ def build_ravdess_utterances(
         if mapped_label is None:
             continue
 
-        audio_path = Path(file_path).expanduser()
-        speaker_raw = _extract_speaker_id(file_name)
+        actor_raw = _extract_actor_id(file_name)
         speaker_id = (
-            f"{RAVDESS_CORPUS_ID}:{speaker_raw}" if speaker_raw is not None else None
+            f"{CREMA_D_CORPUS_ID}:{actor_raw}" if actor_raw is not None else None
         )
         try:
-            rel = audio_path.relative_to(root)
-            sample_id = f"{RAVDESS_CORPUS_ID}:{rel.as_posix()}"
+            rel = audio_path.expanduser().relative_to(root)
+            sample_id = f"{CREMA_D_CORPUS_ID}:{rel.as_posix()}"
         except Exception:
-            sample_id = f"{RAVDESS_CORPUS_ID}:{audio_path.name}"
+            sample_id = f"{CREMA_D_CORPUS_ID}:{audio_path.name}"
+
         utterances.append(
             Utterance(
                 schema_version=1,
                 sample_id=sample_id,
-                corpus=RAVDESS_CORPUS_ID,
-                audio_path=audio_path,
+                corpus=CREMA_D_CORPUS_ID,
+                audio_path=audio_path.expanduser(),
                 label=mapped_label,
                 raw_label=emotion_code,
                 speaker_id=speaker_id,
                 language=default_language,
                 split=None,
-                dataset_policy_id=RAVDESS_DATASET_POLICY_ID,
-                dataset_license_id=RAVDESS_DATASET_LICENSE_ID,
-                source_url=RAVDESS_SOURCE_URL,
+                dataset_policy_id=CREMA_D_DATASET_POLICY_ID,
+                dataset_license_id=CREMA_D_DATASET_LICENSE_ID,
+                source_url=CREMA_D_SOURCE_URL,
             )
         )
 
@@ -137,7 +139,7 @@ def build_ravdess_utterances(
     return utterances
 
 
-def build_ravdess_manifest_jsonl(
+def build_crema_d_manifest_jsonl(
     *,
     dataset_root: Path,
     dataset_glob_pattern: str,
@@ -147,9 +149,9 @@ def build_ravdess_manifest_jsonl(
     max_failed_file_ratio: float,
     output_path: Path,
 ) -> list[Utterance] | None:
-    """Builds utterances and persists a RAVDESS JSONL manifest."""
+    """Builds utterances and persists a CREMA-D JSONL manifest."""
 
-    utterances = build_ravdess_utterances(
+    utterances = build_crema_d_utterances(
         dataset_root=dataset_root,
         dataset_glob_pattern=dataset_glob_pattern,
         emotion_code_map=emotion_code_map,

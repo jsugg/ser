@@ -109,6 +109,7 @@ class Emotion2VecBackend:
         *,
         model_id: str = "iic/emotion2vec_plus_large",
         hub: str | None = None,
+        device: str = "cpu",
         max_chunk_seconds: float = 30.0,
         modelscope_cache_root: Path | None = None,
         huggingface_cache_root: Path | None = None,
@@ -120,6 +121,7 @@ class Emotion2VecBackend:
         Args:
             model_id: Emotion2Vec model identifier on the selected hub.
             hub: Optional hub override (`ms`/`modelscope` or `hf`/`huggingface`).
+            device: FunASR runtime device selector (`cpu`, `cuda`, or `cuda:N`).
             max_chunk_seconds: Maximum chunk duration for bounded-memory encoding.
             modelscope_cache_root: Optional ModelScope cache root for `hub=ms`.
             huggingface_cache_root: Optional Hugging Face cache root for `hub=hf`.
@@ -134,8 +136,14 @@ class Emotion2VecBackend:
             raise ValueError(
                 "feature_extractor and model must be provided together or omitted together."
             )
+        normalized_device = device.strip().lower()
+        if normalized_device != "cpu" and not normalized_device.startswith("cuda"):
+            raise ValueError(
+                "device must be one of 'cpu', 'cuda', or a 'cuda:N' selector."
+            )
         self._model_id = model_id
         self._hub = self._resolve_hub(model_id=model_id, hub=hub)
+        self._device = normalized_device
         self._max_chunk_seconds = max_chunk_seconds
         self._modelscope_cache_root = modelscope_cache_root
         self._huggingface_cache_root = huggingface_cache_root
@@ -316,7 +324,7 @@ class Emotion2VecBackend:
                     "model": source,
                     "disable_update": True,
                     "disable_pbar": True,
-                    "device": "cpu",
+                    "device": self._device,
                 }
                 if include_hub:
                     kwargs["hub"] = self._hub

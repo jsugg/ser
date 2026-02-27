@@ -15,6 +15,7 @@ from sklearn.neural_network import MLPClassifier
 import ser.config as config
 from ser.models import emotion_model
 from ser.repr import EncodedSequence
+from ser.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.medium_inference import (
     MediumModelUnavailableError,
@@ -302,10 +303,22 @@ def test_run_medium_inference_uses_configured_medium_model_id(
         settings,
     )
 
+    backend_override = settings.feature_runtime_policy.for_backend("hf_xlsr")
+    expected_runtime_policy = resolve_feature_runtime_policy(
+        backend_id="hf_xlsr",
+        requested_device=settings.torch_runtime.device,
+        requested_dtype=settings.torch_runtime.dtype,
+        backend_override_device=(
+            backend_override.device if backend_override is not None else None
+        ),
+        backend_override_dtype=(
+            backend_override.dtype if backend_override is not None else None
+        ),
+    )
     assert captured["model_id"] == "unit-test/xlsr"
     assert captured["cache_dir"] == settings.models.huggingface_cache_root
-    assert captured["device"] == settings.torch_runtime.device
-    assert captured["dtype"] == settings.torch_runtime.dtype
+    assert captured["device"] == expected_runtime_policy.device
+    assert captured["dtype"] == expected_runtime_policy.dtype
 
 
 def test_run_medium_inference_requires_backend_model_id_metadata(

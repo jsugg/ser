@@ -49,6 +49,18 @@ _PROFILE_CHOICES: tuple[CliProfileName, ...] = (
     "accurate",
     "accurate-research",
 )
+_DATASET_COMMAND_HELP = (
+    "Dataset workflow commands:\n"
+    "  ser configure --show\n"
+    "  ser configure --accept-dataset-policy <policy ...> "
+    "--accept-dataset-license <license ...> --persist\n"
+    "  ser data download --dataset <ravdess|crema-d|msp-podcast|biic-podcast> "
+    "[--dataset-root PATH] [--manifest-path PATH]\n"
+    "                     [--labels-csv-path PATH] [--audio-base-dir PATH] "
+    "[--skip-download] [--accept-license]\n"
+    "\n"
+    "Run `ser configure --help` and `ser data download --help` for details."
+)
 
 
 def _profile_pipeline_enabled(settings: object) -> bool:
@@ -334,12 +346,30 @@ def main() -> None:
     load_dotenv()
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--log-level", type=str, default=None)
-    pre_args, _ = pre_parser.parse_known_args()
+    pre_args, pre_remaining = pre_parser.parse_known_args()
     configure_logging(pre_args.log_level)
     settings: AppConfig = reload_settings()
 
+    # Subcommand dispatch for dataset workflows.
+    if pre_remaining and pre_remaining[0] in {"configure", "data"}:
+        from ser.data.cli import run_configure_command, run_data_command
+
+        command = pre_remaining[0]
+        command_argv = pre_remaining[1:]
+        try:
+            if command == "configure":
+                raise SystemExit(run_configure_command(command_argv))
+            raise SystemExit(run_data_command(command_argv))
+        except SystemExit:
+            raise
+        except Exception as err:
+            logger.error("Dataset command failed: %s", err)
+            raise SystemExit(1) from err
+
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Speech Emotion Recognition Tool",
+        epilog=_DATASET_COMMAND_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--log-level",
@@ -370,6 +400,14 @@ def main() -> None:
         "--save_transcript",
         action="store_true",
         help="Save the transcript to a CSV file",
+    )
+    parser.add_argument(
+        "--no-transcript",
+        action="store_true",
+        help=(
+            "Skip transcription and build timeline with emotion timestamps only "
+            "(empty speech column)."
+        ),
     )
     parser.add_argument(
         "--profile",
@@ -601,6 +639,7 @@ def main() -> None:
                     file_path=args.file,
                     language=args.language,
                     save_transcript=args.save_transcript,
+                    include_transcript=not args.no_transcript,
                 )
             )
             if execution.timeline_csv_path is not None:
@@ -661,7 +700,11 @@ def _run_legacy_inference_workflow(args: argparse.Namespace) -> None:
     )
 
     emotions: list[EmotionSegment] = predict_emotions(args.file)
-    transcript: list[TranscriptWord] = extract_transcript(args.file, args.language)
+    transcript: list[TranscriptWord]
+    if args.no_transcript:
+        transcript = []
+    else:
+        transcript = extract_transcript(args.file, args.language)
     timeline: list[TimelineEntry] = build_timeline(transcript, emotions)
     print_timeline(timeline)
 

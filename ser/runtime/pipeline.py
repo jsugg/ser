@@ -144,10 +144,12 @@ class RuntimePipeline:
         else:
             emotions = self.predict_emotions(request.file_path)
 
-        _release_torch_runtime_memory_before_transcription()
-        transcript: list[TranscriptWord] = self.extract_transcript(
-            request.file_path, request.language
-        )
+        transcript: list[TranscriptWord]
+        if request.include_transcript:
+            _release_torch_runtime_memory_before_transcription()
+            transcript = self.extract_transcript(request.file_path, request.language)
+        else:
+            transcript = []
 
         timeline_build_started_at = log_phase_started(
             logger,
