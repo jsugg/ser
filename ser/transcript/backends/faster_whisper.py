@@ -25,6 +25,10 @@ from ser.utils.logger import (
     DependencyPolicyContext,
     scoped_dependency_log_policy,
 )
+from ser.utils.transcription_compat import (
+    FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE,
+    has_known_faster_whisper_openmp_runtime_conflict,
+)
 
 if TYPE_CHECKING:
     from ser.config import AppConfig
@@ -76,6 +80,17 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                     ),
                 )
             )
+        if has_known_faster_whisper_openmp_runtime_conflict():
+            functional_issues.append(
+                CompatibilityIssue(
+                    code=FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE,
+                    message=(
+                        "Detected conflicting OpenMP runtimes from ctranslate2 and "
+                        "torch/functorch on darwin-x86_64. This environment can abort "
+                        "during faster-whisper model initialization."
+                    ),
+                )
+            )
         if runtime_request.use_demucs:
             operational_issues.append(
                 CompatibilityIssue(
@@ -83,6 +98,16 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                     message=(
                         "faster-whisper backend does not support demucs preprocessing; "
                         "demucs flag will be ignored."
+                    ),
+                )
+            )
+        if runtime_request.device_type == "mps":
+            operational_issues.append(
+                CompatibilityIssue(
+                    code="faster_whisper_mps_unsupported",
+                    message=(
+                        "faster-whisper backend does not support MPS runtime; "
+                        "transcription will use CPU fallback."
                     ),
                 )
             )
@@ -159,7 +184,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
         runtime_request: BackendRuntimeRequest,
         settings: AppConfig,
     ) -> object:
-        """Loads one faster-whisper model for CPU inference."""
+        """Loads one faster-whisper model for resolved runtime device inference."""
         try:
             faster_whisper_module = importlib.import_module("faster_whisper")
         except ModuleNotFoundError as err:
@@ -171,12 +196,27 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
         whisper_model = getattr(faster_whisper_module, "WhisperModel", None)
         if whisper_model is None:
             raise RuntimeError("faster-whisper package does not expose WhisperModel.")
+        target_device = (
+            "cpu"
+            if runtime_request.device_type == "mps"
+            else runtime_request.device_spec
+        )
+        primary_precision = (
+            runtime_request.precision_candidates[0]
+            if runtime_request.precision_candidates
+            else "float32"
+        )
+        compute_type = (
+            ("float16" if primary_precision == "float16" else "float32")
+            if target_device.startswith("cuda")
+            else "int8"
+        )
         download_root: Path = settings.models.whisper_download_root
         os.makedirs(download_root, exist_ok=True)
         return whisper_model(
             runtime_request.model_name,
-            device="cpu",
-            compute_type="int8",
+            device=target_device,
+            compute_type=compute_type,
             download_root=str(download_root),
         )
 

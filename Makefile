@@ -38,7 +38,7 @@ lint:
 
 type:
 	uv run mypy ser tests
-	uv run pyright ser tests
+	uv run pyright --pythonversion 3.12 ser tests
 
 test:
 	uv run pytest -q

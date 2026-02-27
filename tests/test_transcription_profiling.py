@@ -259,3 +259,84 @@ def test_run_default_profile_benchmark_validates_threshold_arguments() -> None:
             limit=1,
             sampling_strategy="unknown",
         )
+
+
+def _calibration_metrics(
+    *,
+    backend_id: tp.TranscriptionBackendId,
+    model_name: str,
+    iterations: int,
+    mps_loaded_runs: int,
+    mps_completed_runs: int,
+    mps_to_cpu_failover_runs: int,
+    failed_runs: int,
+    hard_mps_oom_runs: int,
+) -> tp.RuntimeCalibrationMetrics:
+    """Builds synthetic runtime-calibration metrics for recommendation tests."""
+    return tp.RuntimeCalibrationMetrics(
+        profile=tp.TranscriptionProfileCandidate(
+            name=f"candidate-{model_name}",
+            source_profile="accurate",
+            backend_id=backend_id,
+            model_name=model_name,
+            use_demucs=True,
+            use_vad=True,
+        ),
+        iterations=iterations,
+        successful_runs=max(iterations - failed_runs, 0),
+        failed_runs=failed_runs,
+        mps_loaded_runs=mps_loaded_runs,
+        mps_completed_runs=mps_completed_runs,
+        mps_to_cpu_failover_runs=mps_to_cpu_failover_runs,
+        hard_mps_oom_runs=hard_mps_oom_runs,
+        mean_latency_seconds=1.0,
+        error_messages=(),
+    )
+
+
+def test_derive_runtime_recommendation_prefers_cpu_on_hard_mps_oom() -> None:
+    """Hard MPS OOM should produce CPU recommendation with high confidence."""
+    metrics = _calibration_metrics(
+        backend_id="stable_whisper",
+        model_name="large",
+        iterations=3,
+        mps_loaded_runs=3,
+        mps_completed_runs=0,
+        mps_to_cpu_failover_runs=2,
+        failed_runs=2,
+        hard_mps_oom_runs=2,
+    )
+
+    recommendation, confidence, reason = tp.derive_runtime_recommendation(metrics)
+
+    assert recommendation == "prefer_cpu"
+    assert confidence == "high"
+    assert "oom" in reason.lower()
+
+
+def test_derive_runtime_recommendation_prefers_mps_when_stable() -> None:
+    """Stable MPS calibrations should recommend MPS with high confidence."""
+    metrics = _calibration_metrics(
+        backend_id="stable_whisper",
+        model_name="turbo",
+        iterations=3,
+        mps_loaded_runs=3,
+        mps_completed_runs=3,
+        mps_to_cpu_failover_runs=0,
+        failed_runs=0,
+        hard_mps_oom_runs=0,
+    )
+
+    recommendation, confidence, _reason = tp.derive_runtime_recommendation(metrics)
+
+    assert recommendation == "prefer_mps"
+    assert confidence == "high"
+
+
+def test_parse_calibration_profiles_validates_values() -> None:
+    """Calibration profile parser should reject unsupported profile names."""
+    parsed = tp.parse_calibration_profiles("accurate,medium,fast")
+    assert parsed == ("accurate", "medium", "fast")
+
+    with pytest.raises(ValueError, match="Unsupported profile"):
+        tp.parse_calibration_profiles("accurate,unknown")
