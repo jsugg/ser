@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from dotenv import load_dotenv
@@ -399,6 +400,29 @@ def main() -> None:
             "(can be used as a standalone management command)."
         ),
     )
+    parser.add_argument(
+        "--calibrate-transcription-runtime",
+        action="store_true",
+        help=(
+            "Run runtime calibration for transcription model/profile recommendations "
+            "with confidence scoring."
+        ),
+    )
+    parser.add_argument(
+        "--calibration-iterations",
+        type=int,
+        default=2,
+        help="Number of calibration runs per profile/model candidate.",
+    )
+    parser.add_argument(
+        "--calibration-profiles",
+        type=str,
+        default="accurate,medium,accurate-research,fast",
+        help=(
+            "Comma-separated profile list for calibration "
+            "(fast,medium,accurate,accurate-research)."
+        ),
+    )
     args: argparse.Namespace = parser.parse_args()
     configure_logging(args.log_level)
     active_settings = _apply_cli_profile_override(
@@ -458,6 +482,57 @@ def main() -> None:
             "Restricted backend opt-in flags require concrete AppConfig settings."
         )
         sys.exit(2)
+
+    if args.calibrate_transcription_runtime:
+        if not args.file:
+            logger.error(
+                "Transcription runtime calibration requires --file with one sample audio path."
+            )
+            sys.exit(2)
+        if args.calibration_iterations <= 0:
+            logger.error("--calibration-iterations must be greater than zero.")
+            sys.exit(2)
+        from ser.transcript.profiling import (
+            parse_calibration_profiles,
+            run_transcription_runtime_calibration,
+        )
+
+        try:
+            calibration_profiles = parse_calibration_profiles(args.calibration_profiles)
+            calibration_result = run_transcription_runtime_calibration(
+                calibration_file=Path(args.file),
+                language=args.language,
+                iterations_per_profile=int(args.calibration_iterations),
+                profile_names=calibration_profiles,
+            )
+        except ValueError as err:
+            logger.error("%s", err)
+            sys.exit(2)
+        except FileNotFoundError as err:
+            logger.error("%s", err)
+            sys.exit(2)
+        except Exception as err:
+            logger.error(
+                "Transcription runtime calibration failed: %s",
+                err,
+                exc_info=True,
+            )
+            sys.exit(1)
+
+        logger.info(
+            "Transcription runtime calibration completed. Report: %s",
+            calibration_result.report_path,
+        )
+        for recommendation in calibration_result.recommendations:
+            logger.info(
+                "Calibration recommendation (%s/%s): %s (confidence=%s, reason=%s).",
+                recommendation.profile.source_profile,
+                recommendation.profile.model_name,
+                recommendation.recommendation,
+                recommendation.confidence,
+                recommendation.reason,
+            )
+        sys.exit(0)
 
     if args.train:
         logger.info("Starting model training...")

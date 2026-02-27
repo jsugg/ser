@@ -3,9 +3,10 @@
 import logging
 import os
 import sys
+from multiprocessing.connection import Connection
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Never, cast
+from types import ModuleType, SimpleNamespace
+from typing import TYPE_CHECKING, Any, Never, cast
 
 import pytest
 
@@ -15,6 +16,16 @@ from ser.transcript.backends import faster_whisper as faster_whisper_adapter
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult
+
+
+@pytest.fixture(autouse=True)
+def _disable_openmp_conflict_detection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keeps transcript extractor backend tests deterministic."""
+    monkeypatch.setattr(
+        faster_whisper_adapter,
+        "has_known_faster_whisper_openmp_runtime_conflict",
+        lambda: False,
+    )
 
 
 class FailingModel:
@@ -38,10 +49,21 @@ def test_extract_transcript_raises_transcription_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Operational failures should propagate as TranscriptionError."""
-    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: FailingModel())
+    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
+    monkeypatch.setattr(
+        te,
+        "_transcribe_file_with_profile",
+        lambda _model, _language, _file, _profile: (_ for _ in ()).throw(
+            te.TranscriptionError("Failed to transcribe audio.")
+        ),
+    )
 
     with pytest.raises(te.TranscriptionError, match="Failed to transcribe audio"):
-        te.extract_transcript("does-not-matter.wav", "en")
+        te._extract_transcript(
+            "does-not-matter.wav",
+            "en",
+            te.TranscriptionProfile(backend_id="stable_whisper", model_name="large-v2"),
+        )
 
 
 def test_extract_transcript_returns_empty_list_for_successful_empty_result(
@@ -51,11 +73,18 @@ def test_extract_transcript_returns_empty_list_for_successful_empty_result(
     monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
     monkeypatch.setattr(
         te,
-        "__transcribe_file",
-        lambda _model, _language, _file: [],
+        "_transcribe_file_with_profile",
+        lambda _model, _language, _file, _profile: [],
     )
 
-    assert te.extract_transcript("empty.wav", "en") == []
+    assert (
+        te._extract_transcript(
+            "empty.wav",
+            "en",
+            te.TranscriptionProfile(backend_id="stable_whisper", model_name="large-v2"),
+        )
+        == []
+    )
 
 
 def test_extract_transcript_formats_word_timestamps(
@@ -65,13 +94,96 @@ def test_extract_transcript_formats_word_timestamps(
     monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: object())
     monkeypatch.setattr(
         te,
-        "__transcribe_file",
-        lambda _model, _language, _file: [TranscriptWord("hello", 0.1, 0.3)],
+        "_transcribe_file_with_profile",
+        lambda _model, _language, _file, _profile: [TranscriptWord("hello", 0.1, 0.3)],
     )
 
-    assert te.extract_transcript("sample.wav", "en") == [
-        TranscriptWord("hello", 0.1, 0.3)
-    ]
+    assert te._extract_transcript(
+        "sample.wav",
+        "en",
+        te.TranscriptionProfile(backend_id="stable_whisper", model_name="large-v2"),
+    ) == [TranscriptWord("hello", 0.1, 0.3)]
+
+
+def test_extract_transcript_releases_runtime_memory_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-process transcript extraction should release runtime memory on success."""
+    loaded_model = object()
+    released_models: list[object] = []
+    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: loaded_model)
+    monkeypatch.setattr(
+        te,
+        "_transcribe_file_with_profile",
+        lambda _model, _language, _file, _profile: [],
+    )
+    monkeypatch.setattr(
+        te,
+        "_release_transcription_runtime_memory",
+        lambda *, model: released_models.append(model),
+    )
+
+    result = te._extract_transcript(
+        "sample.wav",
+        "en",
+        te.TranscriptionProfile(backend_id="stable_whisper", model_name="large-v2"),
+    )
+
+    assert result == []
+    assert released_models == [loaded_model]
+
+
+def test_extract_transcript_releases_runtime_memory_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-process transcript extraction should release runtime memory on failures."""
+    loaded_model = object()
+    released_models: list[object] = []
+    monkeypatch.setattr(te, "load_whisper_model", lambda _profile=None: loaded_model)
+    monkeypatch.setattr(
+        te,
+        "_transcribe_file_with_profile",
+        lambda _model, _language, _file, _profile: (_ for _ in ()).throw(
+            te.TranscriptionError("Failed to transcribe audio.")
+        ),
+    )
+    monkeypatch.setattr(
+        te,
+        "_release_transcription_runtime_memory",
+        lambda *, model: released_models.append(model),
+    )
+
+    with pytest.raises(te.TranscriptionError, match="Failed to transcribe audio"):
+        te._extract_transcript(
+            "sample.wav",
+            "en",
+            te.TranscriptionProfile(backend_id="stable_whisper", model_name="large-v2"),
+        )
+
+    assert released_models == [loaded_model]
+
+
+def test_release_transcription_runtime_memory_empties_available_torch_caches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Torch cache cleanup should be best-effort and gated by availability checks."""
+    calls: list[str] = []
+    fake_torch = ModuleType("torch")
+    fake_mps = ModuleType("mps")
+    fake_cuda = ModuleType("cuda")
+
+    cast(Any, fake_mps).is_available = lambda: True
+    cast(Any, fake_mps).empty_cache = lambda: calls.append("mps")
+    cast(Any, fake_cuda).is_available = lambda: True
+    cast(Any, fake_cuda).empty_cache = lambda: calls.append("cuda")
+    cast(Any, fake_torch).mps = fake_mps
+    cast(Any, fake_torch).cuda = fake_cuda
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(te.gc, "collect", lambda: calls.append("gc"))
+
+    te._release_transcription_runtime_memory(model=object())
+
+    assert calls == ["gc", "mps", "cuda"]
 
 
 def test_format_transcript_raises_for_invalid_result() -> None:
@@ -106,6 +218,11 @@ def test_load_whisper_model_routes_downloads_to_model_cache_root(
         sys.modules,
         "stable_whisper",
         SimpleNamespace(load_model=_fake_load_model),
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper."
+        "enable_stable_whisper_mps_compatibility",
+        lambda model: model,
     )
     monkeypatch.delenv("TORCH_HOME", raising=False)
 
@@ -173,6 +290,64 @@ def test_load_whisper_model_supports_faster_whisper_backend(
     assert captured["model_size_or_path"] == "distil-large-v3"
     assert captured["device"] == "cpu"
     assert captured["compute_type"] == "int8"
+    assert captured["download_root"] == str(download_root)
+
+
+def test_load_whisper_model_uses_runtime_policy_device(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Stable-whisper should stage MPS loads through CPU per compatibility flow."""
+    download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
+    torch_cache_root = tmp_path / "model-cache" / "torch"
+    settings = SimpleNamespace(
+        models=SimpleNamespace(
+            whisper_download_root=download_root,
+            torch_cache_root=torch_cache_root,
+        ),
+        torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
+    )
+    captured: dict[str, object] = {}
+    fake_model = object()
+
+    def _fake_load_model(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return fake_model
+
+    monkeypatch.setattr(te, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        te,
+        "resolve_transcription_runtime_policy",
+        lambda **_kwargs: SimpleNamespace(
+            device_spec="mps",
+            device_type="mps",
+            precision_candidates=("float16", "float32"),
+            memory_tier="low",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "stable_whisper",
+        SimpleNamespace(load_model=_fake_load_model),
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper."
+        "enable_stable_whisper_mps_compatibility",
+        lambda model: model,
+    )
+    monkeypatch.delenv("TORCH_HOME", raising=False)
+
+    loaded = te.load_whisper_model(
+        profile=te.TranscriptionProfile(
+            backend_id="stable_whisper",
+            model_name="large-v3",
+            use_demucs=False,
+            use_vad=True,
+        )
+    )
+
+    assert loaded is fake_model
+    assert captured["device"] == "cpu"
     assert captured["download_root"] == str(download_root)
 
 
@@ -350,6 +525,181 @@ def test_extract_transcript_skips_setup_phase_when_not_required(
         ("start", te.PHASE_TRANSCRIPTION),
         ("completed", te.PHASE_TRANSCRIPTION),
     ]
+
+
+def test_extract_transcript_uses_process_isolation_for_faster_whisper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """faster-whisper profiles should route to process-isolated execution path."""
+    captured: dict[str, object] = {}
+    expected = [TranscriptWord("hello", 0.0, 0.5)]
+    profile = te.TranscriptionProfile(
+        backend_id="faster_whisper",
+        model_name="distil-large-v3",
+        use_demucs=False,
+        use_vad=True,
+    )
+
+    def _fake_isolated_runner(
+        *,
+        file_path: str,
+        language: str,
+        profile: te.TranscriptionProfile,
+    ) -> list[TranscriptWord]:
+        captured["file_path"] = file_path
+        captured["language"] = language
+        captured["profile"] = profile
+        return expected
+
+    def _fail_in_process(**_kwargs: object) -> list[TranscriptWord]:
+        raise AssertionError("in-process path should not be used for faster-whisper")
+
+    monkeypatch.setattr(
+        te, "_run_faster_whisper_process_isolated", _fake_isolated_runner
+    )
+    monkeypatch.setattr(te, "_extract_transcript_in_process", _fail_in_process)
+
+    transcript = te._extract_transcript("sample.wav", "en", profile)
+
+    assert transcript == expected
+    assert captured["file_path"] == "sample.wav"
+    assert captured["language"] == "en"
+    assert captured["profile"] == profile
+
+
+def test_runtime_request_for_isolated_faster_whisper_defaults_to_cpu() -> None:
+    """Process-isolated faster runtime request should avoid torch dependency on CPU."""
+    settings = cast(
+        te.AppConfig,
+        SimpleNamespace(torch_runtime=SimpleNamespace(device="auto", dtype="auto")),
+    )
+    profile = te.TranscriptionProfile(
+        backend_id="faster_whisper",
+        model_name="distil-large-v3",
+        use_demucs=False,
+        use_vad=True,
+    )
+
+    runtime_request = te._runtime_request_for_isolated_faster_whisper(
+        profile=profile,
+        settings=settings,
+    )
+
+    assert runtime_request.device_spec == "cpu"
+    assert runtime_request.device_type == "cpu"
+    assert runtime_request.precision_candidates == ("float32",)
+
+
+def test_runtime_request_for_isolated_faster_whisper_honors_cuda_request() -> None:
+    """Process-isolated faster runtime request should preserve explicit CUDA selectors."""
+    settings = cast(
+        te.AppConfig,
+        SimpleNamespace(
+            torch_runtime=SimpleNamespace(device="cuda:0", dtype="float16")
+        ),
+    )
+    profile = te.TranscriptionProfile(
+        backend_id="faster_whisper",
+        model_name="distil-large-v3",
+        use_demucs=False,
+        use_vad=True,
+    )
+
+    runtime_request = te._runtime_request_for_isolated_faster_whisper(
+        profile=profile,
+        settings=settings,
+    )
+
+    assert runtime_request.device_spec == "cuda:0"
+    assert runtime_request.device_type == "cuda"
+    assert runtime_request.precision_candidates == ("float16",)
+
+
+def test_transcription_worker_entry_blocks_torch_for_faster_whisper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Worker should disable torch import path before faster-whisper adapter operations."""
+    observed: dict[str, object] = {}
+    messages: list[tuple[object, ...]] = []
+
+    class _FakeConnection:
+        def send(self, message: tuple[object, ...]) -> None:
+            messages.append(message)
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    class _FakeAdapter:
+        def setup_required(self, *, runtime_request: object, settings: object) -> bool:
+            del runtime_request, settings
+            observed["torch_none_setup"] = sys.modules.get("torch") is None
+            return False
+
+        def prepare_assets(self, *, runtime_request: object, settings: object) -> None:
+            del runtime_request, settings
+            raise AssertionError(
+                "prepare_assets should not run when setup is not required"
+            )
+
+        def load_model(self, *, runtime_request: object, settings: object) -> object:
+            del runtime_request, settings
+            observed["torch_none_load"] = sys.modules.get("torch") is None
+            return object()
+
+        def transcribe(
+            self,
+            *,
+            model: object,
+            runtime_request: object,
+            file_path: str,
+            language: str,
+            settings: object,
+        ) -> list[TranscriptWord]:
+            del model, runtime_request, settings
+            observed["torch_none_transcribe"] = sys.modules.get("torch") is None
+            observed["file_path"] = file_path
+            observed["language"] = language
+            return [TranscriptWord("hello", 0.0, 0.5)]
+
+    monkeypatch.setattr(
+        te, "get_settings", lambda: cast(te.AppConfig, SimpleNamespace())
+    )
+    monkeypatch.setattr(
+        te,
+        "resolve_transcription_backend_adapter",
+        lambda _backend_id: cast(object, _FakeAdapter()),
+    )
+    payload = te._TranscriptionProcessPayload(
+        file_path="sample.wav",
+        language="en",
+        profile=te.TranscriptionProfile(
+            backend_id="faster_whisper",
+            model_name="distil-large-v3",
+            use_demucs=False,
+            use_vad=True,
+        ),
+    )
+    original_torch = sys.modules.pop("torch", None)
+    try:
+        te._transcription_worker_entry(
+            payload,
+            cast(Connection, _FakeConnection()),
+        )
+    finally:
+        if original_torch is not None:
+            sys.modules["torch"] = original_torch
+        elif "torch" in sys.modules:
+            del sys.modules["torch"]
+
+    assert observed["torch_none_setup"] is True
+    assert observed["torch_none_load"] is True
+    assert observed["torch_none_transcribe"] is True
+    assert observed["file_path"] == "sample.wav"
+    assert observed["language"] == "en"
+    assert observed["closed"] is True
+    assert messages[0] == ("phase", "setup_complete")
+    assert messages[1] == ("phase", "model_loaded")
+    assert messages[2] == ("ok", [("hello", 0.0, 0.5)])
 
 
 def test_faster_whisper_setup_required_when_cache_missing(

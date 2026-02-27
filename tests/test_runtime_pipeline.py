@@ -1,10 +1,14 @@
 """Tests for runtime pipeline orchestration seam."""
 
+import sys
 from collections.abc import Callable, Generator
+from types import ModuleType
+from typing import Any, cast
 
 import pytest
 
 import ser.config as config
+import ser.runtime.pipeline as runtime_pipeline_module
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile
 from ser.runtime.contracts import InferenceRequest
@@ -188,6 +192,69 @@ def test_run_inference_skips_save_when_flag_is_disabled() -> None:
     assert execution.backend_id == "handcrafted"
     assert execution.used_backend_path is False
     assert execution.timeline_csv_path is None
+
+
+def test_run_inference_releases_torch_memory_before_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inference should release accelerator cache before transcript extraction."""
+    call_order: list[str] = []
+    emotions = [EmotionSegment("calm", 0.0, 1.0)]
+    transcript = [TranscriptWord("oi", 0.0, 0.4)]
+
+    monkeypatch.setattr(
+        runtime_pipeline_module,
+        "_release_torch_runtime_memory_before_transcription",
+        lambda: call_order.append("release"),
+    )
+
+    def _fake_extract(_file_path: str, _language: str | None) -> list[TranscriptWord]:
+        call_order.append("extract")
+        return transcript
+
+    pipeline = _build_test_pipeline(
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: emotions,
+        predict_emotions_detailed=lambda _file_path: InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        ),
+        extract_transcript=_fake_extract,
+        build_timeline=lambda _transcript, _emotions: [],
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+    )
+
+    _ = pipeline.run_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    )
+
+    assert call_order == ["release", "extract"]
+
+
+def test_release_torch_runtime_memory_before_transcription_empties_caches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Torch runtime cache release should be best-effort and availability-gated."""
+    calls: list[str] = []
+    fake_torch = ModuleType("torch")
+    fake_mps = ModuleType("mps")
+    fake_cuda = ModuleType("cuda")
+    cast(Any, fake_mps).is_available = lambda: True
+    cast(Any, fake_mps).empty_cache = lambda: calls.append("mps")
+    cast(Any, fake_cuda).is_available = lambda: True
+    cast(Any, fake_cuda).empty_cache = lambda: calls.append("cuda")
+    cast(Any, fake_torch).mps = fake_mps
+    cast(Any, fake_torch).cuda = fake_cuda
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(
+        runtime_pipeline_module.gc, "collect", lambda: calls.append("gc")
+    )
+
+    runtime_pipeline_module._release_torch_runtime_memory_before_transcription()
+
+    assert calls == ["gc", "mps", "cuda"]
 
 
 def test_run_inference_uses_backend_hook_for_fast_when_available() -> None:
@@ -405,6 +472,10 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     expected_use_demucs: bool,
 ) -> None:
     """Factory should bind transcript extraction to selected profile defaults."""
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
+        lambda: False,
+    )
     monkeypatch.delenv("WHISPER_MODEL", raising=False)
     monkeypatch.delenv("WHISPER_DEMUCS", raising=False)
     monkeypatch.delenv("WHISPER_VAD", raising=False)
@@ -450,6 +521,108 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     assert profile.model_name == expected_model_name
     assert profile.use_demucs is expected_use_demucs
     assert profile.use_vad is True
+
+
+def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fast profile should keep faster-whisper and rely on process isolation."""
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
+        lambda: True,
+    )
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
+    monkeypatch.delenv("WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {
+            "handcrafted": lambda _request: InferenceResult(
+                schema_version=OUTPUT_SCHEMA_VERSION,
+                segments=[],
+                frames=[],
+            )
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_extract(
+        _file_path: str,
+        _language: str | None,
+        profile: object | None = None,
+    ) -> list[TranscriptWord]:
+        captured["profile"] = profile
+        return []
+
+    monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+
+    pipeline.run_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    )
+
+    from ser.transcript import TranscriptionProfile
+
+    profile = captured["profile"]
+    assert isinstance(profile, TranscriptionProfile)
+    assert profile.backend_id == "faster_whisper"
+    assert profile.model_name == "distil-large-v3"
+    assert profile.use_demucs is False
+    assert profile.use_vad is True
+
+
+def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit faster backend override should remain stable under conflict risk."""
+    monkeypatch.setenv("WHISPER_BACKEND", "faster_whisper")
+    monkeypatch.setenv("WHISPER_MODEL", "distil-large-v3")
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.registry._missing_optional_modules",
+        lambda _required_modules: (),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.pipeline.build_backend_hooks",
+        lambda _settings: {
+            "handcrafted": lambda _request: InferenceResult(
+                schema_version=OUTPUT_SCHEMA_VERSION,
+                segments=[],
+                frames=[],
+            )
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_extract(
+        _file_path: str,
+        _language: str | None,
+        profile: object | None = None,
+    ) -> list[TranscriptWord]:
+        captured["profile"] = profile
+        return []
+
+    monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
+    settings = config.reload_settings()
+    pipeline = create_runtime_pipeline(settings)
+
+    pipeline.run_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    )
+
+    from ser.transcript import TranscriptionProfile
+
+    profile = captured["profile"]
+    assert isinstance(profile, TranscriptionProfile)
+    assert profile.backend_id == "faster_whisper"
+    assert profile.model_name == "distil-large-v3"
 
 
 def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selected(

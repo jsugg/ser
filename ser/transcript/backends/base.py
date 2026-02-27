@@ -43,6 +43,10 @@ class BackendRuntimeRequest:
     model_name: str
     use_demucs: bool
     use_vad: bool
+    device_spec: str = "cpu"
+    device_type: str = "cpu"
+    precision_candidates: tuple[str, ...] = ("float32",)
+    memory_tier: str = "not_applicable"
 
 
 class TranscriptionBackendAdapter(Protocol):

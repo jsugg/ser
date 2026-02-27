@@ -66,6 +66,73 @@ def test_cli_exits_with_error_when_file_is_missing(
     assert exc_info.value.code == 1
 
 
+def test_cli_calibration_requires_file_argument(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calibration mode should fail fast when `--file` is missing."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--calibrate-transcription-runtime"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+
+
+def test_cli_calibration_dispatches_runtime_calibration_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calibration mode should call profiling runtime calibration and exit zero."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "ser",
+            "--calibrate-transcription-runtime",
+            "--file",
+            "sample.wav",
+            "--calibration-iterations",
+            "3",
+            "--calibration-profiles",
+            "medium,accurate",
+        ],
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "ser.transcript.profiling.parse_calibration_profiles",
+        lambda raw: (
+            captured.setdefault("profiles_raw", raw),
+            ("medium", "accurate"),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "ser.transcript.profiling.run_transcription_runtime_calibration",
+        lambda **kwargs: (
+            captured.setdefault("kwargs", kwargs),
+            SimpleNamespace(
+                report_path=Path("runtime_calibration.json"),
+                recommendations=(),
+            ),
+        )[1],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert captured["profiles_raw"] == "medium,accurate"
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["calibration_file"] == Path("sample.wav")
+    assert kwargs["iterations_per_profile"] == 3
+    assert kwargs["profile_names"] == ("medium", "accurate")
+
+
 def test_cli_train_option_invokes_training_and_exits_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -25,6 +25,8 @@ DEFAULT_ACCURATE_RESEARCH_MODEL_ID = "iic/emotion2vec_plus_large"
 DEFAULT_FAST_MODEL_FILE_NAME = "ser_model.pkl"
 DEFAULT_FAST_SECURE_MODEL_FILE_NAME = "ser_model.skops"
 DEFAULT_FAST_TRAINING_REPORT_FILE_NAME = "training_report.json"
+_SER_TORCH_ENABLE_MPS_FALLBACK_ENV = "SER_TORCH_ENABLE_MPS_FALLBACK"
+_PYTORCH_ENABLE_MPS_FALLBACK_ENV = "PYTORCH_ENABLE_MPS_FALLBACK"
 
 type ArtifactProfileName = Literal["fast", "medium", "accurate", "accurate-research"]
 
@@ -277,6 +279,15 @@ class TranscriptionConfig:
     backend_id: TranscriptionBackendId = "stable_whisper"
     use_demucs: bool = True
     use_vad: bool = True
+    mps_low_memory_threshold_gb: float = 16.0
+    mps_admission_control_enabled: bool = True
+    mps_hard_oom_shortcut_enabled: bool = True
+    mps_admission_min_headroom_mb: float = 64.0
+    mps_admission_safety_margin_mb: float = 64.0
+    mps_admission_calibration_overrides_enabled: bool = True
+    mps_admission_calibration_min_confidence: Literal["high", "medium", "low"] = "high"
+    mps_admission_calibration_report_max_age_hours: float = 168.0
+    mps_admission_calibration_report_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -381,6 +392,7 @@ class TorchRuntimeConfig:
 
     device: str = "auto"
     dtype: str = "auto"
+    enable_mps_fallback: bool = False
 
 
 @dataclass(frozen=True)
@@ -426,6 +438,13 @@ def _read_bool_env(name: str, default: bool) -> bool:
     if normalized in {"1", "true", "yes", "on"}:
         return True
     return False if normalized in {"0", "false", "no", "off"} else default
+
+
+def _sync_torch_runtime_environment(torch_runtime: TorchRuntimeConfig) -> None:
+    """Synchronizes torch runtime compatibility env vars from settings."""
+    os.environ[_PYTORCH_ENABLE_MPS_FALLBACK_ENV] = (
+        "1" if torch_runtime.enable_mps_fallback else "0"
+    )
 
 
 def _read_int_env(name: str, default: int, minimum: int | None = None) -> int:
@@ -543,6 +562,20 @@ def _read_torch_dtype_env(name: str, default: str = "auto") -> str:
         if normalized in {"auto", "float32", "float16", "bfloat16"}
         else default
     )
+
+
+def _read_confidence_level_env(
+    name: str,
+    default: Literal["high", "medium", "low"],
+) -> Literal["high", "medium", "low"]:
+    """Reads one confidence level env var with strict validation."""
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"high", "medium", "low"}:
+        return cast(Literal["high", "medium", "low"], normalized)
+    return default
 
 
 def _resolve_runtime_config_from_profile(
@@ -745,6 +778,63 @@ def _build_settings() -> AppConfig:
     artifact_schema_version: str = os.getenv("SER_ARTIFACT_SCHEMA_VERSION", "v2")
     torch_device: str = _read_torch_device_env("SER_TORCH_DEVICE", "auto")
     torch_dtype: str = _read_torch_dtype_env("SER_TORCH_DTYPE", "auto")
+    torch_enable_mps_fallback: bool = _read_bool_env(
+        _SER_TORCH_ENABLE_MPS_FALLBACK_ENV,
+        _read_bool_env(_PYTORCH_ENABLE_MPS_FALLBACK_ENV, False),
+    )
+    transcription_mps_low_memory_threshold_gb: float = _read_float_env(
+        "SER_TRANSCRIPTION_MPS_LOW_MEMORY_GB",
+        16.0,
+        minimum=1.0,
+    )
+    transcription_mps_admission_control_enabled: bool = _read_bool_env(
+        "SER_TRANSCRIPTION_MPS_ADMISSION_CONTROL",
+        True,
+    )
+    transcription_mps_hard_oom_shortcut_enabled: bool = _read_bool_env(
+        "SER_TRANSCRIPTION_MPS_HARD_OOM_SHORTCUT",
+        True,
+    )
+    transcription_mps_admission_min_headroom_mb: float = _read_float_env(
+        "SER_TRANSCRIPTION_MPS_MIN_HEADROOM_MB",
+        64.0,
+        minimum=0.0,
+    )
+    transcription_mps_admission_safety_margin_mb: float = _read_float_env(
+        "SER_TRANSCRIPTION_MPS_SAFETY_MARGIN_MB",
+        64.0,
+        minimum=0.0,
+    )
+    transcription_mps_admission_calibration_overrides_enabled: bool = _read_bool_env(
+        "SER_TRANSCRIPTION_MPS_CALIBRATION_OVERRIDES",
+        True,
+    )
+    transcription_mps_admission_calibration_min_confidence = _read_confidence_level_env(
+        "SER_TRANSCRIPTION_MPS_CALIBRATION_MIN_CONFIDENCE",
+        "high",
+    )
+    transcription_mps_admission_calibration_report_max_age_hours: float = (
+        _read_float_env(
+            "SER_TRANSCRIPTION_MPS_CALIBRATION_REPORT_MAX_AGE_HOURS",
+            168.0,
+            minimum=1.0,
+        )
+    )
+    transcription_mps_admission_calibration_report_path_raw = os.getenv(
+        "SER_TRANSCRIPTION_MPS_CALIBRATION_REPORT_PATH",
+        "",
+    ).strip()
+    transcription_mps_admission_calibration_report_path = (
+        Path(transcription_mps_admission_calibration_report_path_raw).expanduser()
+        if transcription_mps_admission_calibration_report_path_raw
+        else None
+    )
+    torch_runtime = TorchRuntimeConfig(
+        device=torch_device,
+        dtype=torch_dtype,
+        enable_mps_fallback=torch_enable_mps_fallback,
+    )
+    _sync_torch_runtime_environment(torch_runtime)
     medium_model_id = _resolve_profile_model_id(
         medium_profile_entry,
         fallback_default_model_id=DEFAULT_MEDIUM_MODEL_ID,
@@ -826,6 +916,23 @@ def _build_settings() -> AppConfig:
             backend_id=whisper_backend_id,
             use_demucs=use_demucs,
             use_vad=use_vad,
+            mps_low_memory_threshold_gb=transcription_mps_low_memory_threshold_gb,
+            mps_admission_control_enabled=transcription_mps_admission_control_enabled,
+            mps_hard_oom_shortcut_enabled=transcription_mps_hard_oom_shortcut_enabled,
+            mps_admission_min_headroom_mb=transcription_mps_admission_min_headroom_mb,
+            mps_admission_safety_margin_mb=transcription_mps_admission_safety_margin_mb,
+            mps_admission_calibration_overrides_enabled=(
+                transcription_mps_admission_calibration_overrides_enabled
+            ),
+            mps_admission_calibration_min_confidence=(
+                transcription_mps_admission_calibration_min_confidence
+            ),
+            mps_admission_calibration_report_max_age_hours=(
+                transcription_mps_admission_calibration_report_max_age_hours
+            ),
+            mps_admission_calibration_report_path=(
+                transcription_mps_admission_calibration_report_path
+            ),
         ),
         runtime_flags=RuntimeFlags(
             profile_pipeline=profile_pipeline,
@@ -953,10 +1060,7 @@ def _build_settings() -> AppConfig:
             output_schema_version=output_schema_version,
             artifact_schema_version=artifact_schema_version,
         ),
-        torch_runtime=TorchRuntimeConfig(
-            device=torch_device,
-            dtype=torch_dtype,
-        ),
+        torch_runtime=torch_runtime,
         default_language=default_language,
     )
 
@@ -973,6 +1077,7 @@ def apply_settings(settings: AppConfig) -> AppConfig:
     """Applies an explicit settings snapshot as the active process settings."""
     global _SETTINGS
     _SETTINGS = settings
+    _sync_torch_runtime_environment(_SETTINGS.torch_runtime)
     return _SETTINGS
 
 
