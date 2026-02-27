@@ -125,3 +125,32 @@ def test_embedding_cache_key_changes_when_framing_changes(tmp_path: Path) -> Non
 
     assert base.cache_key != shifted.cache_key
     assert base.cache_path != shifted.cache_path
+
+
+def test_embedding_cache_key_changes_when_segment_bounds_change(tmp_path: Path) -> None:
+    """Segment bounds must affect cache-key derivation."""
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"deterministic-audio")
+    cache = EmbeddingCache(tmp_path / "cache")
+
+    full = cache.get_or_compute(
+        audio_path=str(audio_path),
+        backend_id="hf_xlsr",
+        model_id="facebook/wav2vec2-xls-r-300m",
+        frame_size_seconds=1.0,
+        frame_stride_seconds=1.0,
+        compute=_encoded_sequence,
+    )
+    segment = cache.get_or_compute(
+        audio_path=str(audio_path),
+        backend_id="hf_xlsr",
+        model_id="facebook/wav2vec2-xls-r-300m",
+        frame_size_seconds=1.0,
+        frame_stride_seconds=1.0,
+        start_seconds=0.5,
+        duration_seconds=1.0,
+        compute=_encoded_sequence,
+    )
+
+    assert full.cache_key != segment.cache_key
+    assert full.cache_path != segment.cache_path

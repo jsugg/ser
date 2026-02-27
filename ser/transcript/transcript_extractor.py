@@ -410,10 +410,9 @@ def _run_faster_whisper_process_isolated(
         raise
     finally:
         parent_conn.close()
+        process.join(timeout=_TERMINATE_GRACE_SECONDS)
         if process.is_alive():
             _terminate_worker_process(process)
-        else:
-            process.join(timeout=_TERMINATE_GRACE_SECONDS)
         process.close()
 
 

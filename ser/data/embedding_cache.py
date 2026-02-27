@@ -53,6 +53,8 @@ class EmbeddingCache:
         model_id: str,
         frame_size_seconds: float,
         frame_stride_seconds: float,
+        start_seconds: float | None = None,
+        duration_seconds: float | None = None,
         compute: EncodeSequenceCallable,
     ) -> EmbeddingCacheEntry:
         """Returns cached encoded sequence or computes and stores it.
@@ -81,6 +83,10 @@ class EmbeddingCache:
             raise ValueError("frame_size_seconds must be greater than zero.")
         if frame_stride_seconds <= 0.0:
             raise ValueError("frame_stride_seconds must be greater than zero.")
+        if start_seconds is not None and start_seconds < 0.0:
+            raise ValueError("start_seconds must be >= 0")
+        if duration_seconds is not None and duration_seconds <= 0.0:
+            raise ValueError("duration_seconds must be > 0")
 
         source_path: Path = Path(audio_path).expanduser()
         if not source_path.exists():
@@ -94,6 +100,8 @@ class EmbeddingCache:
             model_id=model_id,
             frame_size_seconds=frame_size_seconds,
             frame_stride_seconds=frame_stride_seconds,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
         )
         cache_path: Path = self._cache_path(
             cache_key=cache_key, backend_id=backend_id, model_id=model_id
@@ -152,6 +160,8 @@ class EmbeddingCache:
         model_id: str,
         frame_size_seconds: float,
         frame_stride_seconds: float,
+        start_seconds: float | None,
+        duration_seconds: float | None,
     ) -> str:
         """Builds deterministic key from source hash + backend/model/frame config."""
         payload: dict[str, Any] = {
@@ -161,6 +171,10 @@ class EmbeddingCache:
             "frame_size_seconds": round(frame_size_seconds, 6),
             "frame_stride_seconds": round(frame_stride_seconds, 6),
         }
+        if start_seconds is not None:
+            payload["segment_start_seconds"] = round(float(start_seconds), 6)
+        if duration_seconds is not None:
+            payload["segment_duration_seconds"] = round(float(duration_seconds), 6)
         serialized: str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 

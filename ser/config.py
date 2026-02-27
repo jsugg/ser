@@ -396,6 +396,31 @@ class TorchRuntimeConfig:
 
 
 @dataclass(frozen=True)
+class FeatureRuntimeBackendOverride:
+    """Backend-scoped runtime selector override used by feature policy resolution."""
+
+    device: str | None = None
+    dtype: str | None = None
+
+
+@dataclass(frozen=True)
+class FeatureRuntimePolicyConfig:
+    """Optional backend-specific runtime selector overrides."""
+
+    backend_overrides: tuple[tuple[str, FeatureRuntimeBackendOverride], ...] = ()
+
+    def for_backend(self, backend_id: str) -> FeatureRuntimeBackendOverride | None:
+        """Returns one backend override when present."""
+        normalized_backend_id = backend_id.strip().lower()
+        if not normalized_backend_id:
+            return None
+        for candidate_backend_id, override in self.backend_overrides:
+            if candidate_backend_id == normalized_backend_id:
+                return override
+        return None
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Immutable runtime configuration for the application."""
 
@@ -425,6 +450,9 @@ class AppConfig:
     quality_gate: QualityGateConfig = field(default_factory=QualityGateConfig)
     schema: SchemaConfig = field(default_factory=SchemaConfig)
     torch_runtime: TorchRuntimeConfig = field(default_factory=TorchRuntimeConfig)
+    feature_runtime_policy: FeatureRuntimePolicyConfig = field(
+        default_factory=FeatureRuntimePolicyConfig
+    )
     default_language: str = "en"
 
 
@@ -578,6 +606,36 @@ def _read_confidence_level_env(
     return default
 
 
+def _build_feature_runtime_policy_config(
+    profile_catalog: Mapping[ArtifactProfileName, ProfileCatalogEntry],
+) -> FeatureRuntimePolicyConfig:
+    """Builds backend-level feature-runtime overrides from profile definitions."""
+    overrides: dict[str, FeatureRuntimeBackendOverride] = {}
+    source_profiles: dict[str, ArtifactProfileName] = {}
+    for profile_name, entry in profile_catalog.items():
+        defaults = entry.feature_runtime_defaults
+        if defaults is None:
+            continue
+        backend_id = entry.backend_id.strip().lower()
+        candidate = FeatureRuntimeBackendOverride(
+            device=defaults.torch_device,
+            dtype=defaults.torch_dtype,
+        )
+        existing = overrides.get(backend_id)
+        if existing is not None and existing != candidate:
+            previous_profile = source_profiles[backend_id]
+            raise RuntimeError(
+                "Profile definitions contain conflicting feature runtime defaults for "
+                f"backend_id={backend_id!r} across profiles "
+                f"{previous_profile!r} and {profile_name!r}."
+            )
+        overrides[backend_id] = candidate
+        source_profiles[backend_id] = profile_name
+    return FeatureRuntimePolicyConfig(
+        backend_overrides=tuple(sorted(overrides.items())),
+    )
+
+
 def _resolve_runtime_config_from_profile(
     entry: ProfileCatalogEntry,
 ) -> ProfileRuntimeConfig:
@@ -724,6 +782,7 @@ def _build_settings() -> AppConfig:
     )
     random_state: int = _read_int_env("SER_RANDOM_STATE", 42, minimum=0)
     profile_catalog = get_profile_catalog()
+    feature_runtime_policy = _build_feature_runtime_policy_config(profile_catalog)
     fast_profile_entry = profile_catalog["fast"]
     medium_profile_entry = profile_catalog["medium"]
     accurate_profile_entry = profile_catalog["accurate"]
@@ -1061,6 +1120,7 @@ def _build_settings() -> AppConfig:
             artifact_schema_version=artifact_schema_version,
         ),
         torch_runtime=torch_runtime,
+        feature_runtime_policy=feature_runtime_policy,
         default_language=default_language,
     )
 

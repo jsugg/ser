@@ -19,7 +19,10 @@ def _build_settings(max_failed_file_ratio: float = 0.5) -> SimpleNamespace:
             folder=Path("unused"),
             manifest_paths=(),
         ),
-        models=SimpleNamespace(num_cores=1),
+        models=SimpleNamespace(
+            num_cores=1,
+            folder=Path("unused/models"),
+        ),
         data_loader=SimpleNamespace(
             max_workers=1,
             max_failed_file_ratio=max_failed_file_ratio,
@@ -217,3 +220,111 @@ def test_load_utterances_rejects_duplicate_sample_ids_across_manifests(
 
     with pytest.raises(RuntimeError, match="Duplicate sample_id"):
         dl.load_utterances()
+
+
+def test_load_utterances_registry_uses_dataset_root_as_manifest_base_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Registry manifests should resolve relative audio paths against dataset_root."""
+    dataset_root = tmp_path / "datasets" / "ravdess"
+    manifest_root = tmp_path / "manifests"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    manifest_root.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifest_root / "ravdess.jsonl"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                (
+                    '{"schema_version": 1, "sample_id": "ravdess:a.wav", '
+                    '"corpus": "ravdess", "audio_path": "clips/a.wav", '
+                    '"label": "happy", "speaker_id": "ravdess:1"}'
+                ),
+                (
+                    '{"schema_version": 1, "sample_id": "ravdess:b.wav", '
+                    '"corpus": "ravdess", "audio_path": "clips/b.wav", '
+                    '"label": "sad", "speaker_id": "ravdess:2"}'
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = _build_settings(max_failed_file_ratio=1.0)
+    settings.dataset.manifest_paths = ()
+    settings.dataset.folder = dataset_root
+    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        dl,
+        "load_dataset_registry",
+        lambda settings: {
+            "ravdess": SimpleNamespace(
+                dataset_id="ravdess",
+                dataset_root=dataset_root,
+                manifest_path=manifest_path,
+                options={},
+            )
+        },
+    )
+    monkeypatch.setattr(
+        dl,
+        "prepare_from_registry_entry",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("not expected")),
+    )
+
+    utterances = dl.load_utterances()
+
+    assert utterances is not None
+    assert utterances[0].audio_path == dataset_root / "clips" / "a.wav"
+    assert utterances[1].audio_path == dataset_root / "clips" / "b.wav"
+
+
+def test_load_utterances_registry_rebuilds_missing_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Missing registry manifests should trigger prepare_from_registry_entry."""
+    dataset_root = tmp_path / "datasets" / "ravdess"
+    manifest_root = tmp_path / "manifests"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    manifest_root.mkdir(parents=True, exist_ok=True)
+    manifest_path = manifest_root / "ravdess.jsonl"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                (
+                    '{"schema_version": 1, "sample_id": "ravdess:a.wav", '
+                    '"corpus": "ravdess", "audio_path": "clips/a.wav", '
+                    '"label": "happy", "speaker_id": "ravdess:1"}'
+                ),
+                (
+                    '{"schema_version": 1, "sample_id": "ravdess:b.wav", '
+                    '"corpus": "ravdess", "audio_path": "clips/b.wav", '
+                    '"label": "sad", "speaker_id": "ravdess:2"}'
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = _build_settings(max_failed_file_ratio=1.0)
+    settings.dataset.manifest_paths = ()
+    settings.dataset.folder = dataset_root
+    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+    entry = SimpleNamespace(
+        dataset_id="ravdess",
+        dataset_root=dataset_root,
+        manifest_path=tmp_path / "missing" / "ravdess.jsonl",
+        options={},
+    )
+    monkeypatch.setattr(
+        dl, "load_dataset_registry", lambda settings: {"ravdess": entry}
+    )
+    monkeypatch.setattr(
+        dl,
+        "prepare_from_registry_entry",
+        lambda **_kwargs: [manifest_path],
+    )
+
+    utterances = dl.load_utterances()
+
+    assert utterances is not None
+    assert [item.sample_id for item in utterances] == ["ravdess:a.wav", "ravdess:b.wav"]
