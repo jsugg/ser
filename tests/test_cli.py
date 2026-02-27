@@ -9,9 +9,6 @@ import pytest
 import ser.__main__ as cli
 import ser.config as config_module
 import ser.models.emotion_model as emotion_model
-import ser.transcript as transcript_module
-import ser.utils.timeline_utils as timeline_utils
-from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.runtime import InferenceRequest
 from ser.runtime.accurate_inference import AccurateRuntimeDependencyError
 from ser.runtime.medium_inference import MediumRuntimeDependencyError
@@ -45,8 +42,14 @@ def test_cli_log_level_flag_overrides_environment_level(
         configured_levels.append(level)
         return 0
 
+    class FakePipeline:
+        def run_inference(self, _request: object) -> object:
+            return SimpleNamespace(timeline_csv_path=None)
+
     monkeypatch.setattr(cli, "configure_logging", _capture_log_level)
-    monkeypatch.setattr(cli, "_run_legacy_inference_workflow", lambda _args: None)
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
 
     cli.main()
 
@@ -157,7 +160,7 @@ def test_cli_train_option_invokes_training_and_exits_zero(
 def test_cli_prediction_passes_language_and_saves_transcript(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prediction path should pass language through and save CSV when requested."""
+    """Prediction path should pass language and transcript-save flags to pipeline."""
     _patch_common_cli_dependencies(monkeypatch)
     monkeypatch.setattr(
         cli.sys,
@@ -166,121 +169,76 @@ def test_cli_prediction_passes_language_and_saves_transcript(
     )
 
     calls: dict[str, object] = {}
-    emotions = [EmotionSegment("happy", 0.0, 1.0)]
-    transcript = [TranscriptWord("hola", 0.0, 0.5)]
-    timeline = [TimelineEntry(0.0, "happy", "hola")]
 
-    monkeypatch.setattr(emotion_model, "predict_emotions", lambda file: emotions)
-
-    def fake_extract_transcript(
-        file_path: str, language: str | None
-    ) -> list[TranscriptWord]:
-        calls["extract"] = (file_path, language)
-        return transcript
+    class FakePipeline:
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path="out.csv")
 
     monkeypatch.setattr(
-        transcript_module, "extract_transcript", fake_extract_transcript
-    )
-    monkeypatch.setattr(
-        timeline_utils,
-        "build_timeline",
-        lambda text, emo: timeline if text == transcript and emo == emotions else [],
-    )
-    monkeypatch.setattr(
-        timeline_utils,
-        "print_timeline",
-        lambda built_timeline: calls.setdefault("printed", built_timeline),
-    )
-
-    def fake_save_timeline_to_csv(
-        built_timeline: list[TimelineEntry], file_name: str
-    ) -> str:
-        calls["saved"] = (built_timeline, file_name)
-        return "out.csv"
-
-    monkeypatch.setattr(
-        timeline_utils, "save_timeline_to_csv", fake_save_timeline_to_csv
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
     )
 
     cli.main()
 
-    assert calls["extract"] == ("sample.wav", "es")
-    assert calls["printed"] == timeline
-    assert calls["saved"] == (timeline, "sample.wav")
+    request = cast(InferenceRequest, calls["request"])
+    assert request.file_path == "sample.wav"
+    assert request.language == "es"
+    assert request.save_transcript is True
+    assert request.include_transcript is True
 
 
-def test_cli_prediction_with_no_transcript_skips_transcript_in_legacy_path(
+def test_cli_prediction_with_no_transcript_disables_transcript_in_pipeline_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Legacy prediction should skip transcript extraction when --no-transcript is set."""
+    """Prediction path should disable transcript extraction when --no-transcript is set."""
     _patch_common_cli_dependencies(monkeypatch)
     monkeypatch.setattr(
         cli.sys, "argv", ["ser", "--file", "sample.wav", "--no-transcript"]
     )
 
-    emotions = [EmotionSegment("happy", 0.0, 1.0)]
-    monkeypatch.setattr(emotion_model, "predict_emotions", lambda _file: emotions)
-    transcript_called = {"value": False}
-    build_calls: dict[str, object] = {}
+    calls: dict[str, object] = {}
 
-    def _fake_extract(_file_path: str, _language: str | None) -> list[TranscriptWord]:
-        transcript_called["value"] = True
-        return [TranscriptWord("ignored", 0.0, 0.1)]
+    class FakePipeline:
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(transcript_module, "extract_transcript", _fake_extract)
-
-    def _fake_build(
-        text_rows: list[TranscriptWord],
-        emotion_rows: list[EmotionSegment],
-    ) -> list[TimelineEntry]:
-        build_calls["text_rows"] = text_rows
-        build_calls["emotion_rows"] = emotion_rows
-        return [TimelineEntry(0.0, "happy", "")]
-
-    monkeypatch.setattr(timeline_utils, "build_timeline", _fake_build)
-    monkeypatch.setattr(timeline_utils, "print_timeline", lambda _timeline: None)
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
 
     cli.main()
 
-    assert transcript_called["value"] is False
-    assert build_calls["text_rows"] == []
-    assert build_calls["emotion_rows"] == emotions
+    request = cast(InferenceRequest, calls["request"])
+    assert request.file_path == "sample.wav"
+    assert request.save_transcript is False
+    assert request.include_transcript is False
 
 
 def test_cli_prediction_does_not_save_when_flag_is_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Prediction path should skip CSV export unless `--save_transcript` is set."""
+    """Prediction path should pass save_transcript=False when flag is absent."""
     _patch_common_cli_dependencies(monkeypatch)
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
-    monkeypatch.setattr(
-        emotion_model,
-        "predict_emotions",
-        lambda _file: [EmotionSegment("calm", 0.0, 1.0)],
-    )
-    monkeypatch.setattr(
-        transcript_module,
-        "extract_transcript",
-        lambda _file, _language: [TranscriptWord("hello", 0.0, 0.5)],
-    )
-    monkeypatch.setattr(
-        timeline_utils,
-        "build_timeline",
-        lambda _text, _emo: [TimelineEntry(0.0, "calm", "hello")],
-    )
-    monkeypatch.setattr(timeline_utils, "print_timeline", lambda _timeline: None)
+    calls: dict[str, object] = {}
 
-    save_called = {"value": False}
+    class FakePipeline:
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path=None)
 
-    def fake_save(_timeline: list[TimelineEntry], _file_name: str) -> str:
-        save_called["value"] = True
-        return "out.csv"
-
-    monkeypatch.setattr(timeline_utils, "save_timeline_to_csv", fake_save)
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
 
     cli.main()
 
-    assert save_called["value"] is False
+    request = cast(InferenceRequest, calls["request"])
+    assert request.file_path == "sample.wav"
+    assert request.save_transcript is False
+    assert request.include_transcript is True
 
 
 def test_cli_train_option_uses_runtime_pipeline_when_enabled(

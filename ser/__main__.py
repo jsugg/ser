@@ -38,7 +38,6 @@ from ser.runtime.phase_timing import format_duration
 from ser.utils.logger import configure_logging, get_logger
 
 if TYPE_CHECKING:
-    from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
     from ser.runtime.pipeline import RuntimePipeline
 
 logger: logging.Logger = get_logger("ser")
@@ -476,10 +475,11 @@ def main() -> None:
     use_profile_pipeline: bool = _profile_pipeline_enabled(active_settings)
     required_restricted_backends: tuple[str, ...] = ()
     if isinstance(active_settings, AppConfig):
+        profile_resolution_enabled = use_profile_pipeline or bool(args.file)
         required_restricted_backends = (
             _required_restricted_backends_for_current_profile(
                 active_settings,
-                use_profile_pipeline=use_profile_pipeline,
+                use_profile_pipeline=profile_resolution_enabled,
             )
         )
         if args.accept_all_restricted_backends:
@@ -494,7 +494,7 @@ def main() -> None:
         if args.accept_restricted_backends:
             persisted = _persist_required_restricted_backends(
                 active_settings,
-                use_profile_pipeline=use_profile_pipeline,
+                use_profile_pipeline=profile_resolution_enabled,
                 consent_source="cli_flag_accept_restricted",
             )
             if persisted:
@@ -624,28 +624,25 @@ def main() -> None:
     workflow_profile = (
         resolve_profile_name(active_settings)
         if isinstance(active_settings, AppConfig)
-        else "legacy"
+        else "fast"
     )
     logger.info("SER workflow started (profile=%s).", workflow_profile)
     start_time = time.perf_counter()
     try:
-        if use_profile_pipeline:
-            from ser.runtime import InferenceRequest
+        from ser.runtime import InferenceRequest
 
-            execution: InferenceExecution = _build_runtime_pipeline(
-                cast(AppConfig, active_settings)
-            ).run_inference(
-                InferenceRequest(
-                    file_path=args.file,
-                    language=args.language,
-                    save_transcript=args.save_transcript,
-                    include_transcript=not args.no_transcript,
-                )
+        execution: InferenceExecution = _build_runtime_pipeline(
+            cast(AppConfig, active_settings)
+        ).run_inference(
+            InferenceRequest(
+                file_path=args.file,
+                language=args.language,
+                save_transcript=args.save_transcript,
+                include_transcript=not args.no_transcript,
             )
-            if execution.timeline_csv_path is not None:
-                logger.info(msg=f"Timeline saved to {execution.timeline_csv_path}")
-        else:
-            _run_legacy_inference_workflow(args)
+        )
+        if execution.timeline_csv_path is not None:
+            logger.info(msg=f"Timeline saved to {execution.timeline_csv_path}")
     except UnsupportedProfileError as err:
         logger.error("%s", err)
         sys.exit(2)
@@ -688,29 +685,6 @@ def main() -> None:
         "SER workflow completed in %s.",
         format_duration(time.perf_counter() - start_time),
     )
-
-
-def _run_legacy_inference_workflow(args: argparse.Namespace) -> None:
-    from ser.models.emotion_model import predict_emotions
-    from ser.transcript import extract_transcript
-    from ser.utils.timeline_utils import (
-        build_timeline,
-        print_timeline,
-        save_timeline_to_csv,
-    )
-
-    emotions: list[EmotionSegment] = predict_emotions(args.file)
-    transcript: list[TranscriptWord]
-    if args.no_transcript:
-        transcript = []
-    else:
-        transcript = extract_transcript(args.file, args.language)
-    timeline: list[TimelineEntry] = build_timeline(transcript, emotions)
-    print_timeline(timeline)
-
-    if args.save_transcript:
-        csv_file_name: str = save_timeline_to_csv(timeline, args.file)
-        logger.info(msg=f"Timeline saved to {csv_file_name}")
 
 
 if __name__ == "__main__":
