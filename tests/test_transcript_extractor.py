@@ -567,6 +567,175 @@ def test_extract_transcript_uses_process_isolation_for_faster_whisper(
     assert captured["profile"] == profile
 
 
+class _FakeIsolatedParentConnection:
+    """Parent pipe endpoint with deterministic message queue."""
+
+    def __init__(self, messages: list[tuple[object, ...]]) -> None:
+        self._messages = messages
+        self.closed = False
+
+    def recv(self) -> tuple[object, ...]:
+        if not self._messages:
+            raise EOFError
+        return self._messages.pop(0)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeIsolatedChildConnection:
+    """Child pipe endpoint for process-isolated transcript tests."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeIsolatedProcess:
+    """Fake process supporting join-first and terminate-fallback scenarios."""
+
+    def __init__(self, *, exit_on_join: bool) -> None:
+        self._alive = False
+        self.closed = False
+        self.join_timeouts: list[float | None] = []
+        self._exit_on_join = exit_on_join
+
+    def start(self) -> None:
+        self._alive = True
+
+    def join(self, timeout: float | None = None) -> None:
+        self.join_timeouts.append(timeout)
+        if self._exit_on_join:
+            self._alive = False
+
+    def is_alive(self) -> bool:
+        return self._alive
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeIsolatedContext:
+    """Fake spawn context for deterministic process-isolated cleanup tests."""
+
+    def __init__(
+        self,
+        *,
+        parent_conn: _FakeIsolatedParentConnection,
+        child_conn: _FakeIsolatedChildConnection,
+        process: _FakeIsolatedProcess,
+    ) -> None:
+        self.parent_conn = parent_conn
+        self.child_conn = child_conn
+        self.process = process
+
+    def Pipe(
+        self, duplex: bool = False
+    ) -> tuple[_FakeIsolatedParentConnection, _FakeIsolatedChildConnection]:
+        assert duplex is False
+        return self.parent_conn, self.child_conn
+
+    def Process(
+        self,
+        *,
+        target: object,
+        args: tuple[object, ...],
+        daemon: bool,
+    ) -> _FakeIsolatedProcess:
+        del target, args
+        assert daemon is False
+        return self.process
+
+
+def _build_fake_isolated_context(
+    *,
+    messages: list[tuple[object, ...]],
+    exit_on_join: bool,
+) -> _FakeIsolatedContext:
+    """Builds deterministic fake multiprocessing context for isolated runs."""
+    return _FakeIsolatedContext(
+        parent_conn=_FakeIsolatedParentConnection(messages),
+        child_conn=_FakeIsolatedChildConnection(),
+        process=_FakeIsolatedProcess(exit_on_join=exit_on_join),
+    )
+
+
+def test_faster_whisper_isolated_run_joins_worker_before_terminate_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Successful isolated runs should allow worker shutdown before terminate fallback."""
+    messages: list[tuple[object, ...]] = [
+        ("phase", "setup_complete"),
+        ("phase", "model_loaded"),
+        ("ok", [("hello", 0.0, 0.5)]),
+    ]
+    terminate_calls: list[object] = []
+
+    context = _build_fake_isolated_context(messages=messages, exit_on_join=True)
+    profile = te.TranscriptionProfile(
+        backend_id="faster_whisper",
+        model_name="distil-large-v3",
+        use_demucs=False,
+        use_vad=True,
+    )
+    monkeypatch.setattr(te.mp, "get_context", lambda _method: context)
+    monkeypatch.setattr(te, "_terminate_worker_process", terminate_calls.append)
+
+    result = te._run_faster_whisper_process_isolated(
+        file_path="sample.wav",
+        language="en",
+        profile=profile,
+    )
+
+    assert result == [TranscriptWord("hello", 0.0, 0.5)]
+    assert context.process.join_timeouts == [te._TERMINATE_GRACE_SECONDS]
+    assert terminate_calls == []
+    assert context.parent_conn.closed is True
+    assert context.child_conn.closed is True
+    assert context.process.closed is True
+
+
+def test_faster_whisper_isolated_run_terminates_worker_after_join_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Isolated runs should still terminate workers that remain alive after join timeout."""
+    messages: list[tuple[object, ...]] = [
+        ("phase", "setup_complete"),
+        ("phase", "model_loaded"),
+        ("ok", [("hello", 0.0, 0.5)]),
+    ]
+    terminate_calls: list[object] = []
+
+    def _fake_terminate_worker_process(process: object) -> None:
+        terminate_calls.append(process)
+        cast(_FakeIsolatedProcess, process)._alive = False
+
+    context = _build_fake_isolated_context(messages=messages, exit_on_join=False)
+    profile = te.TranscriptionProfile(
+        backend_id="faster_whisper",
+        model_name="distil-large-v3",
+        use_demucs=False,
+        use_vad=True,
+    )
+    monkeypatch.setattr(te.mp, "get_context", lambda _method: context)
+    monkeypatch.setattr(te, "_terminate_worker_process", _fake_terminate_worker_process)
+
+    result = te._run_faster_whisper_process_isolated(
+        file_path="sample.wav",
+        language="en",
+        profile=profile,
+    )
+
+    assert result == [TranscriptWord("hello", 0.0, 0.5)]
+    assert context.process.join_timeouts == [te._TERMINATE_GRACE_SECONDS]
+    assert terminate_calls == [context.process]
+    assert context.parent_conn.closed is True
+    assert context.child_conn.closed is True
+    assert context.process.closed is True
+
+
 def test_runtime_request_for_isolated_faster_whisper_defaults_to_cpu() -> None:
     """Process-isolated faster runtime request should avoid torch dependency on CPU."""
     settings = cast(
