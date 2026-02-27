@@ -51,8 +51,13 @@ def _prepare_audio_buffer(raw_audio: NDArray[np.float32]) -> NDArray[np.float32]
     return _normalize_audio(prepared)
 
 
-def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
-    """Reads an audio file and normalizes amplitude to [-1, 1].
+def read_audio_file(
+    file_path: str,
+    *,
+    start_seconds: float | None = None,
+    duration_seconds: float | None = None,
+) -> tuple[NDArray[np.float32], int]:
+    """Reads an audio file (or segment) and normalizes amplitude to [-1, 1].
 
     Args:
         file_path: Path to the audio file.
@@ -60,6 +65,11 @@ def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
     Returns:
         A tuple of `(audio_samples, sample_rate)`.
     """
+    if start_seconds is not None and start_seconds < 0.0:
+        raise ValueError("start_seconds must be >= 0")
+    if duration_seconds is not None and duration_seconds <= 0.0:
+        raise ValueError("duration_seconds must be > 0")
+
     settings: AppConfig = get_settings()
     path = Path(file_path)
     if not path.exists():
@@ -75,7 +85,16 @@ def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
                 warnings.filterwarnings(
                     "ignore", category=UserWarning, module="librosa"
                 )
-                audiofile, current_sample_rate = librosa.load(str(path), sr=None)
+                audiofile, current_sample_rate = librosa.load(
+                    str(path),
+                    sr=None,
+                    offset=float(start_seconds or 0.0),
+                    duration=(
+                        float(duration_seconds)
+                        if duration_seconds is not None
+                        else None
+                    ),
+                )
             normalized_audio = _prepare_audio_buffer(
                 np.asarray(audiofile, dtype=np.float32)
             )
@@ -85,6 +104,20 @@ def read_audio_file(file_path: str) -> tuple[NDArray[np.float32], int]:
 
         except Exception as err:
             logger.warning(msg=f"Librosa failed to read audio file: {err}")
+
+            # Segment reads rely on librosa offset/duration.
+            if start_seconds is not None or duration_seconds is not None:
+                if attempt < settings.audio_read.max_retries - 1:
+                    logger.info(
+                        msg=(
+                            "Retrying with librosa in "
+                            f"{settings.audio_read.retry_delay_seconds} seconds..."
+                        )
+                    )
+                    time.sleep(settings.audio_read.retry_delay_seconds)
+                    continue
+                raise
+
             logger.warning(msg="Falling back to soundfile...")
             try:
                 with sf.SoundFile(str(path)) as sound_file:

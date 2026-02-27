@@ -194,6 +194,44 @@ def test_run_inference_skips_save_when_flag_is_disabled() -> None:
     assert execution.timeline_csv_path is None
 
 
+def test_run_inference_skips_transcript_extraction_when_disabled() -> None:
+    """Pipeline should build an emotion-only timeline when include_transcript is false."""
+    calls: dict[str, object] = {}
+    emotions = [EmotionSegment("happy", 0.0, 1.0)]
+
+    def _fake_build(
+        text_rows: list[TranscriptWord], emotion_rows: list[EmotionSegment]
+    ) -> list[TimelineEntry]:
+        calls["build"] = (text_rows, emotion_rows)
+        return [TimelineEntry(0.0, "happy", "")]
+
+    pipeline = _build_test_pipeline(
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: emotions,
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Detailed path should not run when schema flag is disabled.")
+        ),
+        extract_transcript=lambda _file_path, _language: (_ for _ in ()).throw(
+            AssertionError("extract_transcript should not be called")
+        ),
+        build_timeline=_fake_build,
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+    )
+
+    execution = pipeline.run_inference(
+        InferenceRequest(
+            file_path="sample.wav",
+            language="en",
+            save_transcript=False,
+            include_transcript=False,
+        )
+    )
+
+    assert execution.transcript == []
+    assert calls["build"] == ([], emotions)
+
+
 def test_run_inference_releases_torch_memory_before_transcript(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

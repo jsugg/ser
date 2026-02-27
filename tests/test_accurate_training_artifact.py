@@ -45,6 +45,7 @@ def _settings_stub(tmp_path: Path) -> SimpleNamespace:
             pool_window_stride_seconds=0.75,
         ),
         torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
+        feature_runtime_policy=SimpleNamespace(for_backend=lambda _backend_id: None),
     )
 
 
@@ -140,19 +141,31 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
 
     def _build_dataset(
         *,
-        samples: list[em.LabeledAudioSample],
+        utterances: list[Utterance],
         backend: em.WhisperBackend,
         cache: em.EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
-    ) -> tuple[np.ndarray, list[str]]:
+    ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
         del backend, cache, model_id
         assert backend_id == em.ACCURATE_BACKEND_ID
-        if samples == train_samples:
-            return x_train, y_train
-        if samples == test_samples:
-            return x_test, y_test
-        raise AssertionError(f"Unexpected sample partition: {samples!r}")
+        if utterances == train_utterances:
+            train_meta = [
+                em.WindowMeta(
+                    sample_id=item.sample_id, corpus=item.corpus, language="en"
+                )
+                for item in train_utterances
+            ]
+            return x_train, y_train, train_meta
+        if utterances == test_utterances:
+            test_meta = [
+                em.WindowMeta(
+                    sample_id=item.sample_id, corpus=item.corpus, language="en"
+                )
+                for item in test_utterances
+            ]
+            return x_test, y_test, test_meta
+        raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
     monkeypatch.setattr(em, "_build_accurate_feature_dataset", _build_dataset)
     monkeypatch.setattr(em, "_create_classifier", _dummy_classifier)
@@ -203,6 +216,9 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
 
     report = captured.get("report")
     assert isinstance(report, dict)
+    metrics = report.get("metrics")
+    assert isinstance(metrics, dict)
+    assert "group_metrics" in metrics
     artifact_metadata = report.get("artifact_metadata")
     assert isinstance(artifact_metadata, dict)
     assert artifact_metadata["backend_id"] == "hf_whisper"
@@ -283,23 +299,35 @@ def test_train_accurate_model_uses_configured_model_id(
 
     def _build_dataset(
         *,
-        samples: list[em.LabeledAudioSample],
+        utterances: list[Utterance],
         backend: _BackendStub,
         cache: em.EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
-    ) -> tuple[np.ndarray, list[str]]:
+    ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
         del backend, cache
         assert model_id is not None
         assert backend_id == em.ACCURATE_BACKEND_ID
         dataset_model_ids = captured["dataset_model_ids"]
         assert isinstance(dataset_model_ids, list)
         dataset_model_ids.append(model_id)
-        if samples == train_samples:
-            return x_train, y_train
-        if samples == test_samples:
-            return x_test, y_test
-        raise AssertionError(f"Unexpected sample partition: {samples!r}")
+        if utterances == train_utterances:
+            train_meta = [
+                em.WindowMeta(
+                    sample_id=item.sample_id, corpus=item.corpus, language="en"
+                )
+                for item in train_utterances
+            ]
+            return x_train, y_train, train_meta
+        if utterances == test_utterances:
+            test_meta = [
+                em.WindowMeta(
+                    sample_id=item.sample_id, corpus=item.corpus, language="en"
+                )
+                for item in test_utterances
+            ]
+            return x_test, y_test, test_meta
+        raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
     monkeypatch.setattr(em, "_build_accurate_feature_dataset", _build_dataset)
     monkeypatch.setattr(em, "_create_classifier", _dummy_classifier)
@@ -372,10 +400,12 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             self,
             *,
             model_id: str,
+            device: str,
             modelscope_cache_root: Path,
             huggingface_cache_root: Path,
         ) -> None:
             captured["backend_model_id"] = model_id
+            captured["backend_device"] = device
             captured["backend_modelscope_cache_root"] = modelscope_cache_root
             captured["backend_huggingface_cache_root"] = huggingface_cache_root
 
@@ -394,23 +424,35 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
 
     def _build_dataset(
         *,
-        samples: list[em.LabeledAudioSample],
+        utterances: list[Utterance],
         backend: _BackendStub,
         cache: em.EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
-    ) -> tuple[np.ndarray, list[str]]:
+    ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
         del backend, cache
         assert model_id is not None
         assert backend_id == em.ACCURATE_RESEARCH_BACKEND_ID
         dataset_model_ids = captured["dataset_model_ids"]
         assert isinstance(dataset_model_ids, list)
         dataset_model_ids.append(model_id)
-        if samples == train_samples:
-            return x_train, y_train
-        if samples == test_samples:
-            return x_test, y_test
-        raise AssertionError(f"Unexpected sample partition: {samples!r}")
+        if utterances == train_utterances:
+            train_meta = [
+                em.WindowMeta(
+                    sample_id=item.sample_id, corpus=item.corpus, language="en"
+                )
+                for item in train_utterances
+            ]
+            return x_train, y_train, train_meta
+        if utterances == test_utterances:
+            test_meta = [
+                em.WindowMeta(
+                    sample_id=item.sample_id, corpus=item.corpus, language="en"
+                )
+                for item in test_utterances
+            ]
+            return x_test, y_test, test_meta
+        raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
     monkeypatch.setattr(em, "_build_accurate_feature_dataset", _build_dataset)
     monkeypatch.setattr(em, "_create_classifier", _dummy_classifier)
@@ -451,9 +493,27 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
         "unit-test/emotion2vec-plus",
         "unit-test/emotion2vec-plus",
     ]
+    backend_override = settings.feature_runtime_policy.for_backend(
+        em.ACCURATE_RESEARCH_BACKEND_ID
+    )
+    expected_runtime_policy = em.resolve_feature_runtime_policy(
+        backend_id=em.ACCURATE_RESEARCH_BACKEND_ID,
+        requested_device=settings.torch_runtime.device,
+        requested_dtype=settings.torch_runtime.dtype,
+        backend_override_device=(
+            backend_override.device if backend_override is not None else None
+        ),
+        backend_override_dtype=(
+            backend_override.dtype if backend_override is not None else None
+        ),
+    )
+    assert captured["backend_device"] == expected_runtime_policy.device
 
     report = captured.get("report")
     assert isinstance(report, dict)
+    metrics = report.get("metrics")
+    assert isinstance(metrics, dict)
+    assert "group_metrics" in metrics
     artifact_metadata = report.get("artifact_metadata")
     assert isinstance(artifact_metadata, dict)
     assert artifact_metadata["backend_id"] == "emotion2vec"
@@ -463,8 +523,8 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
         == settings.models.accurate_research_model_id
     )
     assert artifact_metadata["pooling_strategy"] == "mean_std"
-    assert artifact_metadata["torch_device"] == settings.torch_runtime.device
-    assert artifact_metadata["torch_dtype"] == settings.torch_runtime.dtype
+    assert artifact_metadata["torch_device"] == expected_runtime_policy.device
+    assert artifact_metadata["torch_dtype"] == expected_runtime_policy.dtype
     assert artifact_metadata["frame_size_seconds"] == pytest.approx(
         settings.accurate_research_runtime.pool_window_size_seconds
     )

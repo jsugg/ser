@@ -24,7 +24,9 @@ def test_run_accurate_research_inference_uses_configured_model_id(
             accurate_research_model_id="unit-test/e2v",
             modelscope_cache_root=Path("/tmp/ser-modelscope-cache"),
             huggingface_cache_root=Path("/tmp/ser-hf-cache"),
-        )
+        ),
+        torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
+        feature_runtime_policy=SimpleNamespace(for_backend=lambda _backend_id: None),
     )
     captured: dict[str, object] = {}
 
@@ -33,16 +35,26 @@ def test_run_accurate_research_inference_uses_configured_model_id(
             self,
             *,
             model_id: str,
+            device: str,
             modelscope_cache_root: Path,
             huggingface_cache_root: Path,
         ) -> None:
             captured["model_id"] = model_id
+            captured["device"] = device
             captured["modelscope_cache_root"] = modelscope_cache_root
             captured["huggingface_cache_root"] = huggingface_cache_root
 
     monkeypatch.setattr(
         "ser.runtime.accurate_research_inference.Emotion2VecBackend",
         _BackendStub,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.accurate_research_inference.resolve_feature_runtime_policy",
+        lambda **_kwargs: SimpleNamespace(
+            device="cpu",
+            dtype="float32",
+            reason="test_policy",
+        ),
     )
 
     def _fake_run(
@@ -78,6 +90,7 @@ def test_run_accurate_research_inference_uses_configured_model_id(
 
     assert result.schema_version == OUTPUT_SCHEMA_VERSION
     assert captured["model_id"] == "unit-test/e2v"
+    assert captured["device"] == "cpu"
     assert captured["modelscope_cache_root"] == Path("/tmp/ser-modelscope-cache")
     assert captured["huggingface_cache_root"] == Path("/tmp/ser-hf-cache")
     assert captured["backend"] is not None
@@ -91,7 +104,8 @@ def test_run_accurate_research_inference_uses_injected_backend(
 ) -> None:
     """Injected backend should be forwarded unchanged to shared accurate runner."""
     settings = SimpleNamespace(
-        models=SimpleNamespace(accurate_research_model_id="ignored")
+        models=SimpleNamespace(accurate_research_model_id="ignored"),
+        feature_runtime_policy=SimpleNamespace(for_backend=lambda _backend_id: None),
     )
     backend = object()
     captured: dict[str, object] = {}

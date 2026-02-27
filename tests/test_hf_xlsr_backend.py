@@ -77,6 +77,20 @@ class _NaNThenFiniteModel(_FakeModel):
         return output
 
 
+class _NaNThenErrorModel(_FakeModel):
+    """Model stub that returns NaN output once, then raises runtime error."""
+
+    def __call__(self, **kwargs: object) -> _FakeModelOutput:
+        output = super().__call__(**kwargs)
+        if len(self.call_sizes) == 1:
+            hidden = np.asarray(output.last_hidden_state, dtype=np.float32)
+            hidden.fill(np.nan)
+            return _FakeModelOutput(last_hidden_state=hidden)
+        raise RuntimeError(
+            "Input type (c10::Half) and bias type (float) should be the same"
+        )
+
+
 def test_xlsr_backend_feature_dim_is_resolved_from_model_config() -> None:
     """feature_dim should always come from model config hidden_size."""
     backend = XLSRBackend(
@@ -249,3 +263,59 @@ def test_xlsr_backend_retries_non_finite_chunk_in_float32(
 
     assert np.all(np.isfinite(encoded.embeddings))
     assert model_move_dtypes == ["float32"]
+
+
+def test_xlsr_backend_resets_runtime_state_when_float32_fallback_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fallback failures should invalidate runtime caches before propagating errors."""
+    fp16_runtime = TorchRuntime(
+        device=object(),
+        dtype=object(),
+        device_spec="cuda:0",
+        device_type="cuda",
+        dtype_name="float16",
+    )
+    fp32_runtime = TorchRuntime(
+        device=object(),
+        dtype=object(),
+        device_spec="cuda:0",
+        device_type="cuda",
+        dtype_name="float32",
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: fp16_runtime,
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "runtime_with_dtype",
+        lambda runtime, *, dtype: fp32_runtime,
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "move_inputs_to_runtime",
+        lambda inputs, runtime, *, dtype_keys: dict(inputs),
+    )
+    monkeypatch.setattr(
+        hf_xlsr_module,
+        "move_model_to_runtime",
+        lambda model, runtime: None,
+    )
+
+    backend = XLSRBackend(
+        model_id="unit-test/xlsr",
+        device="auto",
+        dtype="auto",
+        feature_extractor=_FakeFeatureExtractor(),
+        model=_NaNThenErrorModel(hidden_size=2),
+    )
+    backend._uses_injected_components = False  # pyright: ignore[reportPrivateUsage]
+
+    with pytest.raises(RuntimeError, match="runtime state was reset"):
+        backend.encode_sequence(np.ones(4, dtype=np.float32), sample_rate=4)
+
+    assert backend._torch_runtime is None  # pyright: ignore[reportPrivateUsage]
+    assert backend._feature_extractor is None  # pyright: ignore[reportPrivateUsage]
+    assert backend._model is None  # pyright: ignore[reportPrivateUsage]

@@ -17,6 +17,7 @@ class InferenceRequest:
     file_path: str
     language: str
     save_transcript: bool = False
+    include_transcript: bool = True
 
 
 @dataclass(frozen=True)

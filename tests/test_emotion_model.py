@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from sklearn.neural_network import MLPClassifier
 
+from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.features import FeatureFrame
 from ser.models import emotion_model as em
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION
@@ -475,6 +476,51 @@ def test_build_training_report_includes_optional_data_controls(
     )
 
     assert report["data_controls"] == {"medium_noise_controls": {"min_window_std": 0.1}}
+
+
+def test_build_dataset_controls_reports_registry_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dataset controls should expose registry mode when registry entries are present."""
+    utterances = [
+        Utterance(
+            schema_version=MANIFEST_SCHEMA_VERSION,
+            sample_id="ravdess:a.wav",
+            corpus="ravdess",
+            audio_path=Path("a.wav"),
+            label="happy",
+            speaker_id="ravdess:1",
+            language="en",
+        ),
+        Utterance(
+            schema_version=MANIFEST_SCHEMA_VERSION,
+            sample_id="crema-d:b.wav",
+            corpus="crema-d",
+            audio_path=Path("b.wav"),
+            label="sad",
+            speaker_id="crema-d:2",
+            language="en",
+        ),
+    ]
+    monkeypatch.setattr(
+        em,
+        "get_settings",
+        lambda: SimpleNamespace(dataset=SimpleNamespace(manifest_paths=())),
+    )
+    monkeypatch.setattr(
+        "ser.data.dataset_registry.load_dataset_registry",
+        lambda settings: {"ravdess": object()},
+    )
+    monkeypatch.setattr(
+        "ser.data.dataset_registry.registered_manifest_paths",
+        lambda settings: (Path("manifests/ravdess.jsonl"),),
+    )
+
+    controls = em._build_dataset_controls(utterances)
+
+    assert controls["mode"] == "registry"
+    assert controls["manifest_paths"] == ["manifests/ravdess.jsonl"]
+    assert controls["utterance_count"] == 2
 
 
 def test_predict_emotions_detailed_uses_predict_proba(

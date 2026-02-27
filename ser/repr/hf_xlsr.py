@@ -123,6 +123,9 @@ class XLSRBackend:
         self._dtype = dtype
         self._feature_extractor = feature_extractor
         self._model = model
+        self._uses_injected_components = (
+            feature_extractor is not None and model is not None
+        )
         self._torch_runtime: TorchRuntime | None = None
 
     @property
@@ -271,18 +274,26 @@ class XLSRBackend:
             "Retrying chunk with float32 fallback.",
             runtime.dtype_name,
         )
-        move_model_to_runtime(model, fallback_runtime)
-        self._torch_runtime = fallback_runtime
-        fallback_inputs = move_inputs_to_runtime(
-            inputs,
-            fallback_runtime,
-            dtype_keys=frozenset({"input_values"}),
-        )
-        fallback_embeddings = self._encode_with_model(
-            model=model,
-            inputs=fallback_inputs,
-        )
+        try:
+            move_model_to_runtime(model, fallback_runtime)
+            self._torch_runtime = fallback_runtime
+            fallback_inputs = move_inputs_to_runtime(
+                inputs,
+                fallback_runtime,
+                dtype_keys=frozenset({"input_values"}),
+            )
+            fallback_embeddings = self._encode_with_model(
+                model=model,
+                inputs=fallback_inputs,
+            )
+        except Exception as err:
+            self._invalidate_runtime_components()
+            raise RuntimeError(
+                "XLSR backend float32 fallback failed and runtime state was reset. "
+                f"Original error: {err}"
+            ) from err
         if not np.all(np.isfinite(fallback_embeddings)):
+            self._invalidate_runtime_components()
             raise RuntimeError(
                 "XLSR backend produced non-finite embeddings after float32 fallback."
             )
@@ -349,6 +360,14 @@ class XLSRBackend:
                 dtype=self._dtype,
             )
         return self._torch_runtime
+
+    def _invalidate_runtime_components(self) -> None:
+        """Drops cached runtime objects so retries rebuild from a clean state."""
+        self._torch_runtime = None
+        if self._uses_injected_components:
+            return
+        self._feature_extractor = None
+        self._model = None
 
     def _ensure_dependencies_available(self) -> None:
         """Validates optional backend dependencies and raises actionable errors."""

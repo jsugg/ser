@@ -6,6 +6,7 @@ import pytest
 
 import ser.config as config
 from ser.profiles import (
+    _validate_feature_runtime_defaults,
     available_profiles,
     get_profile_catalog,
     resolve_profile,
@@ -40,10 +41,14 @@ def test_profile_catalog_contains_backend_and_flag_metadata() -> None:
     assert catalog["fast"].runtime_defaults.process_isolation is False
     assert catalog["fast"].runtime_env.timeout_seconds == "SER_FAST_TIMEOUT_SECONDS"
     assert catalog["medium"].backend_id == "hf_xlsr"
+    assert catalog["medium"].feature_runtime_defaults is not None
+    assert catalog["medium"].feature_runtime_defaults.torch_device is None
+    assert catalog["medium"].feature_runtime_defaults.torch_dtype == "float32"
     assert catalog["medium"].transcription_defaults.backend_id == "stable_whisper"
     assert catalog["medium"].transcription_defaults.model_name == "turbo"
     assert catalog["medium"].enable_flag == "SER_ENABLE_MEDIUM_PROFILE"
     assert catalog["accurate"].backend_id == "hf_whisper"
+    assert catalog["accurate"].feature_runtime_defaults is None
     assert catalog["accurate"].transcription_defaults.backend_id == "stable_whisper"
     assert catalog["accurate"].transcription_defaults.model_name == "large"
     assert catalog["accurate"].enable_flag == "SER_ENABLE_ACCURATE_PROFILE"
@@ -54,6 +59,7 @@ def test_profile_catalog_contains_backend_and_flag_metadata() -> None:
         == "SER_ACCURATE_MAX_TIMEOUT_RETRIES"
     )
     assert catalog["accurate-research"].backend_id == "emotion2vec"
+    assert catalog["accurate-research"].feature_runtime_defaults is None
     assert (
         catalog["accurate-research"].transcription_defaults.backend_id
         == "stable_whisper"
@@ -105,3 +111,18 @@ def test_resolve_profile_prefers_accurate_research_over_accurate(
     settings = config.reload_settings()
     assert resolve_profile_name(settings) == "accurate-research"
     assert resolve_profile(settings).name == "accurate-research"
+
+
+def test_validate_feature_runtime_defaults_rejects_invalid_dtype() -> None:
+    """Profile parser should reject unsupported feature-runtime dtype selectors."""
+    with pytest.raises(RuntimeError, match="feature_runtime_defaults.torch_dtype"):
+        _validate_feature_runtime_defaults(
+            name="medium",
+            raw={"torch_dtype": "fp8"},
+        )
+
+
+def test_validate_feature_runtime_defaults_requires_one_selector() -> None:
+    """Feature-runtime defaults should require at least one selector override."""
+    with pytest.raises(RuntimeError, match="must define at least one"):
+        _validate_feature_runtime_defaults(name="medium", raw={})

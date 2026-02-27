@@ -21,6 +21,7 @@ from ser.config import AppConfig, MediumRuntimeConfig
 from ser.models.emotion_model import LoadedModel, load_model, resolve_medium_model_id
 from ser.pool import mean_std_pool, temporal_pooling_windows
 from ser.repr import EncodedSequence, PoolingWindow, XLSRBackend
+from ser.repr.runtime_policy import FeatureRuntimePolicy, resolve_feature_runtime_policy
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
 from ser.runtime.phase_timing import (
@@ -55,6 +56,9 @@ _TERMINATE_GRACE_SECONDS = 0.5
 _KILL_GRACE_SECONDS = 0.5
 _SINGLE_FLIGHT_LOCKS: dict[tuple[str, str], Lock] = {}
 _SINGLE_FLIGHT_GUARD = Lock()
+_MPS_OOM_SIGNATURE = "mps backend out of memory"
+_NON_FINITE_SIGNATURE = "non-finite embeddings"
+_HALF_FLOAT_MISMATCH_SIGNATURE = "input type (c10::half) and bias type (float)"
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,20 @@ def run_medium_inference(
     """
     runtime_config = settings.medium_runtime
     expected_backend_model_id = resolve_medium_model_id(settings)
+    runtime_policy = _resolve_medium_feature_runtime_policy(settings=settings)
+    policy_device = runtime_policy.device
+    policy_dtype = runtime_policy.dtype
+    if (
+        policy_device != settings.torch_runtime.device
+        or policy_dtype != settings.torch_runtime.dtype
+    ):
+        logger.info(
+            "Medium feature runtime policy adjusted selectors "
+            "(device=%s, dtype=%s, reason=%s).",
+            policy_device,
+            policy_dtype,
+            runtime_policy.reason,
+        )
     use_process_isolation = (
         enforce_timeout
         and loaded_model is None
@@ -151,7 +169,11 @@ def run_medium_inference(
     if use_process_isolation:
         process_payload = MediumProcessPayload(
             request=request,
-            settings=_build_process_settings_snapshot(settings),
+            settings=_settings_with_torch_runtime(
+                _build_process_settings_snapshot(settings),
+                device=policy_device,
+                dtype=policy_dtype,
+            ),
             expected_backend_model_id=expected_backend_model_id,
         )
     else:
@@ -197,19 +219,20 @@ def run_medium_inference(
             )
             _warn_on_runtime_selector_mismatch(
                 loaded_model=active_loaded_model,
-                settings=settings,
                 profile="medium",
+                runtime_device=policy_device,
+                runtime_dtype=policy_dtype,
             )
             audio, sample_rate = read_audio_file(request.file_path)
             audio_array = np.asarray(audio, dtype=np.float32)
             active_backend = (
                 backend
                 if backend is not None
-                else XLSRBackend(
-                    model_id=expected_backend_model_id,
-                    cache_dir=settings.models.huggingface_cache_root,
-                    device=settings.torch_runtime.device,
-                    dtype=settings.torch_runtime.dtype,
+                else _build_medium_backend(
+                    settings=settings,
+                    expected_backend_model_id=expected_backend_model_id,
+                    runtime_device=policy_device,
+                    runtime_dtype=policy_dtype,
                 )
             )
         except Exception:
@@ -226,6 +249,8 @@ def run_medium_inference(
         profile="medium",
         backend_model_id=expected_backend_model_id,
     ):
+        cpu_fallback_applied = False
+
         if not use_process_isolation:
             if active_backend is None:
                 raise RuntimeError(
@@ -342,6 +367,70 @@ def run_medium_inference(
             )
             return result
 
+        def on_transient_failure(
+            err: Exception,
+            _attempt: int,
+            _transient_failures: int,
+        ) -> None:
+            nonlocal active_backend, process_payload, cpu_fallback_applied
+            if cpu_fallback_applied:
+                return
+            if not _should_retry_on_cpu_after_transient_failure(err):
+                return
+            if not use_process_isolation and backend is not None:
+                logger.info(
+                    "Medium inference detected MPS transient failure but cannot "
+                    "switch to CPU when a custom backend instance is injected."
+                )
+                return
+
+            current_device = (
+                process_payload.settings.torch_runtime.device
+                if use_process_isolation and process_payload is not None
+                else policy_device
+            )
+            if current_device.strip().lower() not in {"auto", "mps"}:
+                return
+            cpu_fallback_applied = True
+            logger.info(
+                "Medium inference will retry on CPU after transient MPS failure: %s",
+                _summarize_transient_failure(err),
+            )
+            try:
+                if use_process_isolation:
+                    if process_payload is None:
+                        raise RuntimeError(
+                            "Medium process payload is missing for CPU fallback."
+                        )
+                    process_payload = replace(
+                        process_payload,
+                        settings=_settings_with_torch_runtime(
+                            process_payload.settings,
+                            device="cpu",
+                            dtype="float32",
+                        ),
+                    )
+                    return
+                cpu_settings = _settings_with_torch_runtime(
+                    settings,
+                    device="cpu",
+                    dtype="float32",
+                )
+                active_backend = _build_medium_backend(
+                    settings=cpu_settings,
+                    expected_backend_model_id=expected_backend_model_id,
+                    runtime_device="cpu",
+                    runtime_dtype="float32",
+                )
+                _prepare_medium_backend_runtime(backend=active_backend)
+            except Exception as swap_err:
+                cpu_fallback_applied = False
+                logger.warning(
+                    "Medium inference CPU fallback setup failed; continuing with "
+                    "existing retry policy: %s",
+                    swap_err,
+                )
+
         try:
             return run_with_retry_policy(
                 operation=operation,
@@ -355,6 +444,7 @@ def run_medium_inference(
                 ),
                 retry_delay_seconds=_retry_delay_seconds,
                 logger=logger,
+                on_transient_failure=on_transient_failure,
             )
         except MediumRuntimeDependencyError:
             raise
@@ -648,18 +738,20 @@ def _prepare_process_operation(
         loaded_model,
         expected_backend_model_id=payload.expected_backend_model_id,
     )
+    runtime_policy = _resolve_medium_feature_runtime_policy(settings=settings)
     _warn_on_runtime_selector_mismatch(
         loaded_model=loaded_model,
-        settings=settings,
         profile="medium",
+        runtime_device=runtime_policy.device,
+        runtime_dtype=runtime_policy.dtype,
     )
     audio, sample_rate = read_audio_file(payload.request.file_path)
     audio_array = np.asarray(audio, dtype=np.float32)
-    backend = XLSRBackend(
-        model_id=payload.expected_backend_model_id,
-        cache_dir=settings.models.huggingface_cache_root,
-        device=settings.torch_runtime.device,
-        dtype=settings.torch_runtime.dtype,
+    backend = _build_medium_backend(
+        settings=settings,
+        expected_backend_model_id=payload.expected_backend_model_id,
+        runtime_device=runtime_policy.device,
+        runtime_dtype=runtime_policy.dtype,
     )
     _prepare_medium_backend_runtime(backend=backend)
     return _PreparedMediumOperation(
@@ -685,6 +777,59 @@ def _run_process_operation(prepared: _PreparedMediumOperation) -> InferenceResul
 def _build_process_settings_snapshot(settings: AppConfig) -> AppConfig:
     """Builds a process-safe settings snapshot for spawn-based workers."""
     return replace(settings, emotions=dict(settings.emotions))
+
+
+def _settings_with_torch_runtime(
+    settings: AppConfig,
+    *,
+    device: str,
+    dtype: str,
+) -> AppConfig:
+    """Returns process-safe settings with one normalized torch runtime selector pair."""
+    return replace(
+        settings,
+        emotions=dict(settings.emotions),
+        torch_runtime=replace(
+            settings.torch_runtime,
+            device=device,
+            dtype=dtype,
+        ),
+    )
+
+
+def _resolve_medium_feature_runtime_policy(
+    *,
+    settings: AppConfig,
+) -> FeatureRuntimePolicy:
+    """Resolves backend-aware feature runtime selectors for medium profile."""
+    backend_override = settings.feature_runtime_policy.for_backend("hf_xlsr")
+    return resolve_feature_runtime_policy(
+        backend_id="hf_xlsr",
+        requested_device=settings.torch_runtime.device,
+        requested_dtype=settings.torch_runtime.dtype,
+        backend_override_device=(
+            backend_override.device if backend_override is not None else None
+        ),
+        backend_override_dtype=(
+            backend_override.dtype if backend_override is not None else None
+        ),
+    )
+
+
+def _build_medium_backend(
+    *,
+    settings: AppConfig,
+    expected_backend_model_id: str,
+    runtime_device: str,
+    runtime_dtype: str,
+) -> XLSRBackend:
+    """Builds one XLS-R backend with explicit runtime selectors."""
+    return XLSRBackend(
+        model_id=expected_backend_model_id,
+        cache_dir=settings.models.huggingface_cache_root,
+        device=runtime_device,
+        dtype=runtime_dtype,
+    )
 
 
 def _terminate_worker_process(process: BaseProcess) -> None:
@@ -745,6 +890,27 @@ def _retry_delay_seconds(*, base_delay: float, attempt: int) -> float:
         return 0.0
     jitter = random.uniform(0.0, base_delay * 0.1)
     return (base_delay * float(attempt)) + jitter
+
+
+def _should_retry_on_cpu_after_transient_failure(err: Exception) -> bool:
+    """Returns whether one transient failure should trigger CPU fallback retry."""
+    message = str(err).strip().lower()
+    if _MPS_OOM_SIGNATURE in message:
+        return True
+    if _HALF_FLOAT_MISMATCH_SIGNATURE in message:
+        return True
+    if _NON_FINITE_SIGNATURE in message:
+        return True
+    return False
+
+
+def _summarize_transient_failure(err: Exception) -> str:
+    """Builds one compact summary line for medium transient fallback logs."""
+    message = str(err).strip()
+    if not message:
+        return "transient backend failure"
+    collapsed = " ".join(message.split())
+    return collapsed if len(collapsed) <= 180 else f"{collapsed[:177]}..."
 
 
 def _is_dependency_error(err: RuntimeError) -> bool:
@@ -822,8 +988,9 @@ def _ensure_medium_compatible_model(
 def _warn_on_runtime_selector_mismatch(
     *,
     loaded_model: LoadedModel,
-    settings: AppConfig,
     profile: str,
+    runtime_device: str,
+    runtime_dtype: str,
 ) -> None:
     """Warns when artifact runtime selectors differ from current runtime settings."""
     metadata = loaded_model.artifact_metadata
@@ -842,16 +1009,18 @@ def _warn_on_runtime_selector_mismatch(
     if not normalized_artifact_device or not normalized_artifact_dtype:
         return
 
-    runtime_device = settings.torch_runtime.device.strip().lower()
-    runtime_dtype = settings.torch_runtime.dtype.strip().lower()
+    normalized_runtime_device = runtime_device.strip().lower()
+    normalized_runtime_dtype = runtime_dtype.strip().lower()
     mismatch_components: list[str] = []
-    if normalized_artifact_device != runtime_device:
+    if normalized_artifact_device != normalized_runtime_device:
         mismatch_components.append(
-            f"device artifact={normalized_artifact_device!r} runtime={runtime_device!r}"
+            "device artifact="
+            f"{normalized_artifact_device!r} runtime={normalized_runtime_device!r}"
         )
-    if normalized_artifact_dtype != runtime_dtype:
+    if normalized_artifact_dtype != normalized_runtime_dtype:
         mismatch_components.append(
-            f"dtype artifact={normalized_artifact_dtype!r} runtime={runtime_dtype!r}"
+            "dtype artifact="
+            f"{normalized_artifact_dtype!r} runtime={normalized_runtime_dtype!r}"
         )
     if mismatch_components:
         logger.warning(
