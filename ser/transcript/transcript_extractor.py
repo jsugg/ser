@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import importlib
+import gc
 import logging
-import os
-import warnings
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+import multiprocessing as mp
+import sys
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
-from urllib.parse import urlparse
+from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
+from types import ModuleType
+from typing import TYPE_CHECKING, Literal, Never, Protocol, cast
 
 from ser.config import AppConfig, get_settings
 from ser.domain import TranscriptWord
@@ -26,34 +25,27 @@ from ser.runtime.phase_timing import (
     log_phase_failed,
     log_phase_started,
 )
-from ser.utils.logger import (
-    DependencyLogPolicy,
-    get_logger,
-    scoped_dependency_log_policy,
+from ser.transcript.backends import (
+    BackendRuntimeRequest,
+    CompatibilityReport,
+    resolve_transcription_backend_adapter,
 )
+from ser.transcript.runtime_policy import (
+    DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
+    resolve_transcription_runtime_policy,
+)
+from ser.utils.logger import get_logger
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult
-    from whisper.model import Whisper
 
 logger: logging.Logger = get_logger(__name__)
-_NOISY_FASTER_WHISPER_POLICY = DependencyLogPolicy(
-    logger_prefixes=frozenset({"faster_whisper"})
-)
+_TERMINATE_GRACE_SECONDS = 5.0
+_KILL_GRACE_SECONDS = 2.0
 
 
 class TranscriptionError(RuntimeError):
     """Raised when transcript extraction fails for operational reasons."""
-
-
-@contextmanager
-def _demote_faster_whisper_info_logs() -> Iterator[None]:
-    """Demotes faster-whisper INFO records to DEBUG for one transcription call."""
-    with scoped_dependency_log_policy(
-        policy=_NOISY_FASTER_WHISPER_POLICY,
-        keep_demoted=True,
-    ):
-        yield
 
 
 class WhisperWord(Protocol):
@@ -64,20 +56,6 @@ class WhisperWord(Protocol):
     end: float | None
 
 
-class FasterWhisperWord(Protocol):
-    """Protocol for faster-whisper word-level transcript entries."""
-
-    word: str
-    start: float | None
-    end: float | None
-
-
-class FasterWhisperSegment(Protocol):
-    """Protocol for faster-whisper segment objects with word payloads."""
-
-    words: list[FasterWhisperWord] | tuple[FasterWhisperWord, ...] | None
-
-
 @dataclass(frozen=True)
 class TranscriptionProfile:
     """Runtime profile settings used by transcription backends."""
@@ -86,6 +64,22 @@ class TranscriptionProfile:
     model_name: str = "large-v2"
     use_demucs: bool = True
     use_vad: bool = True
+
+
+@dataclass(frozen=True)
+class _TranscriptionProcessPayload:
+    """Serializable payload for one process-isolated transcription attempt."""
+
+    file_path: str
+    language: str
+    profile: TranscriptionProfile
+
+
+type _WorkerPhase = Literal["setup_complete", "model_loaded"]
+type _WorkerPhaseMessage = tuple[Literal["phase"], _WorkerPhase]
+type _WorkerSuccessMessage = tuple[Literal["ok"], list[tuple[str, float, float]]]
+type _WorkerErrorMessage = tuple[Literal["err"], str, str, str]
+type _WorkerMessage = _WorkerPhaseMessage | _WorkerSuccessMessage | _WorkerErrorMessage
 
 
 def _resolve_backend_id(raw_backend_id: object) -> TranscriptionBackendId:
@@ -113,72 +107,86 @@ def resolve_transcription_profile(
     )
 
 
-def _stable_whisper_download_target(
+def _runtime_request_from_profile(
+    active_profile: TranscriptionProfile,
+    settings: AppConfig,
+) -> BackendRuntimeRequest:
+    """Builds one backend runtime request from transcription profile settings."""
+    torch_runtime = getattr(settings, "torch_runtime", None)
+    transcription_settings = getattr(settings, "transcription", None)
+    requested_device = getattr(torch_runtime, "device", "cpu")
+    requested_dtype = getattr(torch_runtime, "dtype", "auto")
+    requested_mps_low_memory_threshold = getattr(
+        transcription_settings,
+        "mps_low_memory_threshold_gb",
+        DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
+    )
+    runtime_policy = resolve_transcription_runtime_policy(
+        backend_id=active_profile.backend_id,
+        requested_device=(
+            requested_device if isinstance(requested_device, str) else "cpu"
+        ),
+        requested_dtype=requested_dtype if isinstance(requested_dtype, str) else "auto",
+        mps_low_memory_threshold_gb=(
+            requested_mps_low_memory_threshold
+            if (
+                isinstance(requested_mps_low_memory_threshold, int | float)
+                and not isinstance(requested_mps_low_memory_threshold, bool)
+            )
+            else DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB
+        ),
+    )
+    return BackendRuntimeRequest(
+        model_name=active_profile.model_name,
+        use_demucs=active_profile.use_demucs,
+        use_vad=active_profile.use_vad,
+        device_spec=runtime_policy.device_spec,
+        device_type=runtime_policy.device_type,
+        precision_candidates=runtime_policy.precision_candidates,
+        memory_tier=runtime_policy.memory_tier,
+    )
+
+
+def _check_adapter_compatibility(
     *,
     active_profile: TranscriptionProfile,
     settings: AppConfig,
-) -> Path | None:
-    """Returns stable-whisper checkpoint path for registry-backed model ids."""
-    if active_profile.backend_id != "stable_whisper":
-        return None
-    model_name = active_profile.model_name.strip()
-    if not model_name:
-        raise TranscriptionError("Transcription model name must be a non-empty string.")
-    if Path(model_name).is_file():
-        return None
-    try:
-        whisper_module = importlib.import_module("whisper")
-    except ModuleNotFoundError:
-        return None
-    model_registry = getattr(whisper_module, "_MODELS", None)
-    if not isinstance(model_registry, dict):
-        return None
-    model_url = model_registry.get(model_name)
-    if not isinstance(model_url, str):
-        return None
-    filename = Path(urlparse(model_url).path).name
-    if not filename:
-        return None
-    return settings.models.whisper_download_root / filename
-
-
-def _faster_whisper_setup_required(
-    *,
-    active_profile: TranscriptionProfile,
-    settings: AppConfig,
-) -> bool:
-    """Returns whether faster-whisper assets are missing from local cache."""
-    if active_profile.backend_id != "faster_whisper":
-        return False
-    model_name = active_profile.model_name.strip()
-    if not model_name:
-        raise TranscriptionError("Transcription model name must be a non-empty string.")
-    if Path(model_name).is_dir():
-        return False
-    try:
-        fw_utils = importlib.import_module("faster_whisper.utils")
-    except ModuleNotFoundError:
-        return False
-    download_model = getattr(fw_utils, "download_model", None)
-    if not callable(download_model):
-        return False
-    try:
-        model_path = download_model(
-            model_name,
-            local_files_only=True,
-            cache_dir=str(settings.models.whisper_download_root),
+    runtime_request: BackendRuntimeRequest | None = None,
+) -> CompatibilityReport:
+    """Validates backend compatibility and logs non-blocking compatibility issues."""
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    resolved_runtime_request = (
+        _runtime_request_from_profile(active_profile, settings)
+        if runtime_request is None
+        else runtime_request
+    )
+    report = adapter.check_compatibility(
+        runtime_request=resolved_runtime_request,
+        settings=settings,
+    )
+    if report.noise_issues:
+        for issue in report.noise_issues:
+            logger.debug(
+                "Transcription backend '%s' noise issue [%s]: %s",
+                active_profile.backend_id,
+                issue.code,
+                issue.message,
+            )
+    if report.operational_issues:
+        for issue in report.operational_issues:
+            logger.warning(
+                "Transcription backend '%s' operational issue [%s]: %s",
+                active_profile.backend_id,
+                issue.code,
+                issue.message,
+            )
+    if report.has_blocking_issues:
+        details = (
+            "; ".join(issue.message for issue in report.functional_issues)
+            or "backend compatibility validation failed"
         )
-    except Exception:
-        return True
-    if isinstance(model_path, str):
-        return not Path(model_path).is_dir()
-    path_getter = getattr(model_path, "__fspath__", None)
-    if not callable(path_getter):
-        return False
-    resolved_path = path_getter()
-    if not isinstance(resolved_path, str):
-        return False
-    return not Path(resolved_path).is_dir()
+        raise TranscriptionError(details)
+    return report
 
 
 def _transcription_setup_required(
@@ -187,14 +195,15 @@ def _transcription_setup_required(
     settings: AppConfig,
 ) -> bool:
     """Returns whether a setup/download phase is needed before model load."""
-    stable_target_path = _stable_whisper_download_target(
+    runtime_request = _runtime_request_from_profile(active_profile, settings)
+    _check_adapter_compatibility(
         active_profile=active_profile,
         settings=settings,
+        runtime_request=runtime_request,
     )
-    if stable_target_path is not None:
-        return not stable_target_path.is_file()
-    return _faster_whisper_setup_required(
-        active_profile=active_profile,
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    return adapter.setup_required(
+        runtime_request=runtime_request,
         settings=settings,
     )
 
@@ -205,128 +214,290 @@ def _prepare_transcription_assets(
     settings: AppConfig,
 ) -> None:
     """Ensures required stable-whisper model assets are present locally."""
-    target_path = _stable_whisper_download_target(
+    runtime_request = _runtime_request_from_profile(active_profile, settings)
+    _check_adapter_compatibility(
         active_profile=active_profile,
         settings=settings,
+        runtime_request=runtime_request,
     )
-    if target_path is None or target_path.is_file():
-        if active_profile.backend_id != "faster_whisper":
-            return
-        model_name = active_profile.model_name.strip()
-        if not model_name or Path(model_name).is_dir():
-            return
-        try:
-            fw_utils = importlib.import_module("faster_whisper.utils")
-        except ModuleNotFoundError:
-            return
-        download_model = getattr(fw_utils, "download_model", None)
-        if not callable(download_model):
-            return
-        os.makedirs(settings.models.whisper_download_root, exist_ok=True)
-        download_model(
-            model_name,
-            local_files_only=False,
-            cache_dir=str(settings.models.whisper_download_root),
-        )
-        return
-    try:
-        whisper_module = importlib.import_module("whisper")
-    except ModuleNotFoundError:
-        return
-    model_registry = getattr(whisper_module, "_MODELS", None)
-    download_fn = getattr(whisper_module, "_download", None)
-    if not isinstance(model_registry, dict) or not callable(download_fn):
-        return
-    model_url = model_registry.get(active_profile.model_name)
-    if not isinstance(model_url, str):
-        return
-    os.makedirs(settings.models.whisper_download_root, exist_ok=True)
-    download_fn(
-        model_url,
-        str(settings.models.whisper_download_root),
-        False,
-    )
-
-
-def _load_stable_whisper_model(
-    *,
-    active_profile: TranscriptionProfile,
-    settings: AppConfig,
-) -> Whisper:
-    """Loads one stable-whisper model for CPU inference."""
-    try:
-        import stable_whisper
-    except ModuleNotFoundError as err:
-        raise TranscriptionError(
-            "Missing stable-whisper dependencies. Ensure project dependencies are installed."
-        ) from err
-
-    download_root: Path = settings.models.whisper_download_root
-    torch_cache_root: Path = settings.models.torch_cache_root
-    os.makedirs(download_root, exist_ok=True)
-    os.makedirs(torch_cache_root, exist_ok=True)
-    os.environ["TORCH_HOME"] = str(torch_cache_root)
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", module="stable_whisper")
-        model: Whisper = stable_whisper.load_model(
-            name=active_profile.model_name,
-            device="cpu",
-            dq=False,
-            download_root=str(download_root),
-            in_memory=True,
-        )
-    return model
-
-
-def _load_faster_whisper_model(
-    *,
-    active_profile: TranscriptionProfile,
-    settings: AppConfig,
-) -> object:
-    """Loads one faster-whisper model for CPU inference."""
-    try:
-        faster_whisper_module = importlib.import_module("faster_whisper")
-    except ModuleNotFoundError as err:
-        raise TranscriptionError(
-            "Missing faster-whisper dependencies for transcription backend "
-            "'faster_whisper'. Install faster-whisper (for example, "
-            "`uv sync --extra full`) or switch to `stable_whisper`."
-        ) from err
-    whisper_model = getattr(faster_whisper_module, "WhisperModel", None)
-    if whisper_model is None:
-        raise TranscriptionError("faster-whisper package does not expose WhisperModel.")
-
-    download_root: Path = settings.models.whisper_download_root
-    os.makedirs(download_root, exist_ok=True)
-    return whisper_model(
-        active_profile.model_name,
-        device="cpu",
-        compute_type="int8",
-        download_root=str(download_root),
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    adapter.prepare_assets(
+        runtime_request=runtime_request,
+        settings=settings,
     )
 
 
 def load_whisper_model(profile: TranscriptionProfile | None = None) -> object:
-    """Loads the configured transcription model for CPU inference.
+    """Loads the configured transcription model for resolved runtime settings.
 
     Returns:
         The loaded Whisper model instance.
     """
     settings: AppConfig = get_settings()
     active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
+    runtime_request = _runtime_request_from_profile(active_profile, settings)
     try:
-        if active_profile.backend_id == "stable_whisper":
-            return _load_stable_whisper_model(
-                active_profile=active_profile,
-                settings=settings,
-            )
-        return _load_faster_whisper_model(
+        _check_adapter_compatibility(
             active_profile=active_profile,
+            settings=settings,
+            runtime_request=runtime_request,
+        )
+        logger.info(
+            "Transcription runtime resolved (backend=%s, device=%s, precision=%s, memory_tier=%s).",
+            active_profile.backend_id,
+            runtime_request.device_spec,
+            ",".join(runtime_request.precision_candidates),
+            runtime_request.memory_tier,
+        )
+        adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+        return adapter.load_model(
+            runtime_request=runtime_request,
             settings=settings,
         )
     except Exception as err:
         logger.error(msg=f"Failed to load transcription model: {err}", exc_info=True)
         raise TranscriptionError("Failed to load transcription model.") from err
+
+
+def _should_use_process_isolated_path(profile: TranscriptionProfile) -> bool:
+    """Returns whether one transcription profile should execute in a worker process."""
+    return profile.backend_id == "faster_whisper"
+
+
+def _runtime_request_for_isolated_faster_whisper(
+    *,
+    profile: TranscriptionProfile,
+    settings: AppConfig,
+) -> BackendRuntimeRequest:
+    """Builds one faster-whisper runtime request without importing torch in worker."""
+    torch_runtime = getattr(settings, "torch_runtime", None)
+    requested_device = getattr(torch_runtime, "device", "cpu")
+    requested_dtype = getattr(torch_runtime, "dtype", "auto")
+    device_text = (
+        requested_device.strip().lower() if isinstance(requested_device, str) else "cpu"
+    )
+    dtype_text = (
+        requested_dtype.strip().lower() if isinstance(requested_dtype, str) else "auto"
+    )
+    if device_text.startswith("cuda"):
+        device_spec = requested_device.strip() or "cuda"
+        precision_candidates = (
+            (dtype_text,)
+            if dtype_text in {"float16", "float32"}
+            else ("float16", "float32")
+        )
+        return BackendRuntimeRequest(
+            model_name=profile.model_name,
+            use_demucs=profile.use_demucs,
+            use_vad=profile.use_vad,
+            device_spec=device_spec,
+            device_type="cuda",
+            precision_candidates=precision_candidates,
+            memory_tier="not_applicable",
+        )
+    return BackendRuntimeRequest(
+        model_name=profile.model_name,
+        use_demucs=profile.use_demucs,
+        use_vad=profile.use_vad,
+        device_spec="cpu",
+        device_type="cpu",
+        precision_candidates=("float32",),
+        memory_tier="not_applicable",
+    )
+
+
+def _run_faster_whisper_process_isolated(
+    *,
+    file_path: str,
+    language: str,
+    profile: TranscriptionProfile,
+) -> list[TranscriptWord]:
+    """Runs faster-whisper setup/load/transcribe inside one spawned worker process."""
+    payload = _TranscriptionProcessPayload(
+        file_path=file_path,
+        language=language,
+        profile=profile,
+    )
+    context = mp.get_context("spawn")
+    parent_conn, child_conn = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_transcription_worker_entry,
+        args=(payload, child_conn),
+        daemon=False,
+    )
+    setup_started_at = log_phase_started(
+        logger,
+        phase_name=PHASE_TRANSCRIPTION_SETUP,
+    )
+    model_load_started_at: float | None = None
+    transcription_started_at: float | None = None
+    process.start()
+    child_conn.close()
+    try:
+        setup_message = _recv_worker_message(parent_conn, stage="setup")
+        if setup_message == ("phase", "setup_complete"):
+            log_phase_completed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION_SETUP,
+                started_at=setup_started_at,
+            )
+            model_load_started_at = log_phase_started(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+            )
+        else:
+            _raise_worker_error(setup_message)
+
+        model_load_message = _recv_worker_message(parent_conn, stage="model_load")
+        if model_load_message == ("phase", "model_loaded"):
+            if model_load_started_at is None:
+                raise TranscriptionError(
+                    "Transcription worker completed model load before phase timer start."
+                )
+            log_phase_completed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+                started_at=model_load_started_at,
+            )
+            transcription_started_at = log_phase_started(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION,
+            )
+        else:
+            _raise_worker_error(model_load_message)
+
+        completion_message = _recv_worker_message(parent_conn, stage="transcription")
+        if (
+            isinstance(completion_message, tuple)
+            and len(completion_message) == 2
+            and completion_message[0] == "ok"
+            and isinstance(completion_message[1], list)
+        ):
+            serialized_words = completion_message[1]
+            if transcription_started_at is None:
+                raise TranscriptionError(
+                    "Transcription worker completed transcription before phase timer start."
+                )
+            log_phase_completed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION,
+                started_at=transcription_started_at,
+            )
+            return [
+                TranscriptWord(word, start_seconds, end_seconds)
+                for word, start_seconds, end_seconds in serialized_words
+            ]
+        _raise_worker_error(completion_message)
+    except Exception:
+        if transcription_started_at is not None:
+            log_phase_failed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION,
+                started_at=transcription_started_at,
+            )
+        elif model_load_started_at is not None:
+            log_phase_failed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+                started_at=model_load_started_at,
+            )
+        else:
+            log_phase_failed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION_SETUP,
+                started_at=setup_started_at,
+            )
+        raise
+    finally:
+        parent_conn.close()
+        if process.is_alive():
+            _terminate_worker_process(process)
+        else:
+            process.join(timeout=_TERMINATE_GRACE_SECONDS)
+        process.close()
+
+
+def _recv_worker_message(connection: Connection, *, stage: str) -> _WorkerMessage:
+    """Receives one worker message and validates tuple envelope shape."""
+    try:
+        raw_message = connection.recv()
+    except EOFError as err:
+        raise TranscriptionError(
+            f"Transcription worker exited before sending {stage} payload."
+        ) from err
+    if not isinstance(raw_message, tuple) or not raw_message:
+        raise TranscriptionError("Transcription worker returned malformed payload.")
+    return cast(_WorkerMessage, raw_message)
+
+
+def _raise_worker_error(message: _WorkerMessage) -> Never:
+    """Raises one transcription-domain error from a worker payload."""
+    if (
+        isinstance(message, tuple)
+        and len(message) == 4
+        and message[0] == "err"
+        and isinstance(message[1], str)
+        and isinstance(message[2], str)
+        and isinstance(message[3], str)
+    ):
+        stage, error_type, error_message = message[1], message[2], message[3]
+        raise TranscriptionError(
+            f"Transcription worker {stage} failed with {error_type}: {error_message}"
+        )
+    raise TranscriptionError("Transcription worker returned unexpected payload shape.")
+
+
+def _terminate_worker_process(process: BaseProcess) -> None:
+    """Terminates a worker process with kill fallback."""
+    process.terminate()
+    process.join(timeout=_TERMINATE_GRACE_SECONDS)
+    if process.is_alive():
+        process.kill()
+        process.join(timeout=_KILL_GRACE_SECONDS)
+
+
+def _transcription_worker_entry(
+    payload: _TranscriptionProcessPayload,
+    connection: Connection,
+) -> None:
+    """Executes faster-whisper transcription inside one isolated worker process."""
+    stage = "setup"
+    try:
+        if payload.profile.backend_id != "faster_whisper":
+            raise RuntimeError(
+                f"Unsupported process-isolated backend: {payload.profile.backend_id!r}."
+            )
+        # Prevent ctranslate2 from importing torch/functorch in this worker.
+        sys.modules["torch"] = cast(ModuleType, None)
+        settings = get_settings()
+        runtime_request = _runtime_request_for_isolated_faster_whisper(
+            profile=payload.profile,
+            settings=settings,
+        )
+        adapter = resolve_transcription_backend_adapter(payload.profile.backend_id)
+        if adapter.setup_required(runtime_request=runtime_request, settings=settings):
+            adapter.prepare_assets(runtime_request=runtime_request, settings=settings)
+        connection.send(("phase", "setup_complete"))
+        stage = "model_load"
+        model = adapter.load_model(runtime_request=runtime_request, settings=settings)
+        connection.send(("phase", "model_loaded"))
+        stage = "transcription"
+        transcript_words = adapter.transcribe(
+            model=model,
+            runtime_request=runtime_request,
+            file_path=payload.file_path,
+            language=payload.language,
+            settings=settings,
+        )
+        serialized_words = [
+            (word.word, word.start_seconds, word.end_seconds)
+            for word in transcript_words
+        ]
+        connection.send(("ok", serialized_words))
+    except BaseException as err:
+        connection.send(("err", stage, type(err).__name__, str(err)))
+    finally:
+        connection.close()
 
 
 def extract_transcript(
@@ -353,9 +524,31 @@ def _extract_transcript(
     language: str,
     profile: TranscriptionProfile | None = None,
 ) -> list[TranscriptWord]:
-    """Internal transcript workflow with model loading and formatting."""
+    """Internal transcript workflow with backend-specific execution strategy."""
+    active_profile = resolve_transcription_profile(profile)
+    if _should_use_process_isolated_path(active_profile):
+        return _run_faster_whisper_process_isolated(
+            file_path=file_path,
+            language=language,
+            profile=active_profile,
+        )
+    return _extract_transcript_in_process(
+        file_path=file_path,
+        language=language,
+        profile=active_profile,
+    )
+
+
+def _extract_transcript_in_process(
+    *,
+    file_path: str,
+    language: str,
+    profile: TranscriptionProfile,
+) -> list[TranscriptWord]:
+    """Runs one in-process transcript workflow with phase-aware logging."""
     settings: AppConfig = get_settings()
-    active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
+    active_profile = profile
+    model: object | None = None
 
     if _transcription_setup_required(
         active_profile=active_profile,
@@ -407,33 +600,64 @@ def _extract_transcript(
         phase_name=PHASE_TRANSCRIPTION,
     )
     try:
-        transcript_words: list[TranscriptWord] = (
-            __transcribe_file(model, language, file_path)
-            if profile is None
-            else _transcribe_file_with_profile(
+        try:
+            transcript_words = _transcribe_file_with_profile(
                 model,
                 language,
                 file_path,
                 active_profile,
             )
-        )
-    except Exception:
-        log_phase_failed(
+        except Exception:
+            log_phase_failed(
+                logger,
+                phase_name=PHASE_TRANSCRIPTION,
+                started_at=transcription_started_at,
+            )
+            raise
+        log_phase_completed(
             logger,
             phase_name=PHASE_TRANSCRIPTION,
             started_at=transcription_started_at,
         )
-        raise
-    log_phase_completed(
-        logger,
-        phase_name=PHASE_TRANSCRIPTION,
-        started_at=transcription_started_at,
-    )
+        if not transcript_words:
+            logger.info(msg="Transcript extraction succeeded but returned no words.")
+        logger.debug(msg="Transcript output formatted successfully.")
+        return transcript_words
+    finally:
+        _release_transcription_runtime_memory(model=model)
 
-    if not transcript_words:
-        logger.info(msg="Transcript extraction succeeded but returned no words.")
-    logger.debug(msg="Transcript output formatted successfully.")
-    return transcript_words
+
+def _release_transcription_runtime_memory(*, model: object | None) -> None:
+    """Releases best-effort Torch runtime memory after one in-process transcript run."""
+    del model
+    gc.collect()
+    torch_module = sys.modules.get("torch")
+    if not isinstance(torch_module, ModuleType):
+        return
+    mps_module = getattr(torch_module, "mps", None)
+    if isinstance(mps_module, ModuleType):
+        is_available = getattr(mps_module, "is_available", None)
+        empty_cache = getattr(mps_module, "empty_cache", None)
+        try:
+            if callable(is_available) and is_available() and callable(empty_cache):
+                empty_cache()
+        except Exception:
+            logger.debug(
+                "Ignored failure while emptying torch MPS cache after transcription.",
+                exc_info=True,
+            )
+    cuda_module = getattr(torch_module, "cuda", None)
+    if isinstance(cuda_module, ModuleType):
+        is_available = getattr(cuda_module, "is_available", None)
+        empty_cache = getattr(cuda_module, "empty_cache", None)
+        try:
+            if callable(is_available) and is_available() and callable(empty_cache):
+                empty_cache()
+        except Exception:
+            logger.debug(
+                "Ignored failure while emptying torch CUDA cache after transcription.",
+                exc_info=True,
+            )
 
 
 def __transcribe_file(
@@ -443,113 +667,6 @@ def __transcribe_file(
     return _transcribe_file_with_profile(model, language, file_path, profile=None)
 
 
-def _normalize_stable_whisper_result(raw_transcript: object) -> WhisperResult:
-    """Normalizes raw stable-whisper outputs to a WhisperResult instance."""
-    from stable_whisper.result import WhisperResult
-
-    if isinstance(raw_transcript, WhisperResult):
-        return raw_transcript
-    if isinstance(raw_transcript, dict | list | str):
-        return WhisperResult(raw_transcript)
-    logger.error(
-        "Unexpected transcription result type from stable-whisper: %s",
-        type(raw_transcript).__name__,
-    )
-    raise TranscriptionError(
-        "Unexpected transcription result type from stable-whisper."
-    )
-
-
-def _transcribe_with_stable_whisper(
-    model: object,
-    *,
-    language: str,
-    file_path: str,
-    active_profile: TranscriptionProfile,
-) -> list[TranscriptWord]:
-    """Executes one transcription call through stable-whisper."""
-    transcribe = getattr(model, "transcribe", None)
-    if not callable(transcribe):
-        raise TranscriptionError(
-            "Loaded stable-whisper model does not expose a callable transcribe()."
-        )
-    try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            raw_transcript = transcribe(
-                audio=file_path,
-                language=language,
-                verbose=False,
-                word_timestamps=True,
-                no_speech_threshold=None,
-                demucs=active_profile.use_demucs,
-                vad=active_profile.use_vad,
-            )
-    except Exception as err:
-        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
-        raise TranscriptionError("Failed to transcribe audio.") from err
-    return format_transcript(_normalize_stable_whisper_result(raw_transcript))
-
-
-def _transcribe_with_faster_whisper(
-    model: object,
-    *,
-    language: str,
-    file_path: str,
-    active_profile: TranscriptionProfile,
-) -> list[TranscriptWord]:
-    """Executes one transcription call through faster-whisper."""
-    transcribe = getattr(model, "transcribe", None)
-    if not callable(transcribe):
-        raise TranscriptionError(
-            "Loaded faster-whisper model does not expose a callable transcribe()."
-        )
-    if active_profile.use_demucs:
-        logger.warning(
-            "faster-whisper backend does not support demucs preprocessing; "
-            "demucs flag is ignored."
-        )
-    try:
-        with _demote_faster_whisper_info_logs():
-            raw_transcribe_result = transcribe(
-                file_path,
-                language=language,
-                word_timestamps=True,
-                vad_filter=active_profile.use_vad,
-                beam_size=5,
-            )
-    except Exception as err:
-        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
-        raise TranscriptionError("Failed to transcribe audio.") from err
-    if not isinstance(raw_transcribe_result, tuple) or len(raw_transcribe_result) != 2:
-        raise TranscriptionError(
-            "Unexpected result envelope returned by faster-whisper transcribe()."
-        )
-    segments = raw_transcribe_result[0]
-
-    if not isinstance(segments, Iterable):
-        raise TranscriptionError(
-            "Unexpected segment stream type returned by faster-whisper."
-        )
-
-    transcript_words: list[TranscriptWord] = []
-    for segment in cast(Iterable[object], segments):
-        words = cast(FasterWhisperSegment, segment).words
-        if not isinstance(words, list | tuple):
-            continue
-        for word in words:
-            if word.start is None or word.end is None:
-                continue
-            transcript_words.append(
-                TranscriptWord(
-                    word=str(word.word),
-                    start_seconds=float(word.start),
-                    end_seconds=float(word.end),
-                )
-            )
-    return transcript_words
-
-
 def _transcribe_file_with_profile(
     model: object,
     language: str,
@@ -557,24 +674,28 @@ def _transcribe_file_with_profile(
     profile: TranscriptionProfile | None,
 ) -> list[TranscriptWord]:
     """Runs a Whisper transcription call using an explicit runtime profile."""
+    settings: AppConfig = get_settings()
     active_profile: TranscriptionProfile = resolve_transcription_profile(profile)
-    if active_profile.backend_id == "stable_whisper":
-        return _transcribe_with_stable_whisper(
-            model,
-            language=language,
-            file_path=file_path,
-            active_profile=active_profile,
-        )
-    if active_profile.backend_id == "faster_whisper":
-        return _transcribe_with_faster_whisper(
-            model,
-            language=language,
-            file_path=file_path,
-            active_profile=active_profile,
-        )
-    raise TranscriptionError(
-        f"Unsupported transcription backend id: {active_profile.backend_id}."
+    runtime_request = _runtime_request_from_profile(active_profile, settings)
+    _check_adapter_compatibility(
+        active_profile=active_profile,
+        settings=settings,
+        runtime_request=runtime_request,
     )
+    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
+    try:
+        return adapter.transcribe(
+            model=model,
+            runtime_request=runtime_request,
+            file_path=file_path,
+            language=language,
+            settings=settings,
+        )
+    except TranscriptionError:
+        raise
+    except Exception as err:
+        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
+        raise TranscriptionError("Failed to transcribe audio.") from err
 
 
 def transcribe_with_model(

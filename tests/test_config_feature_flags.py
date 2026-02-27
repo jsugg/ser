@@ -1,6 +1,8 @@
 """Tests for runtime feature-flag and schema version configuration."""
 
+import os
 from collections.abc import Generator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -73,6 +75,8 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.schema.artifact_schema_version == "v2"
     assert settings.torch_runtime.device == "auto"
     assert settings.torch_runtime.dtype == "auto"
+    assert settings.torch_runtime.enable_mps_fallback is False
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "0"
     assert settings.models.medium_model_id == "facebook/wav2vec2-xls-r-300m"
     assert settings.models.accurate_model_id == "openai/whisper-large-v3"
     assert settings.models.accurate_research_model_id == "iic/emotion2vec_plus_large"
@@ -80,6 +84,17 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.transcription.backend_id == "faster_whisper"
     assert settings.transcription.use_demucs is False
     assert settings.transcription.use_vad is True
+    assert settings.transcription.mps_low_memory_threshold_gb == pytest.approx(16.0)
+    assert settings.transcription.mps_admission_control_enabled is True
+    assert settings.transcription.mps_hard_oom_shortcut_enabled is True
+    assert settings.transcription.mps_admission_min_headroom_mb == pytest.approx(64.0)
+    assert settings.transcription.mps_admission_safety_margin_mb == pytest.approx(64.0)
+    assert settings.transcription.mps_admission_calibration_overrides_enabled is True
+    assert settings.transcription.mps_admission_calibration_min_confidence == "high"
+    assert settings.transcription.mps_admission_calibration_report_max_age_hours == (
+        pytest.approx(168.0)
+    )
+    assert settings.transcription.mps_admission_calibration_report_path is None
     assert settings.models.model_cache_dir.name == "model-cache"
     assert settings.models.huggingface_cache_root == (
         settings.models.model_cache_dir / "huggingface"
@@ -145,6 +160,22 @@ def test_runtime_flags_and_schema_env_overrides(
     monkeypatch.setenv("SER_ARTIFACT_SCHEMA_VERSION", "v3")
     monkeypatch.setenv("SER_TORCH_DEVICE", "cuda:0")
     monkeypatch.setenv("SER_TORCH_DTYPE", "bfloat16")
+    monkeypatch.setenv("SER_TORCH_ENABLE_MPS_FALLBACK", "true")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_LOW_MEMORY_GB", "24.0")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_ADMISSION_CONTROL", "false")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_HARD_OOM_SHORTCUT", "false")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_MIN_HEADROOM_MB", "96")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_SAFETY_MARGIN_MB", "48")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_CALIBRATION_OVERRIDES", "false")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_CALIBRATION_MIN_CONFIDENCE", "medium")
+    monkeypatch.setenv(
+        "SER_TRANSCRIPTION_MPS_CALIBRATION_REPORT_MAX_AGE_HOURS",
+        "72",
+    )
+    monkeypatch.setenv(
+        "SER_TRANSCRIPTION_MPS_CALIBRATION_REPORT_PATH",
+        "unit-test/transcription_runtime_calibration_report.json",
+    )
     monkeypatch.setenv(
         "SER_DATASET_MANIFESTS",
         "unit-test/manifest_a.jsonl,unit-test/manifest_b.jsonl",
@@ -212,6 +243,8 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.schema.artifact_schema_version == "v3"
     assert settings.torch_runtime.device == "cuda:0"
     assert settings.torch_runtime.dtype == "bfloat16"
+    assert settings.torch_runtime.enable_mps_fallback is True
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
     assert settings.dataset.manifest_paths == (
         Path("unit-test/manifest_a.jsonl"),
         Path("unit-test/manifest_b.jsonl"),
@@ -231,6 +264,19 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.models.whisper_model.name == "base"
     assert settings.transcription.use_demucs is False
     assert settings.transcription.use_vad is False
+    assert settings.transcription.mps_low_memory_threshold_gb == pytest.approx(24.0)
+    assert settings.transcription.mps_admission_control_enabled is False
+    assert settings.transcription.mps_hard_oom_shortcut_enabled is False
+    assert settings.transcription.mps_admission_min_headroom_mb == pytest.approx(96.0)
+    assert settings.transcription.mps_admission_safety_margin_mb == pytest.approx(48.0)
+    assert settings.transcription.mps_admission_calibration_overrides_enabled is False
+    assert settings.transcription.mps_admission_calibration_min_confidence == "medium"
+    assert settings.transcription.mps_admission_calibration_report_max_age_hours == (
+        pytest.approx(72.0)
+    )
+    assert settings.transcription.mps_admission_calibration_report_path == Path(
+        "unit-test/transcription_runtime_calibration_report.json"
+    )
 
 
 @pytest.mark.parametrize(
@@ -332,3 +378,48 @@ def test_invalid_torch_runtime_env_falls_back_to_auto(
 
     assert settings.torch_runtime.device == "auto"
     assert settings.torch_runtime.dtype == "auto"
+
+
+def test_torch_runtime_inherits_pytorch_mps_fallback_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Torch fallback setting should inherit from PYTORCH env when SER override is absent."""
+    monkeypatch.delenv("SER_TORCH_ENABLE_MPS_FALLBACK", raising=False)
+    monkeypatch.setenv("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
+    settings = config.reload_settings()
+
+    assert settings.torch_runtime.enable_mps_fallback is True
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+
+
+def test_apply_settings_syncs_pytorch_mps_fallback_env() -> None:
+    """Applying a settings snapshot should synchronize torch fallback environment."""
+    base_settings = config.reload_settings()
+    enabled_settings = replace(
+        base_settings,
+        torch_runtime=replace(
+            base_settings.torch_runtime,
+            enable_mps_fallback=True,
+        ),
+    )
+
+    config.apply_settings(enabled_settings)
+
+    assert config.get_settings().torch_runtime.enable_mps_fallback is True
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+
+
+def test_invalid_transcription_mps_threshold_env_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid or non-positive threshold should fall back to default value."""
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_LOW_MEMORY_GB", "-2")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_MIN_HEADROOM_MB", "-10")
+    monkeypatch.setenv("SER_TRANSCRIPTION_MPS_SAFETY_MARGIN_MB", "-20")
+
+    settings = config.reload_settings()
+
+    assert settings.transcription.mps_low_memory_threshold_gb == pytest.approx(16.0)
+    assert settings.transcription.mps_admission_min_headroom_mb == pytest.approx(64.0)
+    assert settings.transcription.mps_admission_safety_margin_mb == pytest.approx(64.0)

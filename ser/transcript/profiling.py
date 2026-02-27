@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import glob
 import json
 import logging
@@ -10,13 +11,15 @@ import random
 import re
 import statistics
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal, cast
 
 from ser.config import (
+    AppConfig,
     ArtifactProfileName,
+    apply_settings,
     get_settings,
     resolve_profile_transcription_config,
 )
@@ -43,6 +46,17 @@ DEFAULT_BENCHMARK_PROFILES: Final[
     "medium",
     "fast",
 )
+DEFAULT_CALIBRATION_PROFILES: Final[
+    tuple[
+        ArtifactProfileName,
+        ArtifactProfileName,
+        ArtifactProfileName,
+        ArtifactProfileName,
+    ]
+] = ("accurate", "medium", "accurate-research", "fast")
+
+type RecommendationConfidence = Literal["high", "medium", "low"]
+type RuntimeRecommendation = Literal["prefer_cpu", "prefer_mps", "mps_with_failover"]
 
 
 @dataclass(frozen=True)
@@ -110,6 +124,41 @@ class ProfilingResult:
 
 
 @dataclass(frozen=True)
+class RuntimeCalibrationMetrics:
+    """Empirical runtime outcomes collected for one profile/model candidate."""
+
+    profile: TranscriptionProfileCandidate
+    iterations: int
+    successful_runs: int
+    failed_runs: int
+    mps_loaded_runs: int
+    mps_completed_runs: int
+    mps_to_cpu_failover_runs: int
+    hard_mps_oom_runs: int
+    mean_latency_seconds: float
+    error_messages: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RuntimeCalibrationRecommendation:
+    """Runtime recommendation with confidence for one profile/model candidate."""
+
+    profile: TranscriptionProfileCandidate
+    recommendation: RuntimeRecommendation
+    confidence: RecommendationConfidence
+    reason: str
+    metrics: RuntimeCalibrationMetrics
+
+
+@dataclass(frozen=True)
+class RuntimeCalibrationResult:
+    """Calibration output including recommendation report path."""
+
+    recommendations: tuple[RuntimeCalibrationRecommendation, ...]
+    report_path: Path
+
+
+@dataclass(frozen=True)
 class RavdessMetadata:
     """Parsed metadata fields from a RAVDESS filename."""
 
@@ -136,6 +185,34 @@ def default_profile_candidates() -> tuple[TranscriptionProfileCandidate, ...]:
     """Returns benchmark candidates aligned to effective runtime transcription defaults."""
     candidates: list[TranscriptionProfileCandidate] = []
     for profile_name in DEFAULT_BENCHMARK_PROFILES:
+        backend_id, model_name, use_demucs, use_vad = (
+            resolve_profile_transcription_config(profile_name)
+        )
+        candidates.append(
+            TranscriptionProfileCandidate(
+                name=_candidate_name(
+                    source_profile=profile_name,
+                    backend_id=backend_id,
+                    model_name=model_name,
+                    use_demucs=use_demucs,
+                    use_vad=use_vad,
+                ),
+                source_profile=profile_name,
+                backend_id=backend_id,
+                model_name=model_name,
+                use_demucs=use_demucs,
+                use_vad=use_vad,
+            )
+        )
+    return tuple(candidates)
+
+
+def runtime_calibration_candidates(
+    profiles: tuple[ArtifactProfileName, ...] = DEFAULT_CALIBRATION_PROFILES,
+) -> tuple[TranscriptionProfileCandidate, ...]:
+    """Returns calibration candidates for selected artifact profiles."""
+    candidates: list[TranscriptionProfileCandidate] = []
+    for profile_name in profiles:
         backend_id, model_name, use_demucs, use_vad = (
             resolve_profile_transcription_config(profile_name)
         )
@@ -619,6 +696,291 @@ def run_default_profile_benchmark(
     )
 
 
+def _runtime_calibration_report_path() -> Path:
+    """Returns default output path for runtime calibration reports."""
+    settings = get_settings()
+    return settings.models.folder / "transcription_runtime_calibration_report.json"
+
+
+def _normalize_profile_csv(raw_profiles: str) -> tuple[ArtifactProfileName, ...]:
+    """Parses comma-separated profile names for calibration workflows."""
+    parsed: list[ArtifactProfileName] = []
+    for token in raw_profiles.split(","):
+        normalized = token.strip().lower()
+        if not normalized:
+            continue
+        if normalized not in {
+            "fast",
+            "medium",
+            "accurate",
+            "accurate-research",
+        }:
+            raise ValueError(f"Unsupported profile in calibration set: {token!r}.")
+        parsed.append(cast(ArtifactProfileName, normalized))
+    if not parsed:
+        raise ValueError("At least one calibration profile must be provided.")
+    return tuple(dict.fromkeys(parsed))
+
+
+def parse_calibration_profiles(raw_profiles: str) -> tuple[ArtifactProfileName, ...]:
+    """Parses and validates calibration profile names from CLI input."""
+    return _normalize_profile_csv(raw_profiles)
+
+
+def _resolve_runtime_device_for_loaded_model(
+    *,
+    model: object,
+    backend_id: TranscriptionBackendId,
+) -> str:
+    """Resolves active runtime device for one loaded model object."""
+    if backend_id == "stable_whisper":
+        from ser.transcript.backends.stable_whisper_mps_compat import (
+            get_stable_whisper_runtime_device,
+        )
+
+        return get_stable_whisper_runtime_device(
+            model,
+            default_device_type="cpu",
+        )
+    return "cpu"
+
+
+def _is_hard_mps_oom(error: Exception) -> bool:
+    """Returns whether one exception indicates a hard MPS OOM condition."""
+    message = " ".join(str(error).split()).lower()
+    if "out of memory" not in message or "mps" not in message:
+        return False
+    incompatibility_markers = (
+        "sparsemps",
+        "aten::empty.memory_format",
+        "std_mean",
+        "unsupported dtype",
+        "cannot convert a mps tensor to float64 dtype",
+        "not currently implemented",
+    )
+    return not any(marker in message for marker in incompatibility_markers)
+
+
+def derive_runtime_recommendation(
+    metrics: RuntimeCalibrationMetrics,
+) -> tuple[RuntimeRecommendation, RecommendationConfidence, str]:
+    """Derives runtime recommendation and confidence from calibration metrics."""
+    if metrics.profile.backend_id != "stable_whisper":
+        return (
+            "prefer_cpu",
+            "high",
+            "backend does not support MPS runtime in this project policy.",
+        )
+    if metrics.iterations <= 0:
+        return ("prefer_cpu", "low", "No calibration runs were executed.")
+    if metrics.mps_loaded_runs == 0:
+        confidence: RecommendationConfidence = (
+            "high" if metrics.iterations >= 2 else "medium"
+        )
+        return (
+            "prefer_cpu",
+            confidence,
+            "MPS runtime was never admitted at model load.",
+        )
+
+    mps_stability_ratio = metrics.mps_completed_runs / float(metrics.iterations)
+    failover_ratio = metrics.mps_to_cpu_failover_runs / float(metrics.iterations)
+    failure_ratio = metrics.failed_runs / float(metrics.iterations)
+
+    if metrics.hard_mps_oom_runs > 0:
+        confidence = "high" if metrics.hard_mps_oom_runs >= 2 else "medium"
+        return (
+            "prefer_cpu",
+            confidence,
+            "Hard MPS OOM observed during calibration.",
+        )
+
+    if mps_stability_ratio >= 0.90 and failure_ratio == 0.0:
+        confidence = "high" if metrics.iterations >= 3 else "medium"
+        return (
+            "prefer_mps",
+            confidence,
+            "MPS runs remained stable across calibration.",
+        )
+
+    if mps_stability_ratio >= 0.40 and failover_ratio > 0.0:
+        confidence = "medium" if metrics.iterations >= 2 else "low"
+        return (
+            "mps_with_failover",
+            confidence,
+            "MPS shows mixed stability; keep CPU failover enabled.",
+        )
+
+    confidence = "medium" if metrics.iterations >= 2 else "low"
+    return (
+        "prefer_cpu",
+        confidence,
+        "MPS stability was insufficient for reliable runtime selection.",
+    )
+
+
+def _calibration_settings(base_settings: AppConfig) -> AppConfig:
+    """Builds settings snapshot used during runtime calibration probes."""
+    return replace(
+        base_settings,
+        torch_runtime=replace(
+            base_settings.torch_runtime,
+            device="mps",
+            dtype="auto",
+        ),
+        transcription=replace(
+            base_settings.transcription,
+            mps_admission_control_enabled=False,
+        ),
+    )
+
+
+def _calibrate_runtime_candidate(
+    *,
+    candidate: TranscriptionProfileCandidate,
+    calibration_file: Path,
+    language: str,
+    iterations: int,
+) -> RuntimeCalibrationMetrics:
+    """Runs iterative runtime probes for one profile/model candidate."""
+    active_profile = TranscriptionProfile(
+        backend_id=candidate.backend_id,
+        model_name=candidate.model_name,
+        use_demucs=candidate.use_demucs,
+        use_vad=candidate.use_vad,
+    )
+    latencies: list[float] = []
+    error_messages: list[str] = []
+    successful_runs = 0
+    failed_runs = 0
+    mps_loaded_runs = 0
+    mps_completed_runs = 0
+    mps_to_cpu_failover_runs = 0
+    hard_mps_oom_runs = 0
+
+    for _ in range(iterations):
+        model: object | None = None
+        runtime_device_before = "cpu"
+        run_started_at = time.perf_counter()
+        try:
+            model = load_whisper_model(profile=active_profile)
+            runtime_device_before = _resolve_runtime_device_for_loaded_model(
+                model=model,
+                backend_id=candidate.backend_id,
+            )
+            if runtime_device_before == "mps":
+                mps_loaded_runs += 1
+            _ = transcribe_with_model(
+                model=model,
+                file_path=str(calibration_file),
+                language=language,
+                profile=active_profile,
+            )
+            successful_runs += 1
+        except Exception as error:
+            failed_runs += 1
+            error_messages.append(str(error))
+            if runtime_device_before == "mps" and _is_hard_mps_oom(error):
+                hard_mps_oom_runs += 1
+        else:
+            runtime_device_after = (
+                _resolve_runtime_device_for_loaded_model(
+                    model=model,
+                    backend_id=candidate.backend_id,
+                )
+                if model is not None
+                else runtime_device_before
+            )
+            if runtime_device_before == "mps" and runtime_device_after == "mps":
+                mps_completed_runs += 1
+            if runtime_device_before == "mps" and runtime_device_after == "cpu":
+                mps_to_cpu_failover_runs += 1
+            latencies.append(time.perf_counter() - run_started_at)
+        finally:
+            if model is not None:
+                del model
+            gc.collect()
+
+    mean_latency_seconds = statistics.fmean(latencies) if latencies else 0.0
+    return RuntimeCalibrationMetrics(
+        profile=candidate,
+        iterations=iterations,
+        successful_runs=successful_runs,
+        failed_runs=failed_runs,
+        mps_loaded_runs=mps_loaded_runs,
+        mps_completed_runs=mps_completed_runs,
+        mps_to_cpu_failover_runs=mps_to_cpu_failover_runs,
+        hard_mps_oom_runs=hard_mps_oom_runs,
+        mean_latency_seconds=mean_latency_seconds,
+        error_messages=tuple(error_messages[:5]),
+    )
+
+
+def run_transcription_runtime_calibration(
+    *,
+    calibration_file: Path,
+    language: str,
+    iterations_per_profile: int = 2,
+    profile_names: tuple[ArtifactProfileName, ...] = DEFAULT_CALIBRATION_PROFILES,
+    report_path: Path | None = None,
+) -> RuntimeCalibrationResult:
+    """Runs runtime calibration probes and emits confidence-scored recommendations."""
+    if iterations_per_profile <= 0:
+        raise ValueError("iterations_per_profile must be greater than zero.")
+    if not calibration_file.is_file():
+        raise FileNotFoundError(f"Calibration audio file not found: {calibration_file}")
+
+    original_settings = get_settings()
+    apply_settings(_calibration_settings(original_settings))
+    recommendations: list[RuntimeCalibrationRecommendation] = []
+    try:
+        for candidate in runtime_calibration_candidates(profile_names):
+            metrics = _calibrate_runtime_candidate(
+                candidate=candidate,
+                calibration_file=calibration_file,
+                language=language,
+                iterations=iterations_per_profile,
+            )
+            recommendation, confidence, reason = derive_runtime_recommendation(metrics)
+            recommendations.append(
+                RuntimeCalibrationRecommendation(
+                    profile=candidate,
+                    recommendation=recommendation,
+                    confidence=confidence,
+                    reason=reason,
+                    metrics=metrics,
+                )
+            )
+    finally:
+        apply_settings(original_settings)
+
+    output_path = (
+        _runtime_calibration_report_path() if report_path is None else report_path
+    )
+    payload = {
+        "created_at_utc": datetime.now(tz=UTC).isoformat(),
+        "calibration_file": str(calibration_file),
+        "iterations_per_profile": iterations_per_profile,
+        "profiles": [
+            {
+                "profile": recommendation.profile.source_profile,
+                "backend_id": recommendation.profile.backend_id,
+                "model_name": recommendation.profile.model_name,
+                "recommendation": recommendation.recommendation,
+                "confidence": recommendation.confidence,
+                "reason": recommendation.reason,
+                "metrics": asdict(recommendation.metrics),
+            }
+            for recommendation in recommendations
+        ],
+    }
+    persisted_path = _persist_profile_report(output_path, payload)
+    return RuntimeCalibrationResult(
+        recommendations=tuple(recommendations),
+        report_path=persisted_path,
+    )
+
+
 def _print_profiling_summary(result: ProfilingResult) -> None:
     """Prints a concise summary for internal profiling runs."""
     print("\nTranscription default profiling summary")
@@ -651,12 +1013,43 @@ def _print_profiling_summary(result: ProfilingResult) -> None:
     print(f"Report: {result.report_path}")
 
 
+def _print_runtime_calibration_summary(result: RuntimeCalibrationResult) -> None:
+    """Prints concise runtime-calibration recommendations."""
+    print("\nTranscription runtime calibration summary")
+    print(
+        "profile | backend | model | recommendation | confidence | "
+        "mps_loaded | mps_completed | failover | failed | mean_latency_s | reason"
+    )
+    for recommendation in result.recommendations:
+        metrics = recommendation.metrics
+        print(
+            f"{recommendation.profile.source_profile} | "
+            f"{recommendation.profile.backend_id} | "
+            f"{recommendation.profile.model_name} | "
+            f"{recommendation.recommendation} | "
+            f"{recommendation.confidence} | "
+            f"{metrics.mps_loaded_runs}/{metrics.iterations} | "
+            f"{metrics.mps_completed_runs}/{metrics.iterations} | "
+            f"{metrics.mps_to_cpu_failover_runs} | "
+            f"{metrics.failed_runs} | "
+            f"{metrics.mean_latency_seconds:.4f} | "
+            f"{recommendation.reason}"
+        )
+    print(f"\nReport: {result.report_path}")
+
+
 def main() -> None:
     """Runs the internal transcription-default profiling workflow."""
     import argparse
 
     parser = argparse.ArgumentParser(
         description="Internal transcription default profiling utility"
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="benchmark",
+        choices=("benchmark", "runtime-calibration"),
     )
     parser.add_argument("--language", type=str, default="en")
     parser.add_argument("--sample-limit", type=int, default=None)
@@ -671,9 +1064,35 @@ def main() -> None:
     )
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument("--report-path", type=str, default=None)
+    parser.add_argument("--calibration-file", type=str, default=None)
+    parser.add_argument("--calibration-iterations", type=int, default=2)
+    parser.add_argument(
+        "--calibration-profiles",
+        type=str,
+        default="accurate,medium,accurate-research,fast",
+        help=(
+            "Comma-separated profile list for runtime calibration "
+            "(fast,medium,accurate,accurate-research)."
+        ),
+    )
     args = parser.parse_args()
 
     report_path = None if args.report_path is None else Path(args.report_path)
+    if args.mode == "runtime-calibration":
+        if args.calibration_file is None:
+            raise ValueError(
+                "--calibration-file is required for runtime-calibration mode."
+            )
+        calibration_result = run_transcription_runtime_calibration(
+            calibration_file=Path(args.calibration_file),
+            language=args.language,
+            iterations_per_profile=args.calibration_iterations,
+            profile_names=_normalize_profile_csv(args.calibration_profiles),
+            report_path=report_path,
+        )
+        _print_runtime_calibration_summary(calibration_result)
+        return
+
     result = run_default_profile_benchmark(
         language=args.language,
         sample_limit=args.sample_limit,

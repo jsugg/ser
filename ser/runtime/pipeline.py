@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import gc
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import ModuleType
 
 from ser.config import AppConfig, get_settings, resolve_profile_transcription_config
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
-from ser.profiles import RuntimeProfile, resolve_profile
+from ser.profiles import RuntimeProfile, TranscriptionBackendId, resolve_profile
 from ser.runtime.backend_hooks import build_backend_hooks
 from ser.runtime.contracts import (
     BackendInferenceCallable,
@@ -30,6 +33,9 @@ from ser.runtime.registry import (
 )
 from ser.runtime.schema import InferenceResult, to_legacy_emotion_segments
 from ser.utils.logger import get_logger
+from ser.utils.transcription_compat import (
+    has_known_faster_whisper_openmp_runtime_conflict,
+)
 
 type TrainModelCallable = Callable[[], None]
 type PredictEmotionsCallable = Callable[[str], list[EmotionSegment]]
@@ -43,6 +49,57 @@ type PrintTimelineCallable = Callable[[list[TimelineEntry]], None]
 type SaveTimelineCallable = Callable[[list[TimelineEntry], str], str]
 
 logger = get_logger(__name__)
+
+
+def _resolve_transcription_profile_with_runtime_fallback(
+    *,
+    backend_id: TranscriptionBackendId,
+    model_name: str,
+    use_demucs: bool,
+    use_vad: bool,
+) -> tuple[TranscriptionBackendId, str, bool, bool]:
+    """Applies deterministic runtime compatibility policy for transcription."""
+    if (
+        backend_id == "faster_whisper"
+        and has_known_faster_whisper_openmp_runtime_conflict()
+    ):
+        logger.info(
+            "Transcription backend retained: faster_whisper "
+            "(reason=openmp_runtime_conflict, mode=process_isolation)."
+        )
+    return backend_id, model_name, use_demucs, use_vad
+
+
+def _release_torch_runtime_memory_before_transcription() -> None:
+    """Releases best-effort torch accelerator cache before transcription starts."""
+    gc.collect()
+    torch_module = sys.modules.get("torch")
+    if not isinstance(torch_module, ModuleType):
+        return
+    mps_module = getattr(torch_module, "mps", None)
+    if isinstance(mps_module, ModuleType):
+        is_available = getattr(mps_module, "is_available", None)
+        empty_cache = getattr(mps_module, "empty_cache", None)
+        try:
+            if callable(is_available) and is_available() and callable(empty_cache):
+                empty_cache()
+        except Exception:
+            logger.debug(
+                "Ignored failure while emptying torch MPS cache before transcription.",
+                exc_info=True,
+            )
+    cuda_module = getattr(torch_module, "cuda", None)
+    if isinstance(cuda_module, ModuleType):
+        is_available = getattr(cuda_module, "is_available", None)
+        empty_cache = getattr(cuda_module, "empty_cache", None)
+        try:
+            if callable(is_available) and is_available() and callable(empty_cache):
+                empty_cache()
+        except Exception:
+            logger.debug(
+                "Ignored failure while emptying torch CUDA cache before transcription.",
+                exc_info=True,
+            )
 
 
 @dataclass(frozen=True)
@@ -87,6 +144,7 @@ class RuntimePipeline:
         else:
             emotions = self.predict_emotions(request.file_path)
 
+        _release_torch_runtime_memory_before_transcription()
         transcript: list[TranscriptWord] = self.extract_transcript(
             request.file_path, request.language
         )
@@ -195,6 +253,17 @@ def create_runtime_pipeline(settings: AppConfig | None = None) -> RuntimePipelin
         transcription_use_demucs,
         transcription_use_vad,
     ) = resolve_profile_transcription_config(capability.profile)
+    (
+        transcription_backend_id,
+        transcription_model_name,
+        transcription_use_demucs,
+        transcription_use_vad,
+    ) = _resolve_transcription_profile_with_runtime_fallback(
+        backend_id=transcription_backend_id,
+        model_name=transcription_model_name,
+        use_demucs=transcription_use_demucs,
+        use_vad=transcription_use_vad,
+    )
     transcription_profile = TranscriptionProfile(
         backend_id=transcription_backend_id,
         model_name=transcription_model_name,
