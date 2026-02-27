@@ -33,6 +33,7 @@ from ser.repr import (
     PoolingWindow,
     WhisperBackend,
 )
+from ser.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
 from ser.runtime.phase_timing import (
@@ -240,9 +241,20 @@ def run_accurate_inference(
                 expected_profile=expected_profile,
                 expected_backend_model_id=resolved_expected_backend_model_id,
             )
+            runtime_override = settings.feature_runtime_policy.for_backend(
+                expected_backend_id
+            )
             _warn_on_runtime_selector_mismatch(
                 loaded_model=active_loaded_model,
-                settings=settings,
+                backend_id=expected_backend_id,
+                requested_device=settings.torch_runtime.device,
+                requested_dtype=settings.torch_runtime.dtype,
+                backend_override_device=(
+                    runtime_override.device if runtime_override is not None else None
+                ),
+                backend_override_dtype=(
+                    runtime_override.dtype if runtime_override is not None else None
+                ),
                 profile=expected_profile,
             )
             audio, sample_rate = read_audio_file(request.file_path)
@@ -760,9 +772,20 @@ def _prepare_process_operation(
         expected_profile=payload.expected_profile,
         expected_backend_model_id=payload.expected_backend_model_id,
     )
+    runtime_override = settings.feature_runtime_policy.for_backend(
+        payload.expected_backend_id
+    )
     _warn_on_runtime_selector_mismatch(
         loaded_model=loaded_model,
-        settings=settings,
+        backend_id=payload.expected_backend_id,
+        requested_device=settings.torch_runtime.device,
+        requested_dtype=settings.torch_runtime.dtype,
+        backend_override_device=(
+            runtime_override.device if runtime_override is not None else None
+        ),
+        backend_override_dtype=(
+            runtime_override.dtype if runtime_override is not None else None
+        ),
         profile=payload.expected_profile,
     )
     audio, sample_rate = read_audio_file(payload.request.file_path)
@@ -831,17 +854,29 @@ def _build_backend_for_profile(
     settings: AppConfig,
 ) -> FeatureBackend:
     """Builds a feature backend aligned with profile/backend runtime expectations."""
+    backend_override = settings.feature_runtime_policy.for_backend(expected_backend_id)
     if expected_backend_id == "hf_whisper":
         model_id = (
             expected_backend_model_id
             if expected_backend_model_id is not None
             else resolve_accurate_model_id(settings)
         )
+        runtime_policy = resolve_feature_runtime_policy(
+            backend_id=expected_backend_id,
+            requested_device=settings.torch_runtime.device,
+            requested_dtype=settings.torch_runtime.dtype,
+            backend_override_device=(
+                backend_override.device if backend_override is not None else None
+            ),
+            backend_override_dtype=(
+                backend_override.dtype if backend_override is not None else None
+            ),
+        )
         return WhisperBackend(
             model_id=model_id,
             cache_dir=settings.models.huggingface_cache_root,
-            device=settings.torch_runtime.device,
-            dtype=settings.torch_runtime.dtype,
+            device=runtime_policy.device,
+            dtype=runtime_policy.dtype,
         )
     if expected_backend_id == "emotion2vec":
         model_id = (
@@ -849,8 +884,20 @@ def _build_backend_for_profile(
             if expected_backend_model_id is not None
             else resolve_accurate_research_model_id(settings)
         )
+        runtime_policy = resolve_feature_runtime_policy(
+            backend_id=expected_backend_id,
+            requested_device=settings.torch_runtime.device,
+            requested_dtype=settings.torch_runtime.dtype,
+            backend_override_device=(
+                backend_override.device if backend_override is not None else None
+            ),
+            backend_override_dtype=(
+                backend_override.dtype if backend_override is not None else None
+            ),
+        )
         return Emotion2VecBackend(
             model_id=model_id,
+            device=runtime_policy.device,
             modelscope_cache_root=settings.models.modelscope_cache_root,
             huggingface_cache_root=settings.models.huggingface_cache_root,
         )
@@ -1052,7 +1099,11 @@ def _ensure_accurate_compatible_model(
 def _warn_on_runtime_selector_mismatch(
     *,
     loaded_model: LoadedModel,
-    settings: AppConfig,
+    backend_id: str,
+    requested_device: str,
+    requested_dtype: str,
+    backend_override_device: str | None,
+    backend_override_dtype: str | None,
     profile: str,
 ) -> None:
     """Warns when artifact runtime selectors differ from current runtime settings."""
@@ -1072,8 +1123,15 @@ def _warn_on_runtime_selector_mismatch(
     if not normalized_artifact_device or not normalized_artifact_dtype:
         return
 
-    runtime_device = settings.torch_runtime.device.strip().lower()
-    runtime_dtype = settings.torch_runtime.dtype.strip().lower()
+    runtime_policy = resolve_feature_runtime_policy(
+        backend_id=backend_id,
+        requested_device=requested_device,
+        requested_dtype=requested_dtype,
+        backend_override_device=backend_override_device,
+        backend_override_dtype=backend_override_dtype,
+    )
+    runtime_device = runtime_policy.device.strip().lower()
+    runtime_dtype = runtime_policy.dtype.strip().lower()
     mismatch_components: list[str] = []
     if normalized_artifact_device != runtime_device:
         mismatch_components.append(

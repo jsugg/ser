@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,6 +88,14 @@ class ProfileRuntimeEnvDefinition:
 
 
 @dataclass(frozen=True)
+class ProfileFeatureRuntimeDefaults:
+    """Optional feature-runtime selector defaults for one profile backend."""
+
+    torch_device: str | None
+    torch_dtype: str | None
+
+
+@dataclass(frozen=True)
 class ProfileCatalogEntry:
     """Declarative profile definition entry loaded from YAML."""
 
@@ -100,6 +109,7 @@ class ProfileCatalogEntry:
     transcription_defaults: ProfileTranscriptionDefaults
     runtime_defaults: ProfileRuntimeDefaults
     runtime_env: ProfileRuntimeEnvDefinition
+    feature_runtime_defaults: ProfileFeatureRuntimeDefaults | None
 
 
 _PROFILE_ORDER: tuple[ProfileName, ...] = (
@@ -118,6 +128,9 @@ _ALLOWED_ENABLE_FLAGS: frozenset[str] = frozenset(
 )
 _ALLOWED_TRANSCRIPTION_BACKENDS: frozenset[str] = frozenset(
     {"stable_whisper", "faster_whisper"}
+)
+_ALLOWED_TORCH_DTYPE_SELECTORS: frozenset[str] = frozenset(
+    {"auto", "float16", "float32", "bfloat16"}
 )
 
 
@@ -217,6 +230,24 @@ def _read_required_int(
             f"Profile definition entry {entry_name!r} has invalid {key!r}."
         )
     return raw_value
+
+
+def _normalize_torch_device_selector(value: str) -> str | None:
+    """Normalizes one torch device selector or returns None when invalid."""
+    normalized = value.strip().lower()
+    if normalized in {"auto", "cpu", "mps", "cuda"}:
+        return normalized
+    if re.fullmatch(r"cuda:\d+", normalized):
+        return normalized
+    return None
+
+
+def _normalize_torch_dtype_selector(value: str) -> str | None:
+    """Normalizes one torch dtype selector or returns None when invalid."""
+    normalized = value.strip().lower()
+    if normalized in _ALLOWED_TORCH_DTYPE_SELECTORS:
+        return normalized
+    return None
 
 
 def _validate_model_definition(
@@ -444,6 +475,61 @@ def _validate_runtime_env(
     )
 
 
+def _validate_feature_runtime_defaults(
+    *,
+    name: ProfileName,
+    raw: object,
+) -> ProfileFeatureRuntimeDefaults | None:
+    """Validates optional feature-runtime defaults for one profile."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise RuntimeError(
+            f"Profile definition entry {name!r} has invalid 'feature_runtime_defaults'."
+        )
+    runtime_defaults = cast(dict[str, object], raw)
+    torch_device_raw = _read_optional_text(
+        runtime_defaults,
+        key="torch_device",
+        entry_name=name,
+    )
+    torch_dtype_raw = _read_optional_text(
+        runtime_defaults,
+        key="torch_dtype",
+        entry_name=name,
+    )
+    torch_device = (
+        _normalize_torch_device_selector(torch_device_raw)
+        if torch_device_raw is not None
+        else None
+    )
+    if torch_device_raw is not None and torch_device is None:
+        raise RuntimeError(
+            f"Profile definition entry {name!r} has invalid "
+            "'feature_runtime_defaults.torch_device'."
+        )
+    torch_dtype = (
+        _normalize_torch_dtype_selector(torch_dtype_raw)
+        if torch_dtype_raw is not None
+        else None
+    )
+    if torch_dtype_raw is not None and torch_dtype is None:
+        raise RuntimeError(
+            f"Profile definition entry {name!r} has invalid "
+            "'feature_runtime_defaults.torch_dtype'."
+        )
+    if torch_device is None and torch_dtype is None:
+        raise RuntimeError(
+            f"Profile definition entry {name!r} must define at least one of "
+            "'feature_runtime_defaults.torch_device' or "
+            "'feature_runtime_defaults.torch_dtype'."
+        )
+    return ProfileFeatureRuntimeDefaults(
+        torch_device=torch_device,
+        torch_dtype=torch_dtype,
+    )
+
+
 def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEntry:
     """Validates one profile definition entry loaded from YAML."""
     if not isinstance(raw, dict):
@@ -499,6 +585,10 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
         raw=raw_mapping.get("runtime_defaults"),
     )
     runtime_env = _validate_runtime_env(name=name, raw=raw_mapping.get("runtime_env"))
+    feature_runtime_defaults = _validate_feature_runtime_defaults(
+        name=name,
+        raw=raw_mapping.get("feature_runtime_defaults"),
+    )
     return ProfileCatalogEntry(
         name=name,
         description=description.strip(),
@@ -510,6 +600,7 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
         transcription_defaults=transcription_defaults,
         runtime_defaults=runtime_defaults,
         runtime_env=runtime_env,
+        feature_runtime_defaults=feature_runtime_defaults,
     )
 
 

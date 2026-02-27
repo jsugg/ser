@@ -76,6 +76,11 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.torch_runtime.device == "auto"
     assert settings.torch_runtime.dtype == "auto"
     assert settings.torch_runtime.enable_mps_fallback is False
+    xlsr_override = settings.feature_runtime_policy.for_backend("hf_xlsr")
+    assert xlsr_override is not None
+    assert xlsr_override.device is None
+    assert xlsr_override.dtype == "float32"
+    assert settings.feature_runtime_policy.for_backend("hf_whisper") is None
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "0"
     assert settings.models.medium_model_id == "facebook/wav2vec2-xls-r-300m"
     assert settings.models.accurate_model_id == "openai/whisper-large-v3"
@@ -244,6 +249,11 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.torch_runtime.device == "cuda:0"
     assert settings.torch_runtime.dtype == "bfloat16"
     assert settings.torch_runtime.enable_mps_fallback is True
+    xlsr_override = settings.feature_runtime_policy.for_backend("hf_xlsr")
+    assert xlsr_override is not None
+    assert xlsr_override.device is None
+    assert xlsr_override.dtype == "float32"
+    assert settings.feature_runtime_policy.for_backend("hf_whisper") is None
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
     assert settings.dataset.manifest_paths == (
         Path("unit-test/manifest_a.jsonl"),

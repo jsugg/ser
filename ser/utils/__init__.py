@@ -13,7 +13,12 @@ if TYPE_CHECKING:
     from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 
 
-def read_audio_file(file_path: str) -> tuple[np.ndarray, int]:
+def read_audio_file(
+    file_path: str,
+    *,
+    start_seconds: float | None = None,
+    duration_seconds: float | None = None,
+) -> tuple[np.ndarray, int]:
     """Reads and normalizes an audio file.
 
     Args:
@@ -24,7 +29,11 @@ def read_audio_file(file_path: str) -> tuple[np.ndarray, int]:
     """
     from .audio_utils import read_audio_file as _read_audio_file
 
-    return _read_audio_file(file_path)
+    return _read_audio_file(
+        file_path,
+        start_seconds=start_seconds,
+        duration_seconds=duration_seconds,
+    )
 
 
 def build_timeline(

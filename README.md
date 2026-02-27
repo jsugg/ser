@@ -104,6 +104,54 @@ This generates compatibility model artifacts (`*.pkl` and optional `*.skops`) pl
 training report JSON under your configured models directory.
 Profile-compatible artifacts are selected strictly during predict (fail-closed on mismatch).
 
+### Dataset Consent and Manifest Preparation
+For multi-corpus training, configure dataset policy/license acknowledgements first:
+
+```bash
+uv run ser configure --show
+uv run ser configure \
+  --accept-dataset-policy noncommercial share_alike academic_only \
+  --accept-dataset-license cc-by-nc-sa-4.0 odbl-1.0 msp-academic-license biic-academic-license \
+  --persist
+```
+
+Prepare dataset manifests with `ser data download`:
+
+```bash
+# RAVDESS already present locally (no remote download step).
+uv run ser data download \
+  --dataset ravdess \
+  --dataset-root /path/to/ravdess \
+  --manifest-path /path/to/manifests/ravdess.jsonl \
+  --skip-download
+
+# CREMA-D clone + manifest preparation.
+uv run ser data download \
+  --dataset crema-d \
+  --dataset-root /path/to/crema-d
+
+# MSP-Podcast / BIIC-Podcast require labels CSV for manifest building.
+uv run ser data download \
+  --dataset msp-podcast \
+  --dataset-root /path/to/msp \
+  --labels-csv-path /path/to/labels_consensus.csv \
+  --audio-base-dir /path/to/msp/audio \
+  --skip-download
+```
+
+Local metadata files (default locations):
+- Dataset registry: `${SER_MODELS_DIR}/../.ser/dataset_registry.json`
+- Dataset consent store: `${SER_MODELS_DIR}/../.ser/dataset_consents.json`
+
+`SER_DATASET_CONSENTS_FILE` can override the consent-store path.
+
+Manifest resolution order during training:
+1. Explicit manifests in `SER_DATASET_MANIFESTS`
+2. Registered manifests from the dataset registry (missing manifests are auto-rebuilt from registry metadata)
+3. Legacy RAVDESS glob fallback from `DATASET_FOLDER`
+
+If a registry exists but no manifest can be loaded/rebuilt, training fails with an actionable message to run `ser data download --dataset <id>`.
+
 <details>
 <summary>Advanced artifact compatibility details</summary>
 
@@ -215,6 +263,7 @@ Most users only need these:
 You can also override runtime behavior with environment variables:
 
 * `DATASET_FOLDER`: dataset root folder (default: `ser/dataset/ravdess`)
+* `SER_DATASET_MANIFESTS`: comma-separated JSONL manifest paths used as explicit training input
 * `DEFAULT_LANGUAGE`: default transcription language (default: `en`)
 * `SER_CACHE_DIR`: runtime cache root (default: platform cache dir + `/ser`)
 * `SER_MODEL_CACHE_DIR`: third-party foundation model cache root (default: `$SER_CACHE_DIR/model-cache`)
@@ -260,6 +309,7 @@ You can also override runtime behavior with environment variables:
 * `SER_ENABLE_RESTRICTED_BACKENDS`: volatile global override for restricted backends on that run (default: `false`)
 * `SER_ALLOWED_RESTRICTED_BACKENDS`: volatile per-run allowlist of restricted backend ids (comma-separated, e.g. `emotion2vec`)
 * `SER_RESTRICTED_BACKENDS_CONSENT_FILE`: path override for persisted restricted-backend consent store
+* `SER_DATASET_CONSENTS_FILE`: path override for persisted dataset policy/license consent store
 * `SER_QUALITY_GATE_MIN_UAR_DELTA`: default minimum medium-vs-fast UAR delta for gate CLI (default: `0.0025`)
 * `SER_QUALITY_GATE_MIN_MACRO_F1_DELTA`: default minimum medium-vs-fast macro-F1 delta for gate CLI (default: `0.0025`)
 * `SER_QUALITY_GATE_MAX_MEDIUM_SEGMENTS_PER_MINUTE`: default max medium segments/minute for gate CLI (default: `25.0`)

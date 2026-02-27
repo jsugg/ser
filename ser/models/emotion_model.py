@@ -51,6 +51,7 @@ from ser.repr import (
     WhisperBackend,
     XLSRBackend,
 )
+from ser.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.runtime.schema import (
     ARTIFACT_SCHEMA_VERSION,
     OUTPUT_SCHEMA_VERSION,
@@ -60,7 +61,7 @@ from ser.runtime.schema import (
     to_legacy_emotion_segments,
 )
 from ser.train.eval import grouped_train_test_split
-from ser.train.metrics import compute_ser_metrics
+from ser.train.metrics import compute_grouped_ser_metrics_by_sample, compute_ser_metrics
 from ser.utils.audio_utils import read_audio_file
 from ser.utils.logger import get_logger
 
@@ -128,6 +129,47 @@ def resolve_accurate_research_model_id(settings: AppConfig | None = None) -> str
     return configured_model_id.strip()
 
 
+def _resolve_feature_runtime_selectors(
+    *,
+    backend_id: str,
+    settings: AppConfig,
+) -> tuple[str, str]:
+    """Resolves backend-aware runtime selectors for feature extraction."""
+    backend_override_device: str | None = None
+    backend_override_dtype: str | None = None
+    feature_runtime_policy = getattr(settings, "feature_runtime_policy", None)
+    resolve_backend_override = (
+        getattr(feature_runtime_policy, "for_backend", None)
+        if feature_runtime_policy is not None
+        else None
+    )
+    if callable(resolve_backend_override):
+        backend_override = resolve_backend_override(backend_id)
+        if backend_override is not None:
+            backend_override_device = getattr(backend_override, "device", None)
+            backend_override_dtype = getattr(backend_override, "dtype", None)
+    runtime_policy = resolve_feature_runtime_policy(
+        backend_id=backend_id,
+        requested_device=settings.torch_runtime.device,
+        requested_dtype=settings.torch_runtime.dtype,
+        backend_override_device=backend_override_device,
+        backend_override_dtype=backend_override_dtype,
+    )
+    if (
+        runtime_policy.device != settings.torch_runtime.device
+        or runtime_policy.dtype != settings.torch_runtime.dtype
+    ):
+        logger.info(
+            "Feature runtime policy adjusted selectors for backend=%s "
+            "(device=%s, dtype=%s, reason=%s).",
+            backend_id,
+            runtime_policy.device,
+            runtime_policy.dtype,
+            runtime_policy.reason,
+        )
+    return runtime_policy.device, runtime_policy.dtype
+
+
 class LoadedModel(NamedTuple):
     """Loaded model object and optional expected feature-vector length."""
 
@@ -172,6 +214,15 @@ class MediumSplitMetadata:
     train_unique_speakers: int
     test_unique_speakers: int
     speaker_overlap_count: int
+
+
+@dataclass(frozen=True)
+class WindowMeta:
+    """Window-level metadata for evaluation breakdowns."""
+
+    sample_id: str
+    corpus: str
+    language: str
 
 
 def _read_positive_int(metadata: dict[str, object], field_name: str) -> int:
@@ -1158,14 +1209,90 @@ def _build_dataset_controls(utterances: list[Utterance]) -> dict[str, object]:
     language_counts = dict(
         Counter((utterance.language or "unknown") for utterance in utterances)
     )
+
+    manifest_paths: list[str] = [str(path) for path in settings.dataset.manifest_paths]
+    mode = "manifest" if manifest_paths else "glob"
+    if not manifest_paths:
+        try:
+            from ser.data.dataset_registry import (
+                load_dataset_registry,
+                registered_manifest_paths,
+            )
+
+            registry = load_dataset_registry(settings=settings)
+            if registry:
+                mode = "registry"
+                manifest_paths = [
+                    str(path)
+                    for path in sorted(
+                        set(registered_manifest_paths(settings=settings))
+                    )
+                ]
+        except Exception:
+            # Optional feature; ignore and keep glob mode.
+            pass
     controls: dict[str, object] = {
-        "mode": "manifest" if settings.dataset.manifest_paths else "glob",
-        "manifest_paths": [str(path) for path in settings.dataset.manifest_paths],
+        "mode": mode,
+        "manifest_paths": manifest_paths,
         "utterance_count": len(utterances),
         "corpus_counts": corpus_counts,
         "language_counts": language_counts,
     }
     return controls
+
+
+def _ensure_dataset_consents_for_training(*, utterances: list[Utterance]) -> None:
+    """Enforces dataset policy/license acknowledgements before training."""
+
+    from ser.config import get_settings
+    from ser.data.dataset_consents import (
+        DatasetConsentError,
+        compute_missing_dataset_consents,
+        ensure_dataset_consents,
+        persist_dataset_consents,
+    )
+
+    settings = get_settings()
+    try:
+        ensure_dataset_consents(settings=settings, utterances=utterances)
+        return
+    except DatasetConsentError as err:
+        message = str(err)
+        interactive = os.isatty(0) and os.isatty(2)
+        if not interactive:
+            raise
+
+    logger.warning("%s", message)
+    print("To acknowledge and continue, type 'accept': ", end="", flush=True)
+    try:
+        response = input().strip().lower()
+    except EOFError:
+        response = ""
+    if response != "accept":
+        raise DatasetConsentError(message)
+    missing_policies, missing_licenses = compute_missing_dataset_consents(
+        settings=settings,
+        utterances=utterances,
+    )
+    persist_dataset_consents(
+        settings=settings,
+        accept_policy_ids=sorted(missing_policies),
+        accept_license_ids=sorted(missing_licenses),
+        source="training",
+    )
+
+
+def _group_metrics_min_support() -> int:
+    """Minimum sample support required to report per-group metrics."""
+
+    raw = os.getenv("SER_GROUP_METRICS_MIN_SUPPORT", "").strip()
+    if not raw:
+        return 20
+    try:
+        value = int(raw)
+    except ValueError:
+        return 20
+    return max(1, value)
 
 
 def _pooling_windows_from_encoded_frames(
@@ -1185,6 +1312,8 @@ def _pooling_windows_from_encoded_frames(
 def _encode_medium_sequence(
     *,
     audio_path: str,
+    start_seconds: float | None = None,
+    duration_seconds: float | None = None,
     backend: XLSRBackend,
     cache: EmbeddingCache,
     model_id: str | None = None,
@@ -1198,7 +1327,11 @@ def _encode_medium_sequence(
         resolved_model_id = resolve_medium_model_id(settings)
 
     def _compute_sequence() -> EncodedSequence:
-        audio, sample_rate = read_audio_file(audio_path)
+        audio, sample_rate = read_audio_file(
+            audio_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+        )
         audio_array = np.asarray(audio, dtype=np.float32)
         return backend.encode_sequence(audio_array, sample_rate)
 
@@ -1208,6 +1341,8 @@ def _encode_medium_sequence(
         model_id=resolved_model_id,
         frame_size_seconds=settings.medium_runtime.pool_window_size_seconds,
         frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
+        start_seconds=start_seconds,
+        duration_seconds=duration_seconds,
         compute=_compute_sequence,
     )
     logger.debug(
@@ -1221,20 +1356,23 @@ def _encode_medium_sequence(
 
 def _build_medium_feature_dataset(
     *,
-    samples: list[LabeledAudioSample],
+    utterances: list[Utterance],
     backend: XLSRBackend,
     cache: EmbeddingCache,
     model_id: str | None = None,
-) -> tuple[np.ndarray, list[str], MediumNoiseControlStats]:
+) -> tuple[np.ndarray, list[str], list[WindowMeta], MediumNoiseControlStats]:
     """Builds frame-pooled medium feature matrix from labeled audio files."""
     settings: AppConfig = get_settings()
     runtime_config = settings.medium_runtime
     feature_blocks: list[np.ndarray] = []
     labels: list[str] = []
+    meta: list[WindowMeta] = []
     aggregate_stats = MediumNoiseControlStats()
-    for audio_path, emotion_label in samples:
+    for utterance in utterances:
         encoded = _encode_medium_sequence(
-            audio_path=audio_path,
+            audio_path=str(utterance.audio_path),
+            start_seconds=utterance.start_seconds,
+            duration_seconds=utterance.duration_seconds,
             backend=backend,
             cache=cache,
             model_id=model_id,
@@ -1249,20 +1387,35 @@ def _build_medium_feature_dataset(
             np.asarray(pooled, dtype=np.float64)
         )
         feature_blocks.append(filtered)
-        labels.extend([emotion_label] * int(filtered.shape[0]))
+        labels.extend([utterance.label] * int(filtered.shape[0]))
+        language = utterance.language or "unknown"
+        meta.extend(
+            [
+                WindowMeta(
+                    sample_id=utterance.sample_id,
+                    corpus=utterance.corpus,
+                    language=language,
+                )
+            ]
+            * int(filtered.shape[0])
+        )
         aggregate_stats = _merge_medium_noise_stats(aggregate_stats, stats)
 
     if not feature_blocks:
         raise RuntimeError("Medium training produced no feature vectors.")
     feature_matrix = np.vstack(feature_blocks).astype(np.float64, copy=False)
-    if int(feature_matrix.shape[0]) != len(labels):
+    if int(feature_matrix.shape[0]) != len(labels) or int(
+        feature_matrix.shape[0]
+    ) != len(meta):
         raise RuntimeError("Medium feature/label row mismatch during dataset build.")
-    return feature_matrix, labels, aggregate_stats
+    return feature_matrix, labels, meta, aggregate_stats
 
 
 def _encode_accurate_sequence(
     *,
     audio_path: str,
+    start_seconds: float | None = None,
+    duration_seconds: float | None = None,
     backend: FeatureBackend,
     cache: EmbeddingCache,
     model_id: str | None = None,
@@ -1288,7 +1441,11 @@ def _encode_accurate_sequence(
         )
 
     def _compute_sequence() -> EncodedSequence:
-        audio, sample_rate = read_audio_file(audio_path)
+        audio, sample_rate = read_audio_file(
+            audio_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+        )
         audio_array = np.asarray(audio, dtype=np.float32)
         return backend.encode_sequence(audio_array, sample_rate)
 
@@ -1298,6 +1455,8 @@ def _encode_accurate_sequence(
         model_id=resolved_model_id,
         frame_size_seconds=runtime_config.pool_window_size_seconds,
         frame_stride_seconds=runtime_config.pool_window_stride_seconds,
+        start_seconds=start_seconds,
+        duration_seconds=duration_seconds,
         compute=_compute_sequence,
     )
     logger.debug(
@@ -1312,12 +1471,12 @@ def _encode_accurate_sequence(
 
 def _build_accurate_feature_dataset(
     *,
-    samples: list[LabeledAudioSample],
+    utterances: list[Utterance],
     backend: FeatureBackend,
     cache: EmbeddingCache,
     model_id: str | None = None,
     backend_id: str = ACCURATE_BACKEND_ID,
-) -> tuple[np.ndarray, list[str]]:
+) -> tuple[np.ndarray, list[str], list[WindowMeta]]:
     """Builds frame-pooled accurate feature matrix from labeled audio files."""
     settings: AppConfig = get_settings()
     runtime_config: ProfileRuntimeConfig
@@ -1329,9 +1488,12 @@ def _build_accurate_feature_dataset(
         raise ValueError(f"Unknown accurate backend id: {backend_id!r}.")
     feature_blocks: list[np.ndarray] = []
     labels: list[str] = []
-    for audio_path, emotion_label in samples:
+    meta: list[WindowMeta] = []
+    for utterance in utterances:
         encoded = _encode_accurate_sequence(
-            audio_path=audio_path,
+            audio_path=str(utterance.audio_path),
+            start_seconds=utterance.start_seconds,
+            duration_seconds=utterance.duration_seconds,
             backend=backend,
             cache=cache,
             model_id=model_id,
@@ -1344,14 +1506,27 @@ def _build_accurate_feature_dataset(
         )
         pooled = mean_std_pool(encoded, windows)
         feature_blocks.append(np.asarray(pooled, dtype=np.float64))
-        labels.extend([emotion_label] * int(pooled.shape[0]))
+        labels.extend([utterance.label] * int(pooled.shape[0]))
+        language = utterance.language or "unknown"
+        meta.extend(
+            [
+                WindowMeta(
+                    sample_id=utterance.sample_id,
+                    corpus=utterance.corpus,
+                    language=language,
+                )
+            ]
+            * int(pooled.shape[0])
+        )
 
     if not feature_blocks:
         raise RuntimeError("Accurate training produced no feature vectors.")
     feature_matrix = np.vstack(feature_blocks).astype(np.float64, copy=False)
-    if int(feature_matrix.shape[0]) != len(labels):
+    if int(feature_matrix.shape[0]) != len(labels) or int(
+        feature_matrix.shape[0]
+    ) != len(meta):
         raise RuntimeError("Accurate feature/label row mismatch during dataset build.")
-    return feature_matrix, labels
+    return feature_matrix, labels, meta
 
 
 def _merge_medium_noise_stats(
@@ -1430,25 +1605,28 @@ def train_medium_model() -> None:
     if utterances is None:
         logger.error("Dataset not loaded. Please load the dataset first.")
         raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    _ensure_dataset_consents_for_training(utterances=utterances)
     train_utterances, test_utterances, split_metadata = _split_utterances(utterances)
-    train_samples = _utterances_to_labeled_samples(train_utterances)
-    test_samples = _utterances_to_labeled_samples(test_utterances)
     medium_model_id = resolve_medium_model_id(settings)
+    medium_runtime_device, medium_runtime_dtype = _resolve_feature_runtime_selectors(
+        backend_id=MEDIUM_BACKEND_ID,
+        settings=settings,
+    )
     backend = XLSRBackend(
         model_id=medium_model_id,
         cache_dir=settings.models.huggingface_cache_root,
-        device=settings.torch_runtime.device,
-        dtype=settings.torch_runtime.dtype,
+        device=medium_runtime_device,
+        dtype=medium_runtime_dtype,
     )
     cache = EmbeddingCache(settings.tmp_folder / "medium_embeddings")
-    x_train, y_train, train_noise_stats = _build_medium_feature_dataset(
-        samples=train_samples,
+    x_train, y_train, _train_meta, train_noise_stats = _build_medium_feature_dataset(
+        utterances=train_utterances,
         backend=backend,
         cache=cache,
         model_id=medium_model_id,
     )
-    x_test, y_test, test_noise_stats = _build_medium_feature_dataset(
-        samples=test_samples,
+    x_test, y_test, test_meta, test_noise_stats = _build_medium_feature_dataset(
+        utterances=test_utterances,
         backend=backend,
         cache=cache,
         model_id=medium_model_id,
@@ -1456,8 +1634,8 @@ def train_medium_model() -> None:
     model: EmotionClassifier = _create_classifier()
     logger.info(
         "Medium dataset loaded successfully (train_files=%s, test_files=%s, split=%s).",
-        len(train_samples),
-        len(test_samples),
+        len(train_utterances),
+        len(test_utterances),
         split_metadata.split_strategy,
     )
 
@@ -1468,6 +1646,23 @@ def train_medium_model() -> None:
     accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
     macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
     ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    min_support = _group_metrics_min_support()
+    ser_metrics["group_metrics"] = {
+        "by_corpus": compute_grouped_ser_metrics_by_sample(
+            y_true=y_test,
+            y_pred=y_pred,
+            sample_ids=[m.sample_id for m in test_meta],
+            group_ids=[m.corpus for m in test_meta],
+            min_support=min_support,
+        ),
+        "by_language": compute_grouped_ser_metrics_by_sample(
+            y_true=y_test,
+            y_pred=y_pred,
+            sample_ids=[m.sample_id for m in test_meta],
+            group_ids=[m.language for m in test_meta],
+            min_support=min_support,
+        ),
+    }
     uar = ser_metrics.get("uar")
     if not isinstance(uar, float):
         raise RuntimeError("SER metrics payload missing float 'uar'.")
@@ -1492,8 +1687,8 @@ def train_medium_model() -> None:
         frame_stride_seconds=settings.medium_runtime.pool_window_stride_seconds,
         pooling_strategy=MEDIUM_POOLING_STRATEGY,
         backend_model_id=medium_model_id,
-        torch_device=settings.torch_runtime.device,
-        torch_dtype=settings.torch_runtime.dtype,
+        torch_device=medium_runtime_device,
+        torch_dtype=medium_runtime_dtype,
         provenance=provenance,
     )
     artifact_metadata_obj = artifact.get("metadata")
@@ -1562,26 +1757,31 @@ def train_accurate_model() -> None:
     if utterances is None:
         logger.error("Dataset not loaded. Please load the dataset first.")
         raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    _ensure_dataset_consents_for_training(utterances=utterances)
     train_utterances, test_utterances, split_metadata = _split_utterances(utterances)
-    train_samples = _utterances_to_labeled_samples(train_utterances)
-    test_samples = _utterances_to_labeled_samples(test_utterances)
     accurate_model_id = resolve_accurate_model_id(settings)
+    accurate_runtime_device, accurate_runtime_dtype = (
+        _resolve_feature_runtime_selectors(
+            backend_id=ACCURATE_BACKEND_ID,
+            settings=settings,
+        )
+    )
     backend = WhisperBackend(
         model_id=accurate_model_id,
         cache_dir=settings.models.huggingface_cache_root,
-        device=settings.torch_runtime.device,
-        dtype=settings.torch_runtime.dtype,
+        device=accurate_runtime_device,
+        dtype=accurate_runtime_dtype,
     )
     cache = EmbeddingCache(settings.tmp_folder / "accurate_embeddings")
-    x_train, y_train = _build_accurate_feature_dataset(
-        samples=train_samples,
+    x_train, y_train, _train_meta = _build_accurate_feature_dataset(
+        utterances=train_utterances,
         backend=backend,
         cache=cache,
         model_id=accurate_model_id,
         backend_id=ACCURATE_BACKEND_ID,
     )
-    x_test, y_test = _build_accurate_feature_dataset(
-        samples=test_samples,
+    x_test, y_test, test_meta = _build_accurate_feature_dataset(
+        utterances=test_utterances,
         backend=backend,
         cache=cache,
         model_id=accurate_model_id,
@@ -1590,8 +1790,8 @@ def train_accurate_model() -> None:
     model: EmotionClassifier = _create_classifier()
     logger.info(
         "Accurate dataset loaded successfully (train_files=%s, test_files=%s, split=%s).",
-        len(train_samples),
-        len(test_samples),
+        len(train_utterances),
+        len(test_utterances),
         split_metadata.split_strategy,
     )
 
@@ -1602,6 +1802,23 @@ def train_accurate_model() -> None:
     accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
     macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
     ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    min_support = _group_metrics_min_support()
+    ser_metrics["group_metrics"] = {
+        "by_corpus": compute_grouped_ser_metrics_by_sample(
+            y_true=y_test,
+            y_pred=y_pred,
+            sample_ids=[m.sample_id for m in test_meta],
+            group_ids=[m.corpus for m in test_meta],
+            min_support=min_support,
+        ),
+        "by_language": compute_grouped_ser_metrics_by_sample(
+            y_true=y_test,
+            y_pred=y_pred,
+            sample_ids=[m.sample_id for m in test_meta],
+            group_ids=[m.language for m in test_meta],
+            min_support=min_support,
+        ),
+    }
     uar = ser_metrics.get("uar")
     if not isinstance(uar, float):
         raise RuntimeError("SER metrics payload missing float 'uar'.")
@@ -1626,8 +1843,8 @@ def train_accurate_model() -> None:
         frame_stride_seconds=settings.accurate_runtime.pool_window_stride_seconds,
         pooling_strategy=ACCURATE_POOLING_STRATEGY,
         backend_model_id=accurate_model_id,
-        torch_device=settings.torch_runtime.device,
-        torch_dtype=settings.torch_runtime.dtype,
+        torch_device=accurate_runtime_device,
+        torch_dtype=accurate_runtime_dtype,
         provenance=provenance,
     )
     artifact_metadata_obj = artifact.get("metadata")
@@ -1686,25 +1903,31 @@ def train_accurate_research_model() -> None:
     if utterances is None:
         logger.error("Dataset not loaded. Please load the dataset first.")
         raise RuntimeError("Dataset not loaded. Please load the dataset first.")
+    _ensure_dataset_consents_for_training(utterances=utterances)
     train_utterances, test_utterances, split_metadata = _split_utterances(utterances)
-    train_samples = _utterances_to_labeled_samples(train_utterances)
-    test_samples = _utterances_to_labeled_samples(test_utterances)
     accurate_research_model_id = resolve_accurate_research_model_id(settings)
+    accurate_research_runtime_device, accurate_research_runtime_dtype = (
+        _resolve_feature_runtime_selectors(
+            backend_id=ACCURATE_RESEARCH_BACKEND_ID,
+            settings=settings,
+        )
+    )
     backend = Emotion2VecBackend(
         model_id=accurate_research_model_id,
+        device=accurate_research_runtime_device,
         modelscope_cache_root=settings.models.modelscope_cache_root,
         huggingface_cache_root=settings.models.huggingface_cache_root,
     )
     cache = EmbeddingCache(settings.tmp_folder / "accurate_research_embeddings")
-    x_train, y_train = _build_accurate_feature_dataset(
-        samples=train_samples,
+    x_train, y_train, _train_meta = _build_accurate_feature_dataset(
+        utterances=train_utterances,
         backend=backend,
         cache=cache,
         model_id=accurate_research_model_id,
         backend_id=ACCURATE_RESEARCH_BACKEND_ID,
     )
-    x_test, y_test = _build_accurate_feature_dataset(
-        samples=test_samples,
+    x_test, y_test, test_meta = _build_accurate_feature_dataset(
+        utterances=test_utterances,
         backend=backend,
         cache=cache,
         model_id=accurate_research_model_id,
@@ -1714,8 +1937,8 @@ def train_accurate_research_model() -> None:
     logger.info(
         "Accurate-research dataset loaded successfully "
         "(train_files=%s, test_files=%s, split=%s).",
-        len(train_samples),
-        len(test_samples),
+        len(train_utterances),
+        len(test_utterances),
         split_metadata.split_strategy,
     )
 
@@ -1726,6 +1949,23 @@ def train_accurate_research_model() -> None:
     accuracy: float = float(accuracy_score(y_true=y_test, y_pred=y_pred))
     macro_f1: float = float(f1_score(y_test, y_pred, average="macro"))
     ser_metrics = compute_ser_metrics(y_true=y_test, y_pred=y_pred)
+    min_support = _group_metrics_min_support()
+    ser_metrics["group_metrics"] = {
+        "by_corpus": compute_grouped_ser_metrics_by_sample(
+            y_true=y_test,
+            y_pred=y_pred,
+            sample_ids=[m.sample_id for m in test_meta],
+            group_ids=[m.corpus for m in test_meta],
+            min_support=min_support,
+        ),
+        "by_language": compute_grouped_ser_metrics_by_sample(
+            y_true=y_test,
+            y_pred=y_pred,
+            sample_ids=[m.sample_id for m in test_meta],
+            group_ids=[m.language for m in test_meta],
+            min_support=min_support,
+        ),
+    }
     uar = ser_metrics.get("uar")
     if not isinstance(uar, float):
         raise RuntimeError("SER metrics payload missing float 'uar'.")
@@ -1754,8 +1994,8 @@ def train_accurate_research_model() -> None:
         ),
         pooling_strategy=ACCURATE_POOLING_STRATEGY,
         backend_model_id=accurate_research_model_id,
-        torch_device=settings.torch_runtime.device,
-        torch_dtype=settings.torch_runtime.dtype,
+        torch_device=accurate_research_runtime_device,
+        torch_dtype=accurate_research_runtime_dtype,
         provenance=provenance,
     )
     artifact_metadata_obj = artifact.get("metadata")
@@ -1807,6 +2047,10 @@ def train_model() -> None:
         RuntimeError: If no training data could be loaded from the dataset path.
     """
     settings = get_settings()
+    utterances_for_consent = load_utterances()
+    if utterances_for_consent:
+        _ensure_dataset_consents_for_training(utterances=list(utterances_for_consent))
+
     if data := load_data(test_size=settings.training.test_size):
         x_train, x_test, y_train, y_test = data
         model: EmotionClassifier = _create_classifier()

@@ -4,8 +4,9 @@ import glob
 import logging
 import multiprocessing as mp
 import os
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from functools import partial
+from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 import numpy as np
@@ -14,6 +15,8 @@ from sklearn.model_selection import train_test_split
 
 from ser.config import AppConfig, get_settings
 from ser.data.adapters.ravdess import build_ravdess_utterances
+from ser.data.dataset_prepare import prepare_from_registry_entry
+from ser.data.dataset_registry import load_dataset_registry
 from ser.data.manifest import Utterance
 from ser.data.manifest_jsonl import load_manifest_jsonl
 from ser.data.ontology import LabelOntology, UnknownLabelPolicy, normalize_label
@@ -67,10 +70,8 @@ def load_utterances() -> list[Utterance] | None:
     """Loads manifest utterances when configured, otherwise defaults to RAVDESS discovery."""
     settings: AppConfig = get_settings()
     ontology = _resolve_label_ontology(settings)
-    if settings.dataset.manifest_paths:
-        utterances: list[Utterance] = []
-        for manifest_path in settings.dataset.manifest_paths:
-            utterances.extend(load_manifest_jsonl(manifest_path, ontology=ontology))
+
+    def _validate_utterances(utterances: list[Utterance]) -> list[Utterance] | None:
         if not utterances:
             logger.warning("No manifest utterances loaded.")
             return None
@@ -92,6 +93,67 @@ def load_utterances() -> list[Utterance] | None:
             )
             return None
         return utterances
+
+    def _load_manifest_paths(
+        manifest_paths: list[Path],
+        *,
+        base_dirs: Mapping[Path, Path] | None = None,
+    ) -> list[Utterance] | None:
+        utterances: list[Utterance] = []
+        for manifest_path in manifest_paths:
+            resolved_manifest_path = manifest_path.expanduser()
+            base_dir = (
+                base_dirs.get(resolved_manifest_path) if base_dirs is not None else None
+            )
+            utterances.extend(
+                load_manifest_jsonl(
+                    resolved_manifest_path,
+                    ontology=ontology,
+                    base_dir=base_dir,
+                )
+            )
+        return _validate_utterances(utterances)
+
+    if settings.dataset.manifest_paths:
+        return _load_manifest_paths(list(settings.dataset.manifest_paths))
+
+    registry = load_dataset_registry(settings=settings)
+    if registry:
+        manifest_paths: list[Path] = []
+        base_dirs: dict[Path, Path] = {}
+        for entry in registry.values():
+            manifest_path = entry.manifest_path.expanduser()
+            dataset_root = entry.dataset_root.expanduser()
+            if manifest_path.is_file():
+                manifest_paths.append(manifest_path)
+                base_dirs[manifest_path] = dataset_root
+                continue
+            try:
+                built_paths = prepare_from_registry_entry(
+                    settings=settings,
+                    entry=entry,
+                    ontology=ontology,
+                )
+            except Exception as err:
+                logger.warning(
+                    "Failed to build manifest for registered dataset %s: %s",
+                    entry.dataset_id,
+                    err,
+                )
+                continue
+            for built_path in built_paths:
+                resolved_built_path = built_path.expanduser()
+                if not resolved_built_path.is_file():
+                    continue
+                manifest_paths.append(resolved_built_path)
+                base_dirs[resolved_built_path] = dataset_root
+        deduped_paths = sorted(set(manifest_paths))
+        if not deduped_paths:
+            raise RuntimeError(
+                "Dataset registry is present but no manifests are ready. "
+                "Run `ser data download --dataset <id>` to prepare manifests."
+            )
+        return _load_manifest_paths(deduped_paths, base_dirs=base_dirs)
 
     return build_ravdess_utterances(
         dataset_root=settings.dataset.folder,

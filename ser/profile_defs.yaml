@@ -49,6 +49,8 @@ profiles:
     model:
       env_var: SER_MEDIUM_MODEL_ID
       default_model_id: facebook/wav2vec2-xls-r-300m
+    feature_runtime_defaults:
+      torch_dtype: float32
     transcription_defaults:
       backend_id: stable_whisper
       model_name: turbo

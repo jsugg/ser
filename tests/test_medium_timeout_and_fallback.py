@@ -11,6 +11,7 @@ from sklearn.neural_network import MLPClassifier
 import ser.config as config
 import ser.runtime.medium_inference as medium_inference
 from ser.models import emotion_model
+from ser.repr.runtime_policy import FeatureRuntimePolicy
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.medium_inference import (
     MediumInferenceExecutionError,
@@ -386,6 +387,136 @@ def test_medium_profile_pipeline_allows_timeout_disable(
 
     assert result == expected
     assert calls["process"] == 1
+
+
+def test_medium_profile_pipeline_retries_on_cpu_after_mps_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Process-mode medium retries should demote to CPU after one MPS failure."""
+    monkeypatch.setenv("SER_ENABLE_PROFILE_PIPELINE", "true")
+    monkeypatch.setenv("SER_MEDIUM_MAX_TRANSIENT_RETRIES", "1")
+    monkeypatch.setenv("SER_MEDIUM_RETRY_BACKOFF_SECONDS", "0")
+    settings = config.reload_settings()
+
+    devices: list[tuple[str, str]] = []
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
+    oom_message = (
+        "MPS backend out of memory (MPS allocated: 3.13 GB, other allocations: "
+        "220.17 MB, max allowed: 3.40 GB). Tried to allocate 85.83 MB on private pool."
+    )
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._resolve_medium_feature_runtime_policy",
+        lambda **_kwargs: FeatureRuntimePolicy(
+            device="mps",
+            dtype="float16",
+            reason="test_policy",
+        ),
+    )
+
+    def fail_if_called(**_kwargs: object) -> object:
+        raise AssertionError(
+            "In-process load_model path should not run in process mode."
+        )
+
+    def fake_process_runner(
+        payload: medium_inference.MediumProcessPayload,
+        *,
+        timeout_seconds: float,
+    ) -> InferenceResult:
+        del timeout_seconds
+        devices.append(
+            (
+                payload.settings.torch_runtime.device,
+                payload.settings.torch_runtime.dtype,
+            )
+        )
+        if len(devices) == 1:
+            raise MediumTransientBackendError(oom_message)
+        return expected
+
+    monkeypatch.setattr("ser.runtime.medium_inference.load_model", fail_if_called)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_process_timeout",
+        fake_process_runner,
+    )
+
+    result = run_medium_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        settings,
+    )
+
+    assert result == expected
+    assert devices == [("mps", "float16"), ("cpu", "float32")]
+
+
+def test_medium_in_process_rebuilds_backend_on_cpu_after_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-process medium retries should rebuild backend on CPU after MPS failures."""
+    monkeypatch.setenv("SER_MEDIUM_MAX_TRANSIENT_RETRIES", "1")
+    monkeypatch.setenv("SER_MEDIUM_RETRY_BACKOFF_SECONDS", "0")
+    settings = config.reload_settings()
+    _patch_runtime_prerequisites(monkeypatch)
+
+    backend_selectors: list[tuple[str, str]] = []
+    calls = {"attempts": 0}
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
+    )
+
+    class _BackendStub:
+        def __init__(self, *, device: str, dtype: str, **_kwargs: object) -> None:
+            backend_selectors.append((device, dtype))
+
+        def prepare_runtime(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._resolve_medium_feature_runtime_policy",
+        lambda **_kwargs: FeatureRuntimePolicy(
+            device="mps",
+            dtype="float16",
+            reason="test_policy",
+        ),
+    )
+    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", _BackendStub)
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_timeout",
+        lambda operation, timeout_seconds: operation(),
+    )
+
+    def fake_attempt(
+        *,
+        loaded_model: emotion_model.LoadedModel,
+        backend: object,
+        audio: np.ndarray,
+        sample_rate: int,
+        runtime_config: object,
+    ) -> InferenceResult:
+        del loaded_model, backend, audio, sample_rate, runtime_config
+        calls["attempts"] += 1
+        if calls["attempts"] == 1:
+            raise MediumTransientBackendError(
+                "Input type (c10::Half) and bias type (float) should be the same"
+            )
+        return expected
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_inference_once",
+        fake_attempt,
+    )
+
+    result = run_medium_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
+        settings,
+    )
+
+    assert result == expected
+    assert calls["attempts"] == 2
+    assert backend_selectors == [("mps", "float16"), ("cpu", "float32")]
 
 
 def test_medium_process_timeout_applies_after_setup_phase(
