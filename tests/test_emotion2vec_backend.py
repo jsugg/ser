@@ -108,6 +108,18 @@ def test_emotion2vec_backend_encode_sequence_preserves_chunk_timestamps() -> Non
     assert model.call_sizes == [6, 6]
 
 
+def test_emotion2vec_backend_accepts_xpu_device_selector() -> None:
+    """Backend constructor should accept XPU device selectors."""
+    backend = Emotion2VecBackend(
+        device="xpu:0",
+        feature_extractor=_FakeFeatureExtractor(),
+        model=_FakeModel(hidden_size=4),
+    )
+
+    assert backend.backend_id == "emotion2vec"
+    assert backend.feature_dim == 4
+
+
 def test_emotion2vec_backend_missing_dependency_error_is_actionable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -300,6 +312,47 @@ def test_emotion2vec_backend_falls_back_to_hub_when_local_snapshot_invalid(
     assert captured_calls[0]["model"] == str(model_dir)
     assert captured_calls[1]["model"] == "iic/emotion2vec_plus_large"
     assert captured_calls[1]["hub"] == "ms"
+
+
+def test_emotion2vec_backend_falls_back_to_cpu_when_xpu_init_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XPU initialization failures should retry FunASR initialization on CPU."""
+    original_find_spec = importlib.util.find_spec
+    original_import_module = importlib.import_module
+
+    def fake_find_spec(module_name: str, package: str | None = None) -> object | None:
+        if module_name in {"torch", "funasr", "modelscope"}:
+            return object()
+        return original_find_spec(module_name, package)
+
+    captured_calls: list[dict[str, object]] = []
+
+    class FakeAutoModel:
+        def __init__(self, **kwargs: object) -> None:
+            captured_calls.append(dict(kwargs))
+            requested_device = str(kwargs.get("device", "cpu")).strip().lower()
+            if requested_device.startswith("xpu"):
+                raise RuntimeError("xpu runtime unsupported")
+            self.model = SimpleNamespace(cfg={"embed_dim": 768})
+
+    def fake_import_module(module_name: str) -> object:
+        if module_name == "funasr.auto.auto_model":
+            return SimpleNamespace(AutoModel=FakeAutoModel)
+        return original_import_module(module_name)
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+    backend = Emotion2VecBackend(
+        model_id="iic/emotion2vec_plus_large",
+        device="xpu:0",
+    )
+    backend._ensure_funasr_model()
+
+    assert len(captured_calls) == 2
+    assert captured_calls[0]["device"] == "xpu:0"
+    assert captured_calls[1]["device"] == "cpu"
 
 
 def test_emotion2vec_backend_suppresses_dependency_noise_outside_debug(

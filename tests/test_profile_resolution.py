@@ -122,6 +122,17 @@ def test_validate_feature_runtime_defaults_rejects_invalid_dtype() -> None:
         )
 
 
+def test_validate_feature_runtime_defaults_accepts_xpu_device() -> None:
+    """Feature-runtime defaults should accept explicit XPU selectors."""
+    parsed = _validate_feature_runtime_defaults(
+        name="medium",
+        raw={"torch_device": "xpu:0"},
+    )
+    assert parsed is not None
+    assert parsed.torch_device == "xpu:0"
+    assert parsed.torch_dtype is None
+
+
 def test_validate_feature_runtime_defaults_requires_one_selector() -> None:
     """Feature-runtime defaults should require at least one selector override."""
     with pytest.raises(RuntimeError, match="must define at least one"):

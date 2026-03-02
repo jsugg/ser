@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from ser.utils.torch_inference import TorchRuntime, maybe_resolve_torch_runtime
+from ser.utils.torch_inference import (
+    TorchRuntime,
+    maybe_resolve_torch_runtime,
+    normalize_torch_device_selector,
+)
 
 type FeatureBackendId = Literal["handcrafted", "hf_xlsr", "hf_whisper", "emotion2vec"]
 
@@ -118,11 +122,11 @@ def _resolve_emotion2vec_policy(
             dtype="float32",
             reason="torch_runtime_unavailable",
         )
-    if runtime.device_type == "cuda":
+    if runtime.device_type in {"cuda", "xpu"}:
         return FeatureRuntimePolicy(
             device=runtime.device_spec,
             dtype=requested_dtype,
-            reason="emotion2vec_cuda_enabled",
+            reason=f"emotion2vec_{runtime.device_type}_enabled",
         )
     return FeatureRuntimePolicy(
         device="cpu",
@@ -141,12 +145,8 @@ def _probe_runtime(requested_device: str) -> TorchRuntime | None:
 
 def _normalize_device_selector(value: str) -> str:
     """Normalizes one runtime device selector."""
-    normalized = value.strip().lower()
-    if normalized in {"auto", "cpu", "mps", "cuda"}:
-        return normalized
-    if normalized.startswith("cuda:"):
-        return normalized
-    return "auto"
+    normalized = normalize_torch_device_selector(value)
+    return normalized if normalized is not None else "auto"
 
 
 def _normalize_dtype_selector(value: str) -> str:
@@ -161,12 +161,7 @@ def _normalize_optional_device_selector(value: str | None) -> str | None:
     """Normalizes an optional runtime device selector override."""
     if not isinstance(value, str) or not value.strip():
         return None
-    normalized = value.strip().lower()
-    if normalized in {"auto", "cpu", "mps", "cuda"}:
-        return normalized
-    if normalized.startswith("cuda:"):
-        return normalized
-    return None
+    return normalize_torch_device_selector(value)
 
 
 def _normalize_optional_dtype_selector(value: str | None) -> str | None:

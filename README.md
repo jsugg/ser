@@ -32,7 +32,7 @@ sequenceDiagram;
 ## Audience Guide
 - **CLI users**: focus on `Installation`, `Usage`, and `Additional Options`.
 - **Library users**: also review `Configuration` (common overrides first).
-- **Contributors**: review `Contributing` and advanced sections in this README.
+- **Contributors**: review [CONTRIBUTING.md](CONTRIBUTING.md) and advanced sections in this README.
 -------
 ### Workflows and architectures
 
