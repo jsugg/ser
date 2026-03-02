@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import importlib
+import re
 from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import cast
+
+_SUPPORTED_TORCH_DEVICE_SELECTORS: frozenset[str] = frozenset(
+    {"auto", "cpu", "mps", "cuda", "xpu"}
+)
+_INDEXED_TORCH_DEVICE_SELECTOR_PATTERN = re.compile(r"(cuda|xpu):\d+")
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,16 @@ class TorchRuntime:
     device_spec: str
     device_type: str
     dtype_name: str
+
+
+def normalize_torch_device_selector(value: str) -> str | None:
+    """Returns a normalized torch device selector when valid."""
+    normalized = value.strip().lower()
+    if normalized in _SUPPORTED_TORCH_DEVICE_SELECTORS:
+        return normalized
+    if _INDEXED_TORCH_DEVICE_SELECTOR_PATTERN.fullmatch(normalized):
+        return normalized
+    return None
 
 
 def _cuda_is_available(torch_module: object) -> bool:
@@ -45,17 +61,34 @@ def _mps_is_available(torch_module: object) -> bool:
     return available and built
 
 
+def _xpu_is_available(torch_module: object) -> bool:
+    """Returns whether Intel XPU runtime is available."""
+    xpu = getattr(torch_module, "xpu", None)
+    is_available = getattr(xpu, "is_available", None)
+    return bool(is_available()) if callable(is_available) else False
+
+
 def _resolve_device_spec(torch_module: object, requested_device: str) -> str:
     """Resolves runtime device selector from one requested device string."""
-    normalized: str = requested_device.strip().lower()
+    normalized = normalize_torch_device_selector(requested_device)
     if normalized == "auto":
         if _cuda_is_available(torch_module):
             return "cuda"
+        if _xpu_is_available(torch_module):
+            return "xpu"
         return "mps" if _mps_is_available(torch_module) else "cpu"
-    if normalized.startswith("cuda"):
+    if normalized is None:
+        return "cpu"
+    if normalized == "cuda" or normalized.startswith("cuda:"):
         if not _cuda_is_available(torch_module):
             raise RuntimeError(
                 "SER_TORCH_DEVICE requested CUDA, but CUDA is unavailable."
+            )
+        return normalized
+    if normalized == "xpu" or normalized.startswith("xpu:"):
+        if not _xpu_is_available(torch_module):
+            raise RuntimeError(
+                "SER_TORCH_DEVICE requested XPU, but XPU is unavailable."
             )
         return normalized
     if normalized == "mps":
@@ -94,8 +127,10 @@ def _resolve_dtype_name(
             else "float16"
         )
     elif normalized == "bfloat16":
-        if device_type == "mps":
-            raise RuntimeError("SER_TORCH_DTYPE=bfloat16 is unsupported for MPS.")
+        if device_type in {"mps", "xpu"}:
+            raise RuntimeError(
+                "SER_TORCH_DTYPE=bfloat16 is unsupported for MPS/XPU runtimes."
+            )
         if device_type == "cuda" and not _cuda_bf16_is_supported(torch_module):
             raise RuntimeError(
                 "SER_TORCH_DTYPE=bfloat16 requested, but CUDA bf16 is unsupported."
@@ -120,7 +155,11 @@ def maybe_resolve_torch_runtime(
     resolved_device_type: str = (
         "cuda"
         if resolved_device_spec.startswith("cuda")
-        else ("mps" if resolved_device_spec == "mps" else "cpu")
+        else (
+            "xpu"
+            if resolved_device_spec.startswith("xpu")
+            else ("mps" if resolved_device_spec == "mps" else "cpu")
+        )
     )
     resolved_dtype_name: str = _resolve_dtype_name(
         torch_module,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import gc
 import importlib
 import importlib.util
@@ -11,6 +12,7 @@ import os
 import sys
 from collections.abc import Callable
 from contextlib import nullcontext
+from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Literal, cast
@@ -56,6 +58,7 @@ from ser.utils.logger import (
     scoped_dependency_log_policy,
 )
 from ser.utils.transcription_compat import (
+    format_torio_ffmpeg_remediation,
     has_known_stable_whisper_sparse_mps_incompatibility,
 )
 
@@ -75,8 +78,11 @@ _DEMUCS_DEPRECATED_MESSAGE_REGEX = (
 _TRANSCRIBE_WARNING_MODULE_REGEX = (
     r"^stable_whisper\.whisper_word_level\.original_whisper$"
 )
+_TORIO_FFMPEG_PROBE_POLICY_ID = "torio.ffmpeg_probe_debug_traceback"
 _STABLE_WHISPER_IMPORT_POLICY = DependencyLogPolicy(
-    logger_prefixes=frozenset(),
+    logger_prefixes=frozenset({"torio"}),
+    demote_from_level=logging.DEBUG,
+    demote_to_level=logging.DEBUG,
     backend_ids=frozenset({"stable_whisper"}),
     warning_policies=(
         WarningPolicy(
@@ -143,6 +149,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         del runtime_request
         del settings
         functional_issues: list[CompatibilityIssue] = []
+        operational_issues: list[CompatibilityIssue] = []
         noise_issues: list[CompatibilityIssue] = [
             CompatibilityIssue(
                 code="stable_whisper_invalid_escape_sequence",
@@ -169,6 +176,28 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                 ),
             ),
         ]
+        with scoped_dependency_log_policy(
+            policy=_STABLE_WHISPER_IMPORT_POLICY,
+            context=DependencyPolicyContext(
+                backend_id=self.backend_id,
+                phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+                op_tag="stable_whisper.compatibility",
+            ),
+            keep_demoted=False,
+        ):
+            torio_issue = self._detect_torio_ffmpeg_operational_issue()
+        if torio_issue is not None:
+            operational_issues.append(torio_issue)
+            noise_issues.append(
+                CompatibilityIssue(
+                    code="torio_ffmpeg_probe_debug_traceback",
+                    message=(
+                        "torio may emit DEBUG traceback probe logs while checking "
+                        "FFmpeg extension availability; adapter applies scoped "
+                        "suppression to keep dependency noise bounded."
+                    ),
+                )
+            )
         if not self._is_module_available("stable_whisper"):
             functional_issues.append(
                 CompatibilityIssue(
@@ -182,11 +211,13 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         return CompatibilityReport(
             backend_id="stable_whisper",
             functional_issues=tuple(functional_issues),
+            operational_issues=tuple(operational_issues),
             noise_issues=tuple(noise_issues),
             policy_ids=(
                 _INVALID_ESCAPE_POLICY_ID,
                 _FP16_CPU_WARNING_POLICY_ID,
                 _DEMUCS_DEPRECATED_POLICY_ID,
+                _TORIO_FFMPEG_PROBE_POLICY_ID,
             ),
         )
 
@@ -250,6 +281,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                 phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
                 op_tag="stable_whisper.import",
             ),
+            keep_demoted=False,
         ):
             try:
                 stable_whisper = importlib.import_module("stable_whisper")
@@ -860,6 +892,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                 phase_name=PHASE_TRANSCRIPTION,
                 op_tag="stable_whisper.result.import",
             ),
+            keep_demoted=False,
         ):
             stable_result_module = importlib.import_module("stable_whisper.result")
         whisper_result_ctor = getattr(stable_result_module, "WhisperResult", None)
@@ -906,3 +939,122 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
             return importlib.util.find_spec(module_name) is not None
         except ValueError:
             return module_name in sys.modules
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _detect_torio_ffmpeg_operational_issue() -> CompatibilityIssue | None:
+        """Detects one torio FFmpeg runtime issue that does not block transcription."""
+        if not StableWhisperAdapter._is_module_available("torchaudio"):
+            return None
+        try:
+            torchaudio_module = importlib.import_module("torchaudio")
+        except Exception:
+            return None
+        list_backends = getattr(torchaudio_module, "list_audio_backends", None)
+        if not callable(list_backends):
+            return None
+        try:
+            available_backends = list_backends()
+        except Exception:
+            return None
+        if not isinstance(available_backends, list | tuple):
+            return None
+        normalized_backends = frozenset(
+            str(entry).strip().lower()
+            for entry in available_backends
+            if isinstance(entry, str) and entry.strip()
+        )
+        if "ffmpeg" in normalized_backends:
+            return None
+        loader_error = StableWhisperAdapter._probe_torio_ffmpeg_loader_error()
+        if loader_error is None:
+            remediation = format_torio_ffmpeg_remediation(missing_library=None)
+            return CompatibilityIssue(
+                code="torio_ffmpeg_extension_unavailable",
+                message=(
+                    "torchaudio FFmpeg extension is unavailable in the active runtime; "
+                    "this is a non-blocking advisory and stable-whisper continues "
+                    "with soundfile/sox backends. "
+                    f"{remediation}"
+                ),
+            )
+        missing_library = StableWhisperAdapter._extract_missing_dynamic_library(
+            loader_error
+        )
+        remediation = format_torio_ffmpeg_remediation(missing_library=missing_library)
+        if missing_library is None:
+            return CompatibilityIssue(
+                code="torio_ffmpeg_extension_unavailable",
+                message=(
+                    "torchaudio FFmpeg extension could not be loaded; "
+                    "this is a non-blocking advisory and stable-whisper continues "
+                    "with soundfile/sox backends "
+                    f"(loader_error={loader_error}). {remediation}"
+                ),
+            )
+        if "libavutil" not in missing_library:
+            return CompatibilityIssue(
+                code="torio_ffmpeg_extension_unavailable",
+                message=(
+                    "torchaudio FFmpeg extension could not be loaded due to missing "
+                    f"{missing_library}; this is a non-blocking advisory and "
+                    "stable-whisper continues with "
+                    f"soundfile/sox backends. {remediation}"
+                ),
+            )
+        return CompatibilityIssue(
+            code="torio_ffmpeg_abi_mismatch",
+            message=(
+                "torchaudio FFmpeg extension could not be loaded because "
+                f"{missing_library} is unavailable (FFmpeg ABI mismatch). "
+                "This is a non-blocking advisory and stable-whisper continues "
+                "with soundfile/sox backends. "
+                f"{remediation}"
+            ),
+        )
+
+    @staticmethod
+    def _probe_torio_ffmpeg_loader_error() -> str | None:
+        """Returns one deterministic torio FFmpeg loader error summary when available."""
+        if not StableWhisperAdapter._is_module_available("torio._extension.utils"):
+            return None
+        try:
+            torio_utils = importlib.import_module("torio._extension.utils")
+        except Exception:
+            return None
+        get_lib_path = getattr(torio_utils, "_get_lib_path", None)
+        ffmpeg_versions = getattr(torio_utils, "_FFMPEG_VERS", ())
+        if not callable(get_lib_path):
+            return None
+        if not isinstance(ffmpeg_versions, list | tuple):
+            return None
+        for version in ffmpeg_versions:
+            if not isinstance(version, str):
+                continue
+            library_name = f"libtorio_ffmpeg{version}"
+            try:
+                library_path_value = get_lib_path(library_name)
+            except Exception:
+                continue
+            library_path = Path(str(library_path_value))
+            if not library_path.exists():
+                continue
+            try:
+                ctypes.CDLL(str(library_path))
+            except OSError as err:
+                error_text = str(err).strip()
+                if error_text:
+                    return error_text
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _extract_missing_dynamic_library(error_text: str) -> str | None:
+        """Extracts one missing dynamic library token from a loader error message."""
+        marker = "Library not loaded: "
+        marker_index = error_text.find(marker)
+        if marker_index < 0:
+            return None
+        missing = error_text[marker_index + len(marker) :].splitlines()[0].strip()
+        return missing or None

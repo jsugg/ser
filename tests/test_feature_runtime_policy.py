@@ -83,6 +83,27 @@ def test_feature_runtime_policy_enables_emotion2vec_cuda_when_available(
     assert resolved.reason == "emotion2vec_cuda_enabled"
 
 
+def test_feature_runtime_policy_enables_emotion2vec_xpu_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Emotion2Vec should enable XPU runtime when probe resolves XPU."""
+    monkeypatch.setattr(
+        runtime_policy,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: _runtime(device_spec="xpu:1", device_type="xpu"),
+    )
+
+    resolved = resolve_feature_runtime_policy(
+        backend_id="emotion2vec",
+        requested_device="auto",
+        requested_dtype="auto",
+    )
+
+    assert resolved.device == "xpu:1"
+    assert resolved.dtype == "auto"
+    assert resolved.reason == "emotion2vec_xpu_enabled"
+
+
 def test_feature_runtime_policy_defaults_emotion2vec_to_cpu_without_cuda(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -148,3 +169,25 @@ def test_feature_runtime_policy_keeps_xlsr_mps_guard_with_overrides(
     assert resolved.device == "cpu"
     assert resolved.dtype == "float32"
     assert resolved.reason == "hf_xlsr_mps_stability_guard"
+
+
+def test_feature_runtime_policy_accepts_xpu_override_for_whisper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whisper runtime policy should preserve valid XPU override selectors."""
+    monkeypatch.setattr(
+        runtime_policy,
+        "maybe_resolve_torch_runtime",
+        lambda *, device, dtype: _runtime(device_spec="xpu:0", device_type="xpu"),
+    )
+
+    resolved = resolve_feature_runtime_policy(
+        backend_id="hf_whisper",
+        requested_device="auto",
+        requested_dtype="auto",
+        backend_override_device="xpu:0",
+    )
+
+    assert resolved.device == "xpu:0"
+    assert resolved.dtype == "auto"
+    assert resolved.reason == "torch_backend_requested_selectors"

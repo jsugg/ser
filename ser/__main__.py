@@ -21,6 +21,12 @@ from ser.config import (
     reload_settings,
     resolve_profile_transcription_config,
 )
+from ser.diagnostics.service import (
+    format_startup_preflight_one_liner,
+    parse_preflight_mode,
+    run_startup_preflight,
+    should_fail_preflight,
+)
 from ser.license_check import (
     BackendLicensePolicy,
     BackendLicensePolicyError,
@@ -58,7 +64,12 @@ _DATASET_COMMAND_HELP = (
     "                     [--labels-csv-path PATH] [--audio-base-dir PATH] "
     "[--skip-download] [--accept-license]\n"
     "\n"
-    "Run `ser configure --help` and `ser data download --help` for details."
+    "Diagnostics commands:\n"
+    "  ser doctor [--profile fast|medium|accurate|accurate-research] "
+    "[--format text|json] [--strict]\n"
+    "\n"
+    "Run `ser configure --help`, `ser data download --help`, and "
+    "`ser doctor --help` for details."
 )
 
 
@@ -340,6 +351,49 @@ def _ensure_restricted_backends_ready_for_command(
         )
 
 
+def _preflight_command_requested(args: argparse.Namespace) -> bool:
+    """Returns whether the parsed CLI args request one executable workflow."""
+    return bool(args.train or args.file or args.calibrate_transcription_runtime)
+
+
+def _preflight_includes_transcription_checks(args: argparse.Namespace) -> bool:
+    """Returns whether startup preflight should include transcription checks."""
+    return bool(
+        args.calibrate_transcription_runtime or (args.file and not args.no_transcript)
+    )
+
+
+def _suppress_preflight_transcription_operational_relogs(
+    *,
+    settings: AppConfig,
+    report: object,
+) -> None:
+    """Pre-marks startup-reported transcription operational issues as emitted once."""
+    findings = getattr(report, "findings", ())
+    if not isinstance(findings, tuple | list):
+        return
+    issue_codes: list[str] = []
+    for finding in findings:
+        finding_code = getattr(finding, "code", None)
+        if not isinstance(finding_code, str):
+            continue
+        if finding_code.startswith("transcription_operational_"):
+            issue_codes.append(finding_code.removeprefix("transcription_operational_"))
+    if not issue_codes:
+        return
+    profile_name = resolve_profile_name(settings)
+    backend_id, _model_name, _use_demucs, _use_vad = (
+        resolve_profile_transcription_config(profile_name)
+    )
+    from ser.transcript.transcript_extractor import mark_compatibility_issues_as_emitted
+
+    mark_compatibility_issues_as_emitted(
+        backend_id=backend_id,
+        issue_kind="operational",
+        issue_codes=tuple(issue_codes),
+    )
+
+
 def main() -> None:
     """Parses CLI arguments and runs training or inference workflows."""
     load_dotenv()
@@ -349,20 +403,23 @@ def main() -> None:
     configure_logging(pre_args.log_level)
     settings: AppConfig = reload_settings()
 
-    # Subcommand dispatch for dataset workflows.
-    if pre_remaining and pre_remaining[0] in {"configure", "data"}:
+    # Subcommand dispatch for dataset and diagnostics workflows.
+    if pre_remaining and pre_remaining[0] in {"configure", "data", "doctor"}:
         from ser.data.cli import run_configure_command, run_data_command
+        from ser.diagnostics.command import run_doctor_command
 
         command = pre_remaining[0]
         command_argv = pre_remaining[1:]
         try:
             if command == "configure":
                 raise SystemExit(run_configure_command(command_argv))
-            raise SystemExit(run_data_command(command_argv))
+            if command == "data":
+                raise SystemExit(run_data_command(command_argv))
+            raise SystemExit(run_doctor_command(command_argv, settings=settings))
         except SystemExit:
             raise
         except Exception as err:
-            logger.error("Dataset command failed: %s", err)
+            logger.error("Command '%s' failed: %s", command, err)
             raise SystemExit(1) from err
 
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -446,6 +503,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--preflight",
+        choices=("off", "warn", "strict"),
+        default="warn",
+        help=(
+            "Startup diagnostics gate: off=skip checks, warn=log findings and fail only "
+            "on blocking errors, strict=fail on warnings/errors."
+        ),
+    )
+    parser.add_argument(
         "--calibration-iterations",
         type=int,
         default=2,
@@ -470,6 +536,7 @@ def main() -> None:
         active_settings,
         disable_timeouts=bool(args.disable_timeouts),
     )
+    preflight_mode = parse_preflight_mode(str(args.preflight))
     if isinstance(active_settings, AppConfig):
         apply_settings(active_settings)
     use_profile_pipeline: bool = _profile_pipeline_enabled(active_settings)
@@ -520,6 +587,39 @@ def main() -> None:
             "Restricted backend opt-in flags require concrete AppConfig settings."
         )
         sys.exit(2)
+
+    if (
+        preflight_mode != "off"
+        and isinstance(active_settings, AppConfig)
+        and _preflight_command_requested(args)
+    ):
+        preflight_report = run_startup_preflight(
+            settings=active_settings,
+            include_transcription_checks=_preflight_includes_transcription_checks(args),
+        )
+        profile_hint = (
+            f" --profile {args.profile}" if isinstance(args.profile, str) else ""
+        )
+        doctor_command = f"ser doctor{profile_hint}"
+        fail_preflight = should_fail_preflight(
+            report=preflight_report, mode=preflight_mode
+        )
+        if preflight_report.findings:
+            preflight_summary = format_startup_preflight_one_liner(
+                preflight_report,
+                doctor_command=doctor_command,
+            )
+            if fail_preflight:
+                logger.error("%s", preflight_summary)
+            else:
+                logger.info("%s", preflight_summary)
+                _suppress_preflight_transcription_operational_relogs(
+                    settings=active_settings,
+                    report=preflight_report,
+                )
+        if fail_preflight:
+            logger.error("Startup preflight failed (mode=%s).", preflight_mode)
+            sys.exit(2)
 
     if args.calibrate_transcription_runtime:
         if not args.file:

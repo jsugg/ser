@@ -1,0 +1,176 @@
+name: macOS 15 MPS Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: "Python version used for setup and validation."
+        required: true
+        default: "3.12"
+        type: string
+      accurate_model_id:
+        description: "Whisper model id used by accurate profile smoke."
+        required: true
+        default: "openai/whisper-tiny"
+        type: string
+      run_accurate_research:
+        description: "Run accurate-research profile smoke."
+        required: true
+        default: false
+        type: boolean
+      accurate_research_model_id:
+        description: "Model id used by accurate-research profile smoke."
+        required: true
+        default: "iic/emotion2vec_plus_large"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  macos15-mps-profile-smoke:
+    runs-on: macos-15
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure runtime directories
+        run: |
+          echo "SER_MAX_WORKERS=1" >> "$GITHUB_ENV"
+          echo "SER_MODELS_DIR=$RUNNER_TEMP/ser-models" >> "$GITHUB_ENV"
+          echo "SER_DATA_DIR=$RUNNER_TEMP/ser-data" >> "$GITHUB_ENV"
+          echo "SER_CACHE_DIR=$RUNNER_TEMP/ser-cache" >> "$GITHUB_ENV"
+          echo "SER_TRANSCRIPTS_DIR=$RUNNER_TEMP/ser-transcripts" >> "$GITHUB_ENV"
+          mkdir -p \
+            "$RUNNER_TEMP/ser-models" \
+            "$RUNNER_TEMP/ser-data" \
+            "$RUNNER_TEMP/ser-cache" \
+            "$RUNNER_TEMP/ser-transcripts"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Ensure ffmpeg is available
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          ffmpeg -version
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-macos15-mps-py${{ inputs.python_version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-macos15-mps-py${{ inputs.python_version }}-
+
+      - name: Setup compatible environment
+        run: ./scripts/setup_compatible_env.sh --python ${{ inputs.python_version }}
+
+      - name: Verify MPS runtime availability
+        run: |
+          uv run --python ${{ inputs.python_version }} python - <<'PY'
+          import importlib
+          import platform
+
+          torch = importlib.import_module("torch")
+          backends = getattr(torch, "backends", None)
+          mps = getattr(backends, "mps", None)
+          is_available = getattr(mps, "is_available", None)
+          is_built = getattr(mps, "is_built", None)
+          available = bool(is_available()) if callable(is_available) else False
+          built = bool(is_built()) if callable(is_built) else False
+          machine = platform.machine().lower()
+          print(f"platform.machine={machine}, mps_available={available}, mps_built={built}")
+          if not (available and built):
+              raise SystemExit(
+                  "MPS runtime is unavailable on this macOS 15 runner. "
+                  "Use an Apple Silicon macOS 15 runner."
+              )
+          PY
+
+      - name: Build synthetic RAVDESS smoke dataset
+        run: python ./scripts/build_synthetic_ravdess_dataset.py
+
+      - name: Run MPS-focused runtime policy tests
+        run: >
+          uv run --python ${{ inputs.python_version }} --extra dev pytest -q
+          tests/test_torch_inference.py
+          tests/test_feature_runtime_policy.py
+          tests/test_transcription_runtime_policy.py
+          tests/test_stable_whisper_mps_compat.py
+          tests/test_transcription_mps_admission.py
+          tests/test_transcription_runtime_failures.py
+          tests/test_transcription_backends.py
+
+      - name: Medium profile train and predict (MPS lane)
+        run: |
+          SER_TORCH_DEVICE=auto \
+          SER_TORCH_DTYPE=auto \
+          SER_MODEL_FILE_NAME=ser_model_medium_macos15_mps.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_macos15_mps.json \
+          uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile medium
+
+          SER_TORCH_DEVICE=auto \
+          SER_TORCH_DTYPE=auto \
+          SER_MODEL_FILE_NAME=ser_model_medium_macos15_mps.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_macos15_mps.json \
+          uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile medium
+
+      - name: Accurate profile train and predict (MPS lane)
+        run: |
+          SER_TORCH_DEVICE=auto \
+          SER_TORCH_DTYPE=auto \
+          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
+          SER_MODEL_FILE_NAME=ser_model_accurate_macos15_mps.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_macos15_mps.json \
+          uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile accurate
+
+          SER_TORCH_DEVICE=auto \
+          SER_TORCH_DTYPE=auto \
+          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
+          SER_MODEL_FILE_NAME=ser_model_accurate_macos15_mps.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_macos15_mps.json \
+          uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile accurate
+
+      - name: Accurate-research profile train and predict (optional)
+        if: ${{ inputs.run_accurate_research }}
+        run: |
+          SER_ENABLE_RESTRICTED_BACKENDS=true \
+          SER_TORCH_DEVICE=auto \
+          SER_TORCH_DTYPE=auto \
+          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
+          SER_MODEL_FILE_NAME=ser_model_accurate_research_macos15_mps.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_macos15_mps.json \
+          uv run --python ${{ inputs.python_version }} --extra full ser --train --profile accurate-research
+
+          SER_ENABLE_RESTRICTED_BACKENDS=true \
+          SER_TORCH_DEVICE=auto \
+          SER_TORCH_DTYPE=auto \
+          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
+          SER_MODEL_FILE_NAME=ser_model_accurate_research_macos15_mps.pkl \
+          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_macos15_mps.json \
+          uv run --python ${{ inputs.python_version }} --extra full ser --file sample.wav --profile accurate-research
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos15-mps-validation-artifacts
+          path: |
+            ${{ runner.temp }}/ser-models/*
+            ${{ runner.temp }}/ser-transcripts/*

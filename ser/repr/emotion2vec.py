@@ -26,6 +26,7 @@ from ser.utils.logger import (
     get_logger,
     scoped_dependency_log_policy,
 )
+from ser.utils.torch_inference import normalize_torch_device_selector
 
 logger = get_logger(__name__)
 _NOISY_DEPENDENCY_POLICY: Final[DependencyLogPolicy] = DependencyLogPolicy(
@@ -121,7 +122,8 @@ class Emotion2VecBackend:
         Args:
             model_id: Emotion2Vec model identifier on the selected hub.
             hub: Optional hub override (`ms`/`modelscope` or `hf`/`huggingface`).
-            device: FunASR runtime device selector (`cpu`, `cuda`, or `cuda:N`).
+            device: FunASR runtime device selector (`cpu`, `cuda`/`cuda:N`, or
+                `xpu`/`xpu:N`).
             max_chunk_seconds: Maximum chunk duration for bounded-memory encoding.
             modelscope_cache_root: Optional ModelScope cache root for `hub=ms`.
             huggingface_cache_root: Optional Hugging Face cache root for `hub=hf`.
@@ -136,10 +138,10 @@ class Emotion2VecBackend:
             raise ValueError(
                 "feature_extractor and model must be provided together or omitted together."
             )
-        normalized_device = device.strip().lower()
-        if normalized_device != "cpu" and not normalized_device.startswith("cuda"):
+        normalized_device = normalize_torch_device_selector(device)
+        if normalized_device in {None, "auto", "mps"}:
             raise ValueError(
-                "device must be one of 'cpu', 'cuda', or a 'cuda:N' selector."
+                "device must be one of 'cpu', 'cuda'/'cuda:N', or 'xpu'/'xpu:N'."
             )
         self._model_id = model_id
         self._hub = self._resolve_hub(model_id=model_id, hub=hub)
@@ -334,8 +336,32 @@ class Emotion2VecBackend:
                     kwargs.pop("disable_pbar", None)
                     return auto_model_class(**kwargs)
 
+            def _init_auto_model_with_cpu_fallback(
+                *,
+                source: str,
+                include_hub: bool,
+            ) -> object:
+                try:
+                    return _init_auto_model(source=source, include_hub=include_hub)
+                except Exception as err:
+                    if self._device == "cpu":
+                        raise
+                    requested_device = self._device
+                    logger.warning(
+                        "Emotion2Vec initialization failed on device=%s; "
+                        "retrying on cpu (%s).",
+                        requested_device,
+                        err,
+                    )
+                    self._device = "cpu"
+                    try:
+                        return _init_auto_model(source=source, include_hub=include_hub)
+                    except Exception:
+                        self._device = requested_device
+                        raise
+
             try:
-                model = _init_auto_model(
+                model = _init_auto_model_with_cpu_fallback(
                     source=model_source,
                     include_hub=not is_local_source,
                 )
@@ -348,7 +374,7 @@ class Emotion2VecBackend:
                         self._model_id,
                     )
                     try:
-                        model = _init_auto_model(
+                        model = _init_auto_model_with_cpu_fallback(
                             source=self._model_id,
                             include_hub=True,
                         )

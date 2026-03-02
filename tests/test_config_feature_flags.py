@@ -390,6 +390,17 @@ def test_invalid_torch_runtime_env_falls_back_to_auto(
     assert settings.torch_runtime.dtype == "auto"
 
 
+def test_torch_runtime_env_accepts_xpu_selector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XPU device selectors should be accepted as valid torch runtime config."""
+    monkeypatch.setenv("SER_TORCH_DEVICE", "xpu:1")
+
+    settings = config.reload_settings()
+
+    assert settings.torch_runtime.device == "xpu:1"
+
+
 def test_torch_runtime_inherits_pytorch_mps_fallback_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

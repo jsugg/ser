@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import importlib
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
+
+from ser.utils.torch_inference import normalize_torch_device_selector
 
 if TYPE_CHECKING:
     from ser.config import AppConfig
@@ -234,12 +235,7 @@ def _read_required_int(
 
 def _normalize_torch_device_selector(value: str) -> str | None:
     """Normalizes one torch device selector or returns None when invalid."""
-    normalized = value.strip().lower()
-    if normalized in {"auto", "cpu", "mps", "cuda"}:
-        return normalized
-    if re.fullmatch(r"cuda:\d+", normalized):
-        return normalized
-    return None
+    return normalize_torch_device_selector(value)
 
 
 def _normalize_torch_dtype_selector(value: str) -> str | None:
