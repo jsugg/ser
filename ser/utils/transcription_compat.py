@@ -7,6 +7,7 @@ import platform
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE = "faster_whisper_openmp_runtime_conflict"
 STABLE_WHISPER_SPARSE_MPS_INCOMPATIBLE_ISSUE_CODE = (
@@ -38,6 +39,49 @@ _STABLE_WHISPER_MODEL_ALIASES: dict[str, str] = {
     "openai/whisper-large-v3": "large-v3",
     "openai/whisper-large-v3-turbo": "turbo",
 }
+
+type TranscriptionCompatibilityLane = Literal[
+    "darwin_x86_64_py312_pinned",
+    "darwin_x86_64_py313_partial",
+    "generic",
+]
+
+
+def resolve_transcription_compatibility_lane() -> TranscriptionCompatibilityLane:
+    """Resolves one compatibility lane for environment-specific remediation guidance."""
+    machine = platform.machine().strip().lower()
+    python_major, python_minor = sys.version_info[:2]
+    if sys.platform == "darwin" and machine in {"x86_64", "amd64"}:
+        if (python_major, python_minor) < (3, 13):
+            return "darwin_x86_64_py312_pinned"
+        return "darwin_x86_64_py313_partial"
+    return "generic"
+
+
+def format_torio_ffmpeg_remediation(*, missing_library: str | None) -> str:
+    """Formats one lane-aware remediation message for torio FFmpeg loader issues."""
+    lane = resolve_transcription_compatibility_lane()
+    required_library = missing_library or "required FFmpeg runtime library"
+    if lane == "darwin_x86_64_py312_pinned":
+        return (
+            "This lane pins torch/torchaudio for compatibility "
+            "(darwin-x86_64 Python 3.12), so do not upgrade torch here. "
+            "Install FFmpeg 6 runtime libraries (for example `brew install ffmpeg@6`) "
+            "and rerun with `DYLD_FALLBACK_LIBRARY_PATH` including the `ffmpeg@6` "
+            f"library directory so {required_library} can be resolved."
+        )
+    if lane == "darwin_x86_64_py313_partial":
+        return (
+            "Darwin x86_64 Python 3.13 is a partial fast-profile lane. "
+            "For medium/accurate/accurate-research, switch to the supported "
+            "Python 3.12 setup (`./scripts/setup_compatible_env.sh --python 3.12`) "
+            "and install FFmpeg 6 runtime libraries."
+        )
+    return (
+        f"Install FFmpeg runtime libraries compatible with {required_library}. "
+        "If your environment policy allows torch upgrades, update torch/torchaudio "
+        "to versions compatible with your system FFmpeg."
+    )
 
 
 def has_known_faster_whisper_openmp_runtime_conflict() -> bool:

@@ -13,7 +13,7 @@ from typing import cast
 import pytest
 
 from ser.config import AppConfig
-from ser.transcript.backends.base import BackendRuntimeRequest
+from ser.transcript.backends.base import BackendRuntimeRequest, CompatibilityIssue
 from ser.transcript.backends.faster_whisper import FasterWhisperAdapter
 from ser.transcript.backends.stable_whisper import StableWhisperAdapter
 from ser.utils.transcription_compat import FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
@@ -35,6 +35,11 @@ def test_stable_whisper_compatibility_report_is_noise_aware(
     """Stable adapter should expose noise policy metadata without blocking."""
     adapter = StableWhisperAdapter()
     monkeypatch.setattr(adapter, "_is_module_available", lambda _name: True)
+    monkeypatch.setattr(
+        adapter,
+        "_detect_torio_ffmpeg_operational_issue",
+        lambda: None,
+    )
     report = adapter.check_compatibility(
         runtime_request=BackendRuntimeRequest(
             model_name="large-v2",
@@ -49,6 +54,7 @@ def test_stable_whisper_compatibility_report_is_noise_aware(
         "stable_whisper.invalid_escape_sequence",
         "stable_whisper.fp16_cpu_fallback_warning",
         "stable_whisper.demucs_deprecated_warning",
+        "torio.ffmpeg_probe_debug_traceback",
     )
     assert report.noise_issues
 
@@ -59,6 +65,11 @@ def test_stable_whisper_compatibility_blocks_on_missing_dependency(
     """Stable adapter should block when stable_whisper dependency is unavailable."""
     adapter = StableWhisperAdapter()
     monkeypatch.setattr(adapter, "_is_module_available", lambda _name: False)
+    monkeypatch.setattr(
+        adapter,
+        "_detect_torio_ffmpeg_operational_issue",
+        lambda: None,
+    )
     report = adapter.check_compatibility(
         runtime_request=BackendRuntimeRequest(
             model_name="large-v2",
@@ -73,6 +84,106 @@ def test_stable_whisper_compatibility_blocks_on_missing_dependency(
         issue.code == "missing_dependency_stable_whisper"
         for issue in report.functional_issues
     )
+
+
+def test_stable_whisper_compatibility_reports_torio_ffmpeg_operational_issue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stable adapter should surface torio FFmpeg ABI mismatch as operational."""
+    adapter = StableWhisperAdapter()
+    monkeypatch.setattr(adapter, "_is_module_available", lambda _name: True)
+    monkeypatch.setattr(
+        adapter,
+        "_detect_torio_ffmpeg_operational_issue",
+        lambda: CompatibilityIssue(
+            code="torio_ffmpeg_abi_mismatch",
+            message=(
+                "torchaudio FFmpeg extension could not be loaded because "
+                "@rpath/libavutil.58.dylib is unavailable."
+            ),
+        ),
+    )
+
+    report = adapter.check_compatibility(
+        runtime_request=BackendRuntimeRequest(
+            model_name="large-v2",
+            use_demucs=True,
+            use_vad=True,
+        ),
+        settings=cast(AppConfig, SimpleNamespace()),
+    )
+
+    assert any(
+        issue.code == "torio_ffmpeg_abi_mismatch" for issue in report.operational_issues
+    )
+    assert any(
+        issue.code == "torio_ffmpeg_probe_debug_traceback"
+        for issue in report.noise_issues
+    )
+
+
+def test_stable_whisper_extract_missing_dynamic_library_parses_darwin_dlopen() -> None:
+    """Helper should extract one missing library token from Darwin loader errors."""
+    missing = StableWhisperAdapter._extract_missing_dynamic_library(
+        "dlopen(...): Library not loaded: @rpath/libavutil.58.dylib\n"
+        "  Referenced from: /tmp/libtorio_ffmpeg6.so"
+    )
+    assert missing == "@rpath/libavutil.58.dylib"
+
+
+def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """FFmpeg backend missing with libavutil loader error should report ABI mismatch."""
+    StableWhisperAdapter._detect_torio_ffmpeg_operational_issue.cache_clear()
+    fake_library = tmp_path / "libtorio_ffmpeg6.so"
+    fake_library.write_text("stub", encoding="utf-8")
+    fake_torchaudio = SimpleNamespace(list_audio_backends=lambda: ["sox", "soundfile"])
+    fake_torio_utils = SimpleNamespace(
+        _FFMPEG_VERS=["6"],
+        _get_lib_path=lambda _lib: fake_library,
+    )
+
+    def _fake_import_module(name: str) -> object:
+        if name == "torchaudio":
+            return fake_torchaudio
+        if name == "torio._extension.utils":
+            return fake_torio_utils
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper.importlib.import_module",
+        _fake_import_module,
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper.StableWhisperAdapter._is_module_available",
+        lambda _module_name: True,
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper.format_torio_ffmpeg_remediation",
+        lambda *, missing_library: (
+            f"lane-aware-remediation:{missing_library or 'none'}"
+        ),
+    )
+
+    def _raise_dlopen(_path: str) -> object:
+        raise OSError(
+            "dlopen(...): Library not loaded: @rpath/libavutil.58.dylib\n"
+            "  Referenced from: /tmp/libtorio_ffmpeg6.so"
+        )
+
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper.ctypes.CDLL",
+        _raise_dlopen,
+    )
+
+    issue = StableWhisperAdapter._detect_torio_ffmpeg_operational_issue()
+
+    assert issue is not None
+    assert issue.code == "torio_ffmpeg_abi_mismatch"
+    assert "lane-aware-remediation:@rpath/libavutil.58.dylib" in issue.message
+    StableWhisperAdapter._detect_torio_ffmpeg_operational_issue.cache_clear()
 
 
 def test_faster_whisper_demucs_issue_is_operational_not_blocking(

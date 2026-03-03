@@ -80,6 +80,16 @@ type _WorkerPhaseMessage = tuple[Literal["phase"], _WorkerPhase]
 type _WorkerSuccessMessage = tuple[Literal["ok"], list[tuple[str, float, float]]]
 type _WorkerErrorMessage = tuple[Literal["err"], str, str, str]
 type _WorkerMessage = _WorkerPhaseMessage | _WorkerSuccessMessage | _WorkerErrorMessage
+type _CompatibilityIssueKind = Literal["noise", "operational"]
+
+_EMITTED_COMPATIBILITY_ISSUE_KEYS: set[tuple[str, str, str]] = set()
+_INFO_OPERATIONAL_ISSUE_CODES: frozenset[str] = frozenset(
+    {
+        "torio_ffmpeg_abi_mismatch",
+        "torio_ffmpeg_extension_unavailable",
+        "faster_whisper_openmp_runtime_conflict",
+    }
+)
 
 
 def _resolve_backend_id(raw_backend_id: object) -> TranscriptionBackendId:
@@ -166,19 +176,19 @@ def _check_adapter_compatibility(
     )
     if report.noise_issues:
         for issue in report.noise_issues:
-            logger.debug(
-                "Transcription backend '%s' noise issue [%s]: %s",
-                active_profile.backend_id,
-                issue.code,
-                issue.message,
+            _log_compatibility_issue_once(
+                backend_id=active_profile.backend_id,
+                issue_kind="noise",
+                issue_code=issue.code,
+                issue_message=issue.message,
             )
     if report.operational_issues:
         for issue in report.operational_issues:
-            logger.warning(
-                "Transcription backend '%s' operational issue [%s]: %s",
-                active_profile.backend_id,
-                issue.code,
-                issue.message,
+            _log_compatibility_issue_once(
+                backend_id=active_profile.backend_id,
+                issue_kind="operational",
+                issue_code=issue.code,
+                issue_message=issue.message,
             )
     if report.has_blocking_issues:
         details = (
@@ -187,6 +197,60 @@ def _check_adapter_compatibility(
         )
         raise TranscriptionError(details)
     return report
+
+
+def _log_compatibility_issue_once(
+    *,
+    backend_id: TranscriptionBackendId,
+    issue_kind: _CompatibilityIssueKind,
+    issue_code: str,
+    issue_message: str,
+) -> None:
+    """Logs one non-blocking compatibility issue once per backend/kind/code tuple."""
+    issue_key = (backend_id, issue_kind, issue_code)
+    if issue_key in _EMITTED_COMPATIBILITY_ISSUE_KEYS:
+        return
+    _EMITTED_COMPATIBILITY_ISSUE_KEYS.add(issue_key)
+    if issue_kind == "noise":
+        logger.debug(
+            "Transcription backend '%s' noise issue [%s]: %s",
+            backend_id,
+            issue_code,
+            issue_message,
+        )
+        return
+    log_level = (
+        logging.INFO if issue_code in _INFO_OPERATIONAL_ISSUE_CODES else logging.WARNING
+    )
+    logger.log(
+        log_level,
+        "Transcription backend '%s' non-blocking operational issue [%s]: %s "
+        "Run `ser doctor` for full remediation details.",
+        backend_id,
+        issue_code,
+        _summarize_operational_issue_message(issue_message, max_chars=180),
+    )
+
+
+def _summarize_operational_issue_message(issue_message: str, *, max_chars: int) -> str:
+    """Returns one concise operational issue message for CLI log hygiene."""
+    normalized = " ".join(issue_message.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[: max_chars - 3].rstrip()}..."
+
+
+def mark_compatibility_issues_as_emitted(
+    *,
+    backend_id: TranscriptionBackendId,
+    issue_kind: _CompatibilityIssueKind,
+    issue_codes: tuple[str, ...],
+) -> None:
+    """Marks compatibility issues as already emitted to prevent duplicate logs."""
+    for issue_code in issue_codes:
+        if not issue_code:
+            continue
+        _EMITTED_COMPATIBILITY_ISSUE_KEYS.add((backend_id, issue_kind, issue_code))
 
 
 def _transcription_setup_required(

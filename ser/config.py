@@ -17,6 +17,7 @@ from ser.profiles import (
     TranscriptionBackendId,
     get_profile_catalog,
 )
+from ser.utils.torch_inference import normalize_torch_device_selector
 
 APP_NAME = "ser"
 DEFAULT_ACCURATE_MODEL_ID = "openai/whisper-large-v3"
@@ -571,10 +572,8 @@ def _read_torch_device_env(name: str, default: str = "auto") -> str:
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
-    normalized = raw_value.strip().lower()
-    if normalized in {"auto", "cpu", "mps", "cuda"}:
-        return normalized
-    if re.fullmatch(r"cuda:\d+", normalized):
+    normalized = normalize_torch_device_selector(raw_value)
+    if normalized is not None:
         return normalized
     return default
 

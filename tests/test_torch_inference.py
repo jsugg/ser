@@ -41,6 +41,17 @@ class _FakeMps:
         return self._built
 
 
+class _FakeXpu:
+    """Minimal XPU capability stub."""
+
+    def __init__(self, *, available: bool) -> None:
+        self._available = available
+
+    def is_available(self) -> bool:
+        """Returns configured XPU availability."""
+        return self._available
+
+
 class _FakeBackends:
     """Container for torch.backends namespace stubs."""
 
@@ -62,11 +73,13 @@ class _FakeTorchModule:
         cuda_bf16_supported: bool,
         mps_available: bool,
         mps_built: bool,
+        xpu_available: bool = False,
     ) -> None:
         self.cuda = _FakeCuda(
             available=cuda_available,
             bf16_supported=cuda_bf16_supported,
         )
+        self.xpu = _FakeXpu(available=xpu_available)
         self.backends = _FakeBackends(
             mps=_FakeMps(available=mps_available, built=mps_built)
         )
@@ -121,6 +134,7 @@ def test_maybe_resolve_torch_runtime_prefers_cuda_and_bf16_when_supported(
         cuda_bf16_supported=True,
         mps_available=True,
         mps_built=True,
+        xpu_available=True,
     )
     monkeypatch.setattr(
         torch_inference.importlib,
@@ -155,6 +169,75 @@ def test_maybe_resolve_torch_runtime_rejects_non_float32_cpu_dtype(
     )
     with pytest.raises(RuntimeError, match="CPU runtime only supports"):
         torch_inference.maybe_resolve_torch_runtime(device="cpu", dtype="float16")
+
+
+def test_maybe_resolve_torch_runtime_prefers_xpu_when_cuda_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Auto selectors should pick XPU when CUDA is unavailable and XPU is present."""
+    fake_torch = _FakeTorchModule(
+        cuda_available=False,
+        cuda_bf16_supported=False,
+        mps_available=True,
+        mps_built=True,
+        xpu_available=True,
+    )
+    monkeypatch.setattr(
+        torch_inference.importlib,
+        "import_module",
+        lambda name: fake_torch if name == "torch" else None,
+    )
+
+    runtime = torch_inference.maybe_resolve_torch_runtime(device="auto", dtype="auto")
+
+    assert runtime is not None
+    assert runtime.device_spec == "xpu"
+    assert runtime.device_type == "xpu"
+    assert runtime.dtype_name == "float16"
+    assert runtime.device == "device:xpu"
+    assert runtime.dtype == "float16"
+
+
+def test_maybe_resolve_torch_runtime_rejects_unavailable_xpu_selector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit XPU selector should fail fast when XPU runtime is unavailable."""
+    fake_torch = _FakeTorchModule(
+        cuda_available=False,
+        cuda_bf16_supported=False,
+        mps_available=False,
+        mps_built=False,
+        xpu_available=False,
+    )
+    monkeypatch.setattr(
+        torch_inference.importlib,
+        "import_module",
+        lambda name: fake_torch if name == "torch" else None,
+    )
+
+    with pytest.raises(RuntimeError, match="requested XPU, but XPU is unavailable"):
+        torch_inference.maybe_resolve_torch_runtime(device="xpu:0", dtype="float16")
+
+
+def test_maybe_resolve_torch_runtime_rejects_bfloat16_on_xpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XPU runtime should reject explicit bfloat16 selector for now."""
+    fake_torch = _FakeTorchModule(
+        cuda_available=False,
+        cuda_bf16_supported=False,
+        mps_available=False,
+        mps_built=False,
+        xpu_available=True,
+    )
+    monkeypatch.setattr(
+        torch_inference.importlib,
+        "import_module",
+        lambda name: fake_torch if name == "torch" else None,
+    )
+
+    with pytest.raises(RuntimeError, match="unsupported for MPS/XPU"):
+        torch_inference.maybe_resolve_torch_runtime(device="xpu", dtype="bfloat16")
 
 
 def test_move_inputs_to_runtime_casts_only_selected_dtype_keys() -> None:
