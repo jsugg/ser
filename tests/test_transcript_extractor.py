@@ -13,6 +13,7 @@ import pytest
 from ser.domain import TranscriptWord
 from ser.transcript import transcript_extractor as te
 from ser.transcript.backends import faster_whisper as faster_whisper_adapter
+from ser.transcript.backends.base import CompatibilityIssue
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult
@@ -426,6 +427,81 @@ def test_faster_whisper_info_logs_are_demoted_to_debug_during_transcription() ->
     ]
     assert faster_records, "Expected faster_whisper logs to be captured."
     assert all(record.levelno == logging.DEBUG for record in faster_records)
+
+
+def test_check_adapter_compatibility_logs_non_blocking_issues_once(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Repeated compatibility checks should emit non-blocking issues once."""
+    compatibility_report = te.CompatibilityReport(
+        backend_id="stable_whisper",
+        operational_issues=(
+            CompatibilityIssue(
+                code="torio_ffmpeg_abi_mismatch",
+                message="torchaudio FFmpeg extension ABI mismatch",
+            ),
+        ),
+        noise_issues=(
+            CompatibilityIssue(
+                code="stable_whisper_invalid_escape_sequence",
+                message="stable-whisper import warning noise",
+            ),
+        ),
+    )
+
+    class _FakeAdapter:
+        def check_compatibility(
+            self,
+            *,
+            runtime_request: te.BackendRuntimeRequest,
+            settings: object,
+        ) -> te.CompatibilityReport:
+            del runtime_request
+            del settings
+            return compatibility_report
+
+    monkeypatch.setattr(
+        te,
+        "resolve_transcription_backend_adapter",
+        lambda _backend_id: _FakeAdapter(),
+    )
+    monkeypatch.setattr(te, "_EMITTED_COMPATIBILITY_ISSUE_KEYS", set())
+    runtime_request = te.BackendRuntimeRequest(
+        model_name="large-v2",
+        use_demucs=False,
+        use_vad=True,
+    )
+    profile = te.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large-v2",
+    )
+    settings = cast(te.AppConfig, SimpleNamespace())
+
+    with caplog.at_level(logging.DEBUG):
+        _ = te._check_adapter_compatibility(
+            active_profile=profile,
+            settings=settings,
+            runtime_request=runtime_request,
+        )
+        _ = te._check_adapter_compatibility(
+            active_profile=profile,
+            settings=settings,
+            runtime_request=runtime_request,
+        )
+
+    noise_records = [
+        record
+        for record in caplog.records
+        if "noise issue [stable_whisper_invalid_escape_sequence]" in record.getMessage()
+    ]
+    operational_records = [
+        record
+        for record in caplog.records
+        if "operational issue [torio_ffmpeg_abi_mismatch]" in record.getMessage()
+    ]
+    assert len(noise_records) == 1
+    assert len(operational_records) == 1
 
 
 def test_extract_transcript_logs_setup_before_model_load_when_required(

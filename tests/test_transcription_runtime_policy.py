@@ -164,3 +164,25 @@ def test_policy_passes_configured_mps_threshold_to_memory_tier_resolver(
     )
 
     assert captured["threshold"] == pytest.approx(28.5)
+
+
+def test_policy_falls_back_to_cpu_for_xpu_when_backend_lacks_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """faster-whisper should remain NVIDIA-only and demote XPU to CPU."""
+    monkeypatch.setattr(
+        runtime_policy,
+        "maybe_resolve_torch_runtime",
+        lambda **_kwargs: _runtime(device_spec="xpu:0", device_type="xpu"),
+    )
+
+    policy = runtime_policy.resolve_transcription_runtime_policy(
+        backend_id="faster_whisper",
+        requested_device="auto",
+        requested_dtype="auto",
+    )
+
+    assert policy.device_spec == "cpu"
+    assert policy.device_type == "cpu"
+    assert policy.precision_candidates == ("float32",)
+    assert "backend_faster_whisper_does_not_support_device_xpu" in policy.reason

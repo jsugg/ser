@@ -116,3 +116,64 @@ def test_stable_whisper_sparse_mps_incompatibility_returns_false_when_mps_unavai
     assert compat.has_known_stable_whisper_sparse_mps_incompatibility() is False
 
     compat.has_known_stable_whisper_sparse_mps_incompatibility.cache_clear()
+
+
+def test_resolve_transcription_compatibility_lane_detects_pinned_darwin_py312(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Darwin x86_64 Python 3.12 should map to pinned compatibility lane."""
+    monkeypatch.setattr(compat.sys, "platform", "darwin")
+    monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(compat.sys, "version_info", (3, 12, 9, "final", 0))
+
+    assert (
+        compat.resolve_transcription_compatibility_lane()
+        == "darwin_x86_64_py312_pinned"
+    )
+
+
+def test_format_torio_ffmpeg_remediation_for_pinned_lane_avoids_torch_upgrade_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pinned Darwin lane remediation should explicitly avoid torch upgrade guidance."""
+    monkeypatch.setattr(compat.sys, "platform", "darwin")
+    monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(compat.sys, "version_info", (3, 12, 9, "final", 0))
+
+    message = compat.format_torio_ffmpeg_remediation(
+        missing_library="@rpath/libavutil.58.dylib"
+    )
+
+    assert "do not upgrade torch" in message.lower()
+    assert "brew install ffmpeg@6" in message
+
+
+def test_format_torio_ffmpeg_remediation_for_darwin_py313_recommends_lane_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Darwin x86_64 Python 3.13 remediation should recommend supported lane switch."""
+    monkeypatch.setattr(compat.sys, "platform", "darwin")
+    monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(compat.sys, "version_info", (3, 13, 0, "final", 0))
+
+    message = compat.format_torio_ffmpeg_remediation(
+        missing_library="@rpath/libavutil.58.dylib"
+    )
+
+    assert "partial fast-profile lane" in message
+    assert "setup_compatible_env.sh --python 3.12" in message
+
+
+def test_format_torio_ffmpeg_remediation_for_generic_lane_allows_torch_upgrade_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generic lane remediation can include optional torch upgrade guidance."""
+    monkeypatch.setattr(compat.sys, "platform", "linux")
+    monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(compat.sys, "version_info", (3, 12, 9, "final", 0))
+
+    message = compat.format_torio_ffmpeg_remediation(
+        missing_library="@rpath/libavutil.58.dylib"
+    )
+
+    assert "if your environment policy allows torch upgrades" in message.lower()

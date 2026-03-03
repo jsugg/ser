@@ -9,6 +9,7 @@ import pytest
 import ser.__main__ as cli
 import ser.config as config_module
 import ser.models.emotion_model as emotion_model
+from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
 from ser.runtime import InferenceRequest
 from ser.runtime.accurate_inference import AccurateRuntimeDependencyError
 from ser.runtime.medium_inference import MediumRuntimeDependencyError
@@ -716,7 +717,16 @@ def test_cli_disable_timeouts_flag_applies_to_selected_profile(
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["ser", "--file", "sample.wav", "--profile", "accurate", "--disable-timeouts"],
+        [
+            "ser",
+            "--file",
+            "sample.wav",
+            "--profile",
+            "accurate",
+            "--disable-timeouts",
+            "--preflight",
+            "off",
+        ],
     )
 
     captured: dict[str, object] = {}
@@ -815,7 +825,15 @@ def test_cli_interactive_restricted_backend_prompt_persists_consent(
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["ser", "--file", "sample.wav", "--profile", "accurate-research"],
+        [
+            "ser",
+            "--file",
+            "sample.wav",
+            "--profile",
+            "accurate-research",
+            "--preflight",
+            "off",
+        ],
     )
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True)
@@ -893,6 +911,142 @@ def test_cli_dispatches_data_subcommand_after_global_log_level(
 
     assert exc_info.value.code == 0
     assert captured["argv"] == ["download", "--dataset", "ravdess"]
+
+
+def test_cli_dispatches_doctor_subcommand_after_global_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnostics doctor subcommand should dispatch when global flags appear first."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--log-level", "INFO", "doctor", "--strict"],
+    )
+    captured: dict[str, object] = {}
+
+    def _run_doctor_command(argv: list[str], *, settings: object | None = None) -> int:
+        captured["argv"] = argv
+        captured["settings"] = settings
+        return 0
+
+    monkeypatch.setattr(
+        "ser.diagnostics.command.run_doctor_command",
+        _run_doctor_command,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert captured["argv"] == ["--strict"]
+    assert isinstance(captured["settings"], SimpleNamespace)
+
+
+def test_cli_preflight_warn_mode_logs_findings_and_allows_inference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Warn preflight should log findings but continue execution when non-blocking."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--preflight", "warn"],
+    )
+    report = DiagnosticReport(
+        findings=(
+            DiagnosticFinding(
+                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                severity="warning",
+                message="Test warning",
+            ),
+        )
+    )
+    captured: dict[str, object] = {}
+    info_logs: list[str] = []
+
+    def _run_startup_preflight(
+        *,
+        settings: config_module.AppConfig,
+        include_transcription_checks: bool,
+    ) -> DiagnosticReport:
+        captured["settings"] = settings
+        captured["include_transcription_checks"] = include_transcription_checks
+        return report
+
+    class FakePipeline:
+        def run_inference(self, _request: object) -> object:
+            captured["inference_called"] = True
+            return SimpleNamespace(timeline_csv_path=None)
+
+    monkeypatch.setattr(cli, "run_startup_preflight", _run_startup_preflight)
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
+    monkeypatch.setattr(
+        cli.logger,
+        "info",
+        lambda msg, *args, **_kwargs: info_logs.append(msg % args if args else msg),
+    )
+
+    cli.main()
+
+    assert captured["settings"] is settings
+    assert captured["include_transcription_checks"] is True
+    assert captured["inference_called"] is True
+    assert any("Startup preflight advisory" in message for message in info_logs)
+    assert any("ser doctor" in message for message in info_logs)
+
+
+def test_cli_preflight_strict_mode_exits_two_on_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strict preflight should fail command execution when warnings are present."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--preflight", "strict"],
+    )
+    report = DiagnosticReport(
+        findings=(
+            DiagnosticFinding(
+                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                severity="warning",
+                message="Test warning",
+            ),
+        )
+    )
+    called = {"inference": False}
+
+    def _run_startup_preflight(
+        *,
+        settings: config_module.AppConfig,
+        include_transcription_checks: bool,
+    ) -> DiagnosticReport:
+        assert settings is not None
+        assert include_transcription_checks is True
+        return report
+
+    class FakePipeline:
+        def run_inference(self, _request: object) -> object:
+            called["inference"] = True
+            return SimpleNamespace(timeline_csv_path=None)
+
+    monkeypatch.setattr(cli, "run_startup_preflight", _run_startup_preflight)
+    monkeypatch.setattr(
+        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+    assert called["inference"] is False
 
 
 def test_cli_dataset_workflow_configure_download_and_registry_load(
