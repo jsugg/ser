@@ -717,7 +717,16 @@ def test_cli_disable_timeouts_flag_applies_to_selected_profile(
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["ser", "--file", "sample.wav", "--profile", "accurate", "--disable-timeouts"],
+        [
+            "ser",
+            "--file",
+            "sample.wav",
+            "--profile",
+            "accurate",
+            "--disable-timeouts",
+            "--preflight",
+            "off",
+        ],
     )
 
     captured: dict[str, object] = {}
@@ -816,7 +825,15 @@ def test_cli_interactive_restricted_backend_prompt_persists_consent(
     monkeypatch.setattr(
         cli.sys,
         "argv",
-        ["ser", "--file", "sample.wav", "--profile", "accurate-research"],
+        [
+            "ser",
+            "--file",
+            "sample.wav",
+            "--profile",
+            "accurate-research",
+            "--preflight",
+            "off",
+        ],
     )
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True)
