@@ -41,7 +41,7 @@ class _PredictModel(MLPClassifier):
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings() -> Generator[None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield
@@ -89,7 +89,10 @@ def _patch_runtime_prerequisites(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.WhisperBackend",
@@ -116,7 +119,7 @@ def test_accurate_timeout_retries_up_to_configured_budget(
         raise AccurateInferenceTimeoutError("timeout")
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout", fake_timeout_runner
+        "ser.runtime.accurate_inference._run_with_timeout_impl", fake_timeout_runner
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._retry_delay_seconds",
@@ -166,8 +169,8 @@ def test_accurate_transient_backend_failure_respects_retry_upper_bound(
         raise AccurateTransientBackendError("transient backend failure")
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt
@@ -211,8 +214,8 @@ def test_accurate_non_retryable_value_error_exits_without_retries(
         raise ValueError("Feature vector size mismatch")
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt
@@ -261,8 +264,8 @@ def test_accurate_dependency_error_is_not_retried(
         raise AccurateRuntimeDependencyError("transformers missing")
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt
@@ -297,7 +300,10 @@ def test_accurate_inference_rejects_non_accurate_artifact_metadata(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
 
     with pytest.raises(AccurateModelUnavailableError, match="hf_whisper"):
@@ -322,8 +328,8 @@ def test_accurate_inference_returns_expected_schema(
         schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
     )
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_accurate_inference_once",
@@ -364,7 +370,10 @@ def test_accurate_backend_setup_runs_before_timeout_wrapper(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._build_backend_for_profile",
@@ -376,7 +385,7 @@ def test_accurate_backend_setup_runs_before_timeout_wrapper(
         return expected
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
         fake_timeout_runner,
     )
 
@@ -407,7 +416,10 @@ def test_accurate_inference_uses_configured_accurate_model_id(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     captured: dict[str, object] = {}
 
@@ -427,8 +439,8 @@ def test_accurate_inference_uses_configured_accurate_model_id(
 
     monkeypatch.setattr("ser.runtime.accurate_inference.WhisperBackend", _BackendStub)
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
 
     def _fake_run_once(**kwargs: object) -> InferenceResult:
@@ -475,7 +487,10 @@ def test_accurate_inference_rejects_mismatched_backend_model_id(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     with pytest.raises(AccurateModelUnavailableError, match="backend_model_id"):
         run_accurate_inference(
@@ -537,15 +552,18 @@ def test_accurate_inference_warns_on_torch_runtime_metadata_mismatch(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.WhisperBackend",
         lambda **_kwargs: object(),
     )
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_accurate_inference_once",
@@ -575,8 +593,8 @@ def test_accurate_single_flight_serializes_same_profile_model_calls(
         backend_model_id=settings.models.accurate_model_id,
     )
     monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.accurate_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
 
     counters = {"active": 0, "max_active": 0}
@@ -628,6 +646,7 @@ def test_accurate_single_flight_serializes_same_profile_model_calls(
 
     assert errors == []
     assert counters["max_active"] == 1
+    assert accurate_inference._SINGLE_FLIGHT_REGISTRY.active_key_count() == 0
 
 
 def test_accurate_profile_pipeline_uses_process_timeout_runner(

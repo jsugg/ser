@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import fmean
+from typing import Protocol
 
 from ser.runtime.schema import FramePrediction, SegmentPrediction
 
@@ -18,6 +19,36 @@ class SegmentPostprocessingConfig:
     hysteresis_enter_confidence: float = 0.60
     hysteresis_exit_confidence: float = 0.45
     min_segment_duration_seconds: float = 0.40
+
+
+class SupportsSegmentPostprocessingRuntime(Protocol):
+    """Runtime config protocol required for postprocessing config projection."""
+
+    @property
+    def post_smoothing_window_frames(self) -> int: ...
+
+    @property
+    def post_hysteresis_enter_confidence(self) -> float: ...
+
+    @property
+    def post_hysteresis_exit_confidence(self) -> float: ...
+
+    @property
+    def post_min_segment_duration_seconds(self) -> float: ...
+
+
+def build_segment_postprocessing_config(
+    runtime_config: SupportsSegmentPostprocessingRuntime,
+) -> SegmentPostprocessingConfig:
+    """Builds validated segment postprocessing config from one runtime profile config."""
+    config = SegmentPostprocessingConfig(
+        smoothing_window_frames=runtime_config.post_smoothing_window_frames,
+        hysteresis_enter_confidence=runtime_config.post_hysteresis_enter_confidence,
+        hysteresis_exit_confidence=runtime_config.post_hysteresis_exit_confidence,
+        min_segment_duration_seconds=runtime_config.post_min_segment_duration_seconds,
+    )
+    _validate_config(config)
+    return config
 
 
 def postprocess_frame_predictions(

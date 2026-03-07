@@ -1,5 +1,6 @@
 """Behavior tests for CLI argument dispatch and exit semantics."""
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -9,7 +10,7 @@ import pytest
 import ser.__main__ as cli
 import ser.config as config_module
 import ser.models.emotion_model as emotion_model
-from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
+from ser.license_check import load_persisted_backend_consents
 from ser.runtime import InferenceRequest
 from ser.runtime.accurate_inference import AccurateRuntimeDependencyError
 from ser.runtime.medium_inference import MediumRuntimeDependencyError
@@ -19,10 +20,16 @@ from ser.runtime.registry import UnsupportedProfileError
 def _patch_common_cli_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patches shared CLI dependencies to keep tests deterministic."""
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "reload_settings", lambda: config_module.reload_settings())
     monkeypatch.setattr(
         cli,
-        "reload_settings",
-        lambda: SimpleNamespace(default_language="en"),
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
     )
 
 
@@ -48,9 +55,7 @@ def test_cli_log_level_flag_overrides_environment_level(
             return SimpleNamespace(timeline_csv_path=None)
 
     monkeypatch.setattr(cli, "configure_logging", _capture_log_level)
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
@@ -90,7 +95,7 @@ def test_cli_calibration_requires_file_argument(
 def test_cli_calibration_dispatches_runtime_calibration_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Calibration mode should call profiling runtime calibration and exit zero."""
+    """Calibration mode should dispatch through the API runtime calibration workflow."""
     _patch_common_cli_dependencies(monkeypatch)
     monkeypatch.setattr(
         cli.sys,
@@ -109,19 +114,16 @@ def test_cli_calibration_dispatches_runtime_calibration_command(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
-        "ser.transcript.profiling.parse_calibration_profiles",
-        lambda raw: (
-            captured.setdefault("profiles_raw", raw),
-            ("medium", "accurate"),
-        )[1],
-    )
-    monkeypatch.setattr(
-        "ser.transcript.profiling.run_transcription_runtime_calibration",
+        cli,
+        "run_transcription_runtime_calibration_command",
         lambda **kwargs: (
             captured.setdefault("kwargs", kwargs),
-            SimpleNamespace(
-                report_path=Path("runtime_calibration.json"),
-                recommendations=(),
+            (
+                SimpleNamespace(
+                    report_path=Path("runtime_calibration.json"),
+                    recommendations=(),
+                ),
+                None,
             ),
         )[1],
     )
@@ -130,11 +132,11 @@ def test_cli_calibration_dispatches_runtime_calibration_command(
         cli.main()
 
     assert exc_info.value.code == 0
-    assert captured["profiles_raw"] == "medium,accurate"
     kwargs = cast(dict[str, object], captured["kwargs"])
-    assert kwargs["calibration_file"] == Path("sample.wav")
-    assert kwargs["iterations_per_profile"] == 3
-    assert kwargs["profile_names"] == ("medium", "accurate")
+    assert kwargs["file_path"] == "sample.wav"
+    assert kwargs["calibration_iterations"] == 3
+    assert kwargs["calibration_profiles"] == "medium,accurate"
+    assert kwargs["language"] == "en"
 
 
 def test_cli_train_option_invokes_training_and_exits_zero(
@@ -176,9 +178,7 @@ def test_cli_prediction_passes_language_and_saves_transcript(
             calls["request"] = request
             return SimpleNamespace(timeline_csv_path="out.csv")
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
@@ -205,9 +205,7 @@ def test_cli_prediction_with_no_transcript_disables_transcript_in_pipeline_reque
             calls["request"] = request
             return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
@@ -230,9 +228,7 @@ def test_cli_prediction_does_not_save_when_flag_is_absent(
             calls["request"] = request
             return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
@@ -246,13 +242,14 @@ def test_cli_train_option_uses_runtime_pipeline_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`--train` should dispatch through runtime pipeline when flag is enabled."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--train"])
@@ -263,9 +260,7 @@ def test_cli_train_option_uses_runtime_pipeline_when_enabled(
         def run_training(self) -> None:
             called["train"] = True
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
@@ -278,13 +273,14 @@ def test_cli_prediction_uses_runtime_pipeline_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Prediction should route through runtime pipeline when flag is enabled."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(
@@ -303,9 +299,7 @@ def test_cli_prediction_uses_runtime_pipeline_when_enabled(
             calls["request"] = request
             return SimpleNamespace(timeline_csv_path="timeline.csv")
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
@@ -320,13 +314,14 @@ def test_cli_prediction_pipeline_honors_no_transcript_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pipeline request should disable transcript extraction when --no-transcript is set."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(
@@ -345,9 +340,7 @@ def test_cli_prediction_pipeline_honors_no_transcript_flag(
             calls["request"] = request
             return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
@@ -362,13 +355,14 @@ def test_cli_prediction_pipeline_unsupported_profile_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pipeline capability failures should map to exit code 2."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
@@ -382,9 +376,7 @@ def test_cli_prediction_pipeline_unsupported_profile_exits_two(
                 "Runtime profile 'medium' is not implemented."
             )
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
@@ -396,13 +388,14 @@ def test_cli_prediction_pipeline_medium_dependency_error_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Medium dependency/runtime readiness errors should map to exit code 2."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
@@ -416,9 +409,7 @@ def test_cli_prediction_pipeline_medium_dependency_error_exits_two(
                 "Runtime profile 'medium' requires missing dependency: transformers."
             )
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
@@ -430,13 +421,14 @@ def test_cli_prediction_pipeline_accurate_dependency_error_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Accurate dependency/runtime readiness errors should map to exit code 2."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
@@ -450,9 +442,7 @@ def test_cli_prediction_pipeline_accurate_dependency_error_exits_two(
                 "Runtime profile 'accurate' requires missing dependency: transformers."
             )
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
@@ -467,10 +457,22 @@ def test_cli_profile_option_enables_pipeline_and_overrides_runtime_flags_for_tra
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
     monkeypatch.setattr(
         cli,
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    base_settings = config_module.reload_settings()
+    monkeypatch.setattr(
+        cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(
+                base_settings.runtime_flags,
                 profile_pipeline=False,
                 medium_profile=False,
                 accurate_profile=False,
@@ -492,9 +494,7 @@ def test_cli_profile_option_enables_pipeline_and_overrides_runtime_flags_for_tra
             captured["called"] = True
 
     def _build_pipeline(settings: object) -> FakePipeline:
-        runtime_flags = cast(
-            SimpleNamespace, cast(SimpleNamespace, settings).runtime_flags
-        )
+        runtime_flags = cast(config_module.AppConfig, settings).runtime_flags
         captured["profile_pipeline"] = runtime_flags.profile_pipeline
         captured["medium_profile"] = runtime_flags.medium_profile
         captured["accurate_profile"] = runtime_flags.accurate_profile
@@ -502,7 +502,7 @@ def test_cli_profile_option_enables_pipeline_and_overrides_runtime_flags_for_tra
         captured["restricted_backends"] = runtime_flags.restricted_backends
         return FakePipeline()
 
-    monkeypatch.setattr(cli, "_build_runtime_pipeline", _build_pipeline)
+    monkeypatch.setattr(cli, "build_runtime_pipeline", _build_pipeline)
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
@@ -523,10 +523,22 @@ def test_cli_profile_option_routes_prediction_with_selected_profile(
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
     monkeypatch.setattr(
         cli,
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    base_settings = config_module.reload_settings()
+    monkeypatch.setattr(
+        cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(
+                base_settings.runtime_flags,
                 profile_pipeline=False,
                 medium_profile=False,
                 accurate_profile=False,
@@ -552,16 +564,14 @@ def test_cli_profile_option_routes_prediction_with_selected_profile(
             return SimpleNamespace(timeline_csv_path=None)
 
     def _build_pipeline(settings: object) -> FakePipeline:
-        runtime_flags = cast(
-            SimpleNamespace, cast(SimpleNamespace, settings).runtime_flags
-        )
+        runtime_flags = cast(config_module.AppConfig, settings).runtime_flags
         captured["profile_pipeline"] = runtime_flags.profile_pipeline
         captured["medium_profile"] = runtime_flags.medium_profile
         captured["accurate_profile"] = runtime_flags.accurate_profile
         captured["accurate_research_profile"] = runtime_flags.accurate_research_profile
         return FakePipeline()
 
-    monkeypatch.setattr(cli, "_build_runtime_pipeline", _build_pipeline)
+    monkeypatch.setattr(cli, "build_runtime_pipeline", _build_pipeline)
 
     cli.main()
 
@@ -591,10 +601,7 @@ def test_cli_profile_override_sets_profile_specific_artifact_names(
         accurate_research_model_id=settings.models.accurate_research_model_id,
     )
 
-    resolved = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings, "medium"),
-    )
+    resolved = cli.apply_cli_profile_override(settings, "medium")
 
     assert resolved.models.model_file_name == expected_names[0]
     assert resolved.models.secure_model_file_name == expected_names[1]
@@ -610,10 +617,7 @@ def test_cli_profile_override_preserves_explicit_artifact_env_overrides(
     monkeypatch.setenv("SER_TRAINING_REPORT_FILE_NAME", "custom_report.json")
     settings = config_module.reload_settings()
 
-    resolved = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings, "accurate"),
-    )
+    resolved = cli.apply_cli_profile_override(settings, "accurate")
 
     assert resolved.models.model_file_name == "custom_model.pkl"
     assert resolved.models.secure_model_file_name == "custom_model.skops"
@@ -629,17 +633,11 @@ def test_cli_profile_override_accurate_name_tracks_backend_model_id(
     monkeypatch.delenv("SER_TRAINING_REPORT_FILE_NAME", raising=False)
     monkeypatch.setenv("SER_ACCURATE_MODEL_ID", "unit-test/whisper-large")
     settings_a = config_module.reload_settings()
-    resolved_a = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings_a, "accurate"),
-    )
+    resolved_a = cli.apply_cli_profile_override(settings_a, "accurate")
 
     monkeypatch.setenv("SER_ACCURATE_MODEL_ID", "unit-test/whisper-tiny")
     settings_b = config_module.reload_settings()
-    resolved_b = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings_b, "accurate"),
-    )
+    resolved_b = cli.apply_cli_profile_override(settings_b, "accurate")
 
     assert resolved_a.models.model_file_name != resolved_b.models.model_file_name
     assert (
@@ -661,21 +659,11 @@ def test_cli_profile_override_updates_transcription_defaults_by_profile(
     monkeypatch.delenv("WHISPER_VAD", raising=False)
     settings = config_module.reload_settings()
 
-    resolved_fast = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings, "fast"),
-    )
-    resolved_medium = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings, "medium"),
-    )
-    resolved_accurate = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings, "accurate"),
-    )
-    resolved_accurate_research = cast(
-        config_module.AppConfig,
-        cli._apply_cli_profile_override(settings, "accurate-research"),
+    resolved_fast = cli.apply_cli_profile_override(settings, "fast")
+    resolved_medium = cli.apply_cli_profile_override(settings, "medium")
+    resolved_accurate = cli.apply_cli_profile_override(settings, "accurate")
+    resolved_accurate_research = cli.apply_cli_profile_override(
+        settings, "accurate-research"
     )
 
     assert resolved_fast.transcription.backend_id == "faster_whisper"
@@ -696,10 +684,7 @@ def test_cli_timeout_override_sets_all_profile_timeouts_to_zero() -> None:
     """Timeout override should force all profile timeout budgets to zero."""
     settings = config_module.reload_settings()
 
-    resolved = cast(
-        config_module.AppConfig,
-        cli._apply_cli_timeout_override(settings, disable_timeouts=True),
-    )
+    resolved = cli.apply_cli_timeout_override(settings, disable_timeouts=True)
 
     assert resolved.fast_runtime.timeout_seconds == 0.0
     assert resolved.medium_runtime.timeout_seconds == 0.0
@@ -744,11 +729,183 @@ def test_cli_disable_timeouts_flag_applies_to_selected_profile(
         captured["timeout_seconds"] = app_settings.accurate_runtime.timeout_seconds
         return FakePipeline()
 
-    monkeypatch.setattr(cli, "_build_runtime_pipeline", _build_pipeline)
+    monkeypatch.setattr(cli, "build_runtime_pipeline", _build_pipeline)
 
     cli.main()
 
     assert captured["timeout_seconds"] == 0.0
+
+
+def test_cli_profile_override_is_scoped_to_command_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLI profile overrides should not leak beyond the current invocation."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    base_settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: base_settings)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--profile", "accurate", "--preflight", "off"],
+    )
+    captured: dict[str, object] = {}
+
+    class FakePipeline:
+        def run_inference(self, _request: object) -> object:
+            captured["active_settings_during_run"] = config_module.get_settings()
+            return SimpleNamespace(timeline_csv_path=None)
+
+    def _build_pipeline(runtime_settings: object) -> FakePipeline:
+        captured["pipeline_settings"] = runtime_settings
+        captured["active_settings_during_build"] = config_module.get_settings()
+        return FakePipeline()
+
+    monkeypatch.setattr(cli, "build_runtime_pipeline", _build_pipeline)
+
+    cli.main()
+
+    build_settings = cast(
+        config_module.AppConfig,
+        captured["active_settings_during_build"],
+    )
+    run_settings = cast(
+        config_module.AppConfig,
+        captured["active_settings_during_run"],
+    )
+    assert build_settings.runtime_flags.accurate_profile is True
+    assert run_settings.runtime_flags.accurate_profile is True
+    assert config_module.get_settings() is base_settings
+    assert config_module.get_settings().runtime_flags.accurate_profile is False
+
+
+def test_cli_train_path_calls_api_delegates_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Train path should invoke core API delegates exactly once."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "--train", "--preflight", "off"])
+    captured: dict[str, int] = {"profile": 0, "timeout": 0, "train": 0}
+
+    def _apply_profile(settings_obj: object, profile: object) -> object:
+        captured["profile"] += 1
+        del profile
+        return settings_obj
+
+    def _apply_timeout(settings_obj: object, *, disable_timeouts: bool) -> object:
+        captured["timeout"] += 1
+        del disable_timeouts
+        return settings_obj
+
+    def _run_training_command(**_kwargs: object) -> object:
+        captured["train"] += 1
+        return None
+
+    monkeypatch.setattr(cli, "apply_cli_profile_override", _apply_profile)
+    monkeypatch.setattr(cli, "apply_cli_timeout_override", _apply_timeout)
+    monkeypatch.setattr(cli, "run_training_command", _run_training_command)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    assert captured == {"profile": 1, "timeout": 1, "train": 1}
+
+
+def test_cli_infer_path_calls_api_delegates_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Infer path should invoke API delegates exactly once on success path."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--preflight", "off"],
+    )
+    captured: dict[str, int] = {
+        "profile": 0,
+        "timeout": 0,
+        "workflow_profile": 0,
+        "infer": 0,
+    }
+
+    def _apply_profile(settings_obj: object, profile: object) -> object:
+        captured["profile"] += 1
+        del profile
+        return settings_obj
+
+    def _apply_timeout(settings_obj: object, *, disable_timeouts: bool) -> object:
+        captured["timeout"] += 1
+        del disable_timeouts
+        return settings_obj
+
+    def _resolve_workflow_profile(_settings_obj: object) -> str:
+        captured["workflow_profile"] += 1
+        return "fast"
+
+    def _run_inference_command(**_kwargs: object) -> object:
+        captured["infer"] += 1
+        return (SimpleNamespace(timeline_csv_path=None), None)
+
+    monkeypatch.setattr(cli, "apply_cli_profile_override", _apply_profile)
+    monkeypatch.setattr(cli, "apply_cli_timeout_override", _apply_timeout)
+    monkeypatch.setattr(cli, "resolve_cli_workflow_profile", _resolve_workflow_profile)
+    monkeypatch.setattr(cli, "run_inference_command", _run_inference_command)
+
+    cli.main()
+
+    assert captured == {
+        "profile": 1,
+        "timeout": 1,
+        "workflow_profile": 1,
+        "infer": 1,
+    }
+
+
+def test_cli_preflight_path_calls_api_delegates_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preflight path should invoke one API gate delegate exactly once."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--preflight", "warn"],
+    )
+    captured: dict[str, object] = {}
+
+    def _run_startup_preflight_cli_gate(**kwargs: object) -> object:
+        captured["calls"] = int(cast(int | None, captured.get("calls")) or 0) + 1
+        captured["kwargs"] = kwargs
+        return ((), None)
+
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        _run_startup_preflight_cli_gate,
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_inference_command",
+        lambda **_kwargs: (SimpleNamespace(timeline_csv_path=None), None),
+    )
+
+    cli.main()
+
+    assert captured["calls"] == 1
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["settings"] is settings
+    assert kwargs["mode"] == "warn"
+    assert kwargs["profile"] is None
+    assert kwargs["train_requested"] is False
+    assert kwargs["file_path"] == "sample.wav"
+    assert kwargs["no_transcript"] is False
+    assert kwargs["calibrate_transcription_runtime"] is False
 
 
 def test_cli_accept_restricted_backends_persists_active_profile_consent(
@@ -780,9 +937,44 @@ def test_cli_accept_restricted_backends_persists_active_profile_consent(
         cli.main()
 
     assert exc_info.value.code == 0
-    persisted = cli.load_persisted_backend_consents(settings=settings)
+    persisted = load_persisted_backend_consents(settings=settings)
     assert "emotion2vec" in persisted
     assert persisted["emotion2vec"].consent_source == "cli_flag_accept_restricted"
+
+
+def test_cli_accept_restricted_backends_delegates_to_api_runtime_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restricted-backend opt-in should route through API runtime helpers."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(cli, "reload_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--profile", "accurate-research", "--accept-restricted-backends"],
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        cli,
+        "run_restricted_backend_cli_gate",
+        lambda **kwargs: (
+            captured.setdefault("kwargs", kwargs),
+            ((), 0),
+        )[1],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["use_profile_pipeline"] is True
+    assert kwargs["train_requested"] is False
+    assert kwargs["file_path"] is None
+    assert kwargs["accept_restricted_backends"] is True
+    assert kwargs["accept_all_restricted_backends"] is False
 
 
 def test_cli_accept_all_restricted_backends_persists_all_and_exits_zero(
@@ -803,7 +995,7 @@ def test_cli_accept_all_restricted_backends_persists_all_and_exits_zero(
         cli.main()
 
     assert exc_info.value.code == 0
-    persisted = cli.load_persisted_backend_consents(settings=settings)
+    persisted = load_persisted_backend_consents(settings=settings)
     assert "emotion2vec" in persisted
     assert persisted["emotion2vec"].consent_source == "cli_flag_accept_all"
 
@@ -846,13 +1038,11 @@ def test_cli_interactive_restricted_backend_prompt_persists_consent(
         def run_inference(self, _request: object) -> object:
             return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
-    )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     cli.main()
 
-    persisted = cli.load_persisted_backend_consents(settings=settings)
+    persisted = load_persisted_backend_consents(settings=settings)
     assert "emotion2vec" in persisted
     assert persisted["emotion2vec"].consent_source == "interactive_prompt"
 
@@ -869,8 +1059,11 @@ def test_cli_dispatches_configure_subcommand_with_global_log_level(
     )
     captured: dict[str, object] = {}
 
-    def _run_configure_command(argv: list[str]) -> int:
+    def _run_configure_command(
+        argv: list[str], *, settings: object | None = None
+    ) -> int:
         captured["argv"] = argv
+        captured["settings"] = settings
         return 0
 
     monkeypatch.setattr(
@@ -883,6 +1076,7 @@ def test_cli_dispatches_configure_subcommand_with_global_log_level(
 
     assert exc_info.value.code == 0
     assert captured["argv"] == ["--show"]
+    assert isinstance(captured["settings"], config_module.AppConfig)
 
 
 def test_cli_dispatches_data_subcommand_after_global_log_level(
@@ -897,8 +1091,9 @@ def test_cli_dispatches_data_subcommand_after_global_log_level(
     )
     captured: dict[str, object] = {}
 
-    def _run_data_command(argv: list[str]) -> int:
+    def _run_data_command(argv: list[str], *, settings: object | None = None) -> int:
         captured["argv"] = argv
+        captured["settings"] = settings
         return 0
 
     monkeypatch.setattr(
@@ -911,6 +1106,7 @@ def test_cli_dispatches_data_subcommand_after_global_log_level(
 
     assert exc_info.value.code == 0
     assert captured["argv"] == ["download", "--dataset", "ravdess"]
+    assert isinstance(captured["settings"], config_module.AppConfig)
 
 
 def test_cli_dispatches_doctor_subcommand_after_global_log_level(
@@ -940,7 +1136,7 @@ def test_cli_dispatches_doctor_subcommand_after_global_log_level(
 
     assert exc_info.value.code == 0
     assert captured["argv"] == ["--strict"]
-    assert isinstance(captured["settings"], SimpleNamespace)
+    assert isinstance(captured["settings"], config_module.AppConfig)
 
 
 def test_cli_preflight_warn_mode_logs_findings_and_allows_inference(
@@ -955,36 +1151,32 @@ def test_cli_preflight_warn_mode_logs_findings_and_allows_inference(
         "argv",
         ["ser", "--file", "sample.wav", "--preflight", "warn"],
     )
-    report = DiagnosticReport(
-        findings=(
-            DiagnosticFinding(
-                code="transcription_operational_torio_ffmpeg_abi_mismatch",
-                severity="warning",
-                message="Test warning",
-            ),
-        )
-    )
     captured: dict[str, object] = {}
     info_logs: list[str] = []
 
-    def _run_startup_preflight(
-        *,
-        settings: config_module.AppConfig,
-        include_transcription_checks: bool,
-    ) -> DiagnosticReport:
-        captured["settings"] = settings
-        captured["include_transcription_checks"] = include_transcription_checks
-        return report
+    def _run_startup_preflight_cli_gate(**kwargs: object) -> object:
+        captured["kwargs"] = kwargs
+        return (
+            (
+                (
+                    "info",
+                    "Startup preflight advisory: warning(s) detected. Run `ser doctor`.",
+                ),
+            ),
+            None,
+        )
 
     class FakePipeline:
         def run_inference(self, _request: object) -> object:
             captured["inference_called"] = True
             return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(cli, "run_startup_preflight", _run_startup_preflight)
     monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+        cli,
+        "run_startup_preflight_cli_gate",
+        _run_startup_preflight_cli_gate,
     )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
     monkeypatch.setattr(
         cli.logger,
         "info",
@@ -993,8 +1185,12 @@ def test_cli_preflight_warn_mode_logs_findings_and_allows_inference(
 
     cli.main()
 
-    assert captured["settings"] is settings
-    assert captured["include_transcription_checks"] is True
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["settings"] is settings
+    assert kwargs["mode"] == "warn"
+    assert kwargs["file_path"] == "sample.wav"
+    assert kwargs["no_transcript"] is False
+    assert kwargs["calibrate_transcription_runtime"] is False
     assert captured["inference_called"] is True
     assert any("Startup preflight advisory" in message for message in info_logs)
     assert any("ser doctor" in message for message in info_logs)
@@ -1012,40 +1208,45 @@ def test_cli_preflight_strict_mode_exits_two_on_warning(
         "argv",
         ["ser", "--file", "sample.wav", "--preflight", "strict"],
     )
-    report = DiagnosticReport(
-        findings=(
-            DiagnosticFinding(
-                code="transcription_operational_torio_ffmpeg_abi_mismatch",
-                severity="warning",
-                message="Test warning",
-            ),
-        )
-    )
+    captured: dict[str, object] = {}
     called = {"inference": False}
 
-    def _run_startup_preflight(
-        *,
-        settings: config_module.AppConfig,
-        include_transcription_checks: bool,
-    ) -> DiagnosticReport:
-        assert settings is not None
-        assert include_transcription_checks is True
-        return report
+    def _run_startup_preflight_cli_gate(**kwargs: object) -> object:
+        captured["settings"] = settings
+        captured["kwargs"] = kwargs
+        return (
+            (
+                (
+                    "error",
+                    "Startup preflight advisory: warning(s) detected. Run `ser doctor`.",
+                ),
+                ("error", "Startup preflight failed (mode=strict)."),
+            ),
+            2,
+        )
 
     class FakePipeline:
         def run_inference(self, _request: object) -> object:
             called["inference"] = True
             return SimpleNamespace(timeline_csv_path=None)
 
-    monkeypatch.setattr(cli, "run_startup_preflight", _run_startup_preflight)
     monkeypatch.setattr(
-        cli, "_build_runtime_pipeline", lambda _settings: FakePipeline()
+        cli,
+        "run_startup_preflight_cli_gate",
+        _run_startup_preflight_cli_gate,
     )
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
 
     assert exc_info.value.code == 2
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert kwargs["settings"] is settings
+    assert kwargs["mode"] == "strict"
+    assert kwargs["file_path"] == "sample.wav"
+    assert kwargs["no_transcript"] is False
+    assert kwargs["calibrate_transcription_runtime"] is False
     assert called["inference"] is False
 
 
@@ -1054,7 +1255,6 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     tmp_path: Path,
 ) -> None:
     """End-to-end dataset workflow should persist consent and load registry manifests."""
-    import ser.data.cli as data_cli_module
     import ser.data.data_loader as data_loader_module
     from ser.data.dataset_consents import load_persisted_dataset_consents
     from ser.data.dataset_registry import load_dataset_registry
@@ -1092,7 +1292,6 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
     monkeypatch.setattr(cli, "configure_logging", lambda _level=None: 0)
     monkeypatch.setattr(cli, "reload_settings", lambda: settings)
-    monkeypatch.setattr(data_cli_module, "get_settings", lambda: settings)
     monkeypatch.setattr(data_loader_module, "get_settings", lambda: settings)
 
     monkeypatch.setattr(
@@ -1163,6 +1362,7 @@ def test_cli_help_lists_dataset_commands_and_flags(
     assert exc_info.value.code == 0
     help_text = capsys.readouterr().out
     assert "ser configure --show" in help_text
+    assert "ser data registry" in help_text
     assert "ser data download --dataset" in help_text
     assert "--accept-dataset-policy" in help_text
     assert "--accept-dataset-license" in help_text
@@ -1171,6 +1371,8 @@ def test_cli_help_lists_dataset_commands_and_flags(
     assert "--labels-csv-path" in help_text
     assert "--audio-base-dir" in help_text
     assert "--skip-download" in help_text
+    assert "--source" in help_text
+    assert "--source-revision" in help_text
     assert "--accept-license" in help_text
 
 
@@ -1212,4 +1414,24 @@ def test_cli_dataset_subcommand_help_includes_download_flags(
     assert "--labels-csv-path" in help_text
     assert "--audio-base-dir" in help_text
     assert "--skip-download" in help_text
+    assert "--source" in help_text
+    assert "--source-revision" in help_text
     assert "--accept-license" in help_text
+
+
+def test_cli_dataset_subcommand_help_includes_registry_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`ser data registry --help` should expose registry inspection flags."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "data", "registry", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--show" in help_text
+    assert "--format" in help_text
+    assert "--strict" in help_text

@@ -67,6 +67,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                     "faster-whisper may emit verbose INFO dependency logs during "
                     "transcription; scoped log demotion policy is required."
                 ),
+                impact="informational",
             )
         ]
         if not self._is_module_available("faster_whisper"):
@@ -78,6 +79,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                         "'faster_whisper'. Install faster-whisper (for example, "
                         "`uv sync --extra full`) or switch to `stable_whisper`."
                     ),
+                    impact="blocking",
                 )
             )
         if has_known_faster_whisper_openmp_runtime_conflict():
@@ -89,6 +91,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                         "torch/functorch on darwin-x86_64. This environment can abort "
                         "during faster-whisper model initialization."
                     ),
+                    impact="blocking",
                 )
             )
         if runtime_request.use_demucs:
@@ -99,6 +102,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                         "faster-whisper backend does not support demucs preprocessing; "
                         "demucs flag will be ignored."
                     ),
+                    impact="degraded",
                 )
             )
         if runtime_request.device_type == "mps":
@@ -109,6 +113,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                         "faster-whisper backend does not support MPS runtime; "
                         "transcription will use CPU fallback."
                     ),
+                    impact="degraded",
                 )
             )
         return CompatibilityReport(

@@ -6,17 +6,25 @@ from types import SimpleNamespace
 import pytest
 
 import ser.__main__ as cli
+import ser.config as config_module
 import ser.models.emotion_model as emotion_model
 from ser import domain
+from ser.models.artifact_loading import model_load_candidates
 
 
 def _patch_cli_prerequisites(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patches shared CLI dependencies for deterministic contract tests."""
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "reload_settings", lambda: config_module.reload_settings())
     monkeypatch.setattr(
         cli,
-        "reload_settings",
-        lambda: SimpleNamespace(default_language="en"),
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
     )
 
 
@@ -65,21 +73,22 @@ def test_model_load_candidate_order_and_uniqueness(
 ) -> None:
     """Model load candidate order remains secure-first with deduplicated entries."""
     primary_dir = tmp_path / "primary"
-    monkeypatch.setattr(
-        emotion_model,
-        "get_settings",
-        lambda: SimpleNamespace(
-            models=SimpleNamespace(
-                folder=primary_dir,
-                secure_model_file=primary_dir / "ser_model.skops",
-                model_file=primary_dir / "ser_model.pkl",
-                secure_model_file_name="ser_model.skops",
-                model_file_name="ser_model.pkl",
-            )
-        ),
+    settings = SimpleNamespace(
+        models=SimpleNamespace(
+            folder=primary_dir,
+            secure_model_file=primary_dir / "ser_model.skops",
+            model_file=primary_dir / "ser_model.pkl",
+            secure_model_file_name="ser_model.skops",
+            model_file_name="ser_model.pkl",
+        )
     )
 
-    candidates = emotion_model._model_load_candidates()
+    candidates = model_load_candidates(
+        folder=settings.models.folder,
+        secure_model_file=settings.models.secure_model_file,
+        model_file=settings.models.model_file,
+        candidate_factory=emotion_model.ModelCandidate,
+    )
 
     assert [candidate.artifact_format for candidate in candidates] == [
         "skops",

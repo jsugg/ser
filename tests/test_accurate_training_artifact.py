@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import pytest
@@ -11,8 +12,12 @@ from sklearn.dummy import DummyClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from ser.config import AppConfig
+from ser.data import EmbeddingCache
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.models import emotion_model as em
+from ser.models.profile_runtime import resolve_accurate_research_model_id
+from ser.repr.runtime_policy import resolve_feature_runtime_policy
 
 
 def _settings_stub(tmp_path: Path) -> SimpleNamespace:
@@ -136,16 +141,21 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     monkeypatch.setattr(
         em,
         "_split_utterances",
-        lambda _samples: (train_utterances, test_utterances, split_metadata),
+        lambda _samples, *, settings=None: (
+            train_utterances,
+            test_utterances,
+            split_metadata,
+        ),
     )
 
     def _build_dataset(
         *,
         utterances: list[Utterance],
         backend: em.WhisperBackend,
-        cache: em.EmbeddingCache,
+        cache: EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
+        **_kwargs: object,
     ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
         del backend, cache, model_id
         assert backend_id == em.ACCURATE_BACKEND_ID
@@ -167,8 +177,12 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
             return x_test, y_test, test_meta
         raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
-    monkeypatch.setattr(em, "_build_accurate_feature_dataset", _build_dataset)
-    monkeypatch.setattr(em, "_create_classifier", _dummy_classifier)
+    monkeypatch.setattr(em, "_build_accurate_feature_dataset_impl", _build_dataset)
+    monkeypatch.setattr(
+        em,
+        "_create_classifier",
+        lambda _settings=None: _dummy_classifier(),
+    )
     monkeypatch.setattr(
         em.glob,
         "glob",
@@ -176,11 +190,12 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     )
 
     def _persist_artifacts(
-        *,
         model: em.EmotionClassifier,
         artifact: dict[str, object],
+        *,
+        settings: AppConfig,
     ) -> em.PersistedArtifacts:
-        del model
+        del model, settings
         captured["artifact"] = artifact
         return em.PersistedArtifacts(
             pickle_path=tmp_path / "ser_model_accurate.pkl",
@@ -294,16 +309,21 @@ def test_train_accurate_model_uses_configured_model_id(
     monkeypatch.setattr(
         em,
         "_split_utterances",
-        lambda _samples: (train_utterances, test_utterances, split_metadata),
+        lambda _samples, *, settings=None: (
+            train_utterances,
+            test_utterances,
+            split_metadata,
+        ),
     )
 
     def _build_dataset(
         *,
         utterances: list[Utterance],
         backend: _BackendStub,
-        cache: em.EmbeddingCache,
+        cache: EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
+        **_kwargs: object,
     ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
         del backend, cache
         assert model_id is not None
@@ -329,8 +349,12 @@ def test_train_accurate_model_uses_configured_model_id(
             return x_test, y_test, test_meta
         raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
-    monkeypatch.setattr(em, "_build_accurate_feature_dataset", _build_dataset)
-    monkeypatch.setattr(em, "_create_classifier", _dummy_classifier)
+    monkeypatch.setattr(em, "_build_accurate_feature_dataset_impl", _build_dataset)
+    monkeypatch.setattr(
+        em,
+        "_create_classifier",
+        lambda _settings=None: _dummy_classifier(),
+    )
     monkeypatch.setattr(
         em.glob,
         "glob",
@@ -339,7 +363,7 @@ def test_train_accurate_model_uses_configured_model_id(
     monkeypatch.setattr(
         em,
         "_persist_model_artifacts",
-        lambda **_kwargs: em.PersistedArtifacts(
+        lambda _model, _artifact, *, settings: em.PersistedArtifacts(
             pickle_path=tmp_path / "ser_model_accurate.pkl",
             secure_path=None,
         ),
@@ -362,11 +386,13 @@ def test_resolve_accurate_research_model_id_uses_configured_value(
     tmp_path: Path,
 ) -> None:
     """Accurate-research model id resolver should honor configured settings value."""
+    del monkeypatch
     settings = _settings_stub(tmp_path)
     settings.models.accurate_research_model_id = "unit-test/emotion2vec-plus"
-    monkeypatch.setattr(em, "get_settings", lambda: settings)
-
-    assert em.resolve_accurate_research_model_id() == "unit-test/emotion2vec-plus"
+    assert (
+        resolve_accurate_research_model_id(cast(AppConfig, settings))
+        == "unit-test/emotion2vec-plus"
+    )
 
 
 def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
@@ -419,16 +445,21 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     monkeypatch.setattr(
         em,
         "_split_utterances",
-        lambda _samples: (train_utterances, test_utterances, split_metadata),
+        lambda _samples, *, settings=None: (
+            train_utterances,
+            test_utterances,
+            split_metadata,
+        ),
     )
 
     def _build_dataset(
         *,
         utterances: list[Utterance],
         backend: _BackendStub,
-        cache: em.EmbeddingCache,
+        cache: EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
+        **_kwargs: object,
     ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
         del backend, cache
         assert model_id is not None
@@ -454,8 +485,12 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             return x_test, y_test, test_meta
         raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
-    monkeypatch.setattr(em, "_build_accurate_feature_dataset", _build_dataset)
-    monkeypatch.setattr(em, "_create_classifier", _dummy_classifier)
+    monkeypatch.setattr(em, "_build_accurate_feature_dataset_impl", _build_dataset)
+    monkeypatch.setattr(
+        em,
+        "_create_classifier",
+        lambda _settings=None: _dummy_classifier(),
+    )
     monkeypatch.setattr(
         em.glob,
         "glob",
@@ -464,7 +499,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     monkeypatch.setattr(
         em,
         "_persist_model_artifacts",
-        lambda **_kwargs: em.PersistedArtifacts(
+        lambda _model, _artifact, *, settings: em.PersistedArtifacts(
             pickle_path=tmp_path / "ser_model_accurate_research.pkl",
             secure_path=None,
         ),
@@ -496,7 +531,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     backend_override = settings.feature_runtime_policy.for_backend(
         em.ACCURATE_RESEARCH_BACKEND_ID
     )
-    expected_runtime_policy = em.resolve_feature_runtime_policy(
+    expected_runtime_policy = resolve_feature_runtime_policy(
         backend_id=em.ACCURATE_RESEARCH_BACKEND_ID,
         requested_device=settings.torch_runtime.device,
         requested_dtype=settings.torch_runtime.dtype,

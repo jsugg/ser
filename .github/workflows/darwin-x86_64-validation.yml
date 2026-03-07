@@ -52,7 +52,7 @@ jobs:
             uv-${{ runner.os }}-darwin-intel-py3.12-
 
       - name: Setup compatible environment
-        run: ./scripts/setup_compatible_env.sh --python 3.12
+        run: ./scripts/setup_compatible_env.sh --python 3.12 --extra medium --no-dev --skip-git-hooks
 
       - name: Build synthetic RAVDESS smoke dataset
         run: python ./scripts/build_synthetic_ravdess_dataset.py

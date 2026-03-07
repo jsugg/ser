@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-import ctypes
-import gc
 import importlib
-import importlib.util
 import inspect
 import logging
 import os
-import sys
 from collections.abc import Callable
 from contextlib import nullcontext
-from functools import lru_cache
 from pathlib import Path
-from types import ModuleType
 from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import urlparse
 
@@ -24,11 +18,19 @@ from ser.runtime.phase_contract import (
     PHASE_TRANSCRIPTION,
     PHASE_TRANSCRIPTION_MODEL_LOAD,
 )
+from ser.transcript.backends import stable_whisper_torio_probe
 from ser.transcript.backends.base import (
     BackendRuntimeRequest,
     CompatibilityIssue,
     CompatibilityReport,
     TranscriptionBackendAdapter,
+)
+from ser.transcript.backends.stable_whisper_admission_runtime import (
+    is_compatibility_activation_error,
+    is_retryable_precision_failure,
+    mps_compatibility_fallback_reason,
+    resolve_stable_whisper_mps_admission_decision,
+    should_enforce_stable_whisper_transcribe_admission,
 )
 from ser.transcript.backends.stable_whisper_mps_compat import (
     enable_stable_whisper_mps_compatibility,
@@ -38,18 +40,30 @@ from ser.transcript.backends.stable_whisper_mps_compat import (
     set_stable_whisper_runtime_device,
     stable_whisper_mps_timing_compatibility_context,
 )
+from ser.transcript.backends.stable_whisper_transcribe_admission import (
+    resolve_transcribe_runtime_device as resolve_stable_whisper_transcribe_runtime_device,
+)
+from ser.transcript.backends.stable_whisper_transcribe_execution import (
+    run_stable_whisper_transcribe_with_retry,
+)
+from ser.transcript.backends.stable_whisper_transcribe_kwargs import (
+    build_stable_whisper_transcribe_kwargs,
+)
+from ser.transcript.backends.stable_whisper_transcribe_runtime import (
+    classify_transcription_failure_for_runtime,
+    effective_precision_candidates,
+    release_torch_runtime_memory_for_retry,
+    summarize_runtime_error,
+)
 from ser.transcript.mps_admission import (
     MpsAdmissionDecision,
     decide_mps_admission_for_transcription,
-    format_gib_short,
-)
-from ser.transcript.mps_admission_overrides import (
-    apply_calibrated_mps_admission_override,
+    log_mps_admission_control_fallback,
+    mps_admission_control_enabled,
+    mps_hard_oom_shortcut_enabled,
 )
 from ser.transcript.runtime_failures import (
-    FailureDisposition,
     TranscriptionFailureClassification,
-    classify_stable_whisper_transcription_failure,
 )
 from ser.utils.logger import (
     DependencyLogPolicy,
@@ -58,7 +72,6 @@ from ser.utils.logger import (
     scoped_dependency_log_policy,
 )
 from ser.utils.transcription_compat import (
-    format_torio_ffmpeg_remediation,
     has_known_stable_whisper_sparse_mps_incompatibility,
 )
 
@@ -157,6 +170,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                     "stable-whisper may emit SyntaxWarning invalid escape sequence "
                     "during module import; scoped warning policy is required."
                 ),
+                impact="informational",
             ),
             CompatibilityIssue(
                 code="stable_whisper_fp16_cpu_fallback_warning",
@@ -166,6 +180,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                     "and uses a "
                     "scoped warning policy fallback."
                 ),
+                impact="informational",
             ),
             CompatibilityIssue(
                 code="stable_whisper_demucs_deprecated_warning",
@@ -174,6 +189,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                     "when legacy demucs argument is used; adapter prefers "
                     "denoiser='demucs' and keeps a scoped warning policy fallback."
                 ),
+                impact="informational",
             ),
         ]
         with scoped_dependency_log_policy(
@@ -185,7 +201,9 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
             ),
             keep_demoted=False,
         ):
-            torio_issue = self._detect_torio_ffmpeg_operational_issue()
+            torio_issue = (
+                stable_whisper_torio_probe.detect_default_torio_ffmpeg_operational_issue()
+            )
         if torio_issue is not None:
             operational_issues.append(torio_issue)
             noise_issues.append(
@@ -196,9 +214,10 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                         "FFmpeg extension availability; adapter applies scoped "
                         "suppression to keep dependency noise bounded."
                     ),
+                    impact="informational",
                 )
             )
-        if not self._is_module_available("stable_whisper"):
+        if not stable_whisper_torio_probe.is_module_available("stable_whisper"):
             functional_issues.append(
                 CompatibilityIssue(
                     code="missing_dependency_stable_whisper",
@@ -206,6 +225,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                         "Missing stable-whisper dependencies. Ensure project dependencies "
                         "are installed."
                     ),
+                    impact="blocking",
                 )
             )
         return CompatibilityReport(
@@ -336,12 +356,17 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                     try:
                         model = enable_stable_whisper_mps_compatibility(model)
                     except Exception as err:
-                        if not self._is_retryable_precision_failure(err):
+                        fallback_reason = self._mps_compatibility_fallback_reason(err)
+                        if fallback_reason is None:
                             raise
-                        self._release_torch_runtime_memory_for_retry()
+                        if fallback_reason == "retryable_runtime_error":
+                            self._release_torch_runtime_memory_for_retry()
+                        self._move_model_to_cpu_runtime(model)
                         error_summary = self._summarize_runtime_error(err)
                         logging.getLogger(__name__).warning(
-                            "MPS compatibility mode failed; using cpu runtime (%s).",
+                            "MPS compatibility mode unavailable; using cpu runtime "
+                            "(reason=%s, error=%s).",
+                            fallback_reason,
                             error_summary,
                         )
                         set_stable_whisper_mps_compatibility_enabled(
@@ -426,158 +451,103 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                 "Loaded stable-whisper model does not expose a callable transcribe()."
             )
         typed_transcribe = cast(Callable[..., object], transcribe)
+        logger = logging.getLogger(__name__)
         runtime_device_type = get_stable_whisper_runtime_device(
             model,
             default_device_type=runtime_request.device_type,
         )
-        if runtime_device_type == "mps":
-            transcribe_admission = self._resolve_mps_admission_decision(
-                settings=settings,
-                runtime_request=runtime_request,
-                phase="transcribe",
-            )
-            if transcribe_admission is not None and not transcribe_admission.allow_mps:
-                if self._should_enforce_transcribe_admission(transcribe_admission):
-                    self._log_mps_admission_control_fallback(
-                        phase="transcribe",
-                        decision=transcribe_admission,
-                    )
-                    if self._move_model_to_cpu_runtime(model):
-                        set_stable_whisper_mps_compatibility_enabled(
-                            model,
-                            enabled=False,
-                        )
-                        set_stable_whisper_runtime_device(model, device_type="cpu")
-                        runtime_device_type = "cpu"
-                else:
-                    logging.getLogger(__name__).info(
-                        "MPS admission estimate below budget but confidence=%s; "
-                        "allowing one MPS attempt and relying on runtime fallback "
-                        "(reason=%s).",
-                        transcribe_admission.confidence,
-                        transcribe_admission.reason_code,
-                    )
+        runtime_device_type = resolve_stable_whisper_transcribe_runtime_device(
+            model=model,
+            runtime_request=runtime_request,
+            settings=settings,
+            runtime_device_type=runtime_device_type,
+            resolve_mps_admission_decision=self._resolve_mps_admission_decision,
+            should_enforce_transcribe_admission=self._should_enforce_transcribe_admission,
+            log_mps_admission_control_fallback=self._log_mps_admission_control_fallback,
+            move_model_to_cpu_runtime=self._move_model_to_cpu_runtime,
+            set_mps_compatibility_enabled=set_stable_whisper_mps_compatibility_enabled,
+            set_runtime_device=set_stable_whisper_runtime_device,
+            logger=logger,
+        )
 
         precision_candidates = self._effective_precision_candidates(
             runtime_request=runtime_request,
             runtime_device_type=runtime_device_type,
         )
-        last_error: Exception | None = None
-        for index, precision in enumerate(precision_candidates):
-            transcribe_kwargs = self._build_transcribe_kwargs(
+
+        def _build_transcribe_kwargs_for_runtime(
+            request: BackendRuntimeRequest,
+            precision: str,
+        ) -> dict[str, object]:
+            return self._build_transcribe_kwargs(
                 transcribe_callable=typed_transcribe,
-                runtime_request=runtime_request,
+                runtime_request=request,
                 file_path=file_path,
                 language=language,
                 precision=precision,
             )
-            raw_transcript: object
-            try:
-                with scoped_dependency_log_policy(
-                    policy=_STABLE_WHISPER_TRANSCRIBE_POLICY,
-                    context=DependencyPolicyContext(
-                        backend_id=self.backend_id,
-                        phase_name=PHASE_TRANSCRIPTION,
-                        op_tag="stable_whisper.transcribe",
-                    ),
-                ):
-                    mps_compat_context = (
-                        stable_whisper_mps_timing_compatibility_context()
-                        if (
-                            runtime_device_type == "mps"
-                            and is_stable_whisper_mps_compatibility_enabled(model)
-                        )
-                        else nullcontext()
-                    )
-                    with mps_compat_context:
-                        raw_transcript = typed_transcribe(**transcribe_kwargs)
-                return self._format_transcript(self._normalize_result(raw_transcript))
-            except Exception as err:
-                last_error = err
-                failure_classification = self._classify_transcription_failure(
-                    err=err,
-                    runtime_device_type=runtime_device_type,
-                    precision=precision,
-                    settings=settings,
-                )
-                if failure_classification.is_retryable:
-                    self._release_torch_runtime_memory_for_retry()
-                should_force_cpu_now = (
-                    failure_classification.disposition
-                    == FailureDisposition.FAILOVER_CPU_NOW
-                    and runtime_device_type in {"mps", "cuda"}
-                )
-                is_final_candidate = index >= len(precision_candidates) - 1
-                is_terminal_candidate = is_final_candidate or should_force_cpu_now
-                if (
-                    is_terminal_candidate
-                    and failure_classification.is_retryable
-                    and runtime_device_type in {"mps", "cuda"}
-                ):
-                    error_summary = self._summarize_runtime_error(err)
-                    if should_force_cpu_now:
-                        logging.getLogger(__name__).info(
-                            "Transcription hard MPS OOM on %s; switching directly "
-                            "to cpu (reason=%s, error=%s).",
-                            precision,
-                            failure_classification.reason_code,
-                            error_summary,
-                        )
-                    else:
-                        logging.getLogger(__name__).warning(
-                            "Transcription retrying on cpu runtime after %s "
-                            "failure (%s).",
-                            runtime_device_type,
-                            error_summary,
-                        )
-                    if self._move_model_to_cpu_runtime(model):
-                        set_stable_whisper_mps_compatibility_enabled(
-                            model,
-                            enabled=False,
-                        )
-                        set_stable_whisper_runtime_device(model, device_type="cpu")
-                        runtime_device_type = "cpu"
-                        cpu_kwargs = self._build_transcribe_kwargs(
-                            transcribe_callable=typed_transcribe,
-                            runtime_request=BackendRuntimeRequest(
-                                model_name=runtime_request.model_name,
-                                use_demucs=runtime_request.use_demucs,
-                                use_vad=runtime_request.use_vad,
-                                device_spec="cpu",
-                                device_type="cpu",
-                                precision_candidates=("float32",),
-                                memory_tier="not_applicable",
-                            ),
-                            file_path=file_path,
-                            language=language,
-                            precision="float32",
-                        )
-                        try:
-                            raw_transcript = typed_transcribe(**cpu_kwargs)
-                            return self._format_transcript(
-                                self._normalize_result(raw_transcript)
-                            )
-                        except Exception as cpu_err:
-                            raise RuntimeError(
-                                "Failed to transcribe audio."
-                            ) from cpu_err
 
-                if (
-                    is_terminal_candidate
-                    or failure_classification.disposition
-                    == FailureDisposition.FAIL_FAST
-                ):
-                    raise RuntimeError("Failed to transcribe audio.") from err
-                logging.getLogger(__name__).warning(
-                    "Transcription retrying with fallback precision after "
-                    "failure using %s on %s: %s",
-                    precision,
-                    runtime_device_type,
-                    err,
+        def _invoke_runtime_transcribe(
+            transcribe_kwargs: dict[str, object],
+            runtime_device: str,
+        ) -> object:
+            with scoped_dependency_log_policy(
+                policy=_STABLE_WHISPER_TRANSCRIBE_POLICY,
+                context=DependencyPolicyContext(
+                    backend_id=self.backend_id,
+                    phase_name=PHASE_TRANSCRIPTION,
+                    op_tag="stable_whisper.transcribe",
+                ),
+            ):
+                mps_compat_context = (
+                    stable_whisper_mps_timing_compatibility_context()
+                    if (
+                        runtime_device == "mps"
+                        and is_stable_whisper_mps_compatibility_enabled(model)
+                    )
+                    else nullcontext()
                 )
-        if last_error is not None:
-            raise RuntimeError("Failed to transcribe audio.") from last_error
-        raise RuntimeError("Failed to transcribe audio.")
+                with mps_compat_context:
+                    return typed_transcribe(**transcribe_kwargs)
+
+        return run_stable_whisper_transcribe_with_retry(
+            model=model,
+            runtime_request=runtime_request,
+            settings=settings,
+            runtime_device_type=runtime_device_type,
+            precision_candidates=precision_candidates,
+            typed_transcribe=typed_transcribe,
+            build_transcribe_kwargs=_build_transcribe_kwargs_for_runtime,
+            invoke_runtime_transcribe=_invoke_runtime_transcribe,
+            classify_failure=(
+                lambda err, precision, current_settings: (
+                    self._classify_transcription_failure(
+                        err=err,
+                        runtime_device_type=runtime_device_type,
+                        precision=precision,
+                        settings=current_settings,
+                    )
+                )
+            ),
+            release_runtime_memory_for_retry=self._release_torch_runtime_memory_for_retry,
+            summarize_runtime_error=self._summarize_runtime_error,
+            move_model_to_cpu_runtime=self._move_model_to_cpu_runtime,
+            set_mps_compatibility_disabled=(
+                lambda runtime_model: set_stable_whisper_mps_compatibility_enabled(
+                    runtime_model,
+                    enabled=False,
+                )
+            ),
+            set_runtime_device_cpu=(
+                lambda runtime_model: set_stable_whisper_runtime_device(
+                    runtime_model,
+                    device_type="cpu",
+                )
+            ),
+            normalize_result=self._normalize_result,
+            format_transcript=self._format_transcript,
+            logger=logger,
+        )
 
     @classmethod
     def _build_transcribe_kwargs(
@@ -590,67 +560,42 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         precision: str,
     ) -> dict[str, object]:
         """Builds stable-whisper transcribe kwargs for cross-version compatibility."""
-        kwargs: dict[str, object] = {
-            "audio": file_path,
-            "language": language,
-            "verbose": False,
-            "word_timestamps": True,
-            "no_speech_threshold": None,
-            "vad": runtime_request.use_vad,
-        }
-        if cls._supports_keyword_argument(
-            transcribe_callable,
-            parameter_name="fp16",
-        ):
-            kwargs["fp16"] = precision == "float16"
-        if runtime_request.use_demucs:
-            if cls._supports_keyword_argument(
-                transcribe_callable,
-                parameter_name="denoiser",
-            ):
-                kwargs["denoiser"] = "demucs"
-            elif cls._supports_keyword_argument(
-                transcribe_callable,
-                parameter_name="demucs",
-            ):
-                kwargs["demucs"] = True
-        elif cls._supports_keyword_argument(
-            transcribe_callable,
-            parameter_name="demucs",
-        ):
-            kwargs["demucs"] = False
-        return kwargs
+        return build_stable_whisper_transcribe_kwargs(
+            transcribe_callable=transcribe_callable,
+            runtime_request=runtime_request,
+            file_path=file_path,
+            language=language,
+            precision=precision,
+            supports_keyword_argument=(
+                lambda callable_obj, parameter_name: cls._supports_keyword_argument(
+                    callable_obj,
+                    parameter_name=parameter_name,
+                )
+            ),
+        )
 
     @staticmethod
     def _is_retryable_precision_failure(err: Exception) -> bool:
         """Returns whether one transcription failure may succeed on fallback precision."""
-        message = str(err).strip().lower()
-        if isinstance(err, NotImplementedError):
-            not_implemented_markers = (
-                "sparsemps",
-                "could not run",
-                "aten::",
-                "backend",
-                "mps",
-            )
-            if all(marker in message for marker in not_implemented_markers):
-                return True
-            if "std_mean" in message and "mps" in message:
-                return True
-        retryable_markers = (
-            "out of memory",
-            "mps backend out of memory",
-            "fp16 is not supported on cpu",
-            "fp16 is not supported",
-            "half precision is not supported",
-            "bfloat16 is not supported",
-            "unsupported dtype",
-            "sparsemps",
-            "aten::empty.memory_format",
-            "cannot convert a mps tensor to float64 dtype",
-            "std_mean.correction",
+        return is_retryable_precision_failure(err)
+
+    @staticmethod
+    def _mps_compatibility_fallback_reason(err: Exception) -> str | None:
+        """Returns one CPU-fallback reason for MPS compatibility activation failures."""
+        return mps_compatibility_fallback_reason(
+            err,
+            retryable_precision_checker=(
+                StableWhisperAdapter._is_retryable_precision_failure
+            ),
+            compatibility_activation_checker=(
+                StableWhisperAdapter._is_compatibility_activation_error
+            ),
         )
-        return any(marker in message for marker in retryable_markers)
+
+    @staticmethod
+    def _is_compatibility_activation_error(err: Exception) -> bool:
+        """Returns whether one MPS compatibility activation failure is fail-safe."""
+        return is_compatibility_activation_error(err)
 
     @staticmethod
     def _classify_transcription_failure(
@@ -661,21 +606,15 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         settings: AppConfig,
     ) -> TranscriptionFailureClassification:
         """Classifies one stable-whisper transcription failure into action buckets."""
-        classification = classify_stable_whisper_transcription_failure(
+        return classify_transcription_failure_for_runtime(
             err=err,
             runtime_device_type=runtime_device_type,
             precision=precision,
+            settings=settings,
+            hard_oom_shortcut_enabled=(
+                StableWhisperAdapter._mps_hard_oom_shortcut_enabled(settings)
+            ),
         )
-        if (
-            classification.disposition == FailureDisposition.FAILOVER_CPU_NOW
-            and not StableWhisperAdapter._mps_hard_oom_shortcut_enabled(settings)
-        ):
-            return TranscriptionFailureClassification(
-                disposition=FailureDisposition.RETRY_NEXT_PRECISION,
-                reason_code=f"{classification.reason_code}_disabled",
-                is_retryable=True,
-            )
-        return classification
 
     @staticmethod
     def _move_model_to_cpu_runtime(model: object) -> bool:
@@ -693,9 +632,10 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         runtime_device_type: str,
     ) -> tuple[str, ...]:
         """Resolves one runtime precision order using actual loaded model device."""
-        if runtime_device_type == "cpu":
-            return ("float32",)
-        return runtime_request.precision_candidates or ("float32",)
+        return effective_precision_candidates(
+            runtime_request=runtime_request,
+            runtime_device_type=runtime_device_type,
+        )
 
     @staticmethod
     def _resolve_mps_admission_decision(
@@ -705,67 +645,23 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         phase: Literal["model_load", "transcribe"],
     ) -> MpsAdmissionDecision | None:
         """Returns one dynamic MPS admission decision when control is enabled."""
-        if not StableWhisperAdapter._mps_admission_control_enabled(settings):
-            return None
-        transcription_settings = getattr(settings, "transcription", None)
-        configured_min_headroom_mb = getattr(
-            transcription_settings,
-            "mps_admission_min_headroom_mb",
-            64.0,
-        )
-        configured_safety_margin_mb = getattr(
-            transcription_settings,
-            "mps_admission_safety_margin_mb",
-            64.0,
-        )
-        min_headroom_mb = (
-            configured_min_headroom_mb
-            if isinstance(configured_min_headroom_mb, int | float)
-            and not isinstance(configured_min_headroom_mb, bool)
-            else 64.0
-        )
-        safety_margin_mb = (
-            configured_safety_margin_mb
-            if isinstance(configured_safety_margin_mb, int | float)
-            and not isinstance(configured_safety_margin_mb, bool)
-            else 64.0
-        )
-        heuristic_decision = decide_mps_admission_for_transcription(
-            model_name=runtime_request.model_name,
-            phase=phase,
-            min_headroom_mb=float(min_headroom_mb),
-            safety_margin_mb=float(safety_margin_mb),
-        )
-        resolved_decision = apply_calibrated_mps_admission_override(
+        return resolve_stable_whisper_mps_admission_decision(
             settings=settings,
             runtime_request=runtime_request,
             phase=phase,
-            heuristic_decision=heuristic_decision,
+            logger=logging.getLogger(__name__),
+            heuristic_resolver=decide_mps_admission_for_transcription,
         )
-        if resolved_decision.reason_code != heuristic_decision.reason_code:
-            logging.getLogger(__name__).info(
-                "MPS admission calibrated override applied for %s "
-                "(model=%s, reason=%s, confidence=%s).",
-                phase,
-                runtime_request.model_name,
-                resolved_decision.reason_code,
-                resolved_decision.confidence,
-            )
-        return resolved_decision
 
     @staticmethod
     def _mps_admission_control_enabled(settings: AppConfig) -> bool:
         """Returns whether dynamic MPS admission control is enabled by config."""
-        transcription_settings = getattr(settings, "transcription", None)
-        enabled = getattr(transcription_settings, "mps_admission_control_enabled", True)
-        return bool(enabled)
+        return mps_admission_control_enabled(settings)
 
     @staticmethod
     def _mps_hard_oom_shortcut_enabled(settings: AppConfig) -> bool:
         """Returns whether hard MPS OOM shortcut is enabled by config."""
-        transcription_settings = getattr(settings, "transcription", None)
-        enabled = getattr(transcription_settings, "mps_hard_oom_shortcut_enabled", True)
-        return bool(enabled)
+        return mps_hard_oom_shortcut_enabled(settings)
 
     @staticmethod
     def _log_mps_admission_control_fallback(
@@ -774,64 +670,26 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         decision: MpsAdmissionDecision,
     ) -> None:
         """Logs one concise MPS admission-control fallback message."""
-        logging.getLogger(__name__).info(
-            "MPS admission control switched %s to cpu "
-            "(reason=%s, confidence=%s, required_%s=%s, available_%s=%s).",
-            phase,
-            decision.reason_code,
-            decision.confidence,
-            decision.required_metric,
-            format_gib_short(decision.required_bytes),
-            decision.available_metric,
-            format_gib_short(decision.available_bytes),
+        log_mps_admission_control_fallback(
+            phase=phase,
+            decision=decision,
+            logger=logging.getLogger(__name__),
         )
 
     @staticmethod
     def _should_enforce_transcribe_admission(decision: MpsAdmissionDecision) -> bool:
         """Returns whether one pre-transcribe admission decision should be enforced."""
-        if decision.confidence == "high":
-            return True
-        return decision.reason_code == "mps_headroom_unknown_large_model"
+        return should_enforce_stable_whisper_transcribe_admission(decision)
 
     @staticmethod
     def _release_torch_runtime_memory_for_retry() -> None:
         """Releases best-effort torch runtime caches before retry attempts."""
-        gc.collect()
-        torch_module = sys.modules.get("torch")
-        if not isinstance(torch_module, ModuleType):
-            return
-        mps_module = getattr(torch_module, "mps", None)
-        if isinstance(mps_module, ModuleType):
-            is_available = getattr(mps_module, "is_available", None)
-            empty_cache = getattr(mps_module, "empty_cache", None)
-            try:
-                if callable(is_available) and is_available() and callable(empty_cache):
-                    empty_cache()
-            except Exception:
-                logging.getLogger(__name__).debug(
-                    "Ignored failure while emptying torch MPS cache before retry.",
-                    exc_info=True,
-                )
-        cuda_module = getattr(torch_module, "cuda", None)
-        if isinstance(cuda_module, ModuleType):
-            is_available = getattr(cuda_module, "is_available", None)
-            empty_cache = getattr(cuda_module, "empty_cache", None)
-            try:
-                if callable(is_available) and is_available() and callable(empty_cache):
-                    empty_cache()
-            except Exception:
-                logging.getLogger(__name__).debug(
-                    "Ignored failure while emptying torch CUDA cache before retry.",
-                    exc_info=True,
-                )
+        release_torch_runtime_memory_for_retry(logger=logging.getLogger(__name__))
 
     @staticmethod
     def _summarize_runtime_error(err: Exception, max_chars: int = 180) -> str:
         """Returns one single-line runtime error summary for retry logs."""
-        normalized = " ".join(str(err).split())
-        if len(normalized) <= max_chars:
-            return normalized
-        return f"{normalized[: max_chars - 3]}..."
+        return summarize_runtime_error(err, max_chars=max_chars)
 
     @staticmethod
     def _supports_keyword_argument(
@@ -929,132 +787,3 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                 )
             )
         return transcript
-
-    @staticmethod
-    def _is_module_available(module_name: str) -> bool:
-        """Returns whether one Python module is available or already loaded."""
-        if module_name in sys.modules:
-            return True
-        try:
-            return importlib.util.find_spec(module_name) is not None
-        except ValueError:
-            return module_name in sys.modules
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _detect_torio_ffmpeg_operational_issue() -> CompatibilityIssue | None:
-        """Detects one torio FFmpeg runtime issue that does not block transcription."""
-        if not StableWhisperAdapter._is_module_available("torchaudio"):
-            return None
-        try:
-            torchaudio_module = importlib.import_module("torchaudio")
-        except Exception:
-            return None
-        list_backends = getattr(torchaudio_module, "list_audio_backends", None)
-        if not callable(list_backends):
-            return None
-        try:
-            available_backends = list_backends()
-        except Exception:
-            return None
-        if not isinstance(available_backends, list | tuple):
-            return None
-        normalized_backends = frozenset(
-            str(entry).strip().lower()
-            for entry in available_backends
-            if isinstance(entry, str) and entry.strip()
-        )
-        if "ffmpeg" in normalized_backends:
-            return None
-        loader_error = StableWhisperAdapter._probe_torio_ffmpeg_loader_error()
-        if loader_error is None:
-            remediation = format_torio_ffmpeg_remediation(missing_library=None)
-            return CompatibilityIssue(
-                code="torio_ffmpeg_extension_unavailable",
-                message=(
-                    "torchaudio FFmpeg extension is unavailable in the active runtime; "
-                    "this is a non-blocking advisory and stable-whisper continues "
-                    "with soundfile/sox backends. "
-                    f"{remediation}"
-                ),
-            )
-        missing_library = StableWhisperAdapter._extract_missing_dynamic_library(
-            loader_error
-        )
-        remediation = format_torio_ffmpeg_remediation(missing_library=missing_library)
-        if missing_library is None:
-            return CompatibilityIssue(
-                code="torio_ffmpeg_extension_unavailable",
-                message=(
-                    "torchaudio FFmpeg extension could not be loaded; "
-                    "this is a non-blocking advisory and stable-whisper continues "
-                    "with soundfile/sox backends "
-                    f"(loader_error={loader_error}). {remediation}"
-                ),
-            )
-        if "libavutil" not in missing_library:
-            return CompatibilityIssue(
-                code="torio_ffmpeg_extension_unavailable",
-                message=(
-                    "torchaudio FFmpeg extension could not be loaded due to missing "
-                    f"{missing_library}; this is a non-blocking advisory and "
-                    "stable-whisper continues with "
-                    f"soundfile/sox backends. {remediation}"
-                ),
-            )
-        return CompatibilityIssue(
-            code="torio_ffmpeg_abi_mismatch",
-            message=(
-                "torchaudio FFmpeg extension could not be loaded because "
-                f"{missing_library} is unavailable (FFmpeg ABI mismatch). "
-                "This is a non-blocking advisory and stable-whisper continues "
-                "with soundfile/sox backends. "
-                f"{remediation}"
-            ),
-        )
-
-    @staticmethod
-    def _probe_torio_ffmpeg_loader_error() -> str | None:
-        """Returns one deterministic torio FFmpeg loader error summary when available."""
-        if not StableWhisperAdapter._is_module_available("torio._extension.utils"):
-            return None
-        try:
-            torio_utils = importlib.import_module("torio._extension.utils")
-        except Exception:
-            return None
-        get_lib_path = getattr(torio_utils, "_get_lib_path", None)
-        ffmpeg_versions = getattr(torio_utils, "_FFMPEG_VERS", ())
-        if not callable(get_lib_path):
-            return None
-        if not isinstance(ffmpeg_versions, list | tuple):
-            return None
-        for version in ffmpeg_versions:
-            if not isinstance(version, str):
-                continue
-            library_name = f"libtorio_ffmpeg{version}"
-            try:
-                library_path_value = get_lib_path(library_name)
-            except Exception:
-                continue
-            library_path = Path(str(library_path_value))
-            if not library_path.exists():
-                continue
-            try:
-                ctypes.CDLL(str(library_path))
-            except OSError as err:
-                error_text = str(err).strip()
-                if error_text:
-                    return error_text
-            except Exception:
-                continue
-        return None
-
-    @staticmethod
-    def _extract_missing_dynamic_library(error_text: str) -> str | None:
-        """Extracts one missing dynamic library token from a loader error message."""
-        marker = "Library not loaded: "
-        marker_index = error_text.find(marker)
-        if marker_index < 0:
-            return None
-        missing = error_text[marker_index + len(marker) :].splitlines()[0].strip()
-        return missing or None

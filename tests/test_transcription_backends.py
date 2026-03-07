@@ -13,9 +13,17 @@ from typing import cast
 import pytest
 
 from ser.config import AppConfig
-from ser.transcript.backends.base import BackendRuntimeRequest, CompatibilityIssue
+from ser.transcript.backends.base import (
+    BackendRuntimeRequest,
+    CompatibilityIssue,
+    CompatibilityReport,
+)
 from ser.transcript.backends.faster_whisper import FasterWhisperAdapter
 from ser.transcript.backends.stable_whisper import StableWhisperAdapter
+from ser.transcript.backends.stable_whisper_torio_probe import (
+    detect_default_torio_ffmpeg_operational_issue,
+    extract_missing_dynamic_library,
+)
 from ser.utils.transcription_compat import FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
 
 
@@ -34,10 +42,13 @@ def test_stable_whisper_compatibility_report_is_noise_aware(
 ) -> None:
     """Stable adapter should expose noise policy metadata without blocking."""
     adapter = StableWhisperAdapter()
-    monkeypatch.setattr(adapter, "_is_module_available", lambda _name: True)
     monkeypatch.setattr(
-        adapter,
-        "_detect_torio_ffmpeg_operational_issue",
+        "ser.transcript.backends.stable_whisper_torio_probe.is_module_available",
+        lambda _name: True,
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper_torio_probe."
+        "detect_default_torio_ffmpeg_operational_issue",
         lambda: None,
     )
     report = adapter.check_compatibility(
@@ -57,6 +68,7 @@ def test_stable_whisper_compatibility_report_is_noise_aware(
         "torio.ffmpeg_probe_debug_traceback",
     )
     assert report.noise_issues
+    assert all(issue.impact == "informational" for issue in report.noise_issues)
 
 
 def test_stable_whisper_compatibility_blocks_on_missing_dependency(
@@ -64,10 +76,13 @@ def test_stable_whisper_compatibility_blocks_on_missing_dependency(
 ) -> None:
     """Stable adapter should block when stable_whisper dependency is unavailable."""
     adapter = StableWhisperAdapter()
-    monkeypatch.setattr(adapter, "_is_module_available", lambda _name: False)
     monkeypatch.setattr(
-        adapter,
-        "_detect_torio_ffmpeg_operational_issue",
+        "ser.transcript.backends.stable_whisper_torio_probe.is_module_available",
+        lambda _name: False,
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper_torio_probe."
+        "detect_default_torio_ffmpeg_operational_issue",
         lambda: None,
     )
     report = adapter.check_compatibility(
@@ -81,7 +96,7 @@ def test_stable_whisper_compatibility_blocks_on_missing_dependency(
 
     assert report.has_blocking_issues is True
     assert any(
-        issue.code == "missing_dependency_stable_whisper"
+        issue.code == "missing_dependency_stable_whisper" and issue.impact == "blocking"
         for issue in report.functional_issues
     )
 
@@ -91,16 +106,20 @@ def test_stable_whisper_compatibility_reports_torio_ffmpeg_operational_issue(
 ) -> None:
     """Stable adapter should surface torio FFmpeg ABI mismatch as operational."""
     adapter = StableWhisperAdapter()
-    monkeypatch.setattr(adapter, "_is_module_available", lambda _name: True)
     monkeypatch.setattr(
-        adapter,
-        "_detect_torio_ffmpeg_operational_issue",
+        "ser.transcript.backends.stable_whisper_torio_probe.is_module_available",
+        lambda _name: True,
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper_torio_probe."
+        "detect_default_torio_ffmpeg_operational_issue",
         lambda: CompatibilityIssue(
             code="torio_ffmpeg_abi_mismatch",
             message=(
                 "torchaudio FFmpeg extension could not be loaded because "
                 "@rpath/libavutil.58.dylib is unavailable."
             ),
+            impact="informational",
         ),
     )
 
@@ -114,7 +133,8 @@ def test_stable_whisper_compatibility_reports_torio_ffmpeg_operational_issue(
     )
 
     assert any(
-        issue.code == "torio_ffmpeg_abi_mismatch" for issue in report.operational_issues
+        issue.code == "torio_ffmpeg_abi_mismatch" and issue.impact == "informational"
+        for issue in report.operational_issues
     )
     assert any(
         issue.code == "torio_ffmpeg_probe_debug_traceback"
@@ -124,7 +144,7 @@ def test_stable_whisper_compatibility_reports_torio_ffmpeg_operational_issue(
 
 def test_stable_whisper_extract_missing_dynamic_library_parses_darwin_dlopen() -> None:
     """Helper should extract one missing library token from Darwin loader errors."""
-    missing = StableWhisperAdapter._extract_missing_dynamic_library(
+    missing = extract_missing_dynamic_library(
         "dlopen(...): Library not loaded: @rpath/libavutil.58.dylib\n"
         "  Referenced from: /tmp/libtorio_ffmpeg6.so"
     )
@@ -136,7 +156,7 @@ def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
     tmp_path: Path,
 ) -> None:
     """FFmpeg backend missing with libavutil loader error should report ABI mismatch."""
-    StableWhisperAdapter._detect_torio_ffmpeg_operational_issue.cache_clear()
+    detect_default_torio_ffmpeg_operational_issue.cache_clear()
     fake_library = tmp_path / "libtorio_ffmpeg6.so"
     fake_library.write_text("stub", encoding="utf-8")
     fake_torchaudio = SimpleNamespace(list_audio_backends=lambda: ["sox", "soundfile"])
@@ -153,15 +173,15 @@ def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
         raise ModuleNotFoundError(name)
 
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper.importlib.import_module",
+        "ser.transcript.backends.stable_whisper_torio_probe.importlib.import_module",
         _fake_import_module,
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper.StableWhisperAdapter._is_module_available",
+        "ser.transcript.backends.stable_whisper_torio_probe.is_module_available",
         lambda _module_name: True,
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper.format_torio_ffmpeg_remediation",
+        "ser.transcript.backends.stable_whisper_torio_probe.format_torio_ffmpeg_remediation",
         lambda *, missing_library: (
             f"lane-aware-remediation:{missing_library or 'none'}"
         ),
@@ -174,16 +194,16 @@ def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
         )
 
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper.ctypes.CDLL",
+        "ser.transcript.backends.stable_whisper_torio_probe.ctypes.CDLL",
         _raise_dlopen,
     )
 
-    issue = StableWhisperAdapter._detect_torio_ffmpeg_operational_issue()
+    issue = detect_default_torio_ffmpeg_operational_issue()
 
     assert issue is not None
     assert issue.code == "torio_ffmpeg_abi_mismatch"
     assert "lane-aware-remediation:@rpath/libavutil.58.dylib" in issue.message
-    StableWhisperAdapter._detect_torio_ffmpeg_operational_issue.cache_clear()
+    detect_default_torio_ffmpeg_operational_issue.cache_clear()
 
 
 def test_faster_whisper_demucs_issue_is_operational_not_blocking(
@@ -203,7 +223,7 @@ def test_faster_whisper_demucs_issue_is_operational_not_blocking(
 
     assert report.has_blocking_issues is False
     assert any(
-        issue.code == "faster_whisper_demucs_unsupported"
+        issue.code == "faster_whisper_demucs_unsupported" and issue.impact == "degraded"
         for issue in report.operational_issues
     )
     assert report.policy_ids == ("faster_whisper.info_demotion",)
@@ -230,7 +250,7 @@ def test_faster_whisper_mps_runtime_is_operational_not_blocking(
 
     assert report.has_blocking_issues is False
     assert any(
-        issue.code == "faster_whisper_mps_unsupported"
+        issue.code == "faster_whisper_mps_unsupported" and issue.impact == "degraded"
         for issue in report.operational_issues
     )
 
@@ -258,8 +278,24 @@ def test_faster_whisper_openmp_conflict_is_blocking(
     assert report.has_blocking_issues is True
     assert any(
         issue.code == FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
+        and issue.impact == "blocking"
         for issue in report.functional_issues
     )
+
+
+def test_compatibility_report_detects_non_functional_blocking_issue() -> None:
+    """Blocking impacts in non-functional lists should still report as blocking."""
+    report = CompatibilityReport(
+        backend_id="stable_whisper",
+        operational_issues=(
+            CompatibilityIssue(
+                code="synthetic_operational_blocking",
+                message="Synthetic blocking condition",
+                impact="blocking",
+            ),
+        ),
+    )
+    assert report.has_blocking_issues is True
 
 
 def test_stable_whisper_transcribe_prefers_denoiser_and_fp16_control(
@@ -542,7 +578,11 @@ def test_stable_whisper_load_model_retries_on_cpu_after_retryable_mps_failure(
             models=SimpleNamespace(
                 whisper_download_root=download_root,
                 torch_cache_root=torch_cache_root,
-            )
+            ),
+            transcription=SimpleNamespace(
+                mps_admission_control_enabled=False,
+                mps_hard_oom_shortcut_enabled=True,
+            ),
         ),
     )
     loaded_model = SimpleNamespace()
@@ -589,6 +629,155 @@ def test_stable_whisper_load_model_retries_on_cpu_after_retryable_mps_failure(
 
     assert resolved_model is loaded_model
     assert load_devices == ["cpu"]
+
+
+def test_stable_whisper_load_model_falls_back_on_compat_activation_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Stable adapter should fail safe to CPU on compatibility activation mismatch."""
+    adapter = StableWhisperAdapter()
+    download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
+    torch_cache_root = tmp_path / "model-cache" / "torch"
+    settings = cast(
+        AppConfig,
+        SimpleNamespace(
+            models=SimpleNamespace(
+                whisper_download_root=download_root,
+                torch_cache_root=torch_cache_root,
+            ),
+            transcription=SimpleNamespace(
+                mps_admission_control_enabled=False,
+                mps_hard_oom_shortcut_enabled=True,
+            ),
+        ),
+    )
+    load_devices: list[str] = []
+
+    class _FakeModel:
+        runtime_device = "cpu"
+
+        def to(self, *, device: str) -> _FakeModel:
+            self.runtime_device = device
+            return self
+
+    loaded_model = _FakeModel()
+
+    def _fake_load_model(
+        *,
+        name: str,
+        device: str,
+        dq: bool,
+        download_root: str,
+        in_memory: bool,
+    ) -> object:
+        del name
+        del dq
+        del download_root
+        del in_memory
+        load_devices.append(device)
+        return loaded_model
+
+    def _raise_compat_activation_error(model: object) -> object:
+        cast(_FakeModel, model).runtime_device = "mps"
+        raise RuntimeError(
+            "Loaded stable-whisper model does not expose register_buffer() after MPS move."
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "stable_whisper",
+        SimpleNamespace(load_model=_fake_load_model),
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper."
+        "enable_stable_whisper_mps_compatibility",
+        _raise_compat_activation_error,
+    )
+
+    caplog.set_level(logging.WARNING)
+    resolved_model = adapter.load_model(
+        runtime_request=BackendRuntimeRequest(
+            model_name="large-v3",
+            use_demucs=False,
+            use_vad=True,
+            device_spec="mps",
+            device_type="mps",
+            precision_candidates=("float16", "float32"),
+            memory_tier="low",
+        ),
+        settings=settings,
+    )
+
+    assert resolved_model is loaded_model
+    assert load_devices == ["cpu"]
+    assert loaded_model.runtime_device == "cpu"
+    assert "compatibility_activation_unavailable" in caplog.text
+
+
+def test_stable_whisper_load_model_raises_on_unknown_compat_activation_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Stable adapter should not mask unknown compatibility activation failures."""
+    adapter = StableWhisperAdapter()
+    download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
+    torch_cache_root = tmp_path / "model-cache" / "torch"
+    settings = cast(
+        AppConfig,
+        SimpleNamespace(
+            models=SimpleNamespace(
+                whisper_download_root=download_root,
+                torch_cache_root=torch_cache_root,
+            ),
+            transcription=SimpleNamespace(
+                mps_admission_control_enabled=False,
+                mps_hard_oom_shortcut_enabled=True,
+            ),
+        ),
+    )
+    loaded_model = SimpleNamespace()
+
+    def _fake_load_model(
+        *,
+        name: str,
+        device: str,
+        dq: bool,
+        download_root: str,
+        in_memory: bool,
+    ) -> object:
+        del name
+        del device
+        del dq
+        del download_root
+        del in_memory
+        return loaded_model
+
+    monkeypatch.setitem(
+        sys.modules,
+        "stable_whisper",
+        SimpleNamespace(load_model=_fake_load_model),
+    )
+    monkeypatch.setattr(
+        "ser.transcript.backends.stable_whisper."
+        "enable_stable_whisper_mps_compatibility",
+        lambda _model: (_ for _ in ()).throw(ValueError("unexpected failure")),
+    )
+
+    with pytest.raises(ValueError, match="unexpected failure"):
+        adapter.load_model(
+            runtime_request=BackendRuntimeRequest(
+                model_name="large-v3",
+                use_demucs=False,
+                use_vad=True,
+                device_spec="mps",
+                device_type="mps",
+                precision_candidates=("float16", "float32"),
+                memory_tier="low",
+            ),
+            settings=settings,
+        )
 
 
 def test_stable_whisper_load_model_enables_mps_compatibility_on_success(

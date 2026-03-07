@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
     from ser.config import AppConfig
+
+type CompatibilityIssueImpact = Literal["informational", "degraded", "blocking"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +20,7 @@ class CompatibilityIssue:
 
     code: str
     message: str
+    impact: CompatibilityIssueImpact = "degraded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,8 +35,13 @@ class CompatibilityReport:
 
     @property
     def has_blocking_issues(self) -> bool:
-        """Returns whether functional compatibility issues block execution."""
-        return bool(self.functional_issues)
+        """Returns whether compatibility issues include any blocking condition."""
+        if self.functional_issues:
+            return True
+        return any(
+            issue.impact == "blocking"
+            for issue in (*self.operational_issues, *self.noise_issues)
+        )
 
 
 @dataclass(frozen=True, slots=True)

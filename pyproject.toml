@@ -39,6 +39,8 @@ dependencies = [
   "soundfile>=0.12.1,<1.0.0",
   "python-dotenv>=1.0.1,<2.0.0",
   "PyYAML>=6.0,<7.0",
+  "huggingface_hub>=0.30.0,<1.0.0",
+  "pyarrow>=18.1.0,<20.0.0",
   "tqdm>=4.66.1,<5.0.0",
   "demucs>=4.0.1,<5.0.0; python_version < '3.13' or (sys_platform != 'darwin' or platform_machine != 'x86_64')",
   "torch>=2.2,<=2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64' and python_version < '3.13'",
@@ -56,6 +58,7 @@ dev = [
   "isort>=5.13.0,<7.0.0",
   "mypy>=1.11.0,<2.0.0",
   "pyright>=1.1.390,<2.0.0",
+  "pyupgrade>=3.21.2,<4.0.0",
 ]
 medium = [
   "transformers>=4.49.0,<5.0.0; python_version < '3.13' or (sys_platform != 'darwin' or platform_machine != 'x86_64')",
@@ -131,8 +134,18 @@ line-length = 88
 extend-exclude = ["dist", "build", ".venv"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "B", "TID251"]
 ignore = ["E501"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"ser._internal.api".msg = "Internal API modules are private; import from `ser.api`."
+"ser._internal.api.data".msg = "Internal API modules are private; import from `ser.api`."
+"ser._internal.api.diagnostics".msg = "Internal API modules are private; import from `ser.api`."
+"ser._internal.api.runtime".msg = "Internal API modules are private; import from `ser.api`."
+
+[tool.ruff.lint.per-file-ignores]
+"ser/api.py" = ["TID251"]
+"tests/test_api.py" = ["TID251"]
 
 [tool.ruff.format]
 quote-style = "double"

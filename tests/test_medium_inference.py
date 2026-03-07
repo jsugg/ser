@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from sklearn.neural_network import MLPClassifier
 
 import ser.config as config
+import ser.runtime.medium_inference as medium_inference
 from ser.models import emotion_model
 from ser.repr import EncodedSequence
 from ser.repr.runtime_policy import resolve_feature_runtime_policy
@@ -77,7 +78,7 @@ class _FakeBackend:
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings() -> Generator[None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield
@@ -121,7 +122,10 @@ def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
@@ -220,7 +224,10 @@ def test_run_medium_inference_rejects_feature_size_mismatch(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
@@ -267,7 +274,10 @@ def test_run_medium_inference_uses_configured_medium_model_id(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
 
     class _BackendStub:
@@ -286,8 +296,8 @@ def test_run_medium_inference_uses_configured_medium_model_id(
 
     monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", _BackendStub)
     monkeypatch.setattr(
-        "ser.runtime.medium_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.medium_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference._run_medium_inference_once",
@@ -380,15 +390,18 @@ def test_run_medium_inference_warns_on_torch_runtime_metadata_mismatch(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend",
         lambda **_kwargs: _FakeBackend(),
     )
     monkeypatch.setattr(
-        "ser.runtime.medium_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.medium_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
 
     run_medium_inference(
@@ -398,6 +411,115 @@ def test_run_medium_inference_warns_on_torch_runtime_metadata_mismatch(
 
     assert warnings
     assert "torch runtime selectors differ" in warnings[0]
+
+
+def test_run_medium_inference_delegates_in_process_setup_to_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-process runtime should delegate setup orchestration to helper seam."""
+    settings = config.reload_settings()
+    request = InferenceRequest(
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+    )
+    captured: dict[str, object] = {}
+    prepared = medium_inference.medium_worker_operation_helpers.PreparedMediumOperation(
+        loaded_model=object(),
+        backend=object(),
+        audio=np.ones(8, dtype=np.float32),
+        sample_rate=4,
+        runtime_config=settings.medium_runtime,
+    )
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[],
+        frames=[],
+    )
+
+    def fake_prepare(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return prepared
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_in_process_operation",
+        fake_prepare,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_medium_backend_runtime",
+        lambda *, backend: captured.update({"prepared_backend": backend}),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_process_operation",
+        lambda prepared: expected,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_with_timeout",
+        lambda operation, timeout_seconds: operation(),
+    )
+
+    result = run_medium_inference(request, settings)
+
+    assert result == expected
+    assert captured["request"] == request
+    assert captured["settings"] == settings
+    assert captured["loaded_model"] is None
+    assert captured["backend"] is None
+    assert captured["expected_backend_model_id"] == settings.models.medium_model_id
+    assert captured["prepared_backend"] is prepared.backend
+
+
+def test_run_medium_inference_delegates_operation_to_worker_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime loop should delegate attempt execution to worker helper seam."""
+    settings = config.reload_settings()
+    request = InferenceRequest(
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+    )
+    prepared = medium_inference.medium_worker_operation_helpers.PreparedMediumOperation(
+        loaded_model=object(),
+        backend=object(),
+        audio=np.ones(8, dtype=np.float32),
+        sample_rate=4,
+        runtime_config=settings.medium_runtime,
+    )
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[],
+        frames=[],
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_in_process_operation",
+        lambda **_kwargs: prepared,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_medium_backend_runtime",
+        lambda *, backend: None,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.run_with_retry_policy",
+        lambda **kwargs: kwargs["operation"](),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.medium_worker_operation_helpers.run_inference_operation",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    result = run_medium_inference(request, settings)
+
+    assert result == expected
+    assert captured["enforce_timeout"] is True
+    assert captured["use_process_isolation"] is False
+    assert captured["process_payload"] is None
+    assert captured["prepared_operation"] is prepared
+    assert captured["timeout_seconds"] == settings.medium_runtime.timeout_seconds
+    assert captured["profile"] == "medium"
+    assert captured["inference_phase_name"] == medium_inference.PHASE_EMOTION_INFERENCE
 
 
 def test_medium_single_flight_serializes_same_profile_model_calls(
@@ -421,15 +543,18 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend",
         lambda **_kwargs: object(),
     )
     monkeypatch.setattr(
-        "ser.runtime.medium_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.medium_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
 
     counters = {"active": 0, "max_active": 0}
@@ -473,3 +598,4 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
 
     assert errors == []
     assert counters["max_active"] == 1
+    assert medium_inference._SINGLE_FLIGHT_REGISTRY.active_key_count() == 0

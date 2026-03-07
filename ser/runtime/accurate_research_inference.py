@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ser.config import AppConfig
-from ser.models.emotion_model import LoadedModel, resolve_accurate_research_model_id
+from ser.models.emotion_model import LoadedModel
+from ser.models.profile_runtime import resolve_accurate_research_model_id
 from ser.repr import Emotion2VecBackend, FeatureBackend
 from ser.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.runtime.accurate_inference import run_accurate_inference

@@ -13,7 +13,31 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+
+    outputs:
+      run_full: ${{ steps.classify.outputs.run_full }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      reason: ${{ steps.classify.outputs.reason }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify pull request change scope
+        id: classify
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./scripts/ci_classify_changes.sh "$GITHUB_OUTPUT"
+
   code-quality:
+    needs: [changes]
+    if: needs.changes.outputs.run_full == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -45,9 +69,11 @@ jobs:
             pre-commit-${{ runner.os }}-py3.12-
 
       - name: Run linters and type checks (pre-push stage)
-        run: uv run --frozen --extra dev pre-commit run --all-files --hook-stage pre-push
+        run: make prepush-check
 
   resolve:
+    needs: [changes]
+    if: needs.changes.outputs.run_full == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -78,6 +104,8 @@ jobs:
         run: uv sync --frozen --python ${{ matrix.python-version }} --all-extras --dry-run
 
   tests:
+    needs: [changes]
+    if: needs.changes.outputs.run_full == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -117,25 +145,10 @@ jobs:
           tests/test_runtime_registry.py
           tests/test_runtime_pipeline.py
 
-      # Full-dataset gate execution is intentionally excluded from default CI due runtime cost.
-      # Use .github/workflows/full-dataset-quality-gate-regression.yml for opt-in full runs.
-      - name: Enforce profile quality-gate contracts
-        if: matrix.python-version == '3.12'
-        run: >
-          uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q
-          tests/test_profile_quality_gate.py
-          tests/test_postprocessing.py
-          tests/test_medium_quality_report.py
-
-      - name: Enforce transcription benchmark contract gate
-        if: matrix.python-version == '3.12'
-        run: >
-          uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q
-          tests/test_transcription_profiling.py
-
-  supply-chain:
+  contract-gates:
     runs-on: ubuntu-latest
-    needs: [code-quality, resolve, tests]
+    needs: [changes, code-quality, resolve]
+    if: needs.changes.outputs.run_full == 'true'
 
     steps:
       - name: Checkout
@@ -153,36 +166,25 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
-          key: uv-${{ runner.os }}-supply-chain-${{ hashFiles('uv.lock') }}
+          key: uv-${{ runner.os }}-contract-gates-${{ hashFiles('uv.lock') }}
           restore-keys: |
-            uv-${{ runner.os }}-supply-chain-
+            uv-${{ runner.os }}-contract-gates-
 
-      - name: Sync all dependency groups
-        run: uv sync --frozen --python 3.12 --all-extras
+      - name: Enforce structural ownership contract gates
+        run: make topology-contracts
 
-      - name: Validate license/provenance policy contracts
+      - name: Enforce API import boundary lint gate
+        run: make import-lint
+
+      - name: Enforce transcription benchmark contract gate
         run: >
-          uv run --frozen --python 3.12 --all-extras pytest -q
-          tests/test_license_gates.py
-          tests/test_provenance_metadata.py
-
-      - name: Generate CycloneDX SBOM
-        run: |
-          mkdir -p dist
-          uvx --from cyclonedx-bom cyclonedx-py environment .venv \
-            --of JSON \
-            --output-reproducible \
-            -o dist/sbom.cdx.json
-
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-cyclonedx-json
-          path: dist/sbom.cdx.json
+          uv run --frozen --python 3.12 --extra dev pytest -q
+          tests/test_transcription_profiling.py
 
   build:
     runs-on: ubuntu-latest
-    needs: [code-quality, resolve, tests, supply-chain]
+    needs: [changes, code-quality, resolve]
+    if: needs.changes.outputs.run_full == 'true'
 
     steps:
       - name: Checkout

@@ -2,6 +2,7 @@
 
 import sys
 from collections.abc import Callable, Generator
+from dataclasses import replace
 from types import ModuleType
 from typing import Any, cast
 
@@ -9,6 +10,7 @@ import pytest
 
 import ser.config as config
 import ser.runtime.pipeline as runtime_pipeline_module
+from ser.config import AppConfig
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile
 from ser.runtime.contracts import InferenceRequest
@@ -51,10 +53,12 @@ def _build_test_pipeline(
     print_timeline: PrintTimelineCallable,
     save_timeline_to_csv: SaveTimelineCallable,
     backend_inference: Callable[[InferenceRequest], InferenceResult] | None = None,
+    settings: AppConfig | None = None,
 ) -> RuntimePipeline:
     """Creates a runtime pipeline with injected deterministic dependencies."""
+    pipeline_settings = config.reload_settings() if settings is None else settings
     return RuntimePipeline(
-        settings=config.reload_settings(),
+        settings=pipeline_settings,
         profile=RuntimeProfile(
             name="fast",
             description="Test profile",
@@ -98,6 +102,36 @@ def test_run_training_invokes_training_dependency() -> None:
 
     pipeline.run_training()
     assert called["train"] is True
+
+
+def test_run_training_scopes_pipeline_settings_for_dependencies() -> None:
+    """Training dependencies should observe the pipeline's explicit settings snapshot."""
+    ambient_settings = config.reload_settings()
+    scoped_settings = replace(ambient_settings, default_language="pt-BR")
+    captured: dict[str, object] = {}
+
+    def fake_train_model() -> None:
+        captured["active_settings"] = config.get_settings()
+
+    pipeline = _build_test_pipeline(
+        train_model=fake_train_model,
+        predict_emotions=lambda _file_path: [],
+        predict_emotions_detailed=lambda _file_path: InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        ),
+        extract_transcript=lambda _file_path, _language: [],
+        build_timeline=lambda _transcript, _emotions: [],
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+        settings=scoped_settings,
+    )
+
+    pipeline.run_training()
+
+    assert captured["active_settings"] is scoped_settings
+    assert config.get_settings() is ambient_settings
 
 
 def test_run_inference_with_save_transcript_enabled() -> None:
@@ -162,6 +196,42 @@ def test_run_inference_with_save_transcript_enabled() -> None:
     assert calls["build"] == (transcript, emotions)
     assert calls["print"] == timeline
     assert calls["save"] == (timeline, "sample.wav")
+
+
+def test_run_inference_scopes_pipeline_settings_for_dependencies() -> None:
+    """Inference dependencies should observe the pipeline's explicit settings snapshot."""
+    ambient_settings = config.reload_settings()
+    scoped_settings = replace(ambient_settings, default_language="pt-BR")
+    captured: dict[str, object] = {}
+
+    def fake_predict(_file_path: str) -> list[EmotionSegment]:
+        captured["predict_settings"] = config.get_settings()
+        return [EmotionSegment("happy", 0.0, 1.0)]
+
+    def fake_extract(_file_path: str, _language: str | None) -> list[TranscriptWord]:
+        captured["extract_settings"] = config.get_settings()
+        return [TranscriptWord("ola", 0.0, 0.5)]
+
+    pipeline = _build_test_pipeline(
+        train_model=lambda: None,
+        predict_emotions=fake_predict,
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Detailed path should not run when schema flag is disabled.")
+        ),
+        extract_transcript=fake_extract,
+        build_timeline=lambda _transcript, _emotions: [],
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+        settings=scoped_settings,
+    )
+
+    pipeline.run_inference(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    )
+
+    assert captured["predict_settings"] is scoped_settings
+    assert captured["extract_settings"] is scoped_settings
+    assert config.get_settings() is ambient_settings
 
 
 def test_run_inference_skips_save_when_flag_is_disabled() -> None:

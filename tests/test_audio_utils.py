@@ -1,11 +1,11 @@
 """Behavior tests for audio normalization and decoding guards."""
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from ser.config import AudioReadConfig
 from ser.utils import audio_utils as au
 
 pytestmark = pytest.mark.filterwarnings(
@@ -66,15 +66,11 @@ def test_read_audio_file_uses_soundfile_fallback(
             return np.asarray([[0.2, 0.0], [0.4, 0.0]], dtype=np.float32)
 
     monkeypatch.setattr(au.sf, "SoundFile", DummySoundFile)
-    monkeypatch.setattr(
-        au,
-        "get_settings",
-        lambda: SimpleNamespace(
-            audio_read=SimpleNamespace(max_retries=2, retry_delay_seconds=0.0)
-        ),
-    )
 
-    audio, sample_rate = au.read_audio_file(str(audio_path))
+    audio, sample_rate = au.read_audio_file(
+        str(audio_path),
+        audio_read_config=AudioReadConfig(max_retries=2, retry_delay_seconds=0.0),
+    )
 
     assert sample_rate == 16000
     assert audio.tolist() == pytest.approx([0.5, 1.0])
@@ -109,18 +105,11 @@ def test_read_audio_file_segment_uses_librosa_offset_duration(
         return np.asarray([0.2, 0.4], dtype=np.float32), 22050
 
     monkeypatch.setattr(au.librosa, "load", _fake_librosa_load)
-    monkeypatch.setattr(
-        au,
-        "get_settings",
-        lambda: SimpleNamespace(
-            audio_read=SimpleNamespace(max_retries=1, retry_delay_seconds=0.0)
-        ),
-    )
-
     audio, sample_rate = au.read_audio_file(
         str(audio_path),
         start_seconds=1.5,
         duration_seconds=0.75,
+        audio_read_config=AudioReadConfig(max_retries=1, retry_delay_seconds=0.0),
     )
 
     assert sample_rate == 22050

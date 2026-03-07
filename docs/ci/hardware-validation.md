@@ -72,5 +72,7 @@ gh workflow run .github/workflows/linux-selfhosted-gpu-validation.yml \
 ## Notes
 
 - GitHub-hosted runner minimum for current macOS validation is `macos-15`.
-- `macos-13` is not used.
+- Project support policy still includes local macOS13 validation targets:
+  - `darwin-x86_64-macos13-python3.12` (full profile support)
+  - `darwin-x86_64-macos13-python3.13` (partial, fast profile only)
 - Keep hardware lanes manual unless runtime/cost constraints change.

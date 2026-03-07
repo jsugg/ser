@@ -15,8 +15,8 @@ mkdir -p .git/hooks
 cat > .git/hooks/pre-push <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exec uv run pre-commit run --all-files --hook-stage pre-push
+exec bash ./scripts/run_prepush_gate.sh
 EOF
 chmod +x .git/hooks/pre-push
 
-printf '[hooks] installed .git/hooks/pre-push -> uv run pre-commit run --all-files --hook-stage pre-push\n'
+printf '[hooks] installed .git/hooks/pre-push -> bash ./scripts/run_prepush_gate.sh\n'

@@ -10,7 +10,7 @@ import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
-from ser.config import AppConfig, get_settings
+from ser.config import AudioReadConfig
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
@@ -56,6 +56,7 @@ def read_audio_file(
     *,
     start_seconds: float | None = None,
     duration_seconds: float | None = None,
+    audio_read_config: AudioReadConfig | None = None,
 ) -> tuple[NDArray[np.float32], int]:
     """Reads an audio file (or segment) and normalizes amplitude to [-1, 1].
 
@@ -70,7 +71,9 @@ def read_audio_file(
     if duration_seconds is not None and duration_seconds <= 0.0:
         raise ValueError("duration_seconds must be > 0")
 
-    settings: AppConfig = get_settings()
+    active_config = (
+        audio_read_config if audio_read_config is not None else AudioReadConfig()
+    )
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")
@@ -78,7 +81,7 @@ def read_audio_file(
         raise OSError(f"Path is not a regular file: {file_path}")
 
     logger.debug(msg=f"Starting to read audio file: {file_path}")
-    for attempt in range(settings.audio_read.max_retries):
+    for attempt in range(active_config.max_retries):
         logger.debug(msg=f"Attempt {attempt + 1} to read audio file using librosa.")
         try:
             with warnings.catch_warnings():
@@ -107,14 +110,14 @@ def read_audio_file(
 
             # Segment reads rely on librosa offset/duration.
             if start_seconds is not None or duration_seconds is not None:
-                if attempt < settings.audio_read.max_retries - 1:
+                if attempt < active_config.max_retries - 1:
                     logger.info(
                         msg=(
                             "Retrying with librosa in "
-                            f"{settings.audio_read.retry_delay_seconds} seconds..."
+                            f"{active_config.retry_delay_seconds} seconds..."
                         )
                     )
-                    time.sleep(settings.audio_read.retry_delay_seconds)
+                    time.sleep(active_config.retry_delay_seconds)
                     continue
                 raise
 
@@ -134,19 +137,19 @@ def read_audio_file(
 
             except Exception as err:
                 logger.warning(msg=f"Soundfile also failed: {err}")
-                if attempt < settings.audio_read.max_retries - 1:
+                if attempt < active_config.max_retries - 1:
                     logger.info(
                         msg=(
                             "Retrying with librosa in "
-                            f"{settings.audio_read.retry_delay_seconds} seconds..."
+                            f"{active_config.retry_delay_seconds} seconds..."
                         )
                     )
-                    time.sleep(settings.audio_read.retry_delay_seconds)
+                    time.sleep(active_config.retry_delay_seconds)
 
     logger.error(
         msg=(
             f"Failed to read audio file {file_path} "
-            f"after {settings.audio_read.max_retries} retries."
+            f"after {active_config.max_retries} retries."
         )
     )
     raise OSError(f"Error reading {file_path}")
