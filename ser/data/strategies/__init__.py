@@ -1,0 +1,45 @@
+"""Dataset strategy contracts and default implementations."""
+
+from .base import DatasetStrategy, DatasetStrategyRegistry, PreparedManifestResult
+from .default import (
+    AsvpEsdDatasetStrategy,
+    AttHackDatasetStrategy,
+    BiicPodcastDatasetStrategy,
+    CafeDatasetStrategy,
+    CoraaSerDatasetStrategy,
+    CremaDDatasetStrategy,
+    Emodb2DatasetStrategy,
+    EmovDbDatasetStrategy,
+    EscorpusPeDatasetStrategy,
+    JlCorpusDatasetStrategy,
+    MesdDatasetStrategy,
+    MspPodcastDatasetStrategy,
+    OreauFrenchEsdDatasetStrategy,
+    PavoqueDatasetStrategy,
+    RavdessDatasetStrategy,
+    SpanishMeacorpus2023DatasetStrategy,
+    build_default_dataset_strategies,
+)
+
+__all__ = [
+    "AsvpEsdDatasetStrategy",
+    "AttHackDatasetStrategy",
+    "BiicPodcastDatasetStrategy",
+    "CafeDatasetStrategy",
+    "CoraaSerDatasetStrategy",
+    "CremaDDatasetStrategy",
+    "DatasetStrategy",
+    "DatasetStrategyRegistry",
+    "Emodb2DatasetStrategy",
+    "EmovDbDatasetStrategy",
+    "EscorpusPeDatasetStrategy",
+    "JlCorpusDatasetStrategy",
+    "MesdDatasetStrategy",
+    "MspPodcastDatasetStrategy",
+    "OreauFrenchEsdDatasetStrategy",
+    "PavoqueDatasetStrategy",
+    "PreparedManifestResult",
+    "RavdessDatasetStrategy",
+    "SpanishMeacorpus2023DatasetStrategy",
+    "build_default_dataset_strategies",
+]

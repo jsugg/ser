@@ -2,26 +2,29 @@
 
 from __future__ import annotations
 
-import gc
 import glob
-import json
 import logging
 import math
 import random
 import re
-import statistics
-import time
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, Literal, cast
+from typing import Final, Literal
 
+from ser._internal.transcription import default_profiling as default_profiling_helpers
+from ser._internal.transcription import (
+    profiling_reporting as profiling_reporting_helpers,
+)
+from ser._internal.transcription import (
+    runtime_calibration as runtime_calibration_helpers,
+)
 from ser.config import (
     AppConfig,
     ArtifactProfileName,
-    apply_settings,
     get_settings,
     resolve_profile_transcription_config,
+    settings_override,
 )
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
@@ -408,115 +411,38 @@ def profile_transcription_candidate(
     language: str,
 ) -> ProfileBenchmarkSummary:
     """Profiles one candidate profile over a list of reference audio files."""
-    start_time = time.perf_counter()
-    if not files:
-        return ProfileBenchmarkSummary(
-            profile=candidate,
-            evaluated_samples=0,
-            failed_samples=0,
-            exact_match_rate=0.0,
-            mean_word_error_rate=1.0,
-            median_word_error_rate=1.0,
-            p90_word_error_rate=1.0,
-            mean_accuracy=0.0,
-            average_latency_seconds=0.0,
-            total_runtime_seconds=0.0,
-            error_message="No reference files provided.",
-        )
-
     profile = TranscriptionProfile(
         backend_id=candidate.backend_id,
         model_name=candidate.model_name,
         use_demucs=candidate.use_demucs,
         use_vad=candidate.use_vad,
     )
-    try:
-        model = load_whisper_model(profile=profile)
-    except Exception as err:
-        logger.error(
-            "Failed to load Whisper model for profile %s: %s",
-            candidate.name,
-            err,
-        )
-        return ProfileBenchmarkSummary(
-            profile=candidate,
-            evaluated_samples=0,
-            failed_samples=len(files),
-            exact_match_rate=0.0,
-            mean_word_error_rate=1.0,
-            median_word_error_rate=1.0,
-            p90_word_error_rate=1.0,
-            mean_accuracy=0.0,
-            average_latency_seconds=0.0,
-            total_runtime_seconds=time.perf_counter() - start_time,
-            error_message=str(err),
-        )
-
-    word_error_rates: list[float] = []
-    accuracies: list[float] = []
-    latencies: list[float] = []
-    exact_matches = 0
-    failed_samples = 0
-    for file_path in files:
-        reference_text = ravdess_reference_text(file_path)
-        if reference_text is None:
-            failed_samples += 1
-            continue
-
-        sample_start = time.perf_counter()
-        try:
-            words = transcribe_with_model(
-                model=model,
-                file_path=str(file_path),
-                language=language,
-                profile=profile,
-            )
-        except Exception as err:
-            failed_samples += 1
-            logger.warning("Transcription failed for %s: %s", file_path, err)
-            continue
-        sample_latency = time.perf_counter() - sample_start
-
-        hypothesis_text = transcript_words_to_text(words)
-        sample_wer = word_error_rate(reference_text, hypothesis_text)
-        sample_accuracy = max(0.0, 1.0 - sample_wer)
-
-        word_error_rates.append(sample_wer)
-        accuracies.append(sample_accuracy)
-        latencies.append(sample_latency)
-        if sample_wer == 0.0:
-            exact_matches += 1
-
-    del model
-
-    evaluated_samples = len(word_error_rates)
-    if evaluated_samples == 0:
-        return ProfileBenchmarkSummary(
-            profile=candidate,
-            evaluated_samples=0,
-            failed_samples=failed_samples,
-            exact_match_rate=0.0,
-            mean_word_error_rate=1.0,
-            median_word_error_rate=1.0,
-            p90_word_error_rate=1.0,
-            mean_accuracy=0.0,
-            average_latency_seconds=0.0,
-            total_runtime_seconds=time.perf_counter() - start_time,
-            error_message="No samples were transcribed successfully.",
-        )
+    stats = default_profiling_helpers.profile_candidate_transcriptions(
+        candidate_name=candidate.name,
+        profile=profile,
+        files=files,
+        language=language,
+        load_model=load_whisper_model,
+        transcribe=transcribe_with_model,
+        resolve_reference_text=ravdess_reference_text,
+        words_to_text=transcript_words_to_text,
+        compute_word_error_rate=word_error_rate,
+        percentile=_percentile,
+        logger=logger,
+    )
 
     return ProfileBenchmarkSummary(
         profile=candidate,
-        evaluated_samples=evaluated_samples,
-        failed_samples=failed_samples,
-        exact_match_rate=exact_matches / float(evaluated_samples),
-        mean_word_error_rate=statistics.fmean(word_error_rates),
-        median_word_error_rate=statistics.median(word_error_rates),
-        p90_word_error_rate=_percentile(word_error_rates, 0.90),
-        mean_accuracy=statistics.fmean(accuracies),
-        average_latency_seconds=statistics.fmean(latencies),
-        total_runtime_seconds=time.perf_counter() - start_time,
-        error_message=None,
+        evaluated_samples=stats.evaluated_samples,
+        failed_samples=stats.failed_samples,
+        exact_match_rate=stats.exact_match_rate,
+        mean_word_error_rate=stats.mean_word_error_rate,
+        median_word_error_rate=stats.median_word_error_rate,
+        p90_word_error_rate=stats.p90_word_error_rate,
+        mean_accuracy=stats.mean_accuracy,
+        average_latency_seconds=stats.average_latency_seconds,
+        total_runtime_seconds=stats.total_runtime_seconds,
+        error_message=stats.error_message,
     )
 
 
@@ -605,22 +531,6 @@ def recommend_default_profile(
     )
 
 
-def _default_report_path() -> Path:
-    """Returns the default profiling report path."""
-    settings = get_settings()
-    return settings.models.folder / "transcription_profile_report.json"
-
-
-def _persist_profile_report(path: Path, payload: dict[str, object]) -> Path:
-    """Persists profile report payload to JSON."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
 def run_default_profile_benchmark(
     *,
     language: str,
@@ -631,6 +541,7 @@ def run_default_profile_benchmark(
     sampling_strategy: str = "stratified",
     random_seed: int = 42,
     report_path: Path | None = None,
+    settings: AppConfig | None = None,
 ) -> ProfilingResult:
     """Profiles default candidates and computes recommendation thresholds."""
     if not 0.0 <= absolute_accuracy_floor <= 1.0:
@@ -642,6 +553,7 @@ def run_default_profile_benchmark(
             "minimum_required_samples_for_recommendation must be greater than zero."
         )
 
+    active_settings = settings if settings is not None else get_settings()
     reference_files = collect_ravdess_reference_files(
         limit=sample_limit,
         sampling_strategy=sampling_strategy,
@@ -669,7 +581,11 @@ def run_default_profile_benchmark(
         minimum_required_samples=minimum_required_samples_for_recommendation,
     )
 
-    output_path = _default_report_path() if report_path is None else report_path
+    output_path = (
+        active_settings.models.folder / "transcription_profile_report.json"
+        if report_path is None
+        else report_path
+    )
     coverage = _summarize_subset_coverage(reference_files)
     payload: dict[str, object] = {
         "created_at_utc": datetime.now(tz=UTC).isoformat(),
@@ -685,7 +601,10 @@ def run_default_profile_benchmark(
         "profiles": [asdict(summary) for summary in summaries],
         "recommendation": asdict(recommendation),
     }
-    persisted_path = _persist_profile_report(output_path, payload)
+    persisted_path = profiling_reporting_helpers.persist_profile_report(
+        output_path,
+        payload,
+    )
 
     return ProfilingResult(
         reference_files=len(reference_files),
@@ -696,142 +615,17 @@ def run_default_profile_benchmark(
     )
 
 
-def _runtime_calibration_report_path() -> Path:
-    """Returns default output path for runtime calibration reports."""
-    settings = get_settings()
-    return settings.models.folder / "transcription_runtime_calibration_report.json"
-
-
-def _normalize_profile_csv(raw_profiles: str) -> tuple[ArtifactProfileName, ...]:
-    """Parses comma-separated profile names for calibration workflows."""
-    parsed: list[ArtifactProfileName] = []
-    for token in raw_profiles.split(","):
-        normalized = token.strip().lower()
-        if not normalized:
-            continue
-        if normalized not in {
-            "fast",
-            "medium",
-            "accurate",
-            "accurate-research",
-        }:
-            raise ValueError(f"Unsupported profile in calibration set: {token!r}.")
-        parsed.append(cast(ArtifactProfileName, normalized))
-    if not parsed:
-        raise ValueError("At least one calibration profile must be provided.")
-    return tuple(dict.fromkeys(parsed))
-
-
 def parse_calibration_profiles(raw_profiles: str) -> tuple[ArtifactProfileName, ...]:
     """Parses and validates calibration profile names from CLI input."""
-    return _normalize_profile_csv(raw_profiles)
-
-
-def _resolve_runtime_device_for_loaded_model(
-    *,
-    model: object,
-    backend_id: TranscriptionBackendId,
-) -> str:
-    """Resolves active runtime device for one loaded model object."""
-    if backend_id == "stable_whisper":
-        from ser.transcript.backends.stable_whisper_mps_compat import (
-            get_stable_whisper_runtime_device,
-        )
-
-        return get_stable_whisper_runtime_device(
-            model,
-            default_device_type="cpu",
-        )
-    return "cpu"
-
-
-def _is_hard_mps_oom(error: Exception) -> bool:
-    """Returns whether one exception indicates a hard MPS OOM condition."""
-    message = " ".join(str(error).split()).lower()
-    if "out of memory" not in message or "mps" not in message:
-        return False
-    incompatibility_markers = (
-        "sparsemps",
-        "aten::empty.memory_format",
-        "std_mean",
-        "unsupported dtype",
-        "cannot convert a mps tensor to float64 dtype",
-        "not currently implemented",
-    )
-    return not any(marker in message for marker in incompatibility_markers)
+    return runtime_calibration_helpers.normalize_calibration_profile_csv(raw_profiles)
 
 
 def derive_runtime_recommendation(
     metrics: RuntimeCalibrationMetrics,
 ) -> tuple[RuntimeRecommendation, RecommendationConfidence, str]:
     """Derives runtime recommendation and confidence from calibration metrics."""
-    if metrics.profile.backend_id != "stable_whisper":
-        return (
-            "prefer_cpu",
-            "high",
-            "backend does not support MPS runtime in this project policy.",
-        )
-    if metrics.iterations <= 0:
-        return ("prefer_cpu", "low", "No calibration runs were executed.")
-    if metrics.mps_loaded_runs == 0:
-        confidence: RecommendationConfidence = (
-            "high" if metrics.iterations >= 2 else "medium"
-        )
-        return (
-            "prefer_cpu",
-            confidence,
-            "MPS runtime was never admitted at model load.",
-        )
-
-    mps_stability_ratio = metrics.mps_completed_runs / float(metrics.iterations)
-    failover_ratio = metrics.mps_to_cpu_failover_runs / float(metrics.iterations)
-    failure_ratio = metrics.failed_runs / float(metrics.iterations)
-
-    if metrics.hard_mps_oom_runs > 0:
-        confidence = "high" if metrics.hard_mps_oom_runs >= 2 else "medium"
-        return (
-            "prefer_cpu",
-            confidence,
-            "Hard MPS OOM observed during calibration.",
-        )
-
-    if mps_stability_ratio >= 0.90 and failure_ratio == 0.0:
-        confidence = "high" if metrics.iterations >= 3 else "medium"
-        return (
-            "prefer_mps",
-            confidence,
-            "MPS runs remained stable across calibration.",
-        )
-
-    if mps_stability_ratio >= 0.40 and failover_ratio > 0.0:
-        confidence = "medium" if metrics.iterations >= 2 else "low"
-        return (
-            "mps_with_failover",
-            confidence,
-            "MPS shows mixed stability; keep CPU failover enabled.",
-        )
-
-    confidence = "medium" if metrics.iterations >= 2 else "low"
-    return (
-        "prefer_cpu",
-        confidence,
-        "MPS stability was insufficient for reliable runtime selection.",
-    )
-
-
-def _calibration_settings(base_settings: AppConfig) -> AppConfig:
-    """Builds settings snapshot used during runtime calibration probes."""
-    return replace(
-        base_settings,
-        torch_runtime=replace(
-            base_settings.torch_runtime,
-            device="mps",
-            dtype="auto",
-        ),
-        transcription=replace(
-            base_settings.transcription,
-            mps_admission_control_enabled=False,
-        ),
+    return runtime_calibration_helpers.derive_runtime_recommendation_from_metrics(
+        metrics
     )
 
 
@@ -849,70 +643,26 @@ def _calibrate_runtime_candidate(
         use_demucs=candidate.use_demucs,
         use_vad=candidate.use_vad,
     )
-    latencies: list[float] = []
-    error_messages: list[str] = []
-    successful_runs = 0
-    failed_runs = 0
-    mps_loaded_runs = 0
-    mps_completed_runs = 0
-    mps_to_cpu_failover_runs = 0
-    hard_mps_oom_runs = 0
-
-    for _ in range(iterations):
-        model: object | None = None
-        runtime_device_before = "cpu"
-        run_started_at = time.perf_counter()
-        try:
-            model = load_whisper_model(profile=active_profile)
-            runtime_device_before = _resolve_runtime_device_for_loaded_model(
-                model=model,
-                backend_id=candidate.backend_id,
-            )
-            if runtime_device_before == "mps":
-                mps_loaded_runs += 1
-            _ = transcribe_with_model(
-                model=model,
-                file_path=str(calibration_file),
-                language=language,
-                profile=active_profile,
-            )
-            successful_runs += 1
-        except Exception as error:
-            failed_runs += 1
-            error_messages.append(str(error))
-            if runtime_device_before == "mps" and _is_hard_mps_oom(error):
-                hard_mps_oom_runs += 1
-        else:
-            runtime_device_after = (
-                _resolve_runtime_device_for_loaded_model(
-                    model=model,
-                    backend_id=candidate.backend_id,
-                )
-                if model is not None
-                else runtime_device_before
-            )
-            if runtime_device_before == "mps" and runtime_device_after == "mps":
-                mps_completed_runs += 1
-            if runtime_device_before == "mps" and runtime_device_after == "cpu":
-                mps_to_cpu_failover_runs += 1
-            latencies.append(time.perf_counter() - run_started_at)
-        finally:
-            if model is not None:
-                del model
-            gc.collect()
-
-    mean_latency_seconds = statistics.fmean(latencies) if latencies else 0.0
+    stats = runtime_calibration_helpers.run_runtime_calibration_probes(
+        backend_id=candidate.backend_id,
+        active_profile=active_profile,
+        calibration_file=calibration_file,
+        language=language,
+        iterations=iterations,
+        load_model=load_whisper_model,
+        transcribe=transcribe_with_model,
+    )
     return RuntimeCalibrationMetrics(
         profile=candidate,
         iterations=iterations,
-        successful_runs=successful_runs,
-        failed_runs=failed_runs,
-        mps_loaded_runs=mps_loaded_runs,
-        mps_completed_runs=mps_completed_runs,
-        mps_to_cpu_failover_runs=mps_to_cpu_failover_runs,
-        hard_mps_oom_runs=hard_mps_oom_runs,
-        mean_latency_seconds=mean_latency_seconds,
-        error_messages=tuple(error_messages[:5]),
+        successful_runs=stats.successful_runs,
+        failed_runs=stats.failed_runs,
+        mps_loaded_runs=stats.mps_loaded_runs,
+        mps_completed_runs=stats.mps_completed_runs,
+        mps_to_cpu_failover_runs=stats.mps_to_cpu_failover_runs,
+        hard_mps_oom_runs=stats.hard_mps_oom_runs,
+        mean_latency_seconds=stats.mean_latency_seconds,
+        error_messages=stats.error_messages,
     )
 
 
@@ -923,6 +673,7 @@ def run_transcription_runtime_calibration(
     iterations_per_profile: int = 2,
     profile_names: tuple[ArtifactProfileName, ...] = DEFAULT_CALIBRATION_PROFILES,
     report_path: Path | None = None,
+    settings: AppConfig | None = None,
 ) -> RuntimeCalibrationResult:
     """Runs runtime calibration probes and emits confidence-scored recommendations."""
     if iterations_per_profile <= 0:
@@ -930,10 +681,12 @@ def run_transcription_runtime_calibration(
     if not calibration_file.is_file():
         raise FileNotFoundError(f"Calibration audio file not found: {calibration_file}")
 
-    original_settings = get_settings()
-    apply_settings(_calibration_settings(original_settings))
+    active_settings = settings if settings is not None else get_settings()
+    calibration_settings = runtime_calibration_helpers.build_runtime_calibration_settings(
+        active_settings
+    )
     recommendations: list[RuntimeCalibrationRecommendation] = []
-    try:
+    with settings_override(calibration_settings):
         for candidate in runtime_calibration_candidates(profile_names):
             metrics = _calibrate_runtime_candidate(
                 candidate=candidate,
@@ -951,11 +704,11 @@ def run_transcription_runtime_calibration(
                     metrics=metrics,
                 )
             )
-    finally:
-        apply_settings(original_settings)
 
     output_path = (
-        _runtime_calibration_report_path() if report_path is None else report_path
+        runtime_calibration_helpers.runtime_calibration_report_path(active_settings)
+        if report_path is None
+        else report_path
     )
     payload = {
         "created_at_utc": datetime.now(tz=UTC).isoformat(),
@@ -974,68 +727,14 @@ def run_transcription_runtime_calibration(
             for recommendation in recommendations
         ],
     }
-    persisted_path = _persist_profile_report(output_path, payload)
+    persisted_path = profiling_reporting_helpers.persist_profile_report(
+        output_path,
+        payload,
+    )
     return RuntimeCalibrationResult(
         recommendations=tuple(recommendations),
         report_path=persisted_path,
     )
-
-
-def _print_profiling_summary(result: ProfilingResult) -> None:
-    """Prints a concise summary for internal profiling runs."""
-    print("\nTranscription default profiling summary")
-    print(f"Reference files: {result.reference_files}")
-    print(
-        "Minimum mean accuracy gate: "
-        f"{result.gate.minimum_mean_accuracy:.4f} "
-        f"(baseline={result.gate.baseline_mean_accuracy:.4f}, "
-        f"allowed_drop={result.gate.maximum_accuracy_drop:.4f}, "
-        f"floor={result.gate.absolute_accuracy_floor:.4f})"
-    )
-    print(
-        "profile | mean_accuracy | mean_wer | exact_match_rate | "
-        "avg_latency_s | failed | error"
-    )
-    for summary in result.summaries:
-        print(
-            f"{summary.profile.name} | "
-            f"{summary.mean_accuracy:.4f} | "
-            f"{summary.mean_word_error_rate:.4f} | "
-            f"{summary.exact_match_rate:.4f} | "
-            f"{summary.average_latency_seconds:.4f} | "
-            f"{summary.failed_samples} | "
-            f"{summary.error_message or '-'}"
-        )
-    print("\nRecommendation")
-    print(f"Change defaults: {result.recommendation.should_change_defaults}")
-    print(f"Selected profile: {result.recommendation.selected_profile}")
-    print(f"Reason: {result.recommendation.reason}")
-    print(f"Report: {result.report_path}")
-
-
-def _print_runtime_calibration_summary(result: RuntimeCalibrationResult) -> None:
-    """Prints concise runtime-calibration recommendations."""
-    print("\nTranscription runtime calibration summary")
-    print(
-        "profile | backend | model | recommendation | confidence | "
-        "mps_loaded | mps_completed | failover | failed | mean_latency_s | reason"
-    )
-    for recommendation in result.recommendations:
-        metrics = recommendation.metrics
-        print(
-            f"{recommendation.profile.source_profile} | "
-            f"{recommendation.profile.backend_id} | "
-            f"{recommendation.profile.model_name} | "
-            f"{recommendation.recommendation} | "
-            f"{recommendation.confidence} | "
-            f"{metrics.mps_loaded_runs}/{metrics.iterations} | "
-            f"{metrics.mps_completed_runs}/{metrics.iterations} | "
-            f"{metrics.mps_to_cpu_failover_runs} | "
-            f"{metrics.failed_runs} | "
-            f"{metrics.mean_latency_seconds:.4f} | "
-            f"{recommendation.reason}"
-        )
-    print(f"\nReport: {result.report_path}")
 
 
 def main() -> None:
@@ -1087,10 +786,13 @@ def main() -> None:
             calibration_file=Path(args.calibration_file),
             language=args.language,
             iterations_per_profile=args.calibration_iterations,
-            profile_names=_normalize_profile_csv(args.calibration_profiles),
+            profile_names=parse_calibration_profiles(args.calibration_profiles),
             report_path=report_path,
         )
-        _print_runtime_calibration_summary(calibration_result)
+        for line in profiling_reporting_helpers.runtime_calibration_summary_lines(
+            calibration_result
+        ):
+            print(line)
         return
 
     result = run_default_profile_benchmark(
@@ -1105,7 +807,8 @@ def main() -> None:
         random_seed=args.random_seed,
         report_path=report_path,
     )
-    _print_profiling_summary(result)
+    for line in profiling_reporting_helpers.profiling_summary_lines(result):
+        print(line)
 
 
 if __name__ == "__main__":

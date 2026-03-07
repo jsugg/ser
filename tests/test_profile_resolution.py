@@ -39,6 +39,8 @@ def test_profile_catalog_contains_backend_and_flag_metadata() -> None:
     assert catalog["fast"].runtime_defaults.max_timeout_retries == 0
     assert catalog["fast"].runtime_defaults.max_transient_retries == 0
     assert catalog["fast"].runtime_defaults.process_isolation is False
+    assert catalog["fast"].transcription_env.backend_id == "WHISPER_BACKEND"
+    assert catalog["fast"].transcription_env.model_name == "WHISPER_MODEL"
     assert catalog["fast"].runtime_env.timeout_seconds == "SER_FAST_TIMEOUT_SECONDS"
     assert catalog["medium"].backend_id == "hf_xlsr"
     assert catalog["medium"].feature_runtime_defaults is not None
@@ -53,6 +55,8 @@ def test_profile_catalog_contains_backend_and_flag_metadata() -> None:
     assert catalog["accurate"].transcription_defaults.model_name == "large"
     assert catalog["accurate"].enable_flag == "SER_ENABLE_ACCURATE_PROFILE"
     assert catalog["accurate"].model.env_var == "SER_ACCURATE_MODEL_ID"
+    assert catalog["accurate"].transcription_env.use_demucs == "WHISPER_DEMUCS"
+    assert catalog["accurate"].transcription_env.use_vad == "WHISPER_VAD"
     assert catalog["accurate"].runtime_defaults.timeout_seconds == pytest.approx(120.0)
     assert (
         catalog["accurate"].runtime_env.max_timeout_retries
@@ -78,6 +82,22 @@ def test_resolve_profile_defaults_to_fast() -> None:
     settings = config.reload_settings()
     assert resolve_profile_name(settings) == "fast"
     assert resolve_profile(settings).name == "fast"
+
+
+def test_settings_model_ids_track_profile_catalog_defaults() -> None:
+    """Settings defaults should derive model ids directly from the profile catalog."""
+    settings = config.reload_settings()
+    catalog = get_profile_catalog()
+
+    assert settings.models.medium_model_id == catalog["medium"].model.default_model_id
+    assert (
+        settings.models.accurate_model_id
+        == catalog["accurate"].model.default_model_id
+    )
+    assert (
+        settings.models.accurate_research_model_id
+        == catalog["accurate-research"].model.default_model_id
+    )
 
 
 def test_resolve_profile_selects_medium_when_enabled(

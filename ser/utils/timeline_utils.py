@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Protocol
 
-from ser.config import AppConfig, get_settings
+from ser.config import TimelineConfig
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.utils.common_utils import display_elapsed_time
 from ser.utils.logger import get_logger
@@ -43,7 +43,12 @@ else:
     fg_fn = _fg
 
 
-def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
+def save_timeline_to_csv(
+    timeline: list[TimelineEntry],
+    file_name: str,
+    *,
+    timeline_config: TimelineConfig | None = None,
+) -> str:
     """Saves timeline rows as CSV under the configured transcript folder.
 
     Args:
@@ -53,9 +58,9 @@ def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
     Returns:
         The generated CSV path.
     """
-    settings: AppConfig = get_settings()
     logger.info(msg="Starting to save timeline to CSV.")
-    output_folder: Path = settings.timeline.folder
+    active_config = timeline_config if timeline_config is not None else TimelineConfig()
+    output_folder: Path = active_config.folder
     output_folder.mkdir(parents=True, exist_ok=True)
     output_path: Path = output_folder / f"{Path(file_name).stem}.csv"
 

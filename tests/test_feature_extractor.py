@@ -1,64 +1,74 @@
 """Behavior tests for in-memory feature extraction paths."""
 
 from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import pytest
 
+from ser.config import AppConfig
 from ser.features import feature_extractor as fe
 from ser.repr import EncodedSequence
+from ser.utils import dsp
 
 
+@pytest.mark.filterwarnings(
+    r"ignore:path is deprecated\. Use files\(\) instead\..*:DeprecationWarning"
+)
 def test_extract_feature_from_signal_combines_enabled_components(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """All enabled feature blocks should be concatenated into one vector."""
-    monkeypatch.setattr(
-        fe,
-        "get_settings",
-        lambda: SimpleNamespace(
+    settings = cast(
+        AppConfig,
+        SimpleNamespace(
             feature_flags=SimpleNamespace(
                 mfcc=True,
                 chroma=True,
                 mel=True,
                 contrast=True,
                 tonnetz=True,
-            )
+            ),
+            audio_read=SimpleNamespace(max_retries=1, retry_delay_seconds=0.0),
         ),
     )
     monkeypatch.setattr(
-        fe.librosa, "stft", lambda _audio, n_fft: np.ones((n_fft // 2 + 1, 4))
+        dsp.librosa, "stft", lambda _audio, n_fft: np.ones((n_fft // 2 + 1, 4))
     )
     monkeypatch.setattr(
-        fe.librosa, "power_to_db", lambda array, ref=None: np.asarray(array)
+        dsp.librosa, "power_to_db", lambda array, ref=None: np.asarray(array)
     )
     monkeypatch.setattr(
-        fe.librosa.feature, "mfcc", lambda **_kwargs: np.ones((40, 4), dtype=np.float32)
+        dsp.librosa.feature,
+        "mfcc",
+        lambda **_kwargs: np.ones((40, 4), dtype=np.float32),
     )
     monkeypatch.setattr(
-        fe.librosa.feature,
+        dsp.librosa.feature,
         "chroma_stft",
         lambda **_kwargs: np.ones((12, 4), dtype=np.float32),
     )
     monkeypatch.setattr(
-        fe.librosa.feature,
+        dsp.librosa.feature,
         "melspectrogram",
         lambda **_kwargs: np.ones((128, 4), dtype=np.float32),
     )
     monkeypatch.setattr(
-        fe.librosa.feature,
+        dsp.librosa.feature,
         "spectral_contrast",
         lambda **_kwargs: np.ones((7, 4), dtype=np.float32),
     )
-    monkeypatch.setattr(fe.librosa.effects, "harmonic", lambda audio: audio)
+    monkeypatch.setattr(dsp.librosa.effects, "harmonic", lambda audio: audio)
     monkeypatch.setattr(
-        fe.librosa.feature,
+        dsp.librosa.feature,
         "tonnetz",
         lambda **_kwargs: np.ones((6, 4), dtype=np.float32),
     )
 
     feature_vector = fe.extract_feature_from_signal(
-        np.ones(1024, dtype=np.float32), sample_rate=16000
+        np.ones(1024, dtype=np.float32),
+        sample_rate=16000,
+        settings=settings,
     )
 
     assert feature_vector.shape == (193,)
@@ -77,12 +87,17 @@ def test_extended_extract_feature_uses_in_memory_frames(
 ) -> None:
     """Frame extraction should avoid temporary files and process in-memory slices."""
     monkeypatch.setattr(
-        fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
+        fe,
+        "read_audio_file",
+        lambda _path, *, audio_read_config=None: (np.arange(10, dtype=np.float32), 2),
     )
     monkeypatch.setattr(
-        fe,
+        dsp,
         "extract_feature_from_signal",
-        lambda audio, _sample_rate: np.asarray([float(audio.size)], dtype=np.float64),
+        lambda audio, _sample_rate, *, feature_flags=None: np.asarray(
+            [float(audio.size)],
+            dtype=np.float64,
+        ),
     )
 
     features = fe.extended_extract_feature("sample.wav", frame_size=2, frame_stride=1)
@@ -95,11 +110,16 @@ def test_extract_feature_delegates_to_handcrafted_backend(
 ) -> None:
     """Single-vector feature extraction should route through backend abstraction."""
     monkeypatch.setattr(
-        fe, "read_audio_file", lambda _path: (np.arange(6, dtype=np.float32), 2)
+        fe,
+        "read_audio_file",
+        lambda _path, *, audio_read_config=None: (np.arange(6, dtype=np.float32), 2),
     )
     calls: dict[str, object] = {}
 
     class FakeBackend:
+        def __init__(self, *, feature_flags: object | None = None) -> None:
+            calls["feature_flags"] = feature_flags
+
         def extract_vector(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
             calls["args"] = (audio.size, sample_rate)
             return np.asarray([11.0, 22.0], dtype=np.float64)
@@ -117,12 +137,17 @@ def test_extract_feature_frames_exposes_frame_boundaries(
 ) -> None:
     """Frame extractor should expose exact start/end bounds per frame."""
     monkeypatch.setattr(
-        fe, "read_audio_file", lambda _path: (np.arange(10, dtype=np.float32), 2)
+        fe,
+        "read_audio_file",
+        lambda _path, *, audio_read_config=None: (np.arange(10, dtype=np.float32), 2),
     )
     monkeypatch.setattr(
-        fe,
+        dsp,
         "extract_feature_from_signal",
-        lambda audio, _sample_rate: np.asarray([float(audio.size)], dtype=np.float64),
+        lambda audio, _sample_rate, *, feature_flags=None: np.asarray(
+            [float(audio.size)],
+            dtype=np.float64,
+        ),
     )
 
     frames = fe.extract_feature_frames("sample.wav", frame_size=2, frame_stride=1)
@@ -149,7 +174,9 @@ def test_extract_feature_frames_uses_handcrafted_backend(
 ) -> None:
     """Frame extraction should delegate to handcrafted backend encoding."""
     monkeypatch.setattr(
-        fe, "read_audio_file", lambda _path: (np.arange(4, dtype=np.float32), 2)
+        fe,
+        "read_audio_file",
+        lambda _path, *, audio_read_config=None: (np.arange(4, dtype=np.float32), 2),
     )
     calls: dict[str, object] = {}
 
@@ -159,8 +186,10 @@ def test_extract_feature_frames_uses_handcrafted_backend(
             *,
             frame_size_seconds: int,
             frame_stride_seconds: int,
+            feature_flags: object | None = None,
         ) -> None:
             calls["window"] = (frame_size_seconds, frame_stride_seconds)
+            calls["feature_flags"] = feature_flags
 
         def encode_sequence(
             self,

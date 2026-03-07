@@ -13,7 +13,7 @@ from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings() -> Generator[None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield

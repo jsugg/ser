@@ -56,6 +56,9 @@ def test_compute_ser_metrics_rejects_mismatched_lengths() -> None:
         compute_ser_metrics(y_true=["happy"], y_pred=[])
 
 
+@pytest.mark.filterwarnings(
+    "ignore:A single label was found in 'y_true' and 'y_pred'\\. For the confusion matrix to have the correct shape, use the 'labels' parameter to pass all known labels\\.:UserWarning:sklearn\\.metrics\\._classification"
+)
 def test_grouped_ser_metrics_by_sample_aggregates_majority_vote() -> None:
     """Window-level predictions should collapse to per-sample grouped metrics."""
     grouped = compute_grouped_ser_metrics_by_sample(

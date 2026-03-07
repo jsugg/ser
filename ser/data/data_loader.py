@@ -7,7 +7,7 @@ import os
 from collections.abc import Collection, Mapping
 from functools import partial
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,11 +15,12 @@ from sklearn.model_selection import train_test_split
 
 from ser.config import AppConfig, get_settings
 from ser.data.adapters.ravdess import build_ravdess_utterances
+from ser.data.label_ontology import resolve_label_ontology
 from ser.data.dataset_prepare import prepare_from_registry_entry
 from ser.data.dataset_registry import load_dataset_registry
 from ser.data.manifest import Utterance
 from ser.data.manifest_jsonl import load_manifest_jsonl
-from ser.data.ontology import LabelOntology, UnknownLabelPolicy, normalize_label
+from ser.data.ontology import LabelOntology
 from ser.features import extract_feature
 from ser.utils.logger import get_logger
 
@@ -32,44 +33,10 @@ type DataSplit = tuple[FeatureMatrix, FeatureMatrix, LabelList, LabelList]
 type LabeledAudioSample = tuple[str, str]
 
 
-def _read_unknown_label_policy_env() -> UnknownLabelPolicy:
-    raw = os.getenv("SER_UNKNOWN_LABEL_POLICY", "drop").strip().lower()
-    if raw in {"drop", "error", "map_to_other"}:
-        return cast(UnknownLabelPolicy, raw)
-    return "drop"
-
-
-def _resolve_label_ontology(settings: AppConfig) -> LabelOntology:
-    ontology_id = (
-        os.getenv("SER_LABEL_ONTOLOGY_ID", "default_v1").strip() or "default_v1"
-    )
-    allowed_labels_raw = os.getenv("SER_ALLOWED_LABELS", "").strip()
-    if allowed_labels_raw:
-        allowed = {
-            normalize_label(item)
-            for item in allowed_labels_raw.split(",")
-            if normalize_label(item)
-        }
-    else:
-        allowed = {normalize_label(label) for label in settings.emotions.values()}
-    if not allowed:
-        raise RuntimeError(
-            "Resolved SER label ontology contains zero allowed labels. "
-            "Check SER_ALLOWED_LABELS / configured emotion mapping."
-        )
-    other_label = os.getenv("SER_OTHER_LABEL", "other").strip() or "other"
-    return LabelOntology(
-        ontology_id=ontology_id,
-        allowed_labels=frozenset(allowed),
-        unknown_label_policy=_read_unknown_label_policy_env(),
-        other_label=normalize_label(other_label),
-    )
-
-
-def load_utterances() -> list[Utterance] | None:
+def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | None:
     """Loads manifest utterances when configured, otherwise defaults to RAVDESS discovery."""
-    settings: AppConfig = get_settings()
-    ontology = _resolve_label_ontology(settings)
+    active_settings = settings if settings is not None else get_settings()
+    ontology = resolve_label_ontology(active_settings)
 
     def _validate_utterances(utterances: list[Utterance]) -> list[Utterance] | None:
         if not utterances:
@@ -114,10 +81,10 @@ def load_utterances() -> list[Utterance] | None:
             )
         return _validate_utterances(utterances)
 
-    if settings.dataset.manifest_paths:
-        return _load_manifest_paths(list(settings.dataset.manifest_paths))
+    if active_settings.dataset.manifest_paths:
+        return _load_manifest_paths(list(active_settings.dataset.manifest_paths))
 
-    registry = load_dataset_registry(settings=settings)
+    registry = load_dataset_registry(settings=active_settings)
     if registry:
         manifest_paths: list[Path] = []
         base_dirs: dict[Path, Path] = {}
@@ -130,7 +97,7 @@ def load_utterances() -> list[Utterance] | None:
                 continue
             try:
                 built_paths = prepare_from_registry_entry(
-                    settings=settings,
+                    settings=active_settings,
                     entry=entry,
                     ontology=ontology,
                 )
@@ -156,12 +123,12 @@ def load_utterances() -> list[Utterance] | None:
         return _load_manifest_paths(deduped_paths, base_dirs=base_dirs)
 
     return build_ravdess_utterances(
-        dataset_root=settings.dataset.folder,
-        dataset_glob_pattern=settings.dataset.glob_pattern,
-        emotion_code_map=dict(settings.emotions),
-        default_language=settings.default_language,
+        dataset_root=active_settings.dataset.folder,
+        dataset_glob_pattern=active_settings.dataset.glob_pattern,
+        emotion_code_map=dict(active_settings.emotions),
+        default_language=active_settings.default_language,
         ontology=ontology,
-        max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
+        max_failed_file_ratio=active_settings.data_loader.max_failed_file_ratio,
     )
 
 
@@ -199,6 +166,7 @@ def process_file(
     file: str,
     observed_emotions: Collection[str],
     emotion_map: dict[str, str],
+    settings: AppConfig,
 ) -> ProcessFileResult:
     """Extracts features for a file when its label is in the target emotion set.
 
@@ -227,7 +195,10 @@ def process_file(
 
         if not emotion or emotion not in observed_emotions:
             return ProcessFileResult(sample=None, error=None)
-        features: FeatureVector = np.asarray(extract_feature(file), dtype=np.float64)
+        features: FeatureVector = np.asarray(
+            extract_feature(file, settings=settings),
+            dtype=np.float64,
+        )
 
         return ProcessFileResult(sample=(features, emotion), error=None)
     except Exception as err:
@@ -236,7 +207,10 @@ def process_file(
         )
 
 
-def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
+def load_labeled_audio_paths(
+    *,
+    settings: AppConfig | None = None,
+) -> list[LabeledAudioSample] | None:
     """Loads dataset file paths paired with labels for backend-driven training.
 
     Returns:
@@ -245,7 +219,8 @@ def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
     Raises:
         RuntimeError: If filename-format failures exceed configured threshold.
     """
-    utterances = load_utterances()
+    active_settings = settings if settings is not None else get_settings()
+    utterances = load_utterances(settings=active_settings)
     if utterances is None:
         return None
 
@@ -259,7 +234,11 @@ def load_labeled_audio_paths() -> list[LabeledAudioSample] | None:
     return samples
 
 
-def load_data(test_size: float | None = None) -> DataSplit | None:
+def load_data(
+    test_size: float | None = None,
+    *,
+    settings: AppConfig | None = None,
+) -> DataSplit | None:
     """Loads the configured dataset, extracts features, and splits train/test sets.
 
     Args:
@@ -269,16 +248,16 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
         The `train_test_split` output `(x_train, x_test, y_train, y_test)` when
         data is available; otherwise `None`.
     """
-    settings: AppConfig = get_settings()
-    observed_emotions: set[str] = set(settings.emotions.values())
+    active_settings = settings if settings is not None else get_settings()
+    observed_emotions: set[str] = set(active_settings.emotions.values())
     resolved_test_size: float = (
-        settings.training.test_size if test_size is None else test_size
+        active_settings.training.test_size if test_size is None else test_size
     )
     if not 0.0 < resolved_test_size < 1.0:
         raise ValueError("test_size must be between 0 and 1.")
 
     raw_data: list[ProcessFileResult]
-    data_path_pattern: str = settings.dataset.glob_pattern
+    data_path_pattern: str = active_settings.dataset.glob_pattern
     files: list[str] = sorted(glob.glob(data_path_pattern))
     if not files:
         logger.warning("No dataset files found for pattern: %s", data_path_pattern)
@@ -287,11 +266,12 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
     process_fn: partial[ProcessFileResult] = partial(
         process_file,
         observed_emotions=observed_emotions,
-        emotion_map=dict(settings.emotions),
+        emotion_map=dict(active_settings.emotions),
+        settings=active_settings,
     )
     worker_count: int = _resolve_worker_count(
-        max_cores=settings.models.num_cores,
-        max_workers=settings.data_loader.max_workers,
+        max_cores=active_settings.models.num_cores,
+        max_workers=active_settings.data_loader.max_workers,
         file_count=len(files),
     )
 
@@ -315,12 +295,12 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
             logger.warning("%s", error)
 
     failure_ratio: float = len(errors) / float(len(files))
-    if failure_ratio > settings.data_loader.max_failed_file_ratio:
+    if failure_ratio > active_settings.data_loader.max_failed_file_ratio:
         raise RuntimeError(
             "Aborting data load: "
             f"{failure_ratio * 100.0:.1f}% file failures exceeded configured "
             "limit "
-            f"{settings.data_loader.max_failed_file_ratio * 100.0:.1f}%. "
+            f"{active_settings.data_loader.max_failed_file_ratio * 100.0:.1f}%. "
             "You can relax this limit by increasing the SER_MAX_FAILED_FILE_RATIO "
             "environment variable."
         )
@@ -342,7 +322,7 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
         return None
 
     stratify_labels: list[str] | None = (
-        labels_list if settings.training.stratify_split else None
+        labels_list if active_settings.training.stratify_split else None
     )
     split: list[Any | list[Any]]
     try:
@@ -350,7 +330,7 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
             np.asarray(features, dtype=np.float64),
             labels_list,
             test_size=resolved_test_size,
-            random_state=settings.training.random_state,
+            random_state=active_settings.training.random_state,
             stratify=stratify_labels,
         )
     except ValueError as err:
@@ -362,7 +342,7 @@ def load_data(test_size: float | None = None) -> DataSplit | None:
             np.asarray(features, dtype=np.float64),
             labels_list,
             test_size=resolved_test_size,
-            random_state=settings.training.random_state,
+            random_state=active_settings.training.random_state,
             stratify=None,
         )
     x_train: NDArray = np.asarray(split[0], dtype=np.float64)

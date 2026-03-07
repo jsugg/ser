@@ -3,16 +3,31 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
-from threading import Lock
 from typing import Literal, cast
 
+from ser._internal.runtime.single_flight import SingleFlightRegistry
+from ser._internal.runtime.worker_lifecycle import (
+    is_setup_complete_message as _is_setup_complete_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    parse_worker_completion_message as _parse_worker_completion_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    raise_worker_error as _raise_worker_error_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    recv_worker_message as _recv_worker_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    run_with_timeout as _run_with_timeout_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    terminate_worker_process as _terminate_worker_process_impl,
+)
 from ser.config import AppConfig
 from ser.models.emotion_model import LoadedModel, load_model, predict_emotions_detailed
 from ser.runtime.contracts import InferenceRequest
@@ -28,7 +43,6 @@ from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-type InferenceRunner = Callable[[], InferenceResult]
 type WorkerPhaseMessage = tuple[Literal["phase"], Literal["setup_complete"]]
 type WorkerSuccessMessage = tuple[Literal["ok"], InferenceResult]
 type WorkerErrorMessage = tuple[Literal["err"], str, str]
@@ -36,8 +50,7 @@ type WorkerMessage = WorkerPhaseMessage | WorkerSuccessMessage | WorkerErrorMess
 
 _TERMINATE_GRACE_SECONDS = 0.5
 _KILL_GRACE_SECONDS = 0.5
-_SINGLE_FLIGHT_LOCKS: dict[tuple[str, str], Lock] = {}
-_SINGLE_FLIGHT_GUARD = Lock()
+_SINGLE_FLIGHT_REGISTRY = SingleFlightRegistry()
 
 
 @dataclass(frozen=True)
@@ -74,6 +87,16 @@ class FastInferenceExecutionError(RuntimeError):
 
 class FastTransientBackendError(RuntimeError):
     """Raised for retryable fast backend failures."""
+
+
+_WORKER_ERROR_FACTORIES: dict[str, Callable[[str], Exception]] = {
+    "ValueError": ValueError,
+    "FastModelUnavailableError": FastModelUnavailableError,
+    "FastModelLoadError": FastModelLoadError,
+    "FastInferenceTimeoutError": FastInferenceTimeoutError,
+    "FastTransientBackendError": FastTransientBackendError,
+    "RuntimeError": RuntimeError,
+}
 
 
 def run_fast_inference(
@@ -125,7 +148,7 @@ def run_fast_inference(
         )
         setup_started_at = None
 
-    with _single_flight_lock(profile="fast", backend_model_id=None):
+    with _SINGLE_FLIGHT_REGISTRY.lock(profile="fast", backend_model_id=None):
 
         def operation() -> InferenceResult:
             if enforce_timeout:
@@ -144,13 +167,15 @@ def run_fast_inference(
                     profile="fast",
                 )
                 try:
-                    result = _run_with_timeout(
-                        lambda: _run_fast_inference_once(
+                    result = _run_with_timeout_impl(
+                        operation=lambda: _run_fast_inference_once(
                             request=request,
                             loaded_model=active_loaded_model,
                             settings=settings,
                         ),
                         timeout_seconds=runtime_config.timeout_seconds,
+                        timeout_error_factory=FastInferenceTimeoutError,
+                        timeout_label="Fast inference",
                     )
                 except Exception:
                     log_phase_failed(
@@ -253,28 +278,6 @@ def _run_fast_inference_once(
         request.file_path,
         loaded_model=active_loaded_model,
     )
-
-
-def _run_with_timeout(
-    operation: InferenceRunner,
-    *,
-    timeout_seconds: float,
-) -> InferenceResult:
-    """Runs an inference operation with best-effort timeout enforcement."""
-    if timeout_seconds <= 0.0:
-        return operation()
-
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(operation)
-    try:
-        return future.result(timeout=timeout_seconds)
-    except FuturesTimeoutError as err:
-        future.cancel()
-        raise FastInferenceTimeoutError(
-            f"Fast inference exceeded timeout budget ({timeout_seconds:.2f}s)."
-        ) from err
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _run_with_process_timeout(
@@ -391,56 +394,34 @@ def _recv_worker_message(
     stage: str,
 ) -> WorkerMessage:
     """Receives one worker message and validates tuple envelope shape."""
-    try:
-        raw_message = connection.recv()
-    except EOFError as err:
-        raise FastInferenceExecutionError(
-            f"Fast inference worker exited before sending {stage} payload."
-        ) from err
-    if not isinstance(raw_message, tuple) or not raw_message:
-        raise FastInferenceExecutionError(
-            "Fast inference worker returned malformed payload."
-        )
-    return cast(WorkerMessage, raw_message)
+    return cast(
+        WorkerMessage,
+        _recv_worker_message_impl(
+            connection=connection,
+            stage=stage,
+            worker_label="Fast inference",
+            error_factory=FastInferenceExecutionError,
+        ),
+    )
 
 
 def _is_setup_complete_message(message: WorkerMessage) -> bool:
     """Returns whether one worker message marks setup completion."""
-    if message[0] != "phase":
-        return False
-    if len(message) != 2 or message[1] != "setup_complete":
-        raise FastInferenceExecutionError(
-            "Fast inference worker returned malformed phase payload."
-        )
-    return True
+    return _is_setup_complete_message_impl(
+        message=message,
+        worker_label="Fast inference",
+        error_factory=FastInferenceExecutionError,
+    )
 
 
 def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
     """Parses one worker completion message and returns inference result."""
-    kind = worker_message[0]
-    if kind == "ok":
-        if len(worker_message) != 2:
-            raise FastInferenceExecutionError(
-                "Fast inference worker returned malformed success payload."
-            )
-        result = worker_message[1]
-        if not isinstance(result, InferenceResult):
-            raise FastInferenceExecutionError(
-                "Fast inference worker returned unexpected result type."
-            )
-        return result
-    if kind == "phase":
-        raise FastInferenceExecutionError(
-            "Fast inference worker returned setup phase without completion payload."
-        )
-    if kind == "err":
-        if len(worker_message) != 3:
-            raise FastInferenceExecutionError(
-                "Fast inference worker returned malformed error payload."
-            )
-        _raise_worker_error(worker_message[1], worker_message[2])
-    raise FastInferenceExecutionError(
-        "Fast inference worker returned unknown payload status."
+    return _parse_worker_completion_message_impl(
+        worker_message=worker_message,
+        worker_label="Fast inference",
+        error_factory=FastInferenceExecutionError,
+        raise_worker_error=_raise_worker_error,
+        result_type=InferenceResult,
     )
 
 
@@ -498,52 +479,22 @@ def _ensure_fast_compatible_model(loaded_model: LoadedModel) -> None:
 
 def _terminate_worker_process(process: BaseProcess) -> None:
     """Terminates a timed-out worker process with kill fallback."""
-    process.terminate()
-    process.join(timeout=_TERMINATE_GRACE_SECONDS)
-    if process.is_alive():
-        process.kill()
-        process.join(timeout=_KILL_GRACE_SECONDS)
+    _terminate_worker_process_impl(
+        process=process,
+        terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+        kill_grace_seconds=_KILL_GRACE_SECONDS,
+    )
 
 
 def _raise_worker_error(error_type: str, message: str) -> None:
     """Rehydrates child-process errors into runtime-domain exceptions."""
-    if error_type == "ValueError":
-        raise ValueError(message)
-    if error_type == "FastModelUnavailableError":
-        raise FastModelUnavailableError(message)
-    if error_type == "FastModelLoadError":
-        raise FastModelLoadError(message)
-    if error_type == "FastInferenceTimeoutError":
-        raise FastInferenceTimeoutError(message)
-    if error_type == "FastTransientBackendError":
-        raise FastTransientBackendError(message)
-    if error_type == "RuntimeError":
-        raise RuntimeError(message)
-    raise FastInferenceExecutionError(
-        f"Fast inference worker failed with {error_type}: {message}"
+    _raise_worker_error_impl(
+        error_type=error_type,
+        message=message,
+        known_error_factories=_WORKER_ERROR_FACTORIES,
+        unknown_error_factory=FastInferenceExecutionError,
+        worker_label="Fast inference",
     )
-
-
-@contextmanager
-def _single_flight_lock(
-    *,
-    profile: str,
-    backend_model_id: str | None,
-) -> Iterator[None]:
-    """Serializes in-process inference calls for one profile/model tuple."""
-    model_key = (
-        backend_model_id.strip()
-        if isinstance(backend_model_id, str) and backend_model_id.strip()
-        else "__default__"
-    )
-    key = (profile, model_key)
-    with _SINGLE_FLIGHT_GUARD:
-        lock = _SINGLE_FLIGHT_LOCKS.setdefault(key, Lock())
-    lock.acquire()
-    try:
-        yield
-    finally:
-        lock.release()
 
 
 def _retry_delay_seconds(base_delay: float, attempt: int) -> float:

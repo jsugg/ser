@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush clean
+.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check import-lint topology-contracts clean
 
 .DEFAULT_GOAL := help
 
@@ -13,7 +13,10 @@ help:
 	@echo "  type     - run type checks"
 	@echo "  test     - run tests"
 	@echo "  check    - lint + type + test"
-	@echo "  prepush  - run pre-commit pre-push hooks"
+	@echo "  prepush  - run local pre-push quality gates (autofix + verify)"
+	@echo "  prepush-check - run canonical pre-push hook command (check-only)"
+	@echo "  import-lint - run public API boundary import-lint lane"
+	@echo "  topology-contracts - run structural ownership contract gates (PR-901..PR-903)"
 	@echo "  train    - train model"
 	@echo "  predict  - run prediction (set FILE=sample.wav)"
 	@echo "  optin-all-restricted - persist consent for all known restricted backends"
@@ -27,9 +30,10 @@ setup-runtime:
 	SER_SETUP_INCLUDE_DEV=false ./scripts/setup_compatible_env.sh
 
 fmt:
+	uv run --extra dev pyupgrade --py312-plus --exit-zero-even-if-changed $$(rg --files ser tests -g '*.py')
 	uv run ruff check --fix ser tests
-	uv run ruff format ser tests
 	uv run isort ser tests
+	uv run black ser tests
 
 lint:
 	uv run ruff check ser tests
@@ -45,8 +49,16 @@ test:
 
 check: lint type test
 
-prepush:
-	uvx pre-commit run --all-files --hook-stage pre-push
+prepush-check:
+	uv run --frozen --extra dev pre-commit run --all-files --hook-stage pre-push
+
+prepush: fmt prepush-check
+
+import-lint:
+	bash ./scripts/run_import_lint.sh
+
+topology-contracts:
+	bash ./scripts/run_structural_contract_gates.sh
 
 train:
 	uv run ser --train

@@ -8,7 +8,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
 
-from ser.config import AppConfig, get_settings, resolve_profile_transcription_config
+from ser.config import (
+    AppConfig,
+    resolve_profile_transcription_config,
+    settings_override,
+)
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile, TranscriptionBackendId, resolve_profile
 from ser.runtime.backend_hooks import build_backend_hooks
@@ -121,109 +125,114 @@ class RuntimePipeline:
     def run_training(self) -> None:
         """Runs the model training workflow."""
         ensure_profile_supported(self.capability)
-        self.train_model()
+        with settings_override(self.settings):
+            self.train_model()
 
     def run_inference(self, request: InferenceRequest) -> InferenceExecution:
         """Runs inference and timeline generation for one audio file."""
         ensure_profile_supported(self.capability)
-        phase_timings: dict[str, float] = {}
-        detailed_result: InferenceResult | None = None
-        backend_id: str = self.capability.backend_id
-        used_backend_path = False
-        output_schema_version: str = self.settings.schema.output_schema_version
-        emotions: list[EmotionSegment]
-        if self.backend_inference is not None:
-            detailed_result = self.backend_inference(request)
-            output_schema_version = detailed_result.schema_version
-            emotions = to_legacy_emotion_segments(detailed_result)
-            used_backend_path = True
-        elif self.settings.runtime_flags.new_output_schema:
-            detailed_result = self.predict_emotions_detailed(request.file_path)
-            output_schema_version = detailed_result.schema_version
-            emotions = to_legacy_emotion_segments(detailed_result)
-        else:
-            emotions = self.predict_emotions(request.file_path)
+        with settings_override(self.settings):
+            phase_timings: dict[str, float] = {}
+            detailed_result: InferenceResult | None = None
+            backend_id: str = self.capability.backend_id
+            used_backend_path = False
+            output_schema_version: str = self.settings.schema.output_schema_version
+            emotions: list[EmotionSegment]
+            if self.backend_inference is not None:
+                detailed_result = self.backend_inference(request)
+                output_schema_version = detailed_result.schema_version
+                emotions = to_legacy_emotion_segments(detailed_result)
+                used_backend_path = True
+            elif self.settings.runtime_flags.new_output_schema:
+                detailed_result = self.predict_emotions_detailed(request.file_path)
+                output_schema_version = detailed_result.schema_version
+                emotions = to_legacy_emotion_segments(detailed_result)
+            else:
+                emotions = self.predict_emotions(request.file_path)
 
-        transcript: list[TranscriptWord]
-        if request.include_transcript:
-            _release_torch_runtime_memory_before_transcription()
-            transcript = self.extract_transcript(request.file_path, request.language)
-        else:
-            transcript = []
+            transcript: list[TranscriptWord]
+            if request.include_transcript:
+                _release_torch_runtime_memory_before_transcription()
+                transcript = self.extract_transcript(
+                    request.file_path, request.language
+                )
+            else:
+                transcript = []
 
-        timeline_build_started_at = log_phase_started(
-            logger,
-            phase_name=PHASE_TIMELINE_BUILD,
-            profile=self.profile.name,
-        )
-        timeline: list[TimelineEntry]
-        try:
-            timeline = self.build_timeline(transcript, emotions)
-        except Exception:
-            log_phase_failed(
+            timeline_build_started_at = log_phase_started(
+                logger,
+                phase_name=PHASE_TIMELINE_BUILD,
+                profile=self.profile.name,
+            )
+            timeline: list[TimelineEntry]
+            try:
+                timeline = self.build_timeline(transcript, emotions)
+            except Exception:
+                log_phase_failed(
+                    logger,
+                    phase_name=PHASE_TIMELINE_BUILD,
+                    started_at=timeline_build_started_at,
+                    profile=self.profile.name,
+                )
+                raise
+            phase_timings[PHASE_TIMELINE_BUILD] = log_phase_completed(
                 logger,
                 phase_name=PHASE_TIMELINE_BUILD,
                 started_at=timeline_build_started_at,
                 profile=self.profile.name,
             )
-            raise
-        phase_timings[PHASE_TIMELINE_BUILD] = log_phase_completed(
-            logger,
-            phase_name=PHASE_TIMELINE_BUILD,
-            started_at=timeline_build_started_at,
-            profile=self.profile.name,
-        )
 
-        timeline_output_started_at = log_phase_started(
-            logger,
-            phase_name=PHASE_TIMELINE_OUTPUT,
-            profile=self.profile.name,
-        )
-        try:
-            self.print_timeline(timeline)
-        except Exception:
-            log_phase_failed(
+            timeline_output_started_at = log_phase_started(
+                logger,
+                phase_name=PHASE_TIMELINE_OUTPUT,
+                profile=self.profile.name,
+            )
+            try:
+                self.print_timeline(timeline)
+            except Exception:
+                log_phase_failed(
+                    logger,
+                    phase_name=PHASE_TIMELINE_OUTPUT,
+                    started_at=timeline_output_started_at,
+                    profile=self.profile.name,
+                )
+                raise
+            timeline_csv_path: str | None = None
+            if request.save_transcript:
+                timeline_csv_path = self.save_timeline_to_csv(
+                    timeline, request.file_path
+                )
+            phase_timings[PHASE_TIMELINE_OUTPUT] = log_phase_completed(
                 logger,
                 phase_name=PHASE_TIMELINE_OUTPUT,
                 started_at=timeline_output_started_at,
                 profile=self.profile.name,
             )
-            raise
-        timeline_csv_path: str | None = None
-        if request.save_transcript:
-            timeline_csv_path = self.save_timeline_to_csv(timeline, request.file_path)
-        phase_timings[PHASE_TIMELINE_OUTPUT] = log_phase_completed(
-            logger,
-            phase_name=PHASE_TIMELINE_OUTPUT,
-            started_at=timeline_output_started_at,
-            profile=self.profile.name,
-        )
-        return InferenceExecution(
-            profile=self.profile.name,
-            output_schema_version=output_schema_version,
-            backend_id=backend_id,
-            emotions=emotions,
-            transcript=transcript,
-            timeline=timeline,
-            used_backend_path=used_backend_path,
-            timeline_csv_path=timeline_csv_path,
-            detailed_result=detailed_result,
-            phase_timings_seconds=phase_timings,
-        )
+            return InferenceExecution(
+                profile=self.profile.name,
+                output_schema_version=output_schema_version,
+                backend_id=backend_id,
+                emotions=emotions,
+                transcript=transcript,
+                timeline=timeline,
+                used_backend_path=used_backend_path,
+                timeline_csv_path=timeline_csv_path,
+                detailed_result=detailed_result,
+                phase_timings_seconds=phase_timings,
+            )
 
 
-def create_runtime_pipeline(settings: AppConfig | None = None) -> RuntimePipeline:
+def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
     """Creates a runtime pipeline configured from application settings."""
-    active_settings: AppConfig = settings if settings is not None else get_settings()
     backend_hooks: dict[str, Callable[[InferenceRequest], InferenceResult]] = (
-        build_backend_hooks(active_settings)
+        build_backend_hooks(settings)
     )
     implemented_backends: frozenset[str] = frozenset(
         {"handcrafted", *backend_hooks.keys()}
     )
-    profile: RuntimeProfile = resolve_profile(active_settings)
+    profile: RuntimeProfile = resolve_profile(settings)
     capability: RuntimeCapability = resolve_runtime_capability(
-        active_settings,
+        settings,
         available_backend_hooks=implemented_backends,
     )
     from ser.models.emotion_model import (
@@ -280,7 +289,7 @@ def create_runtime_pipeline(settings: AppConfig | None = None) -> RuntimePipelin
         return extract_transcript(file_path, language, profile=transcription_profile)
 
     return RuntimePipeline(
-        settings=active_settings,
+        settings=settings,
         profile=profile,
         capability=capability,
         train_model=selected_train_model,

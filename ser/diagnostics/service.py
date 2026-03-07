@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import replace
-from typing import cast
+from typing import Literal, cast
 
 from ser.config import (
     AppConfig,
     resolve_profile_transcription_config,
 )
+from ser.data.dataset_prepare import collect_dataset_registry_health_issues
 from ser.diagnostics.domain import (
     DiagnosticFinding,
     DiagnosticReport,
@@ -20,6 +21,7 @@ from ser.profiles import ProfileName, get_profile_catalog, resolve_profile_name
 from ser.runtime.registry import resolve_runtime_capability
 from ser.transcript.backends import (
     BackendRuntimeRequest,
+    CompatibilityIssueImpact,
     resolve_transcription_backend_adapter,
 )
 from ser.transcript.runtime_policy import (
@@ -88,6 +90,7 @@ def run_doctor_diagnostics(
         include_transcription_checks=include_transcription_checks,
         include_noise_findings=include_noise_findings,
         include_lane_info=True,
+        include_dataset_registry_checks=True,
     )
     return DiagnosticReport(findings=tuple(findings))
 
@@ -119,7 +122,11 @@ def format_report_text(report: DiagnosticReport) -> str:
         status_label = (
             " blocking"
             if finding.blocking
-            else (" advisory" if finding.severity == "warning" else "")
+            else (
+                " advisory"
+                if finding.severity == "warning"
+                else (" informational" if finding.severity == "info" else "")
+            )
         )
         lines.append(f"[{level}] {finding.code}:{status_label} {finding.message}")
         for remediation in finding.remediation:
@@ -194,6 +201,7 @@ def _run_checks(
     include_transcription_checks: bool,
     include_noise_findings: bool,
     include_lane_info: bool,
+    include_dataset_registry_checks: bool = False,
 ) -> list[DiagnosticFinding]:
     """Runs one deterministic diagnostics check suite."""
     findings: list[DiagnosticFinding] = []
@@ -215,6 +223,8 @@ def _run_checks(
                 include_noise_findings=include_noise_findings,
             )
         )
+    if include_dataset_registry_checks:
+        findings.extend(_check_dataset_registry_health(settings=settings))
     return findings
 
 
@@ -314,7 +324,7 @@ def _check_transcription_backend_compatibility(
             findings.append(
                 DiagnosticFinding(
                     code=f"transcription_operational_{issue.code}",
-                    severity="warning",
+                    severity="info",
                     message=issue.message,
                 )
             )
@@ -331,7 +341,7 @@ def _check_transcription_backend_compatibility(
         findings.append(
             DiagnosticFinding(
                 code=f"transcription_operational_{issue.code}",
-                severity="warning",
+                severity=_resolve_operational_issue_severity(issue.impact),
                 message=issue.message,
             )
         )
@@ -359,9 +369,35 @@ def _is_advisory_faster_whisper_openmp_conflict(
     )
 
 
+def _resolve_operational_issue_severity(
+    issue_impact: CompatibilityIssueImpact,
+) -> Literal["info", "warning"]:
+    """Maps one operational compatibility impact to diagnostics severity."""
+    if issue_impact == "informational":
+        return "info"
+    return "warning"
+
+
 def _condense_message(message: str, *, max_chars: int) -> str:
     """Returns one single-line message summary bounded by max chars."""
     normalized = " ".join(message.split())
     if len(normalized) <= max_chars:
         return normalized
     return f"{normalized[: max_chars - 3].rstrip()}..."
+
+
+def _check_dataset_registry_health(
+    *,
+    settings: AppConfig,
+) -> tuple[DiagnosticFinding, ...]:
+    """Collects dataset registry consistency findings for diagnostics."""
+
+    issues = collect_dataset_registry_health_issues(settings=settings)
+    return tuple(
+        DiagnosticFinding(
+            code=f"dataset_registry_{issue.code}",
+            severity="error",
+            message=f"[{issue.dataset_id}] {issue.message}",
+        )
+        for issue in issues
+    )
