@@ -89,7 +89,10 @@ def _patch_runtime_prerequisites(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.WhisperBackend",
@@ -297,7 +300,10 @@ def test_accurate_inference_rejects_non_accurate_artifact_metadata(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
 
     with pytest.raises(AccurateModelUnavailableError, match="hf_whisper"):
@@ -364,7 +370,10 @@ def test_accurate_backend_setup_runs_before_timeout_wrapper(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._build_backend_for_profile",
@@ -407,7 +416,10 @@ def test_accurate_inference_uses_configured_accurate_model_id(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     captured: dict[str, object] = {}
 
@@ -475,7 +487,10 @@ def test_accurate_inference_rejects_mismatched_backend_model_id(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     with pytest.raises(AccurateModelUnavailableError, match="backend_model_id"):
         run_accurate_inference(
@@ -537,7 +552,10 @@ def test_accurate_inference_warns_on_torch_runtime_metadata_mismatch(
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.accurate_inference.WhisperBackend",

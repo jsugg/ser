@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import ser.models.accurate_feature_dataset as afd
-from ser.config import AppConfig
+from ser.config import AppConfig, AudioReadConfig
 from ser.data import EmbeddingCache
 from ser.repr import EncodedSequence, FeatureBackend
 
@@ -32,6 +32,7 @@ def _settings_stub() -> AppConfig:
     return cast(
         AppConfig,
         SimpleNamespace(
+            audio_read=AudioReadConfig(),
             accurate_runtime=SimpleNamespace(
                 pool_window_size_seconds=2.0,
                 pool_window_stride_seconds=0.5,

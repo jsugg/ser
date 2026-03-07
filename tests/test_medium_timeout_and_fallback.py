@@ -76,7 +76,10 @@ def _patch_runtime_prerequisites(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: object()
@@ -278,7 +281,10 @@ def test_medium_backend_setup_runs_before_timeout_wrapper(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend",

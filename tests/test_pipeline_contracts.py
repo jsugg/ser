@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import ser.__main__ as cli
+import ser.config as config_module
 import ser.models.emotion_model as emotion_model
 from ser import domain
 from ser.models.artifact_loading import model_load_candidates
@@ -14,10 +15,16 @@ from ser.models.artifact_loading import model_load_candidates
 def _patch_cli_prerequisites(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patches shared CLI dependencies for deterministic contract tests."""
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "reload_settings", lambda: config_module.reload_settings())
     monkeypatch.setattr(
         cli,
-        "reload_settings",
-        lambda: SimpleNamespace(default_language="en"),
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
     )
 
 

@@ -122,7 +122,10 @@ def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.linspace(0.0, 1.0, 16, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.linspace(0.0, 1.0, 16, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
@@ -221,7 +224,10 @@ def test_run_medium_inference_rejects_feature_size_mismatch(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
@@ -268,7 +274,10 @@ def test_run_medium_inference_uses_configured_medium_model_id(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
 
     class _BackendStub:
@@ -381,7 +390,10 @@ def test_run_medium_inference_warns_on_torch_runtime_metadata_mismatch(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend",
@@ -531,7 +543,10 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.read_audio_file",
-        lambda _file_path: (np.ones(8, dtype=np.float32), 4),
+        lambda _file_path, *, audio_read_config=None: (
+            np.ones(8, dtype=np.float32),
+            4,
+        ),
     )
     monkeypatch.setattr(
         "ser.runtime.medium_inference.XLSRBackend",

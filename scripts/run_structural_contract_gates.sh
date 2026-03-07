@@ -49,9 +49,9 @@ readonly OWNERSHIP_TESTS=(
   tests/test_api_import_boundary.py
 )
 
-uv run ruff check "${OWNERSHIP_FILES[@]}"
-uv run black --check "${OWNERSHIP_FILES[@]}"
-uv run isort --check-only "${OWNERSHIP_FILES[@]}"
-uv run mypy "${OWNERSHIP_FILES[@]}"
-uv run pyright --pythonversion 3.12 "${OWNERSHIP_FILES[@]}"
-uv run pytest -q "${OWNERSHIP_TESTS[@]}"
+uv run --frozen --extra dev ruff check "${OWNERSHIP_FILES[@]}"
+uv run --frozen --extra dev black --check "${OWNERSHIP_FILES[@]}"
+uv run --frozen --extra dev isort --check-only "${OWNERSHIP_FILES[@]}"
+uv run --frozen --extra dev mypy "${OWNERSHIP_FILES[@]}"
+uv run --frozen --extra dev pyright --pythonversion 3.12 "${OWNERSHIP_FILES[@]}"
+uv run --frozen --extra dev pytest -q "${OWNERSHIP_TESTS[@]}"
