@@ -77,7 +77,7 @@ class _ProcessPayload(Protocol):
         ...
 
     @property
-    def settings(self) -> "_WorkerSettings":
+    def settings(self) -> _WorkerSettings:
         """Returns serializable worker settings required by backend adapters."""
         ...
 

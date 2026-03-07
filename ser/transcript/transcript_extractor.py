@@ -7,9 +7,9 @@ import logging
 import multiprocessing as mp
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
+from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Literal, Never, Protocol, cast
 
@@ -118,7 +118,7 @@ class _TranscriptionProcessPayload:
     language: str
     profile: TranscriptionProfile
     runtime_request: BackendRuntimeRequest
-    settings: "_TranscriptionWorkerSettings"
+    settings: _TranscriptionWorkerSettings
 
 
 @dataclass(frozen=True, slots=True)

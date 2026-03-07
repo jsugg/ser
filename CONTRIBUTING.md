@@ -32,11 +32,12 @@ make lint      # ruff + black --check + isort --check-only
 make type      # mypy + pyright (pythonversion 3.12)
 make test      # pytest -q
 make prepush-check      # canonical pre-push hook command
+make prepush-hook       # hook workflow: autofix + verify + abort if files changed
 make topology-contracts # PR-901..PR-903 structural ownership contract lane
 make import-lint        # API boundary import lint lane (TID251 banned-api policy)
 ```
 
-Git pre-push hook and CI code-quality lane command:
+CI code-quality lane command:
 ```bash
 uv run --frozen --extra dev pre-commit run --all-files --hook-stage pre-push
 ```
@@ -47,7 +48,11 @@ Install or refresh git hooks manually:
 ./scripts/install_git_hooks.sh
 ```
 
-The generated `.git/hooks/pre-push` runs the same canonical pre-push command above.
+The generated `.git/hooks/pre-push` runs `bash ./scripts/run_prepush_gate.sh`, which:
+- runs `make prepush` to attempt formatter/linter auto-fixes first
+- reruns the canonical pre-push verification lane
+- aborts the push if non-fixable issues remain
+- aborts the push if the hook changed the working tree, so you can review, stage, and commit the fixes first
 
 ## Boundary Commands (When Required)
 Run the boundary lane whenever your change touches `ser/api.py`, `ser/_internal/api/*`, `ser/__main__.py`, or boundary contract tests:

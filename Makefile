@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check import-lint topology-contracts clean
+.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint topology-contracts clean
 
 .DEFAULT_GOAL := help
 
@@ -15,6 +15,7 @@ help:
 	@echo "  check    - lint + type + test"
 	@echo "  prepush  - run local pre-push quality gates (autofix + verify)"
 	@echo "  prepush-check - run canonical pre-push hook command (check-only)"
+	@echo "  prepush-hook - run the git pre-push hook workflow (autofix + abort if files change)"
 	@echo "  import-lint - run public API boundary import-lint lane"
 	@echo "  topology-contracts - run structural ownership contract gates (PR-901..PR-903)"
 	@echo "  train    - train model"
@@ -53,6 +54,9 @@ prepush-check:
 	uv run --frozen --extra dev pre-commit run --all-files --hook-stage pre-push
 
 prepush: fmt prepush-check
+
+prepush-hook:
+	bash ./scripts/run_prepush_gate.sh
 
 import-lint:
 	bash ./scripts/run_import_lint.sh
