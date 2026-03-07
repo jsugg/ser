@@ -21,6 +21,16 @@ def _patch_common_cli_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patches shared CLI dependencies to keep tests deterministic."""
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
     monkeypatch.setattr(cli, "reload_settings", lambda: config_module.reload_settings())
+    monkeypatch.setattr(
+        cli,
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
 
 
 def test_cli_log_level_flag_overrides_environment_level(
@@ -232,13 +242,14 @@ def test_cli_train_option_uses_runtime_pipeline_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`--train` should dispatch through runtime pipeline when flag is enabled."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--train"])
@@ -262,13 +273,14 @@ def test_cli_prediction_uses_runtime_pipeline_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Prediction should route through runtime pipeline when flag is enabled."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(
@@ -302,13 +314,14 @@ def test_cli_prediction_pipeline_honors_no_transcript_flag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pipeline request should disable transcript extraction when --no-transcript is set."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(
@@ -342,13 +355,14 @@ def test_cli_prediction_pipeline_unsupported_profile_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pipeline capability failures should map to exit code 2."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
@@ -374,13 +388,14 @@ def test_cli_prediction_pipeline_medium_dependency_error_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Medium dependency/runtime readiness errors should map to exit code 2."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])
@@ -406,13 +421,14 @@ def test_cli_prediction_pipeline_accurate_dependency_error_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Accurate dependency/runtime readiness errors should map to exit code 2."""
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    _patch_common_cli_dependencies(monkeypatch)
+    base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
         "reload_settings",
-        lambda: SimpleNamespace(
-            default_language="en",
-            runtime_flags=SimpleNamespace(profile_pipeline=True),
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
         ),
     )
     monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav"])

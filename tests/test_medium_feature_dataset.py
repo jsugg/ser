@@ -12,7 +12,7 @@ import pytest
 
 import ser.models.emotion_model as emotion_model
 import ser.models.medium_feature_dataset as mfd
-from ser.config import AppConfig
+from ser.config import AppConfig, AudioReadConfig
 from ser.data import EmbeddingCache
 from ser.models.medium_noise_controls import (
     MediumNoiseControlStats,
@@ -35,10 +35,11 @@ def _settings_stub() -> AppConfig:
     return cast(
         AppConfig,
         SimpleNamespace(
+            audio_read=AudioReadConfig(),
             medium_runtime=SimpleNamespace(
                 pool_window_size_seconds=1.25,
                 pool_window_stride_seconds=0.5,
-            )
+            ),
         ),
     )
 
