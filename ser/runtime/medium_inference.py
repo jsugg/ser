@@ -3,26 +3,67 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-import random
-from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
-from threading import Lock
 from typing import Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.single_flight import SingleFlightRegistry
+from ser._internal.runtime.worker_lifecycle import (
+    is_setup_complete_message as _is_setup_complete_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    parse_worker_completion_message as _parse_worker_completion_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    raise_worker_error as _raise_worker_error_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    recv_worker_message as _recv_worker_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    run_process_setup_compute_handshake as _run_process_setup_compute_handshake_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    run_with_timeout as _run_with_timeout_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    terminate_worker_process as _terminate_worker_process_impl,
+)
 from ser.config import AppConfig, MediumRuntimeConfig
-from ser.models.emotion_model import LoadedModel, load_model, resolve_medium_model_id
+from ser.models.emotion_model import LoadedModel, load_model
+from ser.models.profile_runtime import resolve_medium_model_id
 from ser.pool import mean_std_pool, temporal_pooling_windows
 from ser.repr import EncodedSequence, PoolingWindow, XLSRBackend
-from ser.repr.runtime_policy import FeatureRuntimePolicy, resolve_feature_runtime_policy
+from ser.repr.runtime_policy import FeatureRuntimePolicy
+from ser.runtime import medium_process_timeout as medium_process_timeout_helpers
+from ser.runtime import medium_retry_policy as medium_retry_policy_helpers
+from ser.runtime import medium_worker_operation as medium_worker_operation_helpers
 from ser.runtime.contracts import InferenceRequest
+from ser.runtime.medium_backend_runtime import (
+    build_medium_backend as _build_medium_backend_impl,
+)
+from ser.runtime.medium_backend_runtime import (
+    prepare_medium_backend_runtime as _prepare_medium_backend_runtime_impl,
+)
+from ser.runtime.medium_backend_runtime import (
+    resolve_medium_feature_runtime_policy as _resolve_medium_feature_runtime_policy_impl,
+)
+from ser.runtime.medium_backend_runtime import (
+    settings_with_torch_runtime as _settings_with_torch_runtime_impl,
+)
+from ser.runtime.medium_backend_runtime import (
+    warn_on_runtime_selector_mismatch as _warn_on_runtime_selector_mismatch_impl,
+)
+from ser.runtime.medium_prediction import (
+    confidence_and_probabilities as _confidence_and_probabilities_impl,
+)
+from ser.runtime.medium_prediction import predict_labels as _predict_labels_impl
 from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
 from ser.runtime.phase_timing import (
     log_phase_completed,
@@ -31,14 +72,13 @@ from ser.runtime.phase_timing import (
 )
 from ser.runtime.policy import run_with_retry_policy
 from ser.runtime.postprocessing import (
-    SegmentPostprocessingConfig,
+    build_segment_postprocessing_config,
     postprocess_frame_predictions,
 )
 from ser.runtime.schema import (
     OUTPUT_SCHEMA_VERSION,
     FramePrediction,
     InferenceResult,
-    SegmentPrediction,
 )
 from ser.utils.audio_utils import read_audio_file
 from ser.utils.logger import get_logger
@@ -46,7 +86,6 @@ from ser.utils.logger import get_logger
 logger = get_logger(__name__)
 
 type FeatureMatrix = NDArray[np.float64]
-type InferenceRunner = Callable[[], InferenceResult]
 type WorkerPhaseMessage = tuple[Literal["phase"], Literal["setup_complete"]]
 type WorkerSuccessMessage = tuple[Literal["ok"], InferenceResult]
 type WorkerErrorMessage = tuple[Literal["err"], str, str]
@@ -54,11 +93,7 @@ type WorkerMessage = WorkerPhaseMessage | WorkerSuccessMessage | WorkerErrorMess
 
 _TERMINATE_GRACE_SECONDS = 0.5
 _KILL_GRACE_SECONDS = 0.5
-_SINGLE_FLIGHT_LOCKS: dict[tuple[str, str], Lock] = {}
-_SINGLE_FLIGHT_GUARD = Lock()
-_MPS_OOM_SIGNATURE = "mps backend out of memory"
-_NON_FINITE_SIGNATURE = "non-finite embeddings"
-_HALF_FLOAT_MISMATCH_SIGNATURE = "input type (c10::half) and bias type (float)"
+_SINGLE_FLIGHT_REGISTRY = SingleFlightRegistry()
 
 
 @dataclass(frozen=True)
@@ -70,15 +105,17 @@ class MediumProcessPayload:
     expected_backend_model_id: str
 
 
-@dataclass(frozen=True)
-class _PreparedMediumOperation:
-    """Holds setup-complete data for one medium worker compute phase."""
-
-    loaded_model: LoadedModel
-    backend: XLSRBackend
-    audio: NDArray[np.float32]
-    sample_rate: int
-    runtime_config: MediumRuntimeConfig
+type _PreparedMediumOperation = medium_worker_operation_helpers.PreparedMediumOperation[
+    LoadedModel,
+    XLSRBackend,
+]
+type _MediumRetryOperationState = (
+    medium_worker_operation_helpers.MediumRetryOperationState[
+        MediumProcessPayload,
+        LoadedModel,
+        XLSRBackend,
+    ]
+)
 
 
 class MediumModelUnavailableError(FileNotFoundError):
@@ -103,6 +140,17 @@ class MediumInferenceExecutionError(RuntimeError):
 
 class MediumTransientBackendError(RuntimeError):
     """Raised for retryable medium backend encoding failures."""
+
+
+_WORKER_ERROR_FACTORIES: dict[str, Callable[[str], Exception]] = {
+    "ValueError": ValueError,
+    "MediumRuntimeDependencyError": MediumRuntimeDependencyError,
+    "MediumTransientBackendError": MediumTransientBackendError,
+    "MediumModelUnavailableError": MediumModelUnavailableError,
+    "MediumModelLoadError": MediumModelLoadError,
+    "MediumInferenceTimeoutError": MediumInferenceTimeoutError,
+    "RuntimeError": RuntimeError,
+}
 
 
 def run_medium_inference(
@@ -159,15 +207,23 @@ def run_medium_inference(
         and runtime_config.process_isolation
     )
 
-    process_payload: MediumProcessPayload | None = None
-    active_loaded_model: LoadedModel | None = None
-    active_backend: XLSRBackend | None = None
-    audio_array: NDArray[np.float32] | None = None
-    sample_rate = 0
-    setup_started_at: float | None = None
-
-    if use_process_isolation:
-        process_payload = MediumProcessPayload(
+    retry_state: _MediumRetryOperationState
+    setup_started_at: float | None
+    retry_state, setup_started_at = medium_worker_operation_helpers.prepare_retry_state(
+        use_process_isolation=use_process_isolation,
+        request=request,
+        settings=settings,
+        loaded_model=loaded_model,
+        backend=backend,
+        expected_backend_model_id=expected_backend_model_id,
+        policy_device=policy_device,
+        policy_dtype=policy_dtype,
+        logger=logger,
+        profile="medium",
+        setup_phase_name=PHASE_EMOTION_SETUP,
+        log_phase_started=log_phase_started,
+        log_phase_failed=log_phase_failed,
+        build_process_payload=lambda: MediumProcessPayload(
             request=request,
             settings=_settings_with_torch_runtime(
                 _build_process_settings_snapshot(settings),
@@ -175,261 +231,95 @@ def run_medium_inference(
                 dtype=policy_dtype,
             ),
             expected_backend_model_id=expected_backend_model_id,
-        )
-    else:
-        setup_started_at = log_phase_started(
-            logger,
-            phase_name=PHASE_EMOTION_SETUP,
-            profile="medium",
-        )
-        if loaded_model is None:
-            try:
-                active_loaded_model = load_model(
-                    settings=settings,
-                    expected_backend_id="hf_xlsr",
-                    expected_profile="medium",
-                    expected_backend_model_id=expected_backend_model_id,
-                )
-            except FileNotFoundError as err:
-                if setup_started_at is not None:
-                    log_phase_failed(
-                        logger,
-                        phase_name=PHASE_EMOTION_SETUP,
-                        started_at=setup_started_at,
-                        profile="medium",
-                    )
-                raise MediumModelUnavailableError(str(err)) from err
-            except ValueError as err:
-                if setup_started_at is not None:
-                    log_phase_failed(
-                        logger,
-                        phase_name=PHASE_EMOTION_SETUP,
-                        started_at=setup_started_at,
-                        profile="medium",
-                    )
-                raise MediumModelLoadError(
-                    "Failed to load medium-profile model artifact from configured paths."
-                ) from err
-        else:
-            active_loaded_model = loaded_model
-        try:
-            _ensure_medium_compatible_model(
-                active_loaded_model,
-                expected_backend_model_id=expected_backend_model_id,
-            )
-            _warn_on_runtime_selector_mismatch(
-                loaded_model=active_loaded_model,
-                profile="medium",
-                runtime_device=policy_device,
-                runtime_dtype=policy_dtype,
-            )
-            audio, sample_rate = read_audio_file(request.file_path)
-            audio_array = np.asarray(audio, dtype=np.float32)
-            active_backend = (
-                backend
-                if backend is not None
-                else _build_medium_backend(
-                    settings=settings,
-                    expected_backend_model_id=expected_backend_model_id,
-                    runtime_device=policy_device,
-                    runtime_dtype=policy_dtype,
-                )
-            )
-        except Exception:
-            if setup_started_at is not None:
-                log_phase_failed(
-                    logger,
-                    phase_name=PHASE_EMOTION_SETUP,
-                    started_at=setup_started_at,
-                    profile="medium",
-                )
-            raise
+        ),
+        prepare_in_process_operation=_prepare_in_process_operation,
+    )
 
-    with _single_flight_lock(
+    with _SINGLE_FLIGHT_REGISTRY.lock(
         profile="medium",
         backend_model_id=expected_backend_model_id,
     ):
-        cpu_fallback_applied = False
-
-        if not use_process_isolation:
-            if active_backend is None:
-                raise RuntimeError(
-                    "Medium backend is missing for in-process inference."
-                )
-            try:
+        medium_worker_operation_helpers.finalize_in_process_setup(
+            use_process_isolation=use_process_isolation,
+            state=retry_state,
+            setup_started_at=setup_started_at,
+            logger=logger,
+            profile="medium",
+            setup_phase_name=PHASE_EMOTION_SETUP,
+            prepare_medium_backend_runtime=lambda active_backend: (
                 _prepare_medium_backend_runtime(backend=active_backend)
-            except Exception:
-                if setup_started_at is not None:
-                    log_phase_failed(
-                        logger,
-                        phase_name=PHASE_EMOTION_SETUP,
-                        started_at=setup_started_at,
-                        profile="medium",
-                    )
-                raise
-            if setup_started_at is not None:
-                log_phase_completed(
-                    logger,
-                    phase_name=PHASE_EMOTION_SETUP,
-                    started_at=setup_started_at,
-                    profile="medium",
-                )
-                setup_started_at = None
+            ),
+            log_phase_completed=log_phase_completed,
+            log_phase_failed=log_phase_failed,
+            runtime_error_factory=RuntimeError,
+        )
 
         def operation() -> InferenceResult:
-            if enforce_timeout:
-                if use_process_isolation:
-                    if process_payload is None:
-                        raise RuntimeError(
-                            "Medium process payload is missing for isolated execution."
-                        )
-                    return _run_with_process_timeout(
-                        process_payload,
-                        timeout_seconds=runtime_config.timeout_seconds,
-                    )
-                inference_started_at = log_phase_started(
-                    logger,
-                    phase_name=PHASE_EMOTION_INFERENCE,
-                    profile="medium",
-                )
-
-                def timeout_operation() -> InferenceResult:
-                    if (
-                        active_loaded_model is None
-                        or active_backend is None
-                        or audio_array is None
-                    ):
-                        raise RuntimeError(
-                            "Medium inference operation prerequisites are missing."
-                        )
-                    return _run_medium_inference_once(
-                        loaded_model=active_loaded_model,
-                        backend=active_backend,
-                        audio=audio_array,
-                        sample_rate=sample_rate,
-                        runtime_config=runtime_config,
-                    )
-
-                try:
-                    result = _run_with_timeout(
-                        timeout_operation,
-                        timeout_seconds=runtime_config.timeout_seconds,
-                    )
-                except Exception:
-                    log_phase_failed(
-                        logger,
-                        phase_name=PHASE_EMOTION_INFERENCE,
-                        started_at=inference_started_at,
-                        profile="medium",
-                    )
-                    raise
-                log_phase_completed(
-                    logger,
-                    phase_name=PHASE_EMOTION_INFERENCE,
-                    started_at=inference_started_at,
-                    profile="medium",
-                )
-                return result
-            if (
-                active_loaded_model is None
-                or active_backend is None
-                or audio_array is None
-            ):
-                raise RuntimeError(
-                    "Medium inference operation prerequisites are missing."
-                )
-            inference_started_at = log_phase_started(
-                logger,
-                phase_name=PHASE_EMOTION_INFERENCE,
+            return medium_worker_operation_helpers.run_inference_operation(
+                enforce_timeout=enforce_timeout,
+                use_process_isolation=use_process_isolation,
+                process_payload=retry_state.process_payload,
+                prepared_operation=retry_state.prepared_operation,
+                timeout_seconds=runtime_config.timeout_seconds,
+                logger=logger,
                 profile="medium",
-            )
-            try:
-                result = _run_medium_inference_once(
-                    loaded_model=active_loaded_model,
-                    backend=active_backend,
-                    audio=audio_array,
-                    sample_rate=sample_rate,
-                    runtime_config=runtime_config,
-                )
-            except Exception:
-                log_phase_failed(
-                    logger,
-                    phase_name=PHASE_EMOTION_INFERENCE,
-                    started_at=inference_started_at,
-                    profile="medium",
-                )
-                raise
-            log_phase_completed(
-                logger,
-                phase_name=PHASE_EMOTION_INFERENCE,
-                started_at=inference_started_at,
-                profile="medium",
-            )
-            return result
-
-        def on_transient_failure(
-            err: Exception,
-            _attempt: int,
-            _transient_failures: int,
-        ) -> None:
-            nonlocal active_backend, process_payload, cpu_fallback_applied
-            if cpu_fallback_applied:
-                return
-            if not _should_retry_on_cpu_after_transient_failure(err):
-                return
-            if not use_process_isolation and backend is not None:
-                logger.info(
-                    "Medium inference detected MPS transient failure but cannot "
-                    "switch to CPU when a custom backend instance is injected."
-                )
-                return
-
-            current_device = (
-                process_payload.settings.torch_runtime.device
-                if use_process_isolation and process_payload is not None
-                else policy_device
-            )
-            if current_device.strip().lower() not in {"auto", "mps"}:
-                return
-            cpu_fallback_applied = True
-            logger.info(
-                "Medium inference will retry on CPU after transient MPS failure: %s",
-                _summarize_transient_failure(err),
-            )
-            try:
-                if use_process_isolation:
-                    if process_payload is None:
-                        raise RuntimeError(
-                            "Medium process payload is missing for CPU fallback."
-                        )
-                    process_payload = replace(
-                        process_payload,
-                        settings=_settings_with_torch_runtime(
-                            process_payload.settings,
-                            device="cpu",
-                            dtype="float32",
-                        ),
+                inference_phase_name=PHASE_EMOTION_INFERENCE,
+                log_phase_started=log_phase_started,
+                log_phase_completed=log_phase_completed,
+                log_phase_failed=log_phase_failed,
+                run_with_process_timeout=lambda payload, timeout_seconds: (
+                    _run_with_process_timeout(
+                        payload,
+                        timeout_seconds=timeout_seconds,
                     )
-                    return
-                cpu_settings = _settings_with_torch_runtime(
-                    settings,
-                    device="cpu",
-                    dtype="float32",
-                )
-                active_backend = _build_medium_backend(
-                    settings=cpu_settings,
+                ),
+                run_process_operation=_run_process_operation,
+                run_with_timeout=lambda operation, timeout_seconds: _run_with_timeout(
+                    operation=operation,
+                    timeout_seconds=timeout_seconds,
+                ),
+                runtime_error_factory=RuntimeError,
+            )
+
+        on_transient_failure = (
+            medium_worker_operation_helpers.build_transient_failure_handler(
+                state=retry_state,
+                use_process_isolation=use_process_isolation,
+                injected_backend=backend,
+                policy_device=policy_device,
+                logger=logger,
+                should_retry_on_cpu_after_transient_failure=(
+                    _should_retry_on_cpu_after_transient_failure
+                ),
+                summarize_transient_failure=_summarize_transient_failure,
+                process_payload_cpu_fallback=lambda payload: replace(
+                    payload,
+                    settings=_settings_with_torch_runtime(
+                        payload.settings,
+                        device="cpu",
+                        dtype="float32",
+                    ),
+                ),
+                in_process_cpu_backend_builder=lambda: _build_medium_backend(
+                    settings=_settings_with_torch_runtime(
+                        settings,
+                        device="cpu",
+                        dtype="float32",
+                    ),
                     expected_backend_model_id=expected_backend_model_id,
                     runtime_device="cpu",
                     runtime_dtype="float32",
-                )
-                _prepare_medium_backend_runtime(backend=active_backend)
-            except Exception as swap_err:
-                cpu_fallback_applied = False
-                logger.warning(
-                    "Medium inference CPU fallback setup failed; continuing with "
-                    "existing retry policy: %s",
-                    swap_err,
-                )
+                ),
+                prepare_medium_backend_runtime=lambda active_backend: (
+                    _prepare_medium_backend_runtime(backend=active_backend)
+                ),
+                replace_prepared_backend=lambda prepared, active_backend: replace(
+                    prepared,
+                    backend=active_backend,
+                ),
+                runtime_error_factory=RuntimeError,
+            )
+        )
 
         try:
             return run_with_retry_policy(
@@ -456,6 +346,20 @@ def run_medium_inference(
             raise MediumInferenceExecutionError(
                 "Medium inference failed with a non-retryable runtime error."
             ) from err
+
+
+def _run_with_timeout(
+    *,
+    operation: Callable[[], InferenceResult],
+    timeout_seconds: float,
+) -> InferenceResult:
+    """Runs one in-process medium inference attempt under timeout budget."""
+    return _run_with_timeout_impl(
+        operation=operation,
+        timeout_seconds=timeout_seconds,
+        timeout_error_factory=MediumInferenceTimeoutError,
+        timeout_label="Medium inference",
+    )
 
 
 def _run_medium_inference_once(
@@ -502,34 +406,12 @@ def _run_medium_inference_once(
     ]
     return InferenceResult(
         schema_version=OUTPUT_SCHEMA_VERSION,
-        segments=_segment_predictions(
+        segments=postprocess_frame_predictions(
             frame_predictions,
-            runtime_config=runtime_config,
+            config=build_segment_postprocessing_config(runtime_config),
         ),
         frames=frame_predictions,
     )
-
-
-def _run_with_timeout(
-    operation: InferenceRunner,
-    *,
-    timeout_seconds: float,
-) -> InferenceResult:
-    """Runs an inference operation with best-effort timeout enforcement."""
-    if timeout_seconds <= 0.0:
-        return operation()
-
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(operation)
-    try:
-        return future.result(timeout=timeout_seconds)
-    except FuturesTimeoutError as err:
-        future.cancel()
-        raise MediumInferenceTimeoutError(
-            f"Medium inference exceeded timeout budget ({timeout_seconds:.2f}s)."
-        ) from err
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _run_with_process_timeout(
@@ -538,107 +420,28 @@ def _run_with_process_timeout(
     timeout_seconds: float,
 ) -> InferenceResult:
     """Runs one process-isolated attempt with timeout applied only to compute."""
-    setup_started_at = log_phase_started(
-        logger,
-        phase_name=PHASE_EMOTION_SETUP,
+    return medium_process_timeout_helpers.run_with_process_timeout(
+        payload=payload,
         profile="medium",
+        timeout_seconds=timeout_seconds,
+        get_context=mp.get_context,
+        logger=logger,
+        setup_phase_name=PHASE_EMOTION_SETUP,
+        inference_phase_name=PHASE_EMOTION_INFERENCE,
+        log_phase_started=log_phase_started,
+        log_phase_completed=log_phase_completed,
+        log_phase_failed=log_phase_failed,
+        run_process_setup_compute_handshake=_run_process_setup_compute_handshake_impl,
+        worker_target=_worker_entry,
+        recv_worker_message=_recv_worker_message,
+        is_setup_complete_message=_is_setup_complete_message,
+        terminate_worker_process=_terminate_worker_process,
+        timeout_error_factory=MediumInferenceTimeoutError,
+        execution_error_factory=MediumInferenceExecutionError,
+        worker_label="Medium inference",
+        process_join_grace_seconds=_TERMINATE_GRACE_SECONDS,
+        parse_worker_completion_message=_parse_worker_completion_message,
     )
-    setup_completed = False
-    inference_started_at: float | None = None
-    context = mp.get_context("spawn")
-    parent_conn, child_conn = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_worker_entry,
-        args=(payload, child_conn),
-        daemon=False,
-    )
-    process.start()
-    child_conn.close()
-    try:
-        try:
-            setup_message = _recv_worker_message(parent_conn, stage="setup")
-            if _is_setup_complete_message(setup_message):
-                setup_completed = True
-                log_phase_completed(
-                    logger,
-                    phase_name=PHASE_EMOTION_SETUP,
-                    started_at=setup_started_at,
-                    profile="medium",
-                )
-                inference_started_at = log_phase_started(
-                    logger,
-                    phase_name=PHASE_EMOTION_INFERENCE,
-                    profile="medium",
-                )
-                if timeout_seconds <= 0.0:
-                    worker_message = _recv_worker_message(parent_conn, stage="compute")
-                else:
-                    if not parent_conn.poll(timeout_seconds):
-                        if process.is_alive():
-                            _terminate_worker_process(process)
-                            raise MediumInferenceTimeoutError(
-                                "Medium inference exceeded timeout budget "
-                                f"({timeout_seconds:.2f}s)."
-                            )
-                        raise MediumInferenceExecutionError(
-                            "Medium inference worker exited before sending compute result."
-                        )
-                    worker_message = _recv_worker_message(parent_conn, stage="compute")
-            else:
-                worker_message = setup_message
-            if process.is_alive():
-                process.join(timeout=_TERMINATE_GRACE_SECONDS)
-            if process.exitcode not in (0, None) and not parent_conn.poll():
-                raise MediumInferenceExecutionError(
-                    "Medium inference worker exited without a result payload."
-                )
-        finally:
-            parent_conn.close()
-            if process.is_alive():
-                _terminate_worker_process(process)
-    except Exception:
-        if inference_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_INFERENCE,
-                started_at=inference_started_at,
-                profile="medium",
-            )
-        elif not setup_completed:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_SETUP,
-                started_at=setup_started_at,
-                profile="medium",
-            )
-        raise
-
-    try:
-        result = _parse_worker_completion_message(worker_message)
-    except Exception:
-        if inference_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_INFERENCE,
-                started_at=inference_started_at,
-                profile="medium",
-            )
-        elif not setup_completed:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_SETUP,
-                started_at=setup_started_at,
-                profile="medium",
-            )
-        raise
-    if inference_started_at is not None:
-        log_phase_completed(
-            logger,
-            phase_name=PHASE_EMOTION_INFERENCE,
-            started_at=inference_started_at,
-            profile="medium",
-        )
-    return result
 
 
 def _recv_worker_message(
@@ -647,56 +450,34 @@ def _recv_worker_message(
     stage: str,
 ) -> WorkerMessage:
     """Receives one worker message and validates tuple envelope shape."""
-    try:
-        raw_message = connection.recv()
-    except EOFError as err:
-        raise MediumInferenceExecutionError(
-            f"Medium inference worker exited before sending {stage} payload."
-        ) from err
-    if not isinstance(raw_message, tuple) or not raw_message:
-        raise MediumInferenceExecutionError(
-            "Medium inference worker returned malformed payload."
-        )
-    return cast(WorkerMessage, raw_message)
+    return cast(
+        WorkerMessage,
+        _recv_worker_message_impl(
+            connection=connection,
+            stage=stage,
+            worker_label="Medium inference",
+            error_factory=MediumInferenceExecutionError,
+        ),
+    )
 
 
 def _is_setup_complete_message(message: WorkerMessage) -> bool:
     """Returns whether one worker message marks setup completion."""
-    if message[0] != "phase":
-        return False
-    if len(message) != 2 or message[1] != "setup_complete":
-        raise MediumInferenceExecutionError(
-            "Medium inference worker returned malformed phase payload."
-        )
-    return True
+    return _is_setup_complete_message_impl(
+        message=message,
+        worker_label="Medium inference",
+        error_factory=MediumInferenceExecutionError,
+    )
 
 
 def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
     """Parses one worker completion message and returns inference result."""
-    kind = worker_message[0]
-    if kind == "ok":
-        if len(worker_message) != 2:
-            raise MediumInferenceExecutionError(
-                "Medium inference worker returned malformed success payload."
-            )
-        result = worker_message[1]
-        if not isinstance(result, InferenceResult):
-            raise MediumInferenceExecutionError(
-                "Medium inference worker returned unexpected result type."
-            )
-        return result
-    if kind == "phase":
-        raise MediumInferenceExecutionError(
-            "Medium inference worker returned setup phase without completion payload."
-        )
-    if kind == "err":
-        if len(worker_message) != 3:
-            raise MediumInferenceExecutionError(
-                "Medium inference worker returned malformed error payload."
-            )
-        _raise_worker_error(worker_message[1], worker_message[2])
-    raise MediumInferenceExecutionError(
-        "Medium inference worker returned unknown payload status."
+    return _parse_worker_completion_message_impl(
+        worker_message=worker_message,
+        worker_label="Medium inference",
+        error_factory=MediumInferenceExecutionError,
+        raise_worker_error=_raise_worker_error,
+        result_type=InferenceResult,
     )
 
 
@@ -716,61 +497,124 @@ def _worker_entry(
         connection.close()
 
 
+def _prepare_in_process_operation(
+    *,
+    request: InferenceRequest,
+    settings: AppConfig,
+    loaded_model: LoadedModel | None,
+    backend: XLSRBackend | None,
+    expected_backend_model_id: str,
+    runtime_device: str,
+    runtime_dtype: str,
+) -> _PreparedMediumOperation:
+    """Performs untimed setup for one in-process medium operation."""
+    return medium_worker_operation_helpers.prepare_in_process_operation(
+        request=request,
+        settings=settings,
+        loaded_model=loaded_model,
+        backend=backend,
+        expected_backend_model_id=expected_backend_model_id,
+        runtime_device=runtime_device,
+        runtime_dtype=runtime_dtype,
+        load_medium_model=lambda settings, expected_backend_model_id: load_model(
+            settings=settings,
+            expected_backend_id="hf_xlsr",
+            expected_profile="medium",
+            expected_backend_model_id=expected_backend_model_id,
+        ),
+        ensure_medium_compatible_model=lambda loaded_model, expected_backend_model_id: (
+            _ensure_medium_compatible_model(
+                loaded_model,
+                expected_backend_model_id=expected_backend_model_id,
+            )
+        ),
+        warn_on_runtime_selector_mismatch=lambda loaded_model, runtime_device, runtime_dtype: (
+            _warn_on_runtime_selector_mismatch(
+                loaded_model=loaded_model,
+                profile="medium",
+                runtime_device=runtime_device,
+                runtime_dtype=runtime_dtype,
+            )
+        ),
+        read_audio_file=partial(
+            read_audio_file,
+            audio_read_config=settings.audio_read,
+        ),
+        build_medium_backend=lambda settings, expected_backend_model_id, runtime_device, runtime_dtype: (
+            _build_medium_backend(
+                settings=settings,
+                expected_backend_model_id=expected_backend_model_id,
+                runtime_device=runtime_device,
+                runtime_dtype=runtime_dtype,
+            )
+        ),
+        model_unavailable_error_factory=MediumModelUnavailableError,
+        model_load_error_factory=MediumModelLoadError,
+    )
+
+
 def _prepare_process_operation(
     payload: MediumProcessPayload,
 ) -> _PreparedMediumOperation:
     """Performs untimed setup for one process-isolated medium operation."""
-    settings = payload.settings
-    try:
-        loaded_model = load_model(
+    return medium_worker_operation_helpers.prepare_process_operation(
+        payload=payload,
+        load_medium_model=lambda settings, expected_backend_model_id: load_model(
             settings=settings,
             expected_backend_id="hf_xlsr",
             expected_profile="medium",
-            expected_backend_model_id=payload.expected_backend_model_id,
-        )
-    except FileNotFoundError as err:
-        raise MediumModelUnavailableError(str(err)) from err
-    except ValueError as err:
-        raise MediumModelLoadError(
-            "Failed to load medium-profile model artifact from configured paths."
-        ) from err
-    _ensure_medium_compatible_model(
-        loaded_model,
-        expected_backend_model_id=payload.expected_backend_model_id,
-    )
-    runtime_policy = _resolve_medium_feature_runtime_policy(settings=settings)
-    _warn_on_runtime_selector_mismatch(
-        loaded_model=loaded_model,
-        profile="medium",
-        runtime_device=runtime_policy.device,
-        runtime_dtype=runtime_policy.dtype,
-    )
-    audio, sample_rate = read_audio_file(payload.request.file_path)
-    audio_array = np.asarray(audio, dtype=np.float32)
-    backend = _build_medium_backend(
-        settings=settings,
-        expected_backend_model_id=payload.expected_backend_model_id,
-        runtime_device=runtime_policy.device,
-        runtime_dtype=runtime_policy.dtype,
-    )
-    _prepare_medium_backend_runtime(backend=backend)
-    return _PreparedMediumOperation(
-        loaded_model=loaded_model,
-        backend=backend,
-        audio=audio_array,
-        sample_rate=sample_rate,
-        runtime_config=settings.medium_runtime,
+            expected_backend_model_id=expected_backend_model_id,
+        ),
+        ensure_medium_compatible_model=lambda loaded_model, expected_backend_model_id: (
+            _ensure_medium_compatible_model(
+                loaded_model,
+                expected_backend_model_id=expected_backend_model_id,
+            )
+        ),
+        resolve_runtime_policy=lambda settings: _resolve_medium_feature_runtime_policy(
+            settings=settings
+        ),
+        warn_on_runtime_selector_mismatch=lambda loaded_model, runtime_device, runtime_dtype: (
+            _warn_on_runtime_selector_mismatch(
+                loaded_model=loaded_model,
+                profile="medium",
+                runtime_device=runtime_device,
+                runtime_dtype=runtime_dtype,
+            )
+        ),
+        read_audio_file=partial(
+            read_audio_file,
+            audio_read_config=payload.settings.audio_read,
+        ),
+        build_medium_backend=lambda settings, expected_backend_model_id, runtime_device, runtime_dtype: (
+            _build_medium_backend(
+                settings=settings,
+                expected_backend_model_id=expected_backend_model_id,
+                runtime_device=runtime_device,
+                runtime_dtype=runtime_dtype,
+            )
+        ),
+        prepare_medium_backend_runtime=lambda backend: _prepare_medium_backend_runtime(
+            backend=backend
+        ),
+        model_unavailable_error_factory=MediumModelUnavailableError,
+        model_load_error_factory=MediumModelLoadError,
     )
 
 
 def _run_process_operation(prepared: _PreparedMediumOperation) -> InferenceResult:
     """Runs one medium compute phase inside isolated worker process."""
-    return _run_medium_inference_once(
-        loaded_model=prepared.loaded_model,
-        backend=prepared.backend,
-        audio=prepared.audio,
-        sample_rate=prepared.sample_rate,
-        runtime_config=prepared.runtime_config,
+    return medium_worker_operation_helpers.run_process_operation(
+        prepared,
+        run_medium_inference_once=lambda loaded_model, backend, audio, sample_rate, runtime_config: (
+            _run_medium_inference_once(
+                loaded_model=loaded_model,
+                backend=backend,
+                audio=audio,
+                sample_rate=sample_rate,
+                runtime_config=runtime_config,
+            )
+        ),
     )
 
 
@@ -786,14 +630,10 @@ def _settings_with_torch_runtime(
     dtype: str,
 ) -> AppConfig:
     """Returns process-safe settings with one normalized torch runtime selector pair."""
-    return replace(
+    return _settings_with_torch_runtime_impl(
         settings,
-        emotions=dict(settings.emotions),
-        torch_runtime=replace(
-            settings.torch_runtime,
-            device=device,
-            dtype=dtype,
-        ),
+        device=device,
+        dtype=dtype,
     )
 
 
@@ -802,17 +642,8 @@ def _resolve_medium_feature_runtime_policy(
     settings: AppConfig,
 ) -> FeatureRuntimePolicy:
     """Resolves backend-aware feature runtime selectors for medium profile."""
-    backend_override = settings.feature_runtime_policy.for_backend("hf_xlsr")
-    return resolve_feature_runtime_policy(
-        backend_id="hf_xlsr",
-        requested_device=settings.torch_runtime.device,
-        requested_dtype=settings.torch_runtime.dtype,
-        backend_override_device=(
-            backend_override.device if backend_override is not None else None
-        ),
-        backend_override_dtype=(
-            backend_override.dtype if backend_override is not None else None
-        ),
+    return _resolve_medium_feature_runtime_policy_impl(
+        settings=settings,
     )
 
 
@@ -824,99 +655,56 @@ def _build_medium_backend(
     runtime_dtype: str,
 ) -> XLSRBackend:
     """Builds one XLS-R backend with explicit runtime selectors."""
-    return XLSRBackend(
-        model_id=expected_backend_model_id,
-        cache_dir=settings.models.huggingface_cache_root,
-        device=runtime_device,
-        dtype=runtime_dtype,
+    return _build_medium_backend_impl(
+        settings=settings,
+        expected_backend_model_id=expected_backend_model_id,
+        runtime_device=runtime_device,
+        runtime_dtype=runtime_dtype,
+        backend_factory=XLSRBackend,
     )
 
 
 def _terminate_worker_process(process: BaseProcess) -> None:
     """Terminates a timed-out worker process with kill fallback."""
-    process.terminate()
-    process.join(timeout=_TERMINATE_GRACE_SECONDS)
-    if process.is_alive():
-        process.kill()
-        process.join(timeout=_KILL_GRACE_SECONDS)
+    _terminate_worker_process_impl(
+        process=process,
+        terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+        kill_grace_seconds=_KILL_GRACE_SECONDS,
+    )
 
 
 def _raise_worker_error(error_type: str, message: str) -> None:
     """Rehydrates child-process errors into runtime-domain exceptions."""
-    if error_type == "ValueError":
-        raise ValueError(message)
-    if error_type == "MediumRuntimeDependencyError":
-        raise MediumRuntimeDependencyError(message)
-    if error_type == "MediumTransientBackendError":
-        raise MediumTransientBackendError(message)
-    if error_type == "MediumModelUnavailableError":
-        raise MediumModelUnavailableError(message)
-    if error_type == "MediumModelLoadError":
-        raise MediumModelLoadError(message)
-    if error_type == "MediumInferenceTimeoutError":
-        raise MediumInferenceTimeoutError(message)
-    if error_type == "RuntimeError":
-        raise RuntimeError(message)
-    raise MediumInferenceExecutionError(
-        f"Medium inference worker failed with {error_type}: {message}"
+    _raise_worker_error_impl(
+        error_type=error_type,
+        message=message,
+        known_error_factories=_WORKER_ERROR_FACTORIES,
+        unknown_error_factory=MediumInferenceExecutionError,
+        worker_label="Medium inference",
     )
-
-
-@contextmanager
-def _single_flight_lock(
-    *,
-    profile: str,
-    backend_model_id: str | None,
-) -> Iterator[None]:
-    """Serializes in-process inference calls for one profile/model tuple."""
-    model_key = (
-        backend_model_id.strip()
-        if isinstance(backend_model_id, str) and backend_model_id.strip()
-        else "__default__"
-    )
-    key = (profile, model_key)
-    with _SINGLE_FLIGHT_GUARD:
-        lock = _SINGLE_FLIGHT_LOCKS.setdefault(key, Lock())
-    lock.acquire()
-    try:
-        yield
-    finally:
-        lock.release()
 
 
 def _retry_delay_seconds(*, base_delay: float, attempt: int) -> float:
     """Returns bounded retry delay with small jitter."""
-    if base_delay <= 0.0:
-        return 0.0
-    jitter = random.uniform(0.0, base_delay * 0.1)
-    return (base_delay * float(attempt)) + jitter
+    return medium_retry_policy_helpers.retry_delay_seconds(
+        base_delay=base_delay,
+        attempt=attempt,
+    )
 
 
 def _should_retry_on_cpu_after_transient_failure(err: Exception) -> bool:
     """Returns whether one transient failure should trigger CPU fallback retry."""
-    message = str(err).strip().lower()
-    if _MPS_OOM_SIGNATURE in message:
-        return True
-    if _HALF_FLOAT_MISMATCH_SIGNATURE in message:
-        return True
-    if _NON_FINITE_SIGNATURE in message:
-        return True
-    return False
+    return medium_retry_policy_helpers.should_retry_on_cpu_after_transient_failure(err)
 
 
 def _summarize_transient_failure(err: Exception) -> str:
     """Builds one compact summary line for medium transient fallback logs."""
-    message = str(err).strip()
-    if not message:
-        return "transient backend failure"
-    collapsed = " ".join(message.split())
-    return collapsed if len(collapsed) <= 180 else f"{collapsed[:177]}..."
+    return medium_retry_policy_helpers.summarize_transient_failure(err)
 
 
 def _is_dependency_error(err: RuntimeError) -> bool:
     """Returns whether runtime error indicates missing optional modules."""
-    message = str(err).lower()
-    return "requires optional dependencies" in message or "not installed" in message
+    return medium_retry_policy_helpers.is_dependency_error(err)
 
 
 def _encode_medium_sequence(
@@ -936,15 +724,12 @@ def _encode_medium_sequence(
 
 def _prepare_medium_backend_runtime(*, backend: XLSRBackend) -> None:
     """Warms backend runtime components so setup work is outside timeout budgets."""
-    prepare_runtime = getattr(backend, "prepare_runtime", None)
-    if not callable(prepare_runtime):
-        return
-    try:
-        prepare_runtime()
-    except RuntimeError as err:
-        if _is_dependency_error(err):
-            raise MediumRuntimeDependencyError(str(err)) from err
-        raise MediumTransientBackendError(str(err)) from err
+    _prepare_medium_backend_runtime_impl(
+        backend=backend,
+        is_dependency_error=_is_dependency_error,
+        dependency_error_factory=MediumRuntimeDependencyError,
+        transient_error_factory=MediumTransientBackendError,
+    )
 
 
 def _ensure_medium_compatible_model(
@@ -953,36 +738,11 @@ def _ensure_medium_compatible_model(
     expected_backend_model_id: str,
 ) -> None:
     """Validates that loaded artifact metadata is compatible with medium runtime."""
-    metadata = loaded_model.artifact_metadata
-    if not isinstance(metadata, dict):
-        raise MediumModelUnavailableError(
-            "Medium profile requires a v2 model artifact metadata envelope. "
-            "Train a medium-profile model before inference."
-        )
-
-    backend_id = metadata.get("backend_id")
-    if backend_id != "hf_xlsr":
-        raise MediumModelUnavailableError(
-            "No medium-profile model artifact is available. "
-            f"Found backend_id={backend_id!r}; expected 'hf_xlsr'."
-        )
-
-    profile = metadata.get("profile")
-    if profile != "medium":
-        raise MediumModelUnavailableError(
-            "No medium-profile model artifact is available. "
-            f"Found profile={profile!r}; expected 'medium'."
-        )
-    backend_model_id = metadata.get("backend_model_id")
-    if (
-        not isinstance(backend_model_id, str)
-        or backend_model_id.strip() != expected_backend_model_id
-    ):
-        raise MediumModelUnavailableError(
-            "No medium-profile model artifact is available. "
-            f"Found backend_model_id={backend_model_id!r}; "
-            f"expected {expected_backend_model_id!r}."
-        )
+    medium_worker_operation_helpers.ensure_medium_compatible_model(
+        loaded_model,
+        expected_backend_model_id=expected_backend_model_id,
+        unavailable_error_factory=MediumModelUnavailableError,
+    )
 
 
 def _warn_on_runtime_selector_mismatch(
@@ -993,42 +753,13 @@ def _warn_on_runtime_selector_mismatch(
     runtime_dtype: str,
 ) -> None:
     """Warns when artifact runtime selectors differ from current runtime settings."""
-    metadata = loaded_model.artifact_metadata
-    if not isinstance(metadata, dict):
-        return
-
-    artifact_torch_device = metadata.get("torch_device")
-    artifact_torch_dtype = metadata.get("torch_dtype")
-    if not isinstance(artifact_torch_device, str) or not isinstance(
-        artifact_torch_dtype, str
-    ):
-        return
-
-    normalized_artifact_device = artifact_torch_device.strip().lower()
-    normalized_artifact_dtype = artifact_torch_dtype.strip().lower()
-    if not normalized_artifact_device or not normalized_artifact_dtype:
-        return
-
-    normalized_runtime_device = runtime_device.strip().lower()
-    normalized_runtime_dtype = runtime_dtype.strip().lower()
-    mismatch_components: list[str] = []
-    if normalized_artifact_device != normalized_runtime_device:
-        mismatch_components.append(
-            "device artifact="
-            f"{normalized_artifact_device!r} runtime={normalized_runtime_device!r}"
-        )
-    if normalized_artifact_dtype != normalized_runtime_dtype:
-        mismatch_components.append(
-            "dtype artifact="
-            f"{normalized_artifact_dtype!r} runtime={normalized_runtime_dtype!r}"
-        )
-    if mismatch_components:
-        logger.warning(
-            "Artifact torch runtime selectors differ from current settings for %s "
-            "profile (%s); embedding distribution may shift.",
-            profile,
-            ", ".join(mismatch_components),
-        )
+    _warn_on_runtime_selector_mismatch_impl(
+        loaded_model=loaded_model,
+        profile=profile,
+        runtime_device=runtime_device,
+        runtime_dtype=runtime_dtype,
+        logger=logger,
+    )
 
 
 def _pooling_windows_from_encoded_frames(
@@ -1046,21 +777,10 @@ def _pooling_windows_from_encoded_frames(
 
 def _predict_labels(model: object, features: FeatureMatrix) -> list[str]:
     """Runs model prediction and validates row-aligned label output."""
-    predict = getattr(model, "predict", None)
-    if not callable(predict):
-        raise RuntimeError("Loaded medium model does not expose a callable predict().")
-
-    labels = np.asarray(predict(features), dtype=object)
-    if labels.ndim != 1:
-        raise RuntimeError(
-            "Medium model predict() returned invalid rank; expected 1D labels."
-        )
-    if int(labels.shape[0]) != int(features.shape[0]):
-        raise RuntimeError(
-            "Medium model prediction row count mismatch. "
-            f"Expected {int(features.shape[0])}, got {int(labels.shape[0])}."
-        )
-    return [str(item) for item in labels.tolist()]
+    return _predict_labels_impl(
+        model=model,
+        features=features,
+    )
 
 
 def _confidence_and_probabilities(
@@ -1070,79 +790,9 @@ def _confidence_and_probabilities(
     expected_rows: int,
 ) -> tuple[list[float], list[dict[str, float] | None]]:
     """Returns per-frame confidence and optional class-probability mappings."""
-    fallback_confidence = [1.0] * expected_rows
-    fallback_probabilities: list[dict[str, float] | None] = [None] * expected_rows
-
-    predict_proba = getattr(model, "predict_proba", None)
-    if not callable(predict_proba):
-        logger.warning(
-            "Medium model does not expose predict_proba; using confidence fallback."
-        )
-        return fallback_confidence, fallback_probabilities
-
-    classes_attr = getattr(model, "classes_", None)
-    class_values: list[object] | None = None
-    if isinstance(classes_attr, np.ndarray):
-        class_values = list(classes_attr.tolist())
-    elif isinstance(classes_attr, list | tuple):
-        class_values = list(classes_attr)
-    if class_values is None:
-        logger.warning(
-            "Medium model classes_ metadata is unavailable; using confidence fallback."
-        )
-        return fallback_confidence, fallback_probabilities
-
-    try:
-        raw_probabilities = np.asarray(predict_proba(features), dtype=np.float64)
-    except Exception as err:
-        logger.warning(
-            "Medium model predict_proba failed; using fallback. Error: %s", err
-        )
-        return fallback_confidence, fallback_probabilities
-
-    if raw_probabilities.ndim != 2:
-        logger.warning(
-            "Medium model predict_proba returned invalid rank %s; using fallback.",
-            raw_probabilities.shape,
-        )
-        return fallback_confidence, fallback_probabilities
-    if int(raw_probabilities.shape[0]) != expected_rows:
-        logger.warning(
-            "Medium model predict_proba row mismatch (expected=%s, got=%s); using fallback.",
-            expected_rows,
-            int(raw_probabilities.shape[0]),
-        )
-        return fallback_confidence, fallback_probabilities
-
-    class_labels = [str(item) for item in class_values]
-    if int(raw_probabilities.shape[1]) != len(class_labels):
-        logger.warning(
-            "Medium model predict_proba class mismatch (classes=%s, probs=%s); using fallback.",
-            len(class_labels),
-            int(raw_probabilities.shape[1]),
-        )
-        return fallback_confidence, fallback_probabilities
-
-    confidences = [float(np.max(row)) for row in raw_probabilities]
-    probabilities: list[dict[str, float] | None] = [
-        {class_labels[idx]: float(row[idx]) for idx in range(len(class_labels))}
-        for row in raw_probabilities
-    ]
-    return confidences, probabilities
-
-
-def _segment_predictions(
-    frame_predictions: list[FramePrediction],
-    *,
-    runtime_config: MediumRuntimeConfig,
-) -> list[SegmentPrediction]:
-    """Builds stable segment predictions with smoothing/hysteresis/min-duration cleanup."""
-    return postprocess_frame_predictions(
-        frame_predictions,
-        config=SegmentPostprocessingConfig(
-            smoothing_window_frames=runtime_config.post_smoothing_window_frames,
-            hysteresis_enter_confidence=runtime_config.post_hysteresis_enter_confidence,
-            hysteresis_exit_confidence=runtime_config.post_hysteresis_exit_confidence,
-            min_segment_duration_seconds=runtime_config.post_min_segment_duration_seconds,
-        ),
+    return _confidence_and_probabilities_impl(
+        model=model,
+        features=features,
+        expected_rows=expected_rows,
+        logger=logger,
     )

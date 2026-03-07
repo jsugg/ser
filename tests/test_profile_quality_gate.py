@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+import ser.runtime.profile_quality_gate as gate_module
+from ser.config import AppConfig
 from ser.domain import EmotionSegment
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.profile_quality_gate import (
@@ -17,6 +21,11 @@ from ser.runtime.profile_quality_gate import (
     build_report_payload,
     enforce_quality_gate,
     evaluate_profile_quality_gate,
+)
+from ser.runtime.quality_gate_reporting import (
+    resolve_report_output_path,
+    serialize_report_payload,
+    write_serialized_report,
 )
 
 type LabeledAudioSample = tuple[str, str]
@@ -206,6 +215,48 @@ def test_profile_quality_gate_canonicalizes_overlap_for_temporal_metrics() -> No
     )
 
 
+def test_clip_label_from_segments_uses_stable_tie_break() -> None:
+    """Duration tie should resolve deterministically by label ordering."""
+    normalized = gate_module._normalize_segments(
+        [
+            EmotionSegment("sad", 0.0, 1.0),
+            EmotionSegment("happy", 1.0, 2.0),
+        ]
+    )
+
+    assert (
+        gate_module._clip_label_from_segments(normalized, unknown_label="unknown")
+        == "happy"
+    )
+
+
+def test_profile_quality_gate_counts_failed_clips() -> None:
+    """Profile evaluation should keep processing and report failed clip count."""
+    samples = _build_samples()
+
+    def flaky_fast_predictor(audio_path: str) -> Sequence[EmotionSegment]:
+        if "Actor_01" in audio_path:
+            raise RuntimeError("transient failure")
+        return _segments("sad" if "-04-" in audio_path else "happy")
+
+    def medium_predictor(audio_path: str) -> Sequence[EmotionSegment]:
+        return _segments("sad" if "-04-" in audio_path else "happy")
+
+    report = evaluate_profile_quality_gate(
+        samples=samples,
+        fast_predictor=flaky_fast_predictor,
+        medium_predictor=medium_predictor,
+        dataset_glob_pattern="ser/dataset/ravdess/**/*.wav",
+        thresholds=QualityGateThresholds(),
+        n_splits=2,
+        random_state=42,
+    )
+
+    assert report.fast.failed_clips == 2
+    assert report.fast.evaluated_clips == len(samples) - 2
+    assert report.medium.failed_clips == 0
+
+
 def test_profile_quality_gate_rejects_negative_thresholds() -> None:
     """Negative quality deltas should be rejected as invalid threshold policy."""
     samples = _build_samples()
@@ -226,15 +277,16 @@ def test_parse_args_uses_quality_gate_settings_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """CLI defaults should come from strict quality-gate settings policy."""
-    monkeypatch.setattr(
-        "ser.runtime.profile_quality_gate.get_settings",
-        lambda: SimpleNamespace(
+    settings = cast(
+        AppConfig,
+        SimpleNamespace(
             dataset=SimpleNamespace(glob_pattern="ser/dataset/ravdess/**/*.wav"),
             training=SimpleNamespace(test_size=0.25, random_state=42),
             models=SimpleNamespace(
                 model_file_name="ser_model.pkl",
                 secure_model_file_name="ser_model.skops",
                 training_report_file_name="training_report.json",
+                huggingface_cache_root=Path("cache/hf"),
             ),
             quality_gate=SimpleNamespace(
                 min_uar_delta=0.015,
@@ -242,6 +294,7 @@ def test_parse_args_uses_quality_gate_settings_defaults(
                 max_medium_segments_per_minute=22.5,
                 min_medium_median_segment_duration_seconds=2.2,
             ),
+            default_language="en",
         ),
     )
     monkeypatch.setattr(
@@ -253,7 +306,7 @@ def test_parse_args_uses_quality_gate_settings_defaults(
         ],
     )
 
-    args = _parse_args()
+    args = _parse_args(settings)
 
     assert args.min_uar_delta == pytest.approx(0.015)
     assert args.min_macro_f1_delta == pytest.approx(0.02)
@@ -351,12 +404,20 @@ def test_build_medium_predictor_reuses_loaded_resources(
         "ser.runtime.profile_quality_gate.run_medium_inference",
         _fake_run_medium_inference,
     )
+    settings = cast(
+        AppConfig,
+        SimpleNamespace(
+            default_language="en",
+            models=SimpleNamespace(huggingface_cache_root=Path("cache/hf")),
+        ),
+    )
 
     predictor = _build_medium_predictor(
         model_file_name="medium.pkl",
         secure_model_file_name="medium.skops",
         training_report_file_name="medium_report.json",
         language="pt",
+        settings=settings,
     )
 
     assert len(load_calls) == 1
@@ -368,3 +429,20 @@ def test_build_medium_predictor_reuses_loaded_resources(
         ("a.wav", "pt", loaded_model, backend, False, False),
         ("b.wav", "pt", loaded_model, backend, False, False),
     ]
+
+
+def test_quality_gate_reporting_writes_deterministic_json(
+    tmp_path: Path,
+) -> None:
+    """Reporting helpers should serialize stably and persist newline-terminated JSON."""
+    payload: dict[str, object] = {"z": 1, "a": {"b": "c"}}
+    serialized = serialize_report_payload(payload)
+    output_path = resolve_report_output_path(
+        output_path=None,
+        default_directory=tmp_path,
+    )
+    write_serialized_report(serialized=serialized, output_path=output_path)
+
+    assert output_path == tmp_path / "profile_quality_gate_report.json"
+    assert output_path.read_text(encoding="utf-8") == serialized + "\n"
+    assert serialized.splitlines()[1].lstrip().startswith('"a":')

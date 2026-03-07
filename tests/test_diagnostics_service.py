@@ -16,6 +16,7 @@ from ser.diagnostics.service import (
     format_report_json,
     format_report_text,
     parse_preflight_mode,
+    run_doctor_diagnostics,
     run_startup_preflight,
     should_fail_preflight,
 )
@@ -46,7 +47,7 @@ def test_should_fail_preflight_obeys_mode_semantics() -> None:
     warning_report = DiagnosticReport(
         findings=(
             DiagnosticFinding(
-                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                code="transcription_operational_faster_whisper_mps_unsupported",
                 severity="warning",
                 message="Operational warning",
             ),
@@ -88,8 +89,27 @@ def test_format_report_text_marks_warnings_as_advisory_when_non_blocking() -> No
     report = DiagnosticReport(
         findings=(
             DiagnosticFinding(
-                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                code="transcription_operational_faster_whisper_mps_unsupported",
                 severity="warning",
+                message="MPS is unsupported and CPU fallback will be used.",
+            ),
+        )
+    )
+
+    text_output = format_report_text(report)
+    assert (
+        "[WARNING] transcription_operational_faster_whisper_mps_unsupported: advisory"
+        in text_output
+    )
+
+
+def test_format_report_text_marks_info_as_informational() -> None:
+    """Informational findings should be explicitly marked as informational."""
+    report = DiagnosticReport(
+        findings=(
+            DiagnosticFinding(
+                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                severity="info",
                 message="Non-blocking runtime advisory.",
             ),
         )
@@ -97,7 +117,7 @@ def test_format_report_text_marks_warnings_as_advisory_when_non_blocking() -> No
 
     text_output = format_report_text(report)
     assert (
-        "[WARNING] transcription_operational_torio_ffmpeg_abi_mismatch: advisory"
+        "[INFO] transcription_operational_torio_ffmpeg_abi_mismatch: informational"
         in text_output
     )
 
@@ -107,13 +127,12 @@ def test_format_report_brief_condenses_long_messages() -> None:
     report = DiagnosticReport(
         findings=(
             DiagnosticFinding(
-                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                code="transcription_operational_faster_whisper_mps_unsupported",
                 severity="warning",
                 message=(
-                    "torchaudio FFmpeg extension could not be loaded because "
-                    "@rpath/libavutil.58.dylib is unavailable (FFmpeg ABI mismatch). "
-                    "This is a non-blocking advisory and stable-whisper continues "
-                    "with soundfile/sox backends."
+                    "faster-whisper backend does not support MPS runtime; "
+                    "transcription will use CPU fallback and throughput may "
+                    "be lower for long clips."
                 ),
             ),
         )
@@ -121,16 +140,16 @@ def test_format_report_brief_condenses_long_messages() -> None:
     brief = format_report_brief(report, max_message_chars=90)
     assert "SER diagnostics preflight summary" in brief
     assert (
-        "[WARNING] transcription_operational_torio_ffmpeg_abi_mismatch (advisory):"
+        "[WARNING] transcription_operational_faster_whisper_mps_unsupported (advisory):"
         in brief
     )
     assert "..." in brief
 
 
-def test_fast_openmp_conflict_is_warning_for_cli_diagnostics(
+def test_fast_openmp_conflict_is_info_for_cli_diagnostics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Faster-whisper OpenMP conflict should be advisory in CLI diagnostics."""
+    """Known harmless faster-whisper OpenMP conflicts should be informational."""
     settings = config_module.reload_settings()
     settings = replace(
         settings,
@@ -190,7 +209,42 @@ def test_fast_openmp_conflict_is_warning_for_cli_diagnostics(
     assert any(
         finding.code
         == "transcription_operational_faster_whisper_openmp_runtime_conflict"
-        and finding.severity == "warning"
+        and finding.severity == "info"
         for finding in report.findings
     )
     assert should_fail_preflight(report=report, mode="warn") is False
+
+
+def test_run_doctor_diagnostics_includes_dataset_registry_health_issues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Doctor diagnostics should surface dataset registry provenance issues."""
+    settings = config_module.reload_settings()
+    monkeypatch.setattr(
+        diagnostics_service,
+        "resolve_runtime_capability",
+        lambda *args, **kwargs: SimpleNamespace(available=True, message=None),
+    )
+    monkeypatch.setattr(
+        diagnostics_service,
+        "collect_dataset_registry_health_issues",
+        lambda **kwargs: (
+            SimpleNamespace(
+                dataset_id="msp-podcast",
+                code="source_provenance_mismatch",
+                message="Source mismatch.",
+            ),
+        ),
+    )
+
+    report = run_doctor_diagnostics(
+        settings=settings,
+        include_transcription_checks=False,
+        include_noise_findings=False,
+    )
+
+    assert any(
+        finding.code == "dataset_registry_source_provenance_mismatch"
+        and finding.severity == "error"
+        for finding in report.findings
+    )

@@ -27,12 +27,15 @@ def read_audio_file(
     Returns:
         A tuple of `(audio_samples, sample_rate)`.
     """
+    from ser.config import get_settings
+
     from .audio_utils import read_audio_file as _read_audio_file
 
     return _read_audio_file(
         file_path,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
+        audio_read_config=get_settings().audio_read,
     )
 
 
@@ -55,9 +58,15 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
 
 def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
     """Writes timeline rows to CSV and returns the output path."""
+    from ser.config import get_settings
+
     from .timeline_utils import save_timeline_to_csv as _save_timeline_to_csv
 
-    return _save_timeline_to_csv(timeline, file_name)
+    return _save_timeline_to_csv(
+        timeline,
+        file_name,
+        timeline_config=get_settings().timeline,
+    )
 
 
 __all__ = [

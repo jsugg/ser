@@ -8,13 +8,13 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.models import emotion_model
+from ser.models import medium_feature_dataset
 from ser.repr import EncodedSequence
 from ser.runtime import medium_inference
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings() -> Generator[None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield
@@ -49,7 +49,7 @@ def test_medium_train_and_infer_share_configured_temporal_window_policy(
     runtime_config = config.get_settings().medium_runtime
 
     encoded = _encoded_sequence()
-    train_windows = emotion_model._pooling_windows_from_encoded_frames(
+    train_windows = medium_feature_dataset._build_pooling_windows(
         encoded,
         window_size_seconds=runtime_config.pool_window_size_seconds,
         window_stride_seconds=runtime_config.pool_window_stride_seconds,

@@ -55,6 +55,16 @@ class ProfileTranscriptionDefaults:
 
 
 @dataclass(frozen=True)
+class ProfileTranscriptionEnvDefinition:
+    """Catalog-owned env override mapping for one transcription profile."""
+
+    backend_id: str | None
+    model_name: str | None
+    use_demucs: str | None
+    use_vad: str | None
+
+
+@dataclass(frozen=True)
 class ProfileRuntimeDefaults:
     """Default runtime controls for one runtime profile."""
 
@@ -108,6 +118,7 @@ class ProfileCatalogEntry:
     enabled_by_default: bool
     model: ProfileModelDefinition
     transcription_defaults: ProfileTranscriptionDefaults
+    transcription_env: ProfileTranscriptionEnvDefinition
     runtime_defaults: ProfileRuntimeDefaults
     runtime_env: ProfileRuntimeEnvDefinition
     feature_runtime_defaults: ProfileFeatureRuntimeDefaults | None
@@ -471,6 +482,41 @@ def _validate_runtime_env(
     )
 
 
+def _validate_transcription_env(
+    *,
+    name: ProfileName,
+    raw: object,
+) -> ProfileTranscriptionEnvDefinition:
+    """Validates transcription env override mapping for one profile."""
+    if not isinstance(raw, dict):
+        raise RuntimeError(
+            f"Profile definition entry {name!r} has invalid 'transcription_env'."
+        )
+    transcription_env = cast(dict[str, object], raw)
+    return ProfileTranscriptionEnvDefinition(
+        backend_id=_read_optional_text(
+            transcription_env,
+            key="backend_id",
+            entry_name=name,
+        ),
+        model_name=_read_optional_text(
+            transcription_env,
+            key="model_name",
+            entry_name=name,
+        ),
+        use_demucs=_read_optional_text(
+            transcription_env,
+            key="use_demucs",
+            entry_name=name,
+        ),
+        use_vad=_read_optional_text(
+            transcription_env,
+            key="use_vad",
+            entry_name=name,
+        ),
+    )
+
+
 def _validate_feature_runtime_defaults(
     *,
     name: ProfileName,
@@ -576,6 +622,10 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
         name=name,
         raw=raw_mapping.get("transcription_defaults"),
     )
+    transcription_env = _validate_transcription_env(
+        name=name,
+        raw=raw_mapping.get("transcription_env"),
+    )
     runtime_defaults = _validate_runtime_defaults(
         name=name,
         raw=raw_mapping.get("runtime_defaults"),
@@ -594,6 +644,7 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
         enabled_by_default=enabled_by_default,
         model=model_definition,
         transcription_defaults=transcription_defaults,
+        transcription_env=transcription_env,
         runtime_defaults=runtime_defaults,
         runtime_env=runtime_env,
         feature_runtime_defaults=feature_runtime_defaults,

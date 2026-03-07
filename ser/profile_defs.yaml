@@ -14,6 +14,11 @@ profiles:
       model_name: distil-large-v3
       use_demucs: false
       use_vad: true
+    transcription_env:
+      backend_id: WHISPER_BACKEND
+      model_name: WHISPER_MODEL
+      use_demucs: WHISPER_DEMUCS
+      use_vad: WHISPER_VAD
     runtime_defaults:
       timeout_seconds: 0.0
       max_timeout_retries: 0
@@ -56,6 +61,11 @@ profiles:
       model_name: turbo
       use_demucs: true
       use_vad: true
+    transcription_env:
+      backend_id: WHISPER_BACKEND
+      model_name: WHISPER_MODEL
+      use_demucs: WHISPER_DEMUCS
+      use_vad: WHISPER_VAD
     runtime_defaults:
       timeout_seconds: 60.0
       max_timeout_retries: 1
@@ -96,6 +106,11 @@ profiles:
       model_name: large
       use_demucs: true
       use_vad: true
+    transcription_env:
+      backend_id: WHISPER_BACKEND
+      model_name: WHISPER_MODEL
+      use_demucs: WHISPER_DEMUCS
+      use_vad: WHISPER_VAD
     runtime_defaults:
       timeout_seconds: 120.0
       max_timeout_retries: 0
@@ -137,6 +152,11 @@ profiles:
       model_name: large
       use_demucs: true
       use_vad: true
+    transcription_env:
+      backend_id: WHISPER_BACKEND
+      model_name: WHISPER_MODEL
+      use_demucs: WHISPER_DEMUCS
+      use_vad: WHISPER_VAD
     runtime_defaults:
       timeout_seconds: 120.0
       max_timeout_retries: 0

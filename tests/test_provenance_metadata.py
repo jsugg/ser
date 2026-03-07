@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from sklearn.neural_network import MLPClassifier
@@ -114,10 +115,16 @@ def test_build_training_report_includes_provenance_block(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Training report should include provenance block when provided by caller."""
+    settings = cast(
+        em.AppConfig,
+        SimpleNamespace(dataset=SimpleNamespace(glob_pattern="unused")),
+    )
     monkeypatch.setattr(
         em,
         "get_settings",
-        lambda: SimpleNamespace(dataset=SimpleNamespace(glob_pattern="unused")),
+        lambda: (_ for _ in ()).throw(
+            AssertionError("helper must use explicit settings")
+        ),
     )
     monkeypatch.setattr(em.glob, "glob", lambda _pattern: ["file_0.wav"])
 
@@ -165,6 +172,7 @@ def test_build_training_report_includes_provenance_block(
             "provenance": provenance,
         },
         provenance=provenance,
+        settings=settings,
     )
 
     assert report["provenance"] == provenance

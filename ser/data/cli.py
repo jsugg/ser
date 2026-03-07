@@ -3,26 +3,45 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from ser.config import get_settings
-from ser.data.data_loader import _resolve_label_ontology
+from ser.config import AppConfig
+from ser.data.application import (
+    build_dataset_capability_snapshot_json_payload,
+    build_dataset_registry_snapshot_json_payload,
+    collect_dataset_capability_snapshot,
+    collect_dataset_registry_snapshot,
+    compute_dataset_descriptor_missing_consents,
+    persist_missing_dataset_descriptor_consents,
+    run_dataset_prepare_workflow,
+    run_dataset_uninstall_workflow,
+)
 from ser.data.dataset_consents import (
     DatasetConsentError,
-    is_policy_restricted,
     load_persisted_dataset_consents,
     persist_dataset_consents,
 )
-from ser.data.dataset_prepare import (
-    download_dataset,
-    prepare_dataset_manifest,
-    resolve_dataset_descriptor,
-)
+from ser.data.dataset_prepare import SUPPORTED_DATASETS
 
 
 def _is_interactive() -> bool:
     return sys.stdin.isatty() and sys.stderr.isatty()
+
+
+def _format_bytes(size_bytes: int) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(size_bytes)
+    unit = units[0]
+    for current_unit in units:
+        unit = current_unit
+        if value < 1024.0 or current_unit == units[-1]:
+            break
+        value /= 1024.0
+    if unit == "B":
+        return f"{int(value)} {unit}"
+    return f"{value:.2f} {unit}"
 
 
 def _prompt_acceptance(*, message: str) -> bool:
@@ -37,28 +56,16 @@ def _prompt_acceptance(*, message: str) -> bool:
 
 def _ensure_descriptor_consents(
     *,
+    settings: AppConfig,
     dataset_id: str,
-    policy_id: str,
-    license_id: str,
     accept_license_flag: bool,
 ) -> None:
-    settings = get_settings()
-    persisted = load_persisted_dataset_consents(settings=settings)
-    normalized_policy = policy_id.strip().lower()
-    normalized_license = license_id.strip().lower()
-    missing_policies: list[str] = []
-    missing_licenses: list[str] = []
-    if (
-        is_policy_restricted(normalized_policy)
-        and normalized_policy not in persisted.policy_consents
-    ):
-        missing_policies.append(normalized_policy)
-    if (
-        is_policy_restricted(normalized_policy)
-        and normalized_license
-        and normalized_license not in persisted.license_consents
-    ):
-        missing_licenses.append(normalized_license)
+    consent_status = compute_dataset_descriptor_missing_consents(
+        settings=settings,
+        dataset_id=dataset_id,
+    )
+    missing_policies = consent_status.missing_policy_consents
+    missing_licenses = consent_status.missing_license_consents
     if not missing_policies and not missing_licenses:
         return
 
@@ -86,15 +93,15 @@ def _ensure_descriptor_consents(
                 "Re-run with `--accept-license` or persist consents via `ser configure`."
             )
 
-    persist_dataset_consents(
+    persist_missing_dataset_descriptor_consents(
         settings=settings,
-        accept_policy_ids=missing_policies,
-        accept_license_ids=missing_licenses,
+        missing_policy_consents=missing_policies,
+        missing_license_consents=missing_licenses,
         source=f"ser data download --dataset {dataset_id}",
     )
 
 
-def run_configure_command(argv: list[str]) -> int:
+def run_configure_command(argv: list[str], *, settings: AppConfig) -> int:
     """Runs `ser configure ...` command."""
 
     parser = argparse.ArgumentParser(prog="ser configure")
@@ -122,7 +129,6 @@ def run_configure_command(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    settings = get_settings()
     if args.show or (
         not args.accept_dataset_policy and not args.accept_dataset_license
     ):
@@ -146,18 +152,65 @@ def run_configure_command(argv: list[str]) -> int:
     return 0
 
 
-def run_data_command(argv: list[str]) -> int:
+def run_data_command(argv: list[str], *, settings: AppConfig) -> int:
     """Runs `ser data ...` command."""
 
     parser = argparse.ArgumentParser(prog="ser data")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    supported_dataset_ids = ", ".join(sorted(SUPPORTED_DATASETS))
     download_parser = subparsers.add_parser(
         "download", help="Download/prepare datasets"
+    )
+    registry_parser = subparsers.add_parser(
+        "registry", help="Inspect persisted dataset registry"
+    )
+    catalog_parser = subparsers.add_parser(
+        "catalog", help="Show dataset capabilities and pipeline-use candidates"
+    )
+    uninstall_parser = subparsers.add_parser(
+        "uninstall", help="Remove one dataset registry entry and local artifacts"
+    )
+    registry_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show registered dataset roots/manifests/source provenance.",
+    )
+    registry_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Registry output format.",
+    )
+    registry_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return non-zero when registry contains invalid/mismatched entries.",
+    )
+    catalog_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include non-installed supported datasets in output.",
+    )
+    catalog_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Catalog output format.",
+    )
+    uninstall_parser.add_argument(
+        "--dataset",
+        required=True,
+        help=f"Dataset id ({supported_dataset_ids})",
+    )
+    uninstall_parser.add_argument(
+        "--keep-files",
+        action="store_true",
+        help="Only remove registry entry (keep dataset_root and manifest files).",
     )
     download_parser.add_argument(
         "--dataset",
         required=True,
-        help="Dataset id (ravdess, crema-d, msp-podcast, biic-podcast)",
+        help=f"Dataset id ({supported_dataset_ids})",
     )
     download_parser.add_argument(
         "--dataset-root",
@@ -175,7 +228,11 @@ def run_data_command(argv: list[str]) -> int:
         "--labels-csv-path",
         type=Path,
         default=None,
-        help="Label/index CSV needed by segment-based corpora (MSP/BIIC).",
+        help=(
+            "Label/index CSV path for segment-based corpora. "
+            "Optional for MSP-Podcast when using built-in mirror download "
+            "(auto-generates dataset_root/labels.csv)."
+        ),
     )
     download_parser.add_argument(
         "--audio-base-dir",
@@ -189,64 +246,174 @@ def run_data_command(argv: list[str]) -> int:
         help="Skip download step (useful when the dataset is already present).",
     )
     download_parser.add_argument(
+        "--source",
+        type=str,
+        default=None,
+        help=(
+            "Optional download source id override. "
+            "Currently supported for MSP-Podcast mirror only "
+            "(e.g., AbstractTTS/PODCAST)."
+        ),
+    )
+    download_parser.add_argument(
+        "--source-revision",
+        type=str,
+        default=None,
+        help=(
+            "Optional download source revision/tag/commit override. "
+            "Currently supported for MSP-Podcast mirror only."
+        ),
+    )
+    download_parser.add_argument(
         "--accept-license",
         action="store_true",
         help="Acknowledge the dataset's policy/license and persist locally.",
     )
 
     args = parser.parse_args(argv)
+    if args.subcommand == "registry":
+        snapshot = collect_dataset_registry_snapshot(settings=settings)
+        if args.format == "json":
+            payload = build_dataset_registry_snapshot_json_payload(snapshot)
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            if args.strict and snapshot.issues:
+                return 2
+            return 0
+        if not snapshot.entries:
+            print("Dataset registry is empty.")
+            if args.strict and snapshot.issues:
+                return 2
+            return 0
+        for entry in snapshot.entries:
+            source_pin = (
+                f"{entry.source_repo_id}@{entry.source_revision}"
+                if entry.source_repo_id and entry.source_revision
+                else "(none)"
+            )
+            print(f"- {entry.dataset_id}")
+            print(f"  dataset_root: {entry.dataset_root}")
+            print(f"  manifest_path: {entry.manifest_path}")
+            print(f"  source_pin: {source_pin}")
+        if snapshot.issues:
+            print("Registry health issues:")
+            for issue in snapshot.issues:
+                print(f"- [{issue.dataset_id}] {issue.code}: {issue.message}")
+            if args.strict:
+                return 2
+        else:
+            print("Registry health: ok")
+        return 0
+
+    if args.subcommand == "catalog":
+        rows = collect_dataset_capability_snapshot(
+            settings=settings,
+            include_uninstalled=bool(args.all),
+        )
+        if args.format == "json":
+            payload = build_dataset_capability_snapshot_json_payload(rows)
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        if not rows:
+            print("No installed datasets found in registry.")
+            return 0
+        for row in rows:
+            print(f"- {row.dataset_id} ({row.display_name})")
+            print(f"  registered: {'yes' if row.registered else 'no'}")
+            print(f"  installed: {'yes' if row.installed else 'no'}")
+            print(f"  manifest_exists: {'yes' if row.manifest_exists else 'no'}")
+            if row.dataset_root is not None:
+                print(f"  dataset_root: {row.dataset_root}")
+            if row.manifest_path is not None:
+                print(f"  manifest_path: {row.manifest_path}")
+            print(
+                "  audio_files: "
+                f"referenced={row.referenced_audio_files}, "
+                f"present={row.present_audio_files}, "
+                f"nonempty={row.nonempty_audio_files}"
+            )
+            print(
+                "  dataset_size: "
+                f"{row.dataset_size_bytes} bytes ({_format_bytes(row.dataset_size_bytes)})"
+            )
+            print(f"  source_url: {row.source_url}")
+            print(f"  policy/license: {row.policy_id} / {row.license_id}")
+            print(f"  modalities: {', '.join(row.modalities)}")
+            print(f"  label_schema: {row.label_schema}")
+            print(
+                "  candidates: "
+                f"supervised_ser={'yes' if row.supervised_ser_candidate else 'no'}, "
+                f"ssl={'yes' if row.ssl_candidate else 'no'}, "
+                f"multimodal={'yes' if row.multimodal_candidate else 'no'}, "
+                "emotion_merge="
+                f"{'yes' if row.mergeable_with_emotion_ontology else 'no'}"
+            )
+            print(f"  recommended_uses: {', '.join(row.recommended_uses)}")
+            if row.notes:
+                print(f"  notes: {'; '.join(row.notes)}")
+        return 0
+
+    if args.subcommand == "uninstall":
+        try:
+            result = run_dataset_uninstall_workflow(
+                settings=settings,
+                dataset_id=args.dataset,
+                remove_files=not args.keep_files,
+            )
+        except ValueError as err:
+            print(str(err), file=sys.stderr)
+            return 2
+        if not result.removed_from_registry:
+            print(
+                f"Dataset `{result.descriptor.dataset_id}` is not registered.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            f"Uninstalled dataset `{result.descriptor.dataset_id}` "
+            f"(keep_files={'yes' if args.keep_files else 'no'})."
+        )
+        for manifest_path in result.removed_manifest_paths:
+            print(f"- removed_manifest: {manifest_path}")
+        for dataset_root in result.removed_dataset_roots:
+            print(f"- removed_dataset_root: {dataset_root}")
+        return 0
+
     if args.subcommand != "download":
         raise RuntimeError(f"Unhandled ser data subcommand: {args.subcommand}")
 
-    settings = get_settings()
-    descriptor = resolve_dataset_descriptor(args.dataset)
-    dataset_root = (
-        args.dataset_root.expanduser()
-        if args.dataset_root is not None
-        else (settings.models.folder.parent / "datasets" / descriptor.dataset_id)
-    )
-    manifest_path = (
-        args.manifest_path.expanduser()
-        if args.manifest_path is not None
-        else (
-            settings.models.folder.parent
-            / "manifests"
-            / f"{descriptor.dataset_id}.jsonl"
-        )
-    )
-    labels_csv_path = (
-        args.labels_csv_path.expanduser() if args.labels_csv_path else None
-    )
-    audio_base_dir = args.audio_base_dir.expanduser() if args.audio_base_dir else None
-
-    _ensure_descriptor_consents(
-        dataset_id=descriptor.dataset_id,
-        policy_id=descriptor.policy_id,
-        license_id=descriptor.license_id,
-        accept_license_flag=args.accept_license,
-    )
-    if not args.skip_download:
-        download_dataset(
+    try:
+        if args.skip_download and (args.source or args.source_revision):
+            raise ValueError(
+                "Download source overrides cannot be used with --skip-download."
+            )
+        _ensure_descriptor_consents(
             settings=settings,
-            dataset_id=descriptor.dataset_id,
-            dataset_root=dataset_root,
+            dataset_id=args.dataset,
+            accept_license_flag=args.accept_license,
         )
+        workflow_result = run_dataset_prepare_workflow(
+            settings=settings,
+            dataset_id=args.dataset,
+            dataset_root=args.dataset_root,
+            manifest_path=args.manifest_path,
+            labels_csv_path=args.labels_csv_path,
+            audio_base_dir=args.audio_base_dir,
+            source_repo_id=args.source,
+            source_revision=args.source_revision,
+            default_language=settings.default_language,
+            skip_download=args.skip_download,
+        )
+    except (DatasetConsentError, ValueError, FileNotFoundError) as err:
+        print(str(err), file=sys.stderr)
+        return 2
+    except RuntimeError as err:
+        print(str(err), file=sys.stderr)
+        return 1
 
-    ontology = _resolve_label_ontology(settings)
-    built = prepare_dataset_manifest(
-        settings=settings,
-        dataset_id=descriptor.dataset_id,
-        dataset_root=dataset_root,
-        ontology=ontology,
-        manifest_path=manifest_path,
-        labels_csv_path=labels_csv_path,
-        audio_base_dir=audio_base_dir,
-        default_language=settings.default_language,
-    )
-    if not built:
+    if not workflow_result.manifest_paths:
         print("No manifest written (dataset missing or no usable samples).")
         return 2
     print("Wrote manifest(s):")
-    for path in built:
+    for path in workflow_result.manifest_paths:
         print(f"- {path}")
     return 0
