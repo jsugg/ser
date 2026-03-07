@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 import ser.config as config
+from ser._internal.config import bootstrap
+from ser._internal.config.settings_inputs import ResolvedSettingsInputs
 
 
 @pytest.fixture(autouse=True)
@@ -79,3 +81,55 @@ def test_reload_settings_uses_cpu_fallback(monkeypatch: pytest.MonkeyPatch) -> N
     settings = config.reload_settings()
 
     assert settings.models.num_cores == 1
+
+
+def test_build_settings_delegates_to_internal_settings_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public config facade should reuse bootstrap's shared builder owner."""
+    expected = config.reload_settings()
+    call_count = 0
+
+    def _fake_build_settings_from_inputs(
+        inputs: ResolvedSettingsInputs,
+    ) -> config.AppConfig:
+        nonlocal call_count
+        assert inputs.default_language
+        call_count += 1
+        return expected
+
+    monkeypatch.setattr(
+        "ser._internal.config.settings_builder.build_settings_from_inputs",
+        _fake_build_settings_from_inputs,
+    )
+
+    assert config._build_settings is bootstrap._build_settings
+    assert config._build_settings() is expected
+    assert call_count == 1
+
+
+def test_resolve_settings_inputs_delegates_to_internal_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public config facade should reuse bootstrap's shared input resolver."""
+    expected = config._resolve_settings_inputs()
+    call_count = 0
+
+    def _fake_resolve_settings_inputs_from_internal(
+        deps: object,
+    ) -> ResolvedSettingsInputs:
+        nonlocal call_count
+        assert callable(getattr(deps, "resolve_profile_model_id", None))
+        assert callable(getattr(deps, "get_profile_catalog", None))
+        call_count += 1
+        return expected
+
+    monkeypatch.setattr(
+        bootstrap,
+        "_resolve_settings_inputs_from_internal",
+        _fake_resolve_settings_inputs_from_internal,
+    )
+
+    assert config._resolve_settings_inputs is bootstrap._resolve_settings_inputs
+    assert config._resolve_settings_inputs() is expected
+    assert call_count == 1

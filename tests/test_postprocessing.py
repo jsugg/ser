@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 
 from ser.runtime.postprocessing import (
     SegmentPostprocessingConfig,
+    build_segment_postprocessing_config,
     postprocess_frame_predictions,
 )
 from ser.runtime.schema import FramePrediction
+
+
+@dataclass(frozen=True)
+class _RuntimeConfigStub:
+    """Typed runtime config stub for postprocessing projection tests."""
+
+    post_smoothing_window_frames: int
+    post_hysteresis_enter_confidence: float
+    post_hysteresis_exit_confidence: float
+    post_min_segment_duration_seconds: float
 
 
 def _frame(
@@ -109,3 +122,35 @@ def test_postprocessing_rejects_invalid_hysteresis_thresholds() -> None:
                 min_segment_duration_seconds=0.0,
             ),
         )
+
+
+def test_build_segment_postprocessing_config_maps_runtime_fields() -> None:
+    """Runtime config projection should map all postprocessing controls deterministically."""
+    runtime_config = _RuntimeConfigStub(
+        post_smoothing_window_frames=5,
+        post_hysteresis_enter_confidence=0.72,
+        post_hysteresis_exit_confidence=0.41,
+        post_min_segment_duration_seconds=0.55,
+    )
+
+    config = build_segment_postprocessing_config(runtime_config)
+
+    assert config == SegmentPostprocessingConfig(
+        smoothing_window_frames=5,
+        hysteresis_enter_confidence=0.72,
+        hysteresis_exit_confidence=0.41,
+        min_segment_duration_seconds=0.55,
+    )
+
+
+def test_build_segment_postprocessing_config_rejects_invalid_runtime_values() -> None:
+    """Runtime projection should fail fast when postprocessing invariants are violated."""
+    invalid_runtime_config = _RuntimeConfigStub(
+        post_smoothing_window_frames=3,
+        post_hysteresis_enter_confidence=0.40,
+        post_hysteresis_exit_confidence=0.50,
+        post_min_segment_duration_seconds=0.10,
+    )
+
+    with pytest.raises(ValueError, match="hysteresis_enter_confidence"):
+        build_segment_postprocessing_config(invalid_runtime_config)

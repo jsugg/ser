@@ -68,8 +68,13 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-linux-py313-cli-
 
-      - name: Sync all dependency groups (Python 3.13)
-        run: uv sync --frozen --python 3.13 --all-extras
+      - name: Sync validation dependencies (Python 3.13)
+        run: |
+          sync_args=(--frozen --python 3.13 --extra medium)
+          if [[ "${{ inputs.run_accurate_research }}" == "true" ]]; then
+            sync_args=(--frozen --python 3.13 --extra full)
+          fi
+          uv sync "${sync_args[@]}"
 
       - name: Build synthetic RAVDESS smoke dataset
         run: python ./scripts/build_synthetic_ravdess_dataset.py

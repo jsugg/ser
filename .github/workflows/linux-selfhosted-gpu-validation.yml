@@ -105,8 +105,13 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-selfhosted-cuda-py${{ inputs.python_version }}-
 
-      - name: Sync all dependency groups
-        run: uv sync --frozen --python ${{ inputs.python_version }} --all-extras
+      - name: Sync validation dependencies
+        run: |
+          sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra medium)
+          if [[ "${{ inputs.run_accurate_research }}" == "true" ]]; then
+            sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra full)
+          fi
+          uv sync "${sync_args[@]}"
 
       - name: Verify CUDA runtime availability
         run: |
@@ -245,8 +250,13 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-selfhosted-xpu-py${{ inputs.python_version }}-
 
-      - name: Sync all dependency groups
-        run: uv sync --frozen --python ${{ inputs.python_version }} --all-extras
+      - name: Sync validation dependencies
+        run: |
+          sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra medium)
+          if [[ "${{ inputs.run_accurate_research }}" == "true" ]]; then
+            sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra full)
+          fi
+          uv sync "${sync_args[@]}"
 
       - name: Verify XPU runtime availability
         run: |

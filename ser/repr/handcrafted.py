@@ -7,7 +7,8 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from ser.config import get_settings
+import ser.utils.dsp as dsp
+from ser.config import FeatureFlags
 from ser.repr.backend import (
     EncodedSequence,
     FeatureBackend,
@@ -26,6 +27,7 @@ class HandcraftedBackend(FeatureBackend):
         *,
         frame_size_seconds: int = 3,
         frame_stride_seconds: int = 1,
+        feature_flags: FeatureFlags | None = None,
     ) -> None:
         if frame_size_seconds <= 0:
             raise ValueError("frame_size_seconds must be greater than zero.")
@@ -33,6 +35,9 @@ class HandcraftedBackend(FeatureBackend):
             raise ValueError("frame_stride_seconds must be greater than zero.")
         self._frame_size_seconds = frame_size_seconds
         self._frame_stride_seconds = frame_stride_seconds
+        self._feature_flags = (
+            feature_flags if feature_flags is not None else FeatureFlags()
+        )
 
     @property
     def backend_id(self) -> str:
@@ -42,17 +47,16 @@ class HandcraftedBackend(FeatureBackend):
     @property
     def feature_dim(self) -> int:
         """Returns configured handcrafted feature dimension."""
-        feature_flags = get_settings().feature_flags
         feature_size = 0
-        if feature_flags.mfcc:
+        if self._feature_flags.mfcc:
             feature_size += 40
-        if feature_flags.chroma:
+        if self._feature_flags.chroma:
             feature_size += 12
-        if feature_flags.mel:
+        if self._feature_flags.mel:
             feature_size += 128
-        if feature_flags.contrast:
+        if self._feature_flags.contrast:
             feature_size += 7
-        if feature_flags.tonnetz:
+        if self._feature_flags.tonnetz:
             feature_size += 6
         return feature_size
 
@@ -80,14 +84,16 @@ class HandcraftedBackend(FeatureBackend):
         ends: list[float] = []
         frame_embeddings: list[NDArray[np.float32]] = []
 
-        from ser.features.feature_extractor import extract_feature_from_signal
-
         for start_index in range(0, audio.size, frame_step):
             end_index = min(start_index + frame_length, audio.size)
             frame_audio = audio[start_index:end_index]
             if frame_audio.size == 0:
                 continue
-            frame_features = extract_feature_from_signal(frame_audio, sample_rate)
+            frame_features = dsp.extract_feature_from_signal(
+                frame_audio,
+                sample_rate,
+                feature_flags=self._feature_flags,
+            )
             frame_embeddings.append(np.asarray(frame_features, dtype=np.float32))
             starts.append(float(start_index) / float(sample_rate))
             ends.append(float(end_index) / float(sample_rate))
@@ -127,9 +133,11 @@ class HandcraftedBackend(FeatureBackend):
         sample_rate: int,
     ) -> FeatureVector:
         """Extracts one handcrafted feature vector for whole-audio training paths."""
-        from ser.features.feature_extractor import extract_feature_from_signal
-
         return np.asarray(
-            extract_feature_from_signal(audio, sample_rate),
+            dsp.extract_feature_from_signal(
+                audio,
+                sample_rate,
+                feature_flags=self._feature_flags,
+            ),
             dtype=np.float64,
         )

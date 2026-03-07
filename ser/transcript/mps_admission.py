@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from ser.config import AppConfig
+    from ser.transcript.backends.base import BackendRuntimeRequest
 
 DEFAULT_MPS_ADMISSION_MIN_HEADROOM_MB: float = 64.0
 DEFAULT_MPS_ADMISSION_SAFETY_MARGIN_MB: float = 64.0
 
 type TranscriptionPhase = Literal["model_load", "transcribe"]
+type MpsAdmissionHeuristicResolver = Callable[
+    ...,
+    MpsAdmissionDecision,
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +131,115 @@ def decide_mps_admission_for_transcription(
         required_metric="headroom_budget",
         available_metric="headroom",
         confidence="high",
+    )
+
+
+def resolve_mps_admission_decision(
+    *,
+    settings: AppConfig,
+    runtime_request: BackendRuntimeRequest,
+    phase: TranscriptionPhase,
+    logger: logging.Logger,
+    heuristic_resolver: MpsAdmissionHeuristicResolver | None = None,
+) -> MpsAdmissionDecision | None:
+    """Resolves calibrated MPS admission decision when control is enabled."""
+    if not mps_admission_control_enabled(settings):
+        return None
+    transcription_settings = getattr(settings, "transcription", None)
+    configured_min_headroom_mb = getattr(
+        transcription_settings,
+        "mps_admission_min_headroom_mb",
+        DEFAULT_MPS_ADMISSION_MIN_HEADROOM_MB,
+    )
+    configured_safety_margin_mb = getattr(
+        transcription_settings,
+        "mps_admission_safety_margin_mb",
+        DEFAULT_MPS_ADMISSION_SAFETY_MARGIN_MB,
+    )
+    min_headroom_mb = (
+        configured_min_headroom_mb
+        if isinstance(configured_min_headroom_mb, int | float)
+        and not isinstance(configured_min_headroom_mb, bool)
+        else DEFAULT_MPS_ADMISSION_MIN_HEADROOM_MB
+    )
+    safety_margin_mb = (
+        configured_safety_margin_mb
+        if isinstance(configured_safety_margin_mb, int | float)
+        and not isinstance(configured_safety_margin_mb, bool)
+        else DEFAULT_MPS_ADMISSION_SAFETY_MARGIN_MB
+    )
+    resolve_heuristic = (
+        decide_mps_admission_for_transcription
+        if heuristic_resolver is None
+        else heuristic_resolver
+    )
+    heuristic_decision = resolve_heuristic(
+        model_name=runtime_request.model_name,
+        phase=phase,
+        min_headroom_mb=float(min_headroom_mb),
+        safety_margin_mb=float(safety_margin_mb),
+    )
+    # Local import avoids cyclic dependency with mps_admission_overrides.
+    from ser.transcript.mps_admission_overrides import (
+        apply_calibrated_mps_admission_override,
+    )
+
+    resolved_decision = apply_calibrated_mps_admission_override(
+        settings=settings,
+        runtime_request=runtime_request,
+        phase=phase,
+        heuristic_decision=heuristic_decision,
+    )
+    if resolved_decision.reason_code != heuristic_decision.reason_code:
+        logger.info(
+            "MPS admission calibrated override applied for %s "
+            "(model=%s, reason=%s, confidence=%s).",
+            phase,
+            runtime_request.model_name,
+            resolved_decision.reason_code,
+            resolved_decision.confidence,
+        )
+    return resolved_decision
+
+
+def mps_admission_control_enabled(settings: AppConfig) -> bool:
+    """Returns whether dynamic MPS admission control is enabled by config."""
+    transcription_settings = getattr(settings, "transcription", None)
+    enabled = getattr(transcription_settings, "mps_admission_control_enabled", True)
+    return bool(enabled)
+
+
+def mps_hard_oom_shortcut_enabled(settings: AppConfig) -> bool:
+    """Returns whether hard MPS OOM shortcut is enabled by config."""
+    transcription_settings = getattr(settings, "transcription", None)
+    enabled = getattr(transcription_settings, "mps_hard_oom_shortcut_enabled", True)
+    return bool(enabled)
+
+
+def should_enforce_transcribe_admission(decision: MpsAdmissionDecision) -> bool:
+    """Returns whether one pre-transcribe admission denial should be enforced."""
+    if decision.confidence == "high":
+        return True
+    return decision.reason_code == "mps_headroom_unknown_large_model"
+
+
+def log_mps_admission_control_fallback(
+    *,
+    phase: str,
+    decision: MpsAdmissionDecision,
+    logger: logging.Logger,
+) -> None:
+    """Logs one concise MPS admission-control fallback message."""
+    logger.info(
+        "MPS admission control switched %s to cpu "
+        "(reason=%s, confidence=%s, required_%s=%s, available_%s=%s).",
+        phase,
+        decision.reason_code,
+        decision.confidence,
+        decision.required_metric,
+        format_gib_short(decision.required_bytes),
+        decision.available_metric,
+        format_gib_short(decision.available_bytes),
     )
 
 

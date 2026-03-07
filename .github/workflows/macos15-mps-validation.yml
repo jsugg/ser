@@ -73,7 +73,12 @@ jobs:
             uv-${{ runner.os }}-macos15-mps-py${{ inputs.python_version }}-
 
       - name: Setup compatible environment
-        run: ./scripts/setup_compatible_env.sh --python ${{ inputs.python_version }}
+        run: |
+          setup_args=(--python "${{ inputs.python_version }}" --extra medium --skip-git-hooks)
+          if [[ "${{ inputs.run_accurate_research }}" == "true" ]]; then
+            setup_args=(--python "${{ inputs.python_version }}" --extra full --skip-git-hooks)
+          fi
+          ./scripts/setup_compatible_env.sh "${setup_args[@]}"
 
       - name: Verify MPS runtime availability
         run: |

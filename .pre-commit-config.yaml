@@ -1,7 +1,11 @@
-default_language_version:
-  python: python3.12
-
 repos:
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        args: [--py312-plus]
+        stages: [pre-commit]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.1
     hooks:
@@ -10,20 +14,24 @@ repos:
         stages: [pre-commit]
       - id: ruff
         stages: [pre-push]
-      - id: ruff-format
-        stages: [pre-commit, pre-push]
 
   - repo: https://github.com/psf/black
     rev: 25.12.0
     hooks:
       - id: black
-        stages: [pre-commit, pre-push]
+        stages: [pre-commit]
+      - id: black
+        args: [--check]
+        stages: [pre-push]
 
   - repo: https://github.com/pycqa/isort
     rev: 6.1.0
     hooks:
       - id: isort
-        stages: [pre-commit, pre-push]
+        stages: [pre-commit]
+      - id: isort
+        args: [--check-only]
+        stages: [pre-push]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.19.1

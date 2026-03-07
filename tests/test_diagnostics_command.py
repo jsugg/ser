@@ -17,7 +17,7 @@ def test_run_doctor_command_strict_returns_one_for_warnings(
     report = DiagnosticReport(
         findings=(
             DiagnosticFinding(
-                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                code="transcription_operational_faster_whisper_mps_unsupported",
                 severity="warning",
                 message="Operational warning",
             ),
@@ -31,6 +31,30 @@ def test_run_doctor_command_strict_returns_one_for_warnings(
 
     exit_code = run_doctor_command(["--strict"], settings=settings)
     assert exit_code == 1
+
+
+def test_run_doctor_command_strict_returns_zero_for_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strict mode should not fail when report contains only informational findings."""
+    settings = config_module.reload_settings()
+    report = DiagnosticReport(
+        findings=(
+            DiagnosticFinding(
+                code="transcription_operational_torio_ffmpeg_abi_mismatch",
+                severity="info",
+                message="Non-blocking informational advisory",
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        "ser.diagnostics.command.run_doctor_diagnostics",
+        lambda **_kwargs: report,
+    )
+
+    exit_code = run_doctor_command(["--strict"], settings=settings)
+    assert exit_code == 0
 
 
 def test_run_doctor_command_returns_two_for_blocking_findings(

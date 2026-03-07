@@ -1,5 +1,6 @@
 """Tests for runtime feature-flag and schema version configuration."""
 
+import importlib
 import os
 from collections.abc import Generator
 from dataclasses import replace
@@ -8,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import ser.config as config
+from ser._internal.config import bootstrap
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +116,28 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.models.secure_model_file_name == "ser_model.skops"
     assert settings.models.training_report_file_name == "training_report.json"
     assert settings.dataset.manifest_paths == ()
+
+
+def test_resolve_settings_inputs_rejects_conflicting_feature_runtime_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conflicting backend runtime defaults across profiles should fail fast."""
+    profile_catalog = dict(config.get_profile_catalog())
+    medium_entry = profile_catalog["medium"]
+    assert medium_entry.feature_runtime_defaults is not None
+    profile_catalog["accurate"] = replace(
+        profile_catalog["accurate"],
+        backend_id=medium_entry.backend_id,
+        feature_runtime_defaults=replace(
+            medium_entry.feature_runtime_defaults,
+            torch_dtype="float16",
+        ),
+    )
+    with pytest.MonkeyPatch.context() as conflict_patch:
+        assert config._resolve_settings_inputs is bootstrap._resolve_settings_inputs
+        conflict_patch.setattr(bootstrap, "get_profile_catalog", lambda: profile_catalog)
+        with pytest.raises(RuntimeError, match="conflicting feature runtime defaults"):
+            config._resolve_settings_inputs()
 
 
 def test_runtime_flags_and_schema_env_overrides(
@@ -429,6 +453,41 @@ def test_apply_settings_syncs_pytorch_mps_fallback_env() -> None:
 
     assert config.get_settings().torch_runtime.enable_mps_fallback is True
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+
+
+def test_settings_override_restores_previous_settings_and_env() -> None:
+    """Scoped settings overrides should restore prior state and torch env on exit."""
+    base_settings = config.reload_settings()
+    enabled_settings = replace(
+        base_settings,
+        torch_runtime=replace(
+            base_settings.torch_runtime,
+            enable_mps_fallback=True,
+        ),
+    )
+
+    with config.settings_override(enabled_settings):
+        assert config.get_settings() is enabled_settings
+        assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+
+    assert config.get_settings() is base_settings
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == (
+        "1" if base_settings.torch_runtime.enable_mps_fallback else "0"
+    )
+
+
+def test_importing_config_does_not_mutate_torch_runtime_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Import-time config initialization should not mutate torch env selectors."""
+    monkeypatch.delenv("SER_TORCH_ENABLE_MPS_FALLBACK", raising=False)
+    monkeypatch.setenv("PYTORCH_ENABLE_MPS_FALLBACK", "sentinel")
+
+    reloaded_module = importlib.reload(config)
+
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
+    reloaded_module.reload_settings()
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "0"
 
 
 def test_invalid_transcription_mps_threshold_env_falls_back_to_default(

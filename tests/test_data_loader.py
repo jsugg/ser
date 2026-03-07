@@ -2,10 +2,12 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import numpy as np
 import pytest
 
+from ser.config import AppConfig
 from ser.data import data_loader as dl
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION
 
@@ -38,7 +40,12 @@ def _build_settings(max_failed_file_ratio: float = 0.5) -> SimpleNamespace:
 
 def test_process_file_reports_unexpected_name_format() -> None:
     """Files without expected RAVDESS tokens should be skipped explicitly."""
-    result = dl.process_file("bad.wav", {"happy"}, {"03": "happy"})
+    result = dl.process_file(
+        "bad.wav",
+        {"happy"},
+        {"03": "happy"},
+        settings=cast(AppConfig, _build_settings()),
+    )
 
     assert result.sample is None
     assert result.error is not None
@@ -111,10 +118,14 @@ def test_load_data_aborts_when_failure_ratio_exceeds_threshold(
     )
 
     def fake_process_file(
-        file: str, observed_emotions: set[str], emotion_map: dict[str, str]
+        file: str,
+        observed_emotions: set[str],
+        emotion_map: dict[str, str],
+        settings: object,
     ) -> dl.ProcessFileResult:
         assert observed_emotions
         assert emotion_map
+        assert settings is not None
         if file == "a.wav":
             return dl.ProcessFileResult(
                 sample=(np.asarray([1.0, 2.0], dtype=np.float64), "happy"),
@@ -147,10 +158,14 @@ def test_load_data_returns_split_for_valid_samples(
     }
 
     def fake_process_file(
-        file: str, observed_emotions: set[str], emotion_map: dict[str, str]
+        file: str,
+        observed_emotions: set[str],
+        emotion_map: dict[str, str],
+        settings: object,
     ) -> dl.ProcessFileResult:
         assert observed_emotions
         assert emotion_map
+        assert settings is not None
         return dl.ProcessFileResult(sample=sample_map[file], error=None)
 
     monkeypatch.setattr(dl, "process_file", fake_process_file)

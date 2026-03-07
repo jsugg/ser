@@ -142,6 +142,76 @@ def test_collect_ravdess_reference_files_stratified_limit_is_deterministic(
     assert len(first) == 4
 
 
+def test_profile_transcription_candidate_delegates_to_internal_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Candidate profiling wrapper should delegate execution to internal helper."""
+    captured: dict[str, object] = {}
+    stats = tp.default_profiling_helpers.CandidateProfileBenchmarkStats(
+        evaluated_samples=2,
+        failed_samples=1,
+        exact_match_rate=0.5,
+        mean_word_error_rate=0.25,
+        median_word_error_rate=0.25,
+        p90_word_error_rate=0.3,
+        mean_accuracy=0.75,
+        average_latency_seconds=0.6,
+        total_runtime_seconds=1.3,
+        error_message=None,
+    )
+
+    def _profile_candidate_transcriptions(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return stats
+
+    monkeypatch.setattr(
+        "ser._internal.transcription.default_profiling."
+        "profile_candidate_transcriptions",
+        _profile_candidate_transcriptions,
+    )
+    candidate = tp.TranscriptionProfileCandidate(
+        name="candidate-medium",
+        source_profile="medium",
+        backend_id="stable_whisper",
+        model_name="turbo",
+        use_demucs=False,
+        use_vad=True,
+    )
+    result = tp.profile_transcription_candidate(
+        candidate=candidate,
+        files=[Path("sample.wav")],
+        language="en",
+    )
+
+    assert result.profile is candidate
+    assert result.evaluated_samples == stats.evaluated_samples
+    assert result.failed_samples == stats.failed_samples
+    assert result.exact_match_rate == stats.exact_match_rate
+    assert result.mean_word_error_rate == stats.mean_word_error_rate
+    assert result.median_word_error_rate == stats.median_word_error_rate
+    assert result.p90_word_error_rate == stats.p90_word_error_rate
+    assert result.mean_accuracy == stats.mean_accuracy
+    assert result.average_latency_seconds == stats.average_latency_seconds
+    assert result.total_runtime_seconds == stats.total_runtime_seconds
+    assert result.error_message is None
+    assert captured["candidate_name"] == "candidate-medium"
+    assert captured["profile"] == tp.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="turbo",
+        use_demucs=False,
+        use_vad=True,
+    )
+    assert captured["files"] == [Path("sample.wav")]
+    assert captured["language"] == "en"
+    assert captured["load_model"] is tp.load_whisper_model
+    assert captured["transcribe"] is tp.transcribe_with_model
+    assert captured["resolve_reference_text"] is tp.ravdess_reference_text
+    assert captured["words_to_text"] is tp.transcript_words_to_text
+    assert captured["compute_word_error_rate"] is tp.word_error_rate
+    assert captured["percentile"] is tp._percentile
+    assert captured["logger"] is tp.logger
+
+
 def test_derive_accuracy_gate_uses_baseline_drop_and_floor() -> None:
     """Accuracy gate should respect both absolute floor and allowed drop."""
     baseline_summary = _summary(name="baseline", mean_accuracy=0.94, avg_latency=3.0)
@@ -340,3 +410,69 @@ def test_parse_calibration_profiles_validates_values() -> None:
 
     with pytest.raises(ValueError, match="Unsupported profile"):
         tp.parse_calibration_profiles("accurate,unknown")
+
+
+def test_calibrate_runtime_candidate_delegates_probe_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Candidate calibration wrapper should map internal probe stats to metrics."""
+    captured: dict[str, object] = {}
+    stats = tp.runtime_calibration_helpers.RuntimeCalibrationProbeStats(
+        successful_runs=2,
+        failed_runs=1,
+        mps_loaded_runs=2,
+        mps_completed_runs=1,
+        mps_to_cpu_failover_runs=1,
+        hard_mps_oom_runs=1,
+        mean_latency_seconds=0.42,
+        error_messages=("mps oom",),
+    )
+
+    def _run_runtime_calibration_probes(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return stats
+
+    monkeypatch.setattr(
+        "ser._internal.transcription.runtime_calibration."
+        "run_runtime_calibration_probes",
+        _run_runtime_calibration_probes,
+    )
+    candidate = tp.TranscriptionProfileCandidate(
+        name="candidate",
+        source_profile="accurate",
+        backend_id="stable_whisper",
+        model_name="large",
+        use_demucs=True,
+        use_vad=True,
+    )
+
+    metrics = tp._calibrate_runtime_candidate(
+        candidate=candidate,
+        calibration_file=tmp_path / "sample.wav",
+        language="en",
+        iterations=3,
+    )
+
+    assert metrics.profile is candidate
+    assert metrics.iterations == 3
+    assert metrics.successful_runs == stats.successful_runs
+    assert metrics.failed_runs == stats.failed_runs
+    assert metrics.mps_loaded_runs == stats.mps_loaded_runs
+    assert metrics.mps_completed_runs == stats.mps_completed_runs
+    assert metrics.mps_to_cpu_failover_runs == stats.mps_to_cpu_failover_runs
+    assert metrics.hard_mps_oom_runs == stats.hard_mps_oom_runs
+    assert metrics.mean_latency_seconds == stats.mean_latency_seconds
+    assert metrics.error_messages == stats.error_messages
+    assert captured["backend_id"] == "stable_whisper"
+    assert captured["active_profile"] == tp.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large",
+        use_demucs=True,
+        use_vad=True,
+    )
+    assert captured["calibration_file"] == tmp_path / "sample.wav"
+    assert captured["language"] == "en"
+    assert captured["iterations"] == 3
+    assert captured["load_model"] is tp.load_whisper_model
+    assert captured["transcribe"] is tp.transcribe_with_model

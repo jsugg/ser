@@ -21,7 +21,7 @@ from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings() -> Generator[None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield
@@ -99,7 +99,7 @@ def test_fast_timeout_retries_up_to_configured_budget(
         raise FastInferenceTimeoutError("timeout")
 
     monkeypatch.setattr(
-        "ser.runtime.fast_inference._run_with_timeout",
+        "ser.runtime.fast_inference._run_with_timeout_impl",
         fake_timeout_runner,
     )
     monkeypatch.setattr(
@@ -304,8 +304,8 @@ def test_fast_single_flight_serializes_calls(
     settings = config.reload_settings()
     _patch_fast_prerequisites(monkeypatch)
     monkeypatch.setattr(
-        "ser.runtime.fast_inference._run_with_timeout",
-        lambda operation, timeout_seconds: operation(),
+        "ser.runtime.fast_inference._run_with_timeout_impl",
+        lambda **kwargs: kwargs["operation"](),
     )
 
     counters = {"active": 0, "max_active": 0}
@@ -349,3 +349,4 @@ def test_fast_single_flight_serializes_calls(
 
     assert errors == []
     assert counters["max_active"] == 1
+    assert fast_inference._SINGLE_FLIGHT_REGISTRY.active_key_count() == 0

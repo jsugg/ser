@@ -8,11 +8,14 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.models import emotion_model as em
+from ser.models.medium_noise_controls import (
+    MediumNoiseControlStats,
+    apply_medium_noise_controls,
+)
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
+def _reset_settings() -> Generator[None]:
     """Keeps global settings stable across tests."""
     config.reload_settings()
     yield
@@ -31,9 +34,21 @@ def _pooled_features() -> np.ndarray:
     )
 
 
+def _apply_settings_noise_controls(
+    pooled_features: np.ndarray,
+) -> tuple[np.ndarray, MediumNoiseControlStats]:
+    """Applies owner noise controls using the current settings snapshot."""
+    settings = config.get_settings()
+    return apply_medium_noise_controls(
+        pooled_features,
+        min_window_std=settings.medium_training.min_window_std,
+        max_windows_per_clip=settings.medium_training.max_windows_per_clip,
+    )
+
+
 def test_medium_noise_controls_default_keeps_all_windows() -> None:
     """Default settings should keep all windows without drops."""
-    filtered, stats = em._apply_medium_noise_controls(_pooled_features())
+    filtered, stats = _apply_settings_noise_controls(_pooled_features())
 
     np.testing.assert_allclose(filtered, _pooled_features())
     assert stats.total_windows == 3
@@ -50,7 +65,7 @@ def test_medium_noise_controls_filters_low_std_windows(
     monkeypatch.setenv("SER_MEDIUM_MIN_WINDOW_STD", "0.25")
     config.reload_settings()
 
-    filtered, stats = em._apply_medium_noise_controls(_pooled_features())
+    filtered, stats = _apply_settings_noise_controls(_pooled_features())
 
     np.testing.assert_allclose(
         filtered,
@@ -70,7 +85,7 @@ def test_medium_noise_controls_forced_keep_when_all_rows_are_below_threshold(
     monkeypatch.setenv("SER_MEDIUM_MIN_WINDOW_STD", "10.0")
     config.reload_settings()
 
-    filtered, stats = em._apply_medium_noise_controls(_pooled_features())
+    filtered, stats = _apply_settings_noise_controls(_pooled_features())
 
     np.testing.assert_allclose(
         filtered,
@@ -89,7 +104,7 @@ def test_medium_noise_controls_caps_windows_per_clip(
     monkeypatch.setenv("SER_MEDIUM_MAX_WINDOWS_PER_CLIP", "2")
     config.reload_settings()
 
-    filtered, stats = em._apply_medium_noise_controls(_pooled_features())
+    filtered, stats = _apply_settings_noise_controls(_pooled_features())
 
     np.testing.assert_allclose(
         filtered,

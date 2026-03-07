@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +26,106 @@ class DatasetRegistryEntry:
     dataset_root: Path
     manifest_path: Path
     options: dict[str, str]
+
+
+@dataclass(frozen=True)
+class DatasetRegistryOptions:
+    """Typed known registry options with immutable passthrough extras."""
+
+    labels_csv_path: str | None
+    audio_base_dir: str | None
+    source_repo_id: str | None
+    source_revision: str | None
+    source_commit_sha: str | None
+    default_language: str | None
+    extras: tuple[tuple[str, str], ...]
+
+    def as_dict(self) -> dict[str, str]:
+        """Returns one normalized dict representation for persistence."""
+        normalized: dict[str, str] = dict(self.extras)
+        if self.labels_csv_path is not None:
+            normalized["labels_csv_path"] = self.labels_csv_path
+        if self.audio_base_dir is not None:
+            normalized["audio_base_dir"] = self.audio_base_dir
+        if self.source_repo_id is not None:
+            normalized["source_repo_id"] = self.source_repo_id
+        if self.source_revision is not None:
+            normalized["source_revision"] = self.source_revision
+        if self.source_commit_sha is not None:
+            normalized["source_commit_sha"] = self.source_commit_sha
+        if self.default_language is not None:
+            normalized["default_language"] = self.default_language
+        return normalized
+
+
+def parse_dataset_registry_options(
+    options: Mapping[str, str] | None,
+) -> DatasetRegistryOptions:
+    """Parses and validates typed registry options."""
+
+    raw: dict[str, str] = {}
+    if options is not None:
+        raw = {str(key): str(value) for key, value in options.items()}
+
+    def _read_optional_str(key: str) -> str | None:
+        value = raw.get(key)
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    labels_csv_path = _read_optional_str("labels_csv_path")
+    audio_base_dir = _read_optional_str("audio_base_dir")
+    source_repo_id = _read_optional_str("source_repo_id")
+    source_revision = _read_optional_str("source_revision")
+    source_commit_sha = _read_optional_str("source_commit_sha")
+    default_language = _read_optional_str("default_language")
+
+    if source_repo_id is not None:
+        if "/" not in source_repo_id or any(char.isspace() for char in source_repo_id):
+            raise ValueError(
+                "Invalid source_repo_id in dataset registry. Expected Hugging Face "
+                "dataset id like `namespace/name`."
+            )
+    if source_revision is not None and any(char.isspace() for char in source_revision):
+        raise ValueError(
+            "Invalid source_revision in dataset registry: whitespace is not allowed."
+        )
+    if source_commit_sha is not None:
+        normalized_source_commit_sha = source_commit_sha.lower()
+        if (
+            any(char.isspace() for char in normalized_source_commit_sha)
+            or len(normalized_source_commit_sha) < 7
+            or len(normalized_source_commit_sha) > 64
+            or any(
+                char not in "0123456789abcdef" for char in normalized_source_commit_sha
+            )
+        ):
+            raise ValueError(
+                "Invalid source_commit_sha in dataset registry: expected 7-64 hex characters."
+            )
+        source_commit_sha = normalized_source_commit_sha
+
+    known_keys = {
+        "labels_csv_path",
+        "audio_base_dir",
+        "source_repo_id",
+        "source_revision",
+        "source_commit_sha",
+        "default_language",
+    }
+    extras = tuple(
+        sorted((key, value) for key, value in raw.items() if key not in known_keys)
+    )
+    return DatasetRegistryOptions(
+        labels_csv_path=labels_csv_path,
+        audio_base_dir=audio_base_dir,
+        source_repo_id=source_repo_id,
+        source_revision=source_revision,
+        source_commit_sha=source_commit_sha,
+        default_language=default_language,
+        extras=extras,
+    )
 
 
 def _registry_path(settings: AppConfig) -> Path:
@@ -87,13 +188,30 @@ def upsert_dataset_registry_entry(
 ) -> None:
     registry = load_dataset_registry(settings=settings)
     normalized = dataset_id.strip().lower()
+    parsed_options = parse_dataset_registry_options(options)
     registry[normalized] = DatasetRegistryEntry(
         dataset_id=normalized,
         dataset_root=dataset_root.expanduser(),
         manifest_path=manifest_path.expanduser(),
-        options=dict(options or {}),
+        options=parsed_options.as_dict(),
     )
     save_dataset_registry(settings=settings, registry=registry)
+
+
+def remove_dataset_registry_entry(
+    *,
+    settings: AppConfig,
+    dataset_id: str,
+) -> DatasetRegistryEntry | None:
+    """Removes one dataset registry entry when present."""
+
+    registry = load_dataset_registry(settings=settings)
+    normalized = dataset_id.strip().lower()
+    existing = registry.pop(normalized, None)
+    if existing is None:
+        return None
+    save_dataset_registry(settings=settings, registry=registry)
+    return existing
 
 
 def registered_manifest_paths(*, settings: AppConfig) -> tuple[Path, ...]:
