@@ -14,7 +14,6 @@ from ser.data.dataset_consents import (
     load_persisted_dataset_consents,
     persist_dataset_consents,
 )
-from ser.data.label_ontology import resolve_label_ontology
 from ser.data.dataset_prepare import (
     SUPPORTED_DATASETS,
     DatasetDescriptor,
@@ -30,6 +29,7 @@ from ser.data.dataset_registry import (
     parse_dataset_registry_options,
     remove_dataset_registry_entry,
 )
+from ser.data.label_ontology import resolve_label_ontology
 
 
 @dataclass(frozen=True, slots=True)

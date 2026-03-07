@@ -777,9 +777,7 @@ def test_run_faster_whisper_process_isolated_delegates_to_internal_service(
             ),
         ),
     )
-    assert payload.settings.models.whisper_download_root == Path(
-        "/tmp/whisper-cache"
-    )
+    assert payload.settings.models.whisper_download_root == Path("/tmp/whisper-cache")
     assert captured["get_spawn_context"] is te._spawn_context
     get_spawn_context = cast(Callable[[], object], captured["get_spawn_context"])
     spawn_context = get_spawn_context()
@@ -1130,7 +1128,9 @@ def test_transcribe_with_profile_uses_explicit_settings_without_ambient_lookup(
             AssertionError("private helper must use explicit settings")
         ),
     )
-    monkeypatch.setattr(te, "_runtime_request_from_profile", lambda *_a: runtime_request)
+    monkeypatch.setattr(
+        te, "_runtime_request_from_profile", lambda *_a: runtime_request
+    )
     monkeypatch.setattr(te, "_check_adapter_compatibility", lambda **_kwargs: None)
     monkeypatch.setattr(
         te,
@@ -1612,7 +1612,9 @@ def test_transcription_worker_entry_blocks_torch_for_faster_whisper(
     monkeypatch.setattr(
         te,
         "get_settings",
-        lambda: (_ for _ in ()).throw(AssertionError("worker must not use ambient settings")),
+        lambda: (_ for _ in ()).throw(
+            AssertionError("worker must not use ambient settings")
+        ),
     )
     monkeypatch.setattr(
         te,

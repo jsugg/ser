@@ -682,8 +682,8 @@ def run_transcription_runtime_calibration(
         raise FileNotFoundError(f"Calibration audio file not found: {calibration_file}")
 
     active_settings = settings if settings is not None else get_settings()
-    calibration_settings = runtime_calibration_helpers.build_runtime_calibration_settings(
-        active_settings
+    calibration_settings = (
+        runtime_calibration_helpers.build_runtime_calibration_settings(active_settings)
     )
     recommendations: list[RuntimeCalibrationRecommendation] = []
     with settings_override(calibration_settings):

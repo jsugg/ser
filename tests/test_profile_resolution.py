@@ -91,8 +91,7 @@ def test_settings_model_ids_track_profile_catalog_defaults() -> None:
 
     assert settings.models.medium_model_id == catalog["medium"].model.default_model_id
     assert (
-        settings.models.accurate_model_id
-        == catalog["accurate"].model.default_model_id
+        settings.models.accurate_model_id == catalog["accurate"].model.default_model_id
     )
     assert (
         settings.models.accurate_research_model_id

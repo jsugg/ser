@@ -15,12 +15,11 @@ from sklearn.model_selection import train_test_split
 
 from ser.config import AppConfig, get_settings
 from ser.data.adapters.ravdess import build_ravdess_utterances
-from ser.data.label_ontology import resolve_label_ontology
 from ser.data.dataset_prepare import prepare_from_registry_entry
 from ser.data.dataset_registry import load_dataset_registry
+from ser.data.label_ontology import resolve_label_ontology
 from ser.data.manifest import Utterance
 from ser.data.manifest_jsonl import load_manifest_jsonl
-from ser.data.ontology import LabelOntology
 from ser.features import extract_feature
 from ser.utils.logger import get_logger
 
