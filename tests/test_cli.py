@@ -455,6 +455,16 @@ def test_cli_profile_option_enables_pipeline_and_overrides_runtime_flags_for_tra
 ) -> None:
     """`--profile` should enable pipeline mode and override runtime flags."""
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
     base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
@@ -511,6 +521,16 @@ def test_cli_profile_option_routes_prediction_with_selected_profile(
 ) -> None:
     """Prediction should route through pipeline when `--profile` is provided."""
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_startup_preflight_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
     base_settings = config_module.reload_settings()
     monkeypatch.setattr(
         cli,
