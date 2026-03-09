@@ -5,11 +5,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.retry_scaffold import (
+    finalize_in_process_setup as _finalize_in_process_setup_impl,
+)
+from ser._internal.runtime.retry_scaffold import (
+    prepare_retry_state as _prepare_retry_state_impl,
+)
 from ser.config import AppConfig, ProfileRuntimeConfig
 
 
@@ -91,41 +97,29 @@ def prepare_retry_state(
 ]:
     """Builds initial retry state for accurate runtime and performs untimed setup."""
     retry_state = AccurateRetryOperationState[_PayloadT, _BackendT]()
-    setup_started_at: float | None = None
-    if use_process_isolation:
-        if process_payload is None:
-            raise RuntimeError(
-                "Accurate process payload is missing for isolated execution."
-            )
-        retry_state.process_payload = process_payload
-        return retry_state, None, setup_started_at
-
-    setup_started_at = log_phase_started(
-        logger,
-        phase_name=setup_phase_name,
-        profile=profile,
-    )
-    prepared_operation: PreparedAccurateOperation[_LoadedModelT, _BackendT] | None = (
-        None
-    )
-    try:
-        prepared_operation = prepare_in_process_operation(
-            request=request,
-            settings=settings,
-            runtime_config=runtime_config,
-            loaded_model=loaded_model,
-            backend=backend,
+    if use_process_isolation and process_payload is None:
+        raise RuntimeError("Accurate process payload is missing for isolated execution.")
+    active_process_payload, prepared_operation, setup_started_at = (
+        _prepare_retry_state_impl(
+            use_process_isolation=use_process_isolation,
+            logger=logger,
+            profile=profile,
+            setup_phase_name=setup_phase_name,
+            log_phase_started=log_phase_started,
+            log_phase_failed=log_phase_failed,
+            build_process_payload=lambda: cast(_PayloadT, process_payload),
+            prepare_in_process_operation=lambda: prepare_in_process_operation(
+                request=request,
+                settings=settings,
+                runtime_config=runtime_config,
+                loaded_model=loaded_model,
+                backend=backend,
+            ),
         )
+    )
+    retry_state.process_payload = active_process_payload
+    if prepared_operation is not None:
         retry_state.active_backend = prepared_operation.backend
-    except Exception:
-        if setup_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=setup_phase_name,
-                started_at=setup_started_at,
-                profile=profile,
-            )
-        raise
     return retry_state, prepared_operation, setup_started_at
 
 
@@ -143,30 +137,19 @@ def finalize_in_process_setup(
     runtime_error_factory: Callable[[str], Exception],
 ) -> None:
     """Prepares in-process backend runtime and emits setup phase diagnostics."""
-    if use_process_isolation:
-        return
-    if state.active_backend is None:
-        raise runtime_error_factory(
-            "Accurate backend is missing for in-process inference."
-        )
-    try:
-        prepare_accurate_backend_runtime(state.active_backend)
-    except Exception:
-        if setup_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=setup_phase_name,
-                started_at=setup_started_at,
-                profile=profile,
-            )
-        raise
-    if setup_started_at is not None:
-        log_phase_completed(
-            logger,
-            phase_name=setup_phase_name,
-            started_at=setup_started_at,
-            profile=profile,
-        )
+    _finalize_in_process_setup_impl(
+        use_process_isolation=use_process_isolation,
+        backend=state.active_backend,
+        setup_started_at=setup_started_at,
+        logger=logger,
+        profile=profile,
+        setup_phase_name=setup_phase_name,
+        prepare_backend_runtime=prepare_accurate_backend_runtime,
+        log_phase_completed=log_phase_completed,
+        log_phase_failed=log_phase_failed,
+        missing_backend_message="Accurate backend is missing for in-process inference.",
+        runtime_error_factory=runtime_error_factory,
+    )
 
 
 def prepare_in_process_operation(

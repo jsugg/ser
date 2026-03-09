@@ -7,9 +7,30 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
-from typing import Literal, cast
+from typing import Literal
 
 from ser._internal.runtime.single_flight import SingleFlightRegistry
+from ser._internal.runtime.process_timeout import (
+    run_with_process_timeout as _run_with_process_timeout_orchestration,
+)
+from ser._internal.runtime.worker_bindings import (
+    is_setup_complete_message as _is_setup_complete_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    parse_worker_completion_message as _parse_worker_completion_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    raise_worker_error as _raise_worker_error_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    recv_worker_message as _recv_worker_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    run_worker_entry as _run_worker_entry_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    terminate_worker_process as _terminate_worker_process_binding,
+)
 from ser._internal.runtime.worker_lifecycle import (
     is_setup_complete_message as _is_setup_complete_message_impl,
 )
@@ -21,6 +42,9 @@ from ser._internal.runtime.worker_lifecycle import (
 )
 from ser._internal.runtime.worker_lifecycle import (
     recv_worker_message as _recv_worker_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    run_process_setup_compute_handshake as _run_process_setup_compute_handshake_impl,
 )
 from ser._internal.runtime.worker_lifecycle import (
     run_with_timeout as _run_with_timeout_impl,
@@ -286,106 +310,28 @@ def _run_with_process_timeout(
     timeout_seconds: float,
 ) -> InferenceResult:
     """Runs one process-isolated attempt with timeout applied only to compute."""
-    setup_started_at = log_phase_started(
-        logger,
-        phase_name=PHASE_EMOTION_SETUP,
-        profile="fast",
+    return _run_with_process_timeout_orchestration(
+        payload=payload,
+        resolve_profile=lambda _payload: "fast",
+        timeout_seconds=timeout_seconds,
+        get_context=mp.get_context,
+        logger=logger,
+        setup_phase_name=PHASE_EMOTION_SETUP,
+        inference_phase_name=PHASE_EMOTION_INFERENCE,
+        log_phase_started=log_phase_started,
+        log_phase_completed=log_phase_completed,
+        log_phase_failed=log_phase_failed,
+        run_process_setup_compute_handshake=_run_process_setup_compute_handshake_impl,
+        worker_target=_worker_entry,
+        recv_worker_message=_recv_worker_message,
+        is_setup_complete_message=_is_setup_complete_message,
+        terminate_worker_process=_terminate_worker_process,
+        timeout_error_factory=FastInferenceTimeoutError,
+        execution_error_factory=FastInferenceExecutionError,
+        worker_label="Fast inference",
+        process_join_grace_seconds=_TERMINATE_GRACE_SECONDS,
+        parse_worker_completion_message=_parse_worker_completion_message,
     )
-    setup_completed = False
-    inference_started_at: float | None = None
-    context = mp.get_context("spawn")
-    parent_conn, child_conn = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_worker_entry,
-        args=(payload, child_conn),
-        daemon=False,
-    )
-    process.start()
-    child_conn.close()
-    try:
-        try:
-            setup_message = _recv_worker_message(parent_conn, stage="setup")
-            if _is_setup_complete_message(setup_message):
-                setup_completed = True
-                log_phase_completed(
-                    logger,
-                    phase_name=PHASE_EMOTION_SETUP,
-                    started_at=setup_started_at,
-                    profile="fast",
-                )
-                inference_started_at = log_phase_started(
-                    logger,
-                    phase_name=PHASE_EMOTION_INFERENCE,
-                    profile="fast",
-                )
-                if timeout_seconds <= 0.0:
-                    worker_message = _recv_worker_message(parent_conn, stage="compute")
-                else:
-                    if not parent_conn.poll(timeout_seconds):
-                        if process.is_alive():
-                            _terminate_worker_process(process)
-                            raise FastInferenceTimeoutError(
-                                f"Fast inference exceeded timeout budget ({timeout_seconds:.2f}s)."
-                            )
-                        raise FastInferenceExecutionError(
-                            "Fast inference worker exited before sending compute result."
-                        )
-                    worker_message = _recv_worker_message(parent_conn, stage="compute")
-            else:
-                worker_message = setup_message
-            if process.is_alive():
-                process.join(timeout=_TERMINATE_GRACE_SECONDS)
-            if process.exitcode not in (0, None) and not parent_conn.poll():
-                raise FastInferenceExecutionError(
-                    "Fast inference worker exited without a result payload."
-                )
-        finally:
-            parent_conn.close()
-            if process.is_alive():
-                _terminate_worker_process(process)
-    except Exception:
-        if inference_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_INFERENCE,
-                started_at=inference_started_at,
-                profile="fast",
-            )
-        elif not setup_completed:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_SETUP,
-                started_at=setup_started_at,
-                profile="fast",
-            )
-        raise
-
-    try:
-        result = _parse_worker_completion_message(worker_message)
-    except Exception:
-        if inference_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_INFERENCE,
-                started_at=inference_started_at,
-                profile="fast",
-            )
-        elif not setup_completed:
-            log_phase_failed(
-                logger,
-                phase_name=PHASE_EMOTION_SETUP,
-                started_at=setup_started_at,
-                profile="fast",
-            )
-        raise
-    if inference_started_at is not None:
-        log_phase_completed(
-            logger,
-            phase_name=PHASE_EMOTION_INFERENCE,
-            started_at=inference_started_at,
-            profile="fast",
-        )
-    return result
 
 
 def _recv_worker_message(
@@ -394,21 +340,20 @@ def _recv_worker_message(
     stage: str,
 ) -> WorkerMessage:
     """Receives one worker message and validates tuple envelope shape."""
-    return cast(
-        WorkerMessage,
-        _recv_worker_message_impl(
-            connection=connection,
-            stage=stage,
-            worker_label="Fast inference",
-            error_factory=FastInferenceExecutionError,
-        ),
+    return _recv_worker_message_binding(
+        connection=connection,
+        stage=stage,
+        impl=_recv_worker_message_impl,
+        worker_label="Fast inference",
+        error_factory=FastInferenceExecutionError,
     )
 
 
 def _is_setup_complete_message(message: WorkerMessage) -> bool:
     """Returns whether one worker message marks setup completion."""
-    return _is_setup_complete_message_impl(
+    return _is_setup_complete_message_binding(
         message=message,
+        impl=_is_setup_complete_message_impl,
         worker_label="Fast inference",
         error_factory=FastInferenceExecutionError,
     )
@@ -416,8 +361,9 @@ def _is_setup_complete_message(message: WorkerMessage) -> bool:
 
 def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
     """Parses one worker completion message and returns inference result."""
-    return _parse_worker_completion_message_impl(
+    return _parse_worker_completion_message_binding(
         worker_message=worker_message,
+        impl=_parse_worker_completion_message_impl,
         worker_label="Fast inference",
         error_factory=FastInferenceExecutionError,
         raise_worker_error=_raise_worker_error,
@@ -427,15 +373,12 @@ def _parse_worker_completion_message(worker_message: WorkerMessage) -> Inference
 
 def _worker_entry(payload: FastProcessPayload, connection: Connection) -> None:
     """Executes one fast inference operation inside child process."""
-    try:
-        prepared_operation = _prepare_process_operation(payload)
-        connection.send(("phase", "setup_complete"))
-        result = _run_process_operation(prepared_operation)
-        connection.send(("ok", result))
-    except BaseException as err:
-        connection.send(("err", type(err).__name__, str(err)))
-    finally:
-        connection.close()
+    _run_worker_entry_binding(
+        payload=payload,
+        connection=connection,
+        prepare_process_operation=_prepare_process_operation,
+        run_process_operation=_run_process_operation,
+    )
 
 
 def _prepare_process_operation(payload: FastProcessPayload) -> _PreparedFastOperation:
@@ -479,8 +422,9 @@ def _ensure_fast_compatible_model(loaded_model: LoadedModel) -> None:
 
 def _terminate_worker_process(process: BaseProcess) -> None:
     """Terminates a timed-out worker process with kill fallback."""
-    _terminate_worker_process_impl(
+    _terminate_worker_process_binding(
         process=process,
+        impl=_terminate_worker_process_impl,
         terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
         kill_grace_seconds=_KILL_GRACE_SECONDS,
     )
@@ -488,9 +432,10 @@ def _terminate_worker_process(process: BaseProcess) -> None:
 
 def _raise_worker_error(error_type: str, message: str) -> None:
     """Rehydrates child-process errors into runtime-domain exceptions."""
-    _raise_worker_error_impl(
+    _raise_worker_error_binding(
         error_type=error_type,
         message=message,
+        impl=_raise_worker_error_impl,
         known_error_factories=_WORKER_ERROR_FACTORIES,
         unknown_error_factory=FastInferenceExecutionError,
         worker_label="Fast inference",

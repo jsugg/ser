@@ -15,6 +15,24 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ser._internal.runtime.single_flight import SingleFlightRegistry
+from ser._internal.runtime.worker_bindings import (
+    is_setup_complete_message as _is_setup_complete_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    parse_worker_completion_message as _parse_worker_completion_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    raise_worker_error as _raise_worker_error_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    recv_worker_message as _recv_worker_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    run_worker_entry as _run_worker_entry_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    terminate_worker_process as _terminate_worker_process_binding,
+)
 from ser._internal.runtime.worker_lifecycle import (
     is_setup_complete_message as _is_setup_complete_message_impl,
 )
@@ -524,21 +542,20 @@ def _recv_worker_message(
     stage: str,
 ) -> WorkerMessage:
     """Receives one worker message and validates tuple envelope shape."""
-    return cast(
-        WorkerMessage,
-        _recv_worker_message_impl(
-            connection=connection,
-            stage=stage,
-            worker_label="Accurate inference",
-            error_factory=AccurateInferenceExecutionError,
-        ),
+    return _recv_worker_message_binding(
+        connection=connection,
+        stage=stage,
+        impl=_recv_worker_message_impl,
+        worker_label="Accurate inference",
+        error_factory=AccurateInferenceExecutionError,
     )
 
 
 def _is_setup_complete_message(message: WorkerMessage) -> bool:
     """Returns whether one worker message marks setup completion."""
-    return _is_setup_complete_message_impl(
+    return _is_setup_complete_message_binding(
         message=message,
+        impl=_is_setup_complete_message_impl,
         worker_label="Accurate inference",
         error_factory=AccurateInferenceExecutionError,
     )
@@ -546,8 +563,9 @@ def _is_setup_complete_message(message: WorkerMessage) -> bool:
 
 def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
     """Parses one worker completion message and returns inference result."""
-    return _parse_worker_completion_message_impl(
+    return _parse_worker_completion_message_binding(
         worker_message=worker_message,
+        impl=_parse_worker_completion_message_impl,
         worker_label="Accurate inference",
         error_factory=AccurateInferenceExecutionError,
         raise_worker_error=_raise_worker_error,
@@ -560,15 +578,12 @@ def _worker_entry(
     connection: Connection,
 ) -> None:
     """Executes one inference operation inside child process."""
-    try:
-        prepared_operation = _prepare_process_operation(payload)
-        connection.send(("phase", "setup_complete"))
-        result = _run_process_operation(prepared_operation)
-        connection.send(("ok", result))
-    except BaseException as err:
-        connection.send(("err", type(err).__name__, str(err)))
-    finally:
-        connection.close()
+    _run_worker_entry_binding(
+        payload=payload,
+        connection=connection,
+        prepare_process_operation=_prepare_process_operation,
+        run_process_operation=_run_process_operation,
+    )
 
 
 def _prepare_in_process_accurate_operation(
@@ -720,8 +735,9 @@ def _build_backend_for_profile(
 
 def _terminate_worker_process(process: BaseProcess) -> None:
     """Terminates a timed-out worker process with kill fallback."""
-    _terminate_worker_process_impl(
+    _terminate_worker_process_binding(
         process=process,
+        impl=_terminate_worker_process_impl,
         terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
         kill_grace_seconds=_KILL_GRACE_SECONDS,
     )
@@ -729,9 +745,10 @@ def _terminate_worker_process(process: BaseProcess) -> None:
 
 def _raise_worker_error(error_type: str, message: str) -> None:
     """Rehydrates child-process errors into runtime-domain exceptions."""
-    _raise_worker_error_impl(
+    _raise_worker_error_binding(
         error_type=error_type,
         message=message,
+        impl=_raise_worker_error_impl,
         known_error_factories=_WORKER_ERROR_FACTORIES,
         unknown_error_factory=AccurateInferenceExecutionError,
         worker_label="Accurate inference",
