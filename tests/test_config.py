@@ -38,7 +38,7 @@ def test_reload_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("WHISPER_MODEL", "base")
     monkeypatch.setenv("WHISPER_DEMUCS", "false")
     monkeypatch.setenv("WHISPER_VAD", "true")
-    monkeypatch.setattr(config.os, "cpu_count", lambda: 4)
+    monkeypatch.setattr(bootstrap.os, "cpu_count", lambda: 4)
 
     settings = config.reload_settings()
 
@@ -76,17 +76,17 @@ def test_reload_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_reload_settings_uses_cpu_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """When cpu_count is unavailable, configuration should default to one core."""
-    monkeypatch.setattr(config.os, "cpu_count", lambda: None)
+    monkeypatch.setattr(bootstrap.os, "cpu_count", lambda: None)
 
     settings = config.reload_settings()
 
     assert settings.models.num_cores == 1
 
 
-def test_build_settings_delegates_to_internal_settings_builder(
+def test_bootstrap_build_settings_delegates_to_internal_settings_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The public config facade should reuse bootstrap's shared builder owner."""
+    """Bootstrap should keep single ownership of settings construction."""
     expected = config.reload_settings()
     call_count = 0
 
@@ -103,16 +103,15 @@ def test_build_settings_delegates_to_internal_settings_builder(
         _fake_build_settings_from_inputs,
     )
 
-    assert config._build_settings is bootstrap._build_settings
-    assert config._build_settings() is expected
+    assert bootstrap._build_settings() is expected
     assert call_count == 1
 
 
-def test_resolve_settings_inputs_delegates_to_internal_resolver(
+def test_bootstrap_resolve_settings_inputs_delegates_to_internal_resolver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The public config facade should reuse bootstrap's shared input resolver."""
-    expected = config._resolve_settings_inputs()
+    """Bootstrap should keep single ownership of settings input resolution."""
+    expected = bootstrap._resolve_settings_inputs()
     call_count = 0
 
     def _fake_resolve_settings_inputs_from_internal(
@@ -130,6 +129,17 @@ def test_resolve_settings_inputs_delegates_to_internal_resolver(
         _fake_resolve_settings_inputs_from_internal,
     )
 
-    assert config._resolve_settings_inputs is bootstrap._resolve_settings_inputs
-    assert config._resolve_settings_inputs() is expected
+    assert bootstrap._resolve_settings_inputs() is expected
     assert call_count == 1
+
+
+def test_public_config_facade_does_not_expose_private_builder_helpers() -> None:
+    """Public config facade should not expose private bootstrap builder helpers."""
+    for private_name in (
+        "_build_settings",
+        "_resolve_settings_inputs",
+        "_resolve_settings_inputs_from_internal",
+        "os",
+        "sys",
+    ):
+        assert not hasattr(config, private_name)

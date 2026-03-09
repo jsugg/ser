@@ -662,46 +662,68 @@ def test_run_training_workflow_uses_pipeline_builder_when_enabled(
     assert calls["training"] is True
 
 
-def test_run_training_workflow_uses_legacy_training_when_disabled(
+def test_run_training_workflow_uses_pipeline_builder_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Training workflow should delegate to legacy trainer when pipeline is disabled."""
+    """Training workflow should keep routing through the pipeline when disabled."""
     settings = config_module.reload_settings()
-    calls: dict[str, bool] = {"training": False}
+    captured: dict[str, object] = {"training": False}
 
-    def _fake_train_model() -> None:
-        calls["training"] = True
+    class _FakePipeline:
+        def run_training(self) -> None:
+            captured["training"] = True
 
-    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
+        def run_inference(self, request: InferenceRequest) -> InferenceExecution:
+            del request
+            raise AssertionError("unreachable")
+
+    def _pipeline_builder(received_settings: AppConfig) -> _FakePipeline:
+        captured["settings"] = received_settings
+        return _FakePipeline()
+
+    monkeypatch.setattr(
+        "ser.models.emotion_model.train_model",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("Legacy training branch should remain unreachable.")
+        ),
+    )
 
     api.run_training_workflow(
         settings=settings,
         use_profile_pipeline=False,
+        pipeline_builder=_pipeline_builder,
     )
 
-    assert calls["training"] is True
+    assert captured["settings"] is settings
+    assert captured["training"] is True
 
 
-def test_run_training_workflow_scopes_settings_for_legacy_training(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Legacy training path should honor explicit workflow settings."""
-    ambient_settings = config_module.reload_settings()
-    scoped_settings = replace(ambient_settings, default_language="pt-BR")
-    captured: dict[str, object] = {}
+def test_run_training_workflow_passes_scoped_settings_to_pipeline_builder() -> None:
+    """Training workflow should pass explicit profile-scoped settings to the builder."""
+    base_settings = config_module.reload_settings()
+    scoped_settings = replace(base_settings, default_language="pt-BR")
+    captured: dict[str, object] = {"training": False}
 
-    def _fake_train_model() -> None:
-        captured["active_settings"] = config_module.get_settings()
+    class _FakePipeline:
+        def run_training(self) -> None:
+            captured["training"] = True
 
-    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
+        def run_inference(self, request: InferenceRequest) -> InferenceExecution:
+            del request
+            raise AssertionError("unreachable")
+
+    def _pipeline_builder(received_settings: AppConfig) -> _FakePipeline:
+        captured["settings"] = received_settings
+        return _FakePipeline()
 
     api.run_training_workflow(
         settings=scoped_settings,
         use_profile_pipeline=False,
+        pipeline_builder=_pipeline_builder,
     )
 
-    assert captured["active_settings"] is scoped_settings
-    assert config_module.get_settings() is ambient_settings
+    assert captured["settings"] is scoped_settings
+    assert captured["training"] is True
 
 
 def test_run_inference_workflow_builds_inference_request(

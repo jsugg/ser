@@ -209,7 +209,7 @@ def train(
     use_profile_pipeline: bool = True,
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> None:
-    """Runs training using the active settings snapshot."""
+    """Runs training using the active settings snapshot via the runtime pipeline."""
     active_settings = settings if settings is not None else get_settings()
     return _train(
         profile=profile,

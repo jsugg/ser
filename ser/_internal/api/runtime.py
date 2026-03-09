@@ -46,7 +46,6 @@ from ser.config import (
     AppConfig,
     profile_artifact_file_names,
     resolve_profile_transcription_config,
-    settings_override,
 )
 from ser.profiles import ProfileName, get_profile_catalog, resolve_profile_name
 from ser.utils.logger import get_logger
@@ -272,19 +271,16 @@ def run_training_workflow(
     use_profile_pipeline: bool,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> None:
-    """Runs CLI-equivalent training workflow through one API boundary."""
-    if use_profile_pipeline:
-        builder = (
-            pipeline_builder
-            if pipeline_builder is not None
-            else _build_runtime_pipeline
-        )
-        builder(settings).run_training()
-        return
-    from ser.models.emotion_model import train_model
+    """Runs CLI-equivalent training workflow through the runtime pipeline.
 
-    with settings_override(settings):
-        train_model()
+    The ``use_profile_pipeline`` parameter is retained for compatibility with older
+    callers, but training now uses the pipeline for every profile so orchestration
+    remains single-owned.
+    """
+    builder = (
+        pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
+    )
+    builder(settings).run_training()
 
 
 def train(
@@ -294,7 +290,7 @@ def train(
     use_profile_pipeline: bool = True,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> None:
-    """Runs training for the selected profile with optional explicit settings."""
+    """Runs training for the selected profile through the runtime pipeline."""
     scoped_settings = _settings_for_profile(settings, profile=profile)
     run_training_workflow(
         settings=scoped_settings,
