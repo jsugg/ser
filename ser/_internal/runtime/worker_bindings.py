@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
-_WorkerMessageT = TypeVar("_WorkerMessageT", bound=tuple[Any, ...], covariant=True)
+_WorkerMessageT = TypeVar("_WorkerMessageT", bound=tuple[Any, ...])
 _ResultT = TypeVar("_ResultT")
 _PayloadT = TypeVar("_PayloadT")
 _PreparedT = TypeVar("_PreparedT")
@@ -17,19 +17,16 @@ def recv_worker_message(
     *,
     connection: Connection,
     stage: str,
-    impl: Callable[..., tuple[Any, ...]],
+    impl: Callable[..., _WorkerMessageT],
     worker_label: str,
     error_factory: Callable[[str], Exception] | type[Exception],
 ) -> _WorkerMessageT:
     """Delegates worker-message reads with stable label/error wiring."""
-    return cast(
-        _WorkerMessageT,
-        impl(
-            connection=connection,
-            stage=stage,
-            worker_label=worker_label,
-            error_factory=error_factory,
-        ),
+    return impl(
+        connection=connection,
+        stage=stage,
+        worker_label=worker_label,
+        error_factory=error_factory,
     )
 
 

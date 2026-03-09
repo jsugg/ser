@@ -98,7 +98,9 @@ def prepare_retry_state(
     """Builds initial retry state for accurate runtime and performs untimed setup."""
     retry_state = AccurateRetryOperationState[_PayloadT, _BackendT]()
     if use_process_isolation and process_payload is None:
-        raise RuntimeError("Accurate process payload is missing for isolated execution.")
+        raise RuntimeError(
+            "Accurate process payload is missing for isolated execution."
+        )
     active_process_payload, prepared_operation, setup_started_at = (
         _prepare_retry_state_impl(
             use_process_isolation=use_process_isolation,

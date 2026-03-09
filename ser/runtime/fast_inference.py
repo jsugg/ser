@@ -9,10 +9,10 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Literal
 
-from ser._internal.runtime.single_flight import SingleFlightRegistry
 from ser._internal.runtime.process_timeout import (
     run_with_process_timeout as _run_with_process_timeout_orchestration,
 )
+from ser._internal.runtime.single_flight import SingleFlightRegistry
 from ser._internal.runtime.worker_bindings import (
     is_setup_complete_message as _is_setup_complete_message_binding,
 )

@@ -336,6 +336,7 @@ def run_inference_operation(
     runtime_error_factory: Callable[[str], Exception],
 ) -> _ResultT:
     """Runs one medium inference attempt with phase/timing orchestration."""
+
     def _run_once_inprocess() -> _ResultT:
         if prepared_operation is None:
             raise runtime_error_factory(
