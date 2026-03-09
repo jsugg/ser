@@ -12,16 +12,11 @@ dist/
 build/
 *.egg-info/
 
-memory.json
-.serena/
 .ruff_cache/
-.qodo/
 .pytest_cache/
 .mypy_cache/
 .uv-cache/
 .uv-tools/
 .tmp/
-docs/adr/
-docs/compatibility-matrix.md
 tmp/
 ser/models/*.json
