@@ -3,6 +3,7 @@
 .git
 .DS_Store
 ser/dataset/**/*.wav
+ser/dataset/ravdess/
 ser/models/*.pkl
 ser/models/OpenAI/**
 transcripts/**/*
@@ -10,3 +11,12 @@ transcripts/**/*
 dist/
 build/
 *.egg-info/
+
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.uv-cache/
+.uv-tools/
+.tmp/
+tmp/
+ser/models/*.json

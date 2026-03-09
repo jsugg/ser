@@ -134,12 +134,11 @@ def test_resolve_settings_inputs_rejects_conflicting_feature_runtime_defaults(
         ),
     )
     with pytest.MonkeyPatch.context() as conflict_patch:
-        assert config._resolve_settings_inputs is bootstrap._resolve_settings_inputs
         conflict_patch.setattr(
             bootstrap, "get_profile_catalog", lambda: profile_catalog
         )
         with pytest.raises(RuntimeError, match="conflicting feature runtime defaults"):
-            config._resolve_settings_inputs()
+            bootstrap._resolve_settings_inputs()
 
 
 def test_runtime_flags_and_schema_env_overrides(
