@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import os as os
-import sys as sys
-
 from ser._internal.config.bootstrap import (
-    _build_settings,
-    _resolve_settings_inputs,
     apply_settings,
     get_settings,
     reload_settings,
@@ -50,9 +45,6 @@ from ser._internal.config.settings_inputs import (
     ResolvedSettingsInputs,
     SettingsInputDeps,
 )
-from ser._internal.config.settings_inputs import (
-    resolve_settings_inputs as _resolve_settings_inputs_from_internal,
-)
 from ser.profiles import (
     ProfileCatalogEntry,
     TranscriptionBackendId,
@@ -93,18 +85,13 @@ __all__ = [
     "TranscriptionBackendId",
     "TranscriptionConfig",
     "WhisperModelConfig",
-    "_build_settings",
-    "_resolve_settings_inputs",
-    "_resolve_settings_inputs_from_internal",
     "apply_settings",
     "default_profile_model_id",
     "get_profile_catalog",
     "get_settings",
     "normalize_torch_device_selector",
-    "os",
     "profile_artifact_file_names",
     "reload_settings",
     "resolve_profile_transcription_config",
     "settings_override",
-    "sys",
 ]
