@@ -10,6 +10,15 @@ from typing import Generic, Protocol, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.retry_scaffold import (
+    finalize_in_process_setup as _finalize_in_process_setup_impl,
+)
+from ser._internal.runtime.retry_scaffold import (
+    prepare_retry_state as _prepare_retry_state_impl,
+)
+from ser._internal.runtime.retry_scaffold import (
+    run_retryable_operation as _run_retryable_operation_impl,
+)
 from ser.config import AppConfig, MediumRuntimeConfig
 
 _LoadedModelT = TypeVar("_LoadedModelT")
@@ -102,18 +111,15 @@ def prepare_retry_state(
 ]:
     """Builds initial retry state for medium runtime and performs untimed setup."""
     retry_state = MediumRetryOperationState[_PayloadT, _LoadedModelT, _BackendT]()
-    setup_started_at: float | None = None
-    if use_process_isolation:
-        retry_state.process_payload = build_process_payload()
-        return retry_state, setup_started_at
-
-    setup_started_at = log_phase_started(
-        logger,
-        phase_name=setup_phase_name,
+    process_payload, prepared_operation, setup_started_at = _prepare_retry_state_impl(
+        use_process_isolation=use_process_isolation,
+        logger=logger,
         profile=profile,
-    )
-    try:
-        retry_state.prepared_operation = prepare_in_process_operation(
+        setup_phase_name=setup_phase_name,
+        log_phase_started=log_phase_started,
+        log_phase_failed=log_phase_failed,
+        build_process_payload=build_process_payload,
+        prepare_in_process_operation=lambda: prepare_in_process_operation(
             request=request,
             settings=settings,
             loaded_model=loaded_model,
@@ -121,16 +127,10 @@ def prepare_retry_state(
             expected_backend_model_id=expected_backend_model_id,
             runtime_device=policy_device,
             runtime_dtype=policy_dtype,
-        )
-    except Exception:
-        if setup_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=setup_phase_name,
-                started_at=setup_started_at,
-                profile=profile,
-            )
-        raise
+        ),
+    )
+    retry_state.process_payload = process_payload
+    retry_state.prepared_operation = prepared_operation
     return retry_state, setup_started_at
 
 
@@ -148,30 +148,22 @@ def finalize_in_process_setup(
     runtime_error_factory: Callable[[str], Exception],
 ) -> None:
     """Prepares in-process backend runtime and emits setup phase diagnostics."""
-    if use_process_isolation:
-        return
-    if state.prepared_operation is None:
-        raise runtime_error_factory(
-            "Medium inference operation prerequisites are missing."
-        )
-    try:
-        prepare_medium_backend_runtime(state.prepared_operation.backend)
-    except Exception:
-        if setup_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=setup_phase_name,
-                started_at=setup_started_at,
-                profile=profile,
-            )
-        raise
-    if setup_started_at is not None:
-        log_phase_completed(
-            logger,
-            phase_name=setup_phase_name,
-            started_at=setup_started_at,
-            profile=profile,
-        )
+    prepared_backend = (
+        None if state.prepared_operation is None else state.prepared_operation.backend
+    )
+    _finalize_in_process_setup_impl(
+        use_process_isolation=use_process_isolation,
+        backend=prepared_backend,
+        setup_started_at=setup_started_at,
+        logger=logger,
+        profile=profile,
+        setup_phase_name=setup_phase_name,
+        prepare_backend_runtime=prepare_medium_backend_runtime,
+        log_phase_completed=log_phase_completed,
+        log_phase_failed=log_phase_failed,
+        missing_backend_message="Medium inference operation prerequisites are missing.",
+        runtime_error_factory=runtime_error_factory,
+    )
 
 
 def ensure_medium_compatible_model(
@@ -344,69 +336,41 @@ def run_inference_operation(
     runtime_error_factory: Callable[[str], Exception],
 ) -> _ResultT:
     """Runs one medium inference attempt with phase/timing orchestration."""
-    if enforce_timeout:
-        if use_process_isolation:
-            if process_payload is None:
-                raise runtime_error_factory(
-                    "Medium process payload is missing for isolated execution."
-                )
-            return run_with_process_timeout(process_payload, timeout_seconds)
-        inference_started_at = log_phase_started(
-            logger,
-            phase_name=inference_phase_name,
-            profile=profile,
-        )
 
-        def timeout_operation() -> _ResultT:
-            if prepared_operation is None:
-                raise runtime_error_factory(
-                    "Medium inference operation prerequisites are missing."
-                )
-            return run_process_operation(prepared_operation)
-
-        try:
-            result = run_with_timeout(timeout_operation, timeout_seconds)
-        except Exception:
-            log_phase_failed(
-                logger,
-                phase_name=inference_phase_name,
-                started_at=inference_started_at,
-                profile=profile,
+    def _run_once_inprocess() -> _ResultT:
+        if prepared_operation is None:
+            raise runtime_error_factory(
+                "Medium inference operation prerequisites are missing."
             )
-            raise
-        log_phase_completed(
-            logger,
-            phase_name=inference_phase_name,
-            started_at=inference_started_at,
-            profile=profile,
-        )
-        return result
-    if prepared_operation is None:
-        raise runtime_error_factory(
-            "Medium inference operation prerequisites are missing."
-        )
-    inference_started_at = log_phase_started(
-        logger,
-        phase_name=inference_phase_name,
+        return run_process_operation(prepared_operation)
+
+    return _run_retryable_operation_impl(
+        enforce_timeout=enforce_timeout,
+        use_process_isolation=use_process_isolation,
+        process_payload=process_payload,
+        timeout_seconds=timeout_seconds,
+        logger=logger,
         profile=profile,
-    )
-    try:
-        result = run_process_operation(prepared_operation)
-    except Exception:
-        log_phase_failed(
-            logger,
-            phase_name=inference_phase_name,
-            started_at=inference_started_at,
-            profile=profile,
-        )
-        raise
-    log_phase_completed(
-        logger,
         phase_name=inference_phase_name,
-        started_at=inference_started_at,
-        profile=profile,
+        log_phase_started=log_phase_started,
+        log_phase_completed=log_phase_completed,
+        log_phase_failed=log_phase_failed,
+        run_with_process_timeout=lambda payload: run_with_process_timeout(
+            payload,
+            timeout_seconds,
+        ),
+        run_once_inprocess=_run_once_inprocess,
+        run_with_timeout=lambda **kwargs: run_with_timeout(
+            kwargs["operation"],
+            kwargs["timeout_seconds"],
+        ),
+        timeout_error_factory=runtime_error_factory,
+        timeout_label="Medium inference",
+        missing_process_payload_message=(
+            "Medium process payload is missing for isolated execution."
+        ),
+        runtime_error_factory=runtime_error_factory,
     )
-    return result
 
 
 def run_process_operation(
