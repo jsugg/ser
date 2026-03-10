@@ -6,6 +6,10 @@ import logging
 from collections.abc import Callable
 from typing import TypeVar
 
+from ser._internal.runtime.process_timeout import (
+    run_with_process_timeout as _run_with_process_timeout_impl,
+)
+
 _WorkerMessageT = TypeVar("_WorkerMessageT")
 _ResultT = TypeVar("_ResultT")
 
@@ -34,89 +38,28 @@ def run_with_process_timeout(
     parse_worker_completion_message: Callable[[_WorkerMessageT], _ResultT],
 ) -> _ResultT:
     """Runs one process-isolated attempt with timeout budget on compute phase."""
-    setup_started_at = log_phase_started(
-        logger,
-        phase_name=setup_phase_name,
-        profile=profile,
+    return _run_with_process_timeout_impl(
+        payload=payload,
+        resolve_profile=lambda _payload: profile,
+        timeout_seconds=timeout_seconds,
+        get_context=get_context,
+        logger=logger,
+        setup_phase_name=setup_phase_name,
+        inference_phase_name=inference_phase_name,
+        log_phase_started=log_phase_started,
+        log_phase_completed=log_phase_completed,
+        log_phase_failed=log_phase_failed,
+        run_process_setup_compute_handshake=run_process_setup_compute_handshake,
+        worker_target=worker_target,
+        recv_worker_message=recv_worker_message,
+        is_setup_complete_message=is_setup_complete_message,
+        terminate_worker_process=terminate_worker_process,
+        timeout_error_factory=timeout_error_factory,
+        execution_error_factory=execution_error_factory,
+        worker_label=worker_label,
+        process_join_grace_seconds=process_join_grace_seconds,
+        parse_worker_completion_message=parse_worker_completion_message,
     )
-    setup_completed = False
-    inference_started_at: float | None = None
-    context = get_context("spawn")
-
-    def _on_setup_complete() -> None:
-        nonlocal inference_started_at
-        nonlocal setup_completed
-        setup_completed = True
-        log_phase_completed(
-            logger,
-            phase_name=setup_phase_name,
-            started_at=setup_started_at,
-            profile=profile,
-        )
-        inference_started_at = log_phase_started(
-            logger,
-            phase_name=inference_phase_name,
-            profile=profile,
-        )
-
-    try:
-        worker_message = run_process_setup_compute_handshake(
-            context=context,
-            worker_target=worker_target,
-            payload=payload,
-            timeout_seconds=timeout_seconds,
-            recv_worker_message=recv_worker_message,
-            is_setup_complete_message=is_setup_complete_message,
-            terminate_worker_process=terminate_worker_process,
-            timeout_error_factory=timeout_error_factory,
-            execution_error_factory=execution_error_factory,
-            worker_label=worker_label,
-            process_join_grace_seconds=process_join_grace_seconds,
-            on_setup_complete=_on_setup_complete,
-        )
-    except Exception:
-        if inference_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=inference_phase_name,
-                started_at=inference_started_at,
-                profile=profile,
-            )
-        elif not setup_completed:
-            log_phase_failed(
-                logger,
-                phase_name=setup_phase_name,
-                started_at=setup_started_at,
-                profile=profile,
-            )
-        raise
-
-    try:
-        result = parse_worker_completion_message(worker_message)
-    except Exception:
-        if inference_started_at is not None:
-            log_phase_failed(
-                logger,
-                phase_name=inference_phase_name,
-                started_at=inference_started_at,
-                profile=profile,
-            )
-        elif not setup_completed:
-            log_phase_failed(
-                logger,
-                phase_name=setup_phase_name,
-                started_at=setup_started_at,
-                profile=profile,
-            )
-        raise
-    if inference_started_at is not None:
-        log_phase_completed(
-            logger,
-            phase_name=inference_phase_name,
-            started_at=inference_started_at,
-            profile=profile,
-        )
-    return result
 
 
 __all__ = ["run_with_process_timeout"]
