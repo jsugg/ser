@@ -7,7 +7,6 @@ Use this page as the canonical starting point for SER architecture and change-pl
 - Codebase architecture analysis: [`docs/codebase-architecture.md`](codebase-architecture.md)
 - Text architecture diagram: [`docs/architecture-diagram.md`](architecture-diagram.md)
 - Subsystem dependency map: [`docs/subsystem-dependency-map.md`](subsystem-dependency-map.md)
-- Architecture refactor roadmap: [`docs/architecture-refactor-roadmap.md`](architecture-refactor-roadmap.md)
 - Refactor hotspot inventory: [`docs/refactor-hotspot-checks.md`](refactor-hotspot-checks.md)
 - Architecture decisions: [`docs/adr/`](adr/)
 - Compatibility matrix: [`docs/compatibility-matrix.md`](compatibility-matrix.md)

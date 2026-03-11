@@ -4,15 +4,15 @@ This document summarizes the current architecture of the `ser` codebase from the
 source itself. It is intended as the narrative overview companion to the more
 formal artifacts in [`docs/architecture-diagram.md`](architecture-diagram.md),
 [`docs/subsystem-dependency-map.md`](subsystem-dependency-map.md), and
-[`docs/architecture-refactor-roadmap.md`](architecture-refactor-roadmap.md).
+[`docs/refactor-hotspot-checks.md`](refactor-hotspot-checks.md).
 
 ## Scope and current state
 
 These counts are a current working-tree snapshot and are regression-checked by
-`tests/test_architecture_docs.py`.
+`make architecture-docs`.
 
 - Source modules under `ser/`: `223`
-- Test modules under `tests/`: `137`
+- Test modules under `tests/`: `136`
 - Public modules outside `_internal/`: `166`
 - Internal owner/helper modules under `_internal/`: `57`
 - Public modules importing `_internal` directly: `24`

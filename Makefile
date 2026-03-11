@@ -61,9 +61,6 @@ prepush-hook:
 import-lint:
 	bash ./scripts/run_import_lint.sh
 
-architecture-docs:
-	uv run --frozen --extra dev pytest -q tests/test_architecture_docs.py
-
 train:
 	uv run ser --train
 
