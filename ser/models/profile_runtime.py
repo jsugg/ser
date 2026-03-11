@@ -4,15 +4,29 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import Final, Literal
 
-from ser.config import (
-    AppConfig,
-    default_profile_model_id,
-    get_settings,
-)
+from ser._internal.config.schema import default_profile_model_id
+from ser.config import AppConfig, get_settings
 from ser.models.feature_runtime_encoding import resolve_profile_runtime_selectors
 from ser.repr import Emotion2VecBackend, WhisperBackend, XLSRBackend
 from ser.repr.runtime_policy import resolve_feature_runtime_policy
+
+MEDIUM_BACKEND_ID: Final[str] = "hf_xlsr"
+MEDIUM_PROFILE_ID: Final[Literal["medium"]] = "medium"
+MEDIUM_MODEL_ID = default_profile_model_id(MEDIUM_PROFILE_ID)
+MEDIUM_FRAME_SIZE_SECONDS: Final[float] = 1.0
+MEDIUM_FRAME_STRIDE_SECONDS: Final[float] = 1.0
+MEDIUM_POOLING_STRATEGY: Final[str] = "mean_std"
+
+ACCURATE_BACKEND_ID: Final[str] = "hf_whisper"
+ACCURATE_PROFILE_ID: Final[Literal["accurate"]] = "accurate"
+ACCURATE_MODEL_ID = default_profile_model_id(ACCURATE_PROFILE_ID)
+ACCURATE_POOLING_STRATEGY: Final[str] = "mean_std"
+
+ACCURATE_RESEARCH_BACKEND_ID: Final[str] = "emotion2vec"
+ACCURATE_RESEARCH_PROFILE_ID: Final[Literal["accurate-research"]] = "accurate-research"
+ACCURATE_RESEARCH_MODEL_ID = default_profile_model_id(ACCURATE_RESEARCH_PROFILE_ID)
 
 
 def resolve_model_id_from_settings(
@@ -133,6 +147,19 @@ def build_accurate_research_backend_for_settings(
 
 
 __all__ = [
+    "ACCURATE_BACKEND_ID",
+    "ACCURATE_MODEL_ID",
+    "ACCURATE_POOLING_STRATEGY",
+    "ACCURATE_PROFILE_ID",
+    "ACCURATE_RESEARCH_BACKEND_ID",
+    "ACCURATE_RESEARCH_MODEL_ID",
+    "ACCURATE_RESEARCH_PROFILE_ID",
+    "MEDIUM_BACKEND_ID",
+    "MEDIUM_FRAME_SIZE_SECONDS",
+    "MEDIUM_FRAME_STRIDE_SECONDS",
+    "MEDIUM_MODEL_ID",
+    "MEDIUM_POOLING_STRATEGY",
+    "MEDIUM_PROFILE_ID",
     "build_accurate_backend_for_settings",
     "build_accurate_research_backend_for_settings",
     "build_medium_backend_for_settings",

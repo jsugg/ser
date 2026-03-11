@@ -10,7 +10,15 @@ from .logger import get_logger
 if TYPE_CHECKING:
     import numpy as np
 
+    from ser.config import AppConfig
     from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
+
+
+def _resolve_boundary_settings() -> AppConfig:
+    """Returns the active settings snapshot for public utility wrappers."""
+    from ser.config import get_settings
+
+    return get_settings()
 
 
 def read_audio_file(
@@ -27,15 +35,13 @@ def read_audio_file(
     Returns:
         A tuple of `(audio_samples, sample_rate)`.
     """
-    from ser.config import get_settings
-
     from .audio_utils import read_audio_file as _read_audio_file
 
     return _read_audio_file(
         file_path,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
-        audio_read_config=get_settings().audio_read,
+        audio_read_config=_resolve_boundary_settings().audio_read,
     )
 
 
@@ -58,14 +64,12 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
 
 def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
     """Writes timeline rows to CSV and returns the output path."""
-    from ser.config import get_settings
-
     from .timeline_utils import save_timeline_to_csv as _save_timeline_to_csv
 
     return _save_timeline_to_csv(
         timeline,
         file_name,
-        timeline_config=get_settings().timeline,
+        timeline_config=_resolve_boundary_settings().timeline,
     )
 
 

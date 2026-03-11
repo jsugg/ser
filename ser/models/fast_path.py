@@ -29,9 +29,7 @@ def frame_confidence_and_probabilities(
 
     predict_proba = getattr(model, "predict_proba", None)
     if not callable(predict_proba):
-        logger.warning(
-            "Loaded model does not expose predict_proba; using confidence=1.0 fallback."
-        )
+        logger.warning("Loaded model does not expose predict_proba; using confidence=1.0 fallback.")
         return fallback_confidence, fallback_probabilities
 
     classes_attr = getattr(model, "classes_", None)
@@ -88,9 +86,7 @@ def aggregate_probabilities(
     if first is None:
         return None
     labels = list(first.keys())
-    if any(
-        item is None or set(item.keys()) != set(labels) for item in probabilities[1:]
-    ):
+    if any(item is None or set(item.keys()) != set(labels) for item in probabilities[1:]):
         return None
 
     aggregates: dict[str, float] = {}
@@ -182,9 +178,7 @@ def predict_emotions_detailed_with_model(
             )
 
     feature_matrix = np.asarray(feature_vectors, dtype=np.float64)
-    predicted_emotions: list[str] = [
-        str(item) for item in model.predict(feature_matrix)
-    ]
+    predicted_emotions: list[str] = [str(item) for item in model.predict(feature_matrix)]
     if len(predicted_emotions) != len(feature_frames):
         raise RuntimeError(
             "Frame/prediction length mismatch. "

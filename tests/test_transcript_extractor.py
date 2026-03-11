@@ -123,9 +123,7 @@ def test_extract_transcript_formats_word_timestamps(
     monkeypatch.setattr(
         te,
         "_transcribe_file_with_profile",
-        lambda _model, _language, _file, _profile, **_kwargs: [
-            TranscriptWord("hello", 0.1, 0.3)
-        ],
+        lambda _model, _language, _file, _profile, **_kwargs: [TranscriptWord("hello", 0.1, 0.3)],
     )
 
     assert te._extract_transcript(
@@ -212,6 +210,8 @@ def test_release_transcription_runtime_memory_empties_available_torch_caches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Torch cache cleanup should be best-effort and gated by availability checks."""
+    from ser._internal.transcription import process_worker as process_worker_helpers
+
     calls: list[str] = []
     fake_torch = ModuleType("torch")
     fake_mps = ModuleType("mps")
@@ -224,7 +224,11 @@ def test_release_transcription_runtime_memory_empties_available_torch_caches(
     cast(Any, fake_torch).mps = fake_mps
     cast(Any, fake_torch).cuda = fake_cuda
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr(te.gc, "collect", lambda: calls.append("gc"))
+    monkeypatch.setattr(
+        process_worker_helpers.gc,
+        "collect",
+        lambda: calls.append("gc"),
+    )
 
     te._release_transcription_runtime_memory(model=object())
 
@@ -245,16 +249,22 @@ def test_load_whisper_model_routes_downloads_to_model_cache_root(
     """Whisper and torch-hub assets should route to SER model cache roots."""
     download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
     torch_cache_root = tmp_path / "model-cache" / "torch"
+    huggingface_cache_root = tmp_path / "model-cache" / "huggingface"
+    modelscope_cache_root = tmp_path / "model-cache" / "modelscope" / "hub"
     settings = SimpleNamespace(
         models=SimpleNamespace(
             whisper_download_root=download_root,
             torch_cache_root=torch_cache_root,
-        )
+            huggingface_cache_root=huggingface_cache_root,
+            modelscope_cache_root=modelscope_cache_root,
+        ),
+        torch_runtime=SimpleNamespace(enable_mps_fallback=False),
     )
     captured: dict[str, object] = {}
     fake_model = object()
 
     def _fake_load_model(**kwargs: object) -> object:
+        captured["torch_home"] = os.getenv("TORCH_HOME")
         captured.update(kwargs)
         return fake_model
 
@@ -265,8 +275,7 @@ def test_load_whisper_model_routes_downloads_to_model_cache_root(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda model: model,
     )
     monkeypatch.delenv("TORCH_HOME", raising=False)
@@ -281,7 +290,8 @@ def test_load_whisper_model_routes_downloads_to_model_cache_root(
 
     assert loaded is fake_model
     assert captured["download_root"] == str(download_root)
-    assert os.environ["TORCH_HOME"] == str(torch_cache_root)
+    assert captured["torch_home"] == str(torch_cache_root)
+    assert "TORCH_HOME" not in os.environ
     assert download_root.is_dir()
     assert torch_cache_root.is_dir()
 
@@ -345,17 +355,26 @@ def test_load_whisper_model_uses_runtime_policy_device(
     """Stable-whisper should stage MPS loads through CPU per compatibility flow."""
     download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
     torch_cache_root = tmp_path / "model-cache" / "torch"
+    huggingface_cache_root = tmp_path / "model-cache" / "huggingface"
+    modelscope_cache_root = tmp_path / "model-cache" / "modelscope" / "hub"
     settings = SimpleNamespace(
         models=SimpleNamespace(
             whisper_download_root=download_root,
             torch_cache_root=torch_cache_root,
+            huggingface_cache_root=huggingface_cache_root,
+            modelscope_cache_root=modelscope_cache_root,
         ),
-        torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
+        torch_runtime=SimpleNamespace(
+            device="auto",
+            dtype="auto",
+            enable_mps_fallback=False,
+        ),
     )
     captured: dict[str, object] = {}
     fake_model = object()
 
     def _fake_load_model(**kwargs: object) -> object:
+        captured["torch_home"] = os.getenv("TORCH_HOME")
         captured.update(kwargs)
         return fake_model
 
@@ -376,8 +395,7 @@ def test_load_whisper_model_uses_runtime_policy_device(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda model: model,
     )
     monkeypatch.delenv("TORCH_HOME", raising=False)
@@ -403,12 +421,16 @@ def test_load_whisper_model_uses_explicit_settings_without_ambient_lookup(
     """Explicit settings should fully drive model loading without ambient fallbacks."""
     download_root = tmp_path / "model-cache" / "OpenAI" / "whisper"
     torch_cache_root = tmp_path / "model-cache" / "torch"
+    huggingface_cache_root = tmp_path / "model-cache" / "huggingface"
+    modelscope_cache_root = tmp_path / "model-cache" / "modelscope" / "hub"
     settings = cast(
         te.AppConfig,
         SimpleNamespace(
             models=SimpleNamespace(
                 whisper_download_root=download_root,
                 torch_cache_root=torch_cache_root,
+                huggingface_cache_root=huggingface_cache_root,
+                modelscope_cache_root=modelscope_cache_root,
                 whisper_model=SimpleNamespace(name="large-v3"),
             ),
             transcription=SimpleNamespace(
@@ -416,13 +438,18 @@ def test_load_whisper_model_uses_explicit_settings_without_ambient_lookup(
                 use_demucs=False,
                 use_vad=True,
             ),
-            torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
+            torch_runtime=SimpleNamespace(
+                device="auto",
+                dtype="auto",
+                enable_mps_fallback=False,
+            ),
         ),
     )
     captured: dict[str, object] = {}
     fake_model = object()
 
     def _fake_load_model(**kwargs: object) -> object:
+        captured["torch_home"] = os.getenv("TORCH_HOME")
         captured.update(kwargs)
         return fake_model
 
@@ -449,8 +476,7 @@ def test_load_whisper_model_uses_explicit_settings_without_ambient_lookup(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda model: model,
     )
     monkeypatch.delenv("TORCH_HOME", raising=False)
@@ -460,7 +486,8 @@ def test_load_whisper_model_uses_explicit_settings_without_ambient_lookup(
     assert loaded is fake_model
     assert captured["name"] == "large-v3"
     assert captured["download_root"] == str(download_root)
-    assert os.environ["TORCH_HOME"] == str(torch_cache_root)
+    assert captured["torch_home"] == str(torch_cache_root)
+    assert "TORCH_HOME" not in os.environ
 
 
 def test_transcribe_with_model_supports_faster_whisper_word_segments() -> None:
@@ -471,9 +498,7 @@ def test_transcribe_with_model_supports_faster_whisper_word_segments() -> None:
     ]
 
     class _FakeFasterModel:
-        def transcribe(
-            self, *_args: object, **_kwargs: object
-        ) -> tuple[object, object]:
+        def transcribe(self, *_args: object, **_kwargs: object) -> tuple[object, object]:
             return iter([SimpleNamespace(words=words)]), object()
 
     transcript = te.transcribe_with_model(
@@ -511,9 +536,7 @@ def test_faster_whisper_info_logs_are_demoted_to_debug_during_transcription() ->
     try:
 
         class _FakeFasterModel:
-            def transcribe(
-                self, *_args: object, **_kwargs: object
-            ) -> tuple[object, object]:
+            def transcribe(self, *_args: object, **_kwargs: object) -> tuple[object, object]:
                 logging.getLogger("faster_whisper").info("Processing audio sample")
                 return iter([SimpleNamespace(words=words)]), object()
 
@@ -533,9 +556,7 @@ def test_faster_whisper_info_logs_are_demoted_to_debug_during_transcription() ->
         root_logger.setLevel(original_level)
 
     assert transcript == [TranscriptWord("hello", 0.0, 0.2)]
-    faster_records = [
-        record for record in captured if record.name.startswith("faster_whisper")
-    ]
+    faster_records = [record for record in captured if record.name.startswith("faster_whisper")]
     assert faster_records, "Expected faster_whisper logs to be captured."
     assert all(record.levelno == logging.DEBUG for record in faster_records)
 
@@ -657,6 +678,47 @@ def test_check_adapter_compatibility_delegates_to_internal_service(
     assert captured["logger"] is te.logger
 
 
+def test_check_adapter_compatibility_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compatibility wrapper should delegate boundary assembly to the internal owner."""
+    captured: dict[str, object] = {}
+    report = te.CompatibilityReport(backend_id="stable_whisper")
+    profile = te.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large-v2",
+    )
+    settings = cast(te.AppConfig, SimpleNamespace())
+    emitted_issue_keys: set[tuple[str, str, str]] = set()
+
+    def _fake_boundary_impl(**kwargs: object) -> te.CompatibilityReport:
+        captured.update(kwargs)
+        return report
+
+    monkeypatch.setattr(te, "_EMITTED_COMPATIBILITY_ISSUE_KEYS", emitted_issue_keys)
+    monkeypatch.setattr(
+        te,
+        "_check_adapter_compatibility_boundary_impl",
+        _fake_boundary_impl,
+    )
+
+    resolved = te._check_adapter_compatibility(
+        active_profile=profile,
+        settings=settings,
+    )
+
+    assert resolved is report
+    assert captured["active_profile"] == profile
+    assert captured["settings"] is settings
+    assert captured["runtime_request"] is None
+    assert captured["check_adapter_compatibility_impl"] is te._check_adapter_compatibility_impl
+    assert captured["runtime_request_resolver"] is te._runtime_request_from_profile
+    assert captured["adapter_resolver"] is te.resolve_transcription_backend_adapter
+    assert captured["emitted_issue_keys"] is emitted_issue_keys
+    assert captured["logger"] is te.logger
+    assert captured["error_factory"] is te.TranscriptionError
+
+
 def test_runtime_request_from_profile_delegates_to_internal_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -688,13 +750,8 @@ def test_runtime_request_from_profile_delegates_to_internal_service(
     assert resolved is expected
     assert captured["active_profile"] == profile
     assert captured["settings"] is settings
-    assert (
-        captured["runtime_policy_resolver"] is te.resolve_transcription_runtime_policy
-    )
-    assert (
-        captured["default_mps_low_memory_threshold_gb"]
-        == te.DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB
-    )
+    assert captured["runtime_policy_resolver"] is te.resolve_transcription_runtime_policy
+    assert captured["default_mps_low_memory_threshold_gb"] == te.DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB
 
 
 def test_run_faster_whisper_process_isolated_delegates_to_internal_service(
@@ -733,10 +790,7 @@ def test_run_faster_whisper_process_isolated_delegates_to_internal_service(
     assert captured["profile"] == profile
     settings_resolver = cast(Callable[[], te.AppConfig], captured["settings_resolver"])
     assert settings_resolver() is settings
-    assert (
-        captured["runtime_request_resolver"]
-        is te._runtime_request_for_isolated_faster_whisper
-    )
+    assert captured["runtime_request_resolver"] is te._runtime_request_for_isolated_faster_whisper
     runtime_request_resolver = cast(
         Callable[[te.TranscriptionProfile, te.AppConfig], te.BackendRuntimeRequest],
         captured["runtime_request_resolver"],
@@ -770,9 +824,7 @@ def test_run_faster_whisper_process_isolated_delegates_to_internal_service(
             settings=cast(
                 te.AppConfig,
                 SimpleNamespace(
-                    models=SimpleNamespace(
-                        whisper_download_root=Path("/tmp/whisper-cache")
-                    )
+                    models=SimpleNamespace(whisper_download_root=Path("/tmp/whisper-cache"))
                 ),
             ),
         ),
@@ -794,6 +846,58 @@ def test_run_faster_whisper_process_isolated_delegates_to_internal_service(
     assert captured["recv_worker_message_fn"] is te._recv_worker_message
     assert captured["raise_worker_error_fn"] is te._raise_worker_error
     assert captured["transcript_word_factory"] is te.TranscriptWord
+    assert captured["logger"] is te.logger
+    assert captured["error_factory"] is te.TranscriptionError
+    assert captured["terminate_grace_seconds"] == te._TERMINATE_GRACE_SECONDS
+
+
+def test_run_faster_whisper_process_isolated_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public isolated-run wrapper should delegate assembly to the internal boundary owner."""
+    captured: dict[str, object] = {}
+    expected = [TranscriptWord("hello", 0.0, 0.5)]
+    profile = te.TranscriptionProfile(
+        backend_id="faster_whisper",
+        model_name="distil-large-v3",
+        use_demucs=False,
+        use_vad=True,
+    )
+    settings = cast(te.AppConfig, SimpleNamespace())
+
+    def _fake_boundary_impl(**kwargs: object) -> list[TranscriptWord]:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        te,
+        "_run_faster_whisper_process_isolated_boundary_impl",
+        _fake_boundary_impl,
+    )
+
+    resolved = te._run_faster_whisper_process_isolated(
+        file_path="sample.wav",
+        language="en",
+        profile=profile,
+        settings=settings,
+    )
+
+    assert resolved == expected
+    assert captured["file_path"] == "sample.wav"
+    assert captured["language"] == "en"
+    assert captured["profile"] == profile
+    assert captured["settings"] is settings
+    assert (
+        captured["run_faster_whisper_process_isolated_impl"]
+        is te._run_faster_whisper_process_isolated_impl
+    )
+    assert captured["runtime_request_resolver"] is te._runtime_request_for_isolated_faster_whisper
+    assert captured["payload_factory"] is te._build_transcription_process_payload
+    assert captured["spawn_context_resolver"] is te._spawn_context
+    assert captured["worker_entry"] is te._transcription_worker_entry
+    assert captured["recv_worker_message_fn"] is te._recv_worker_message
+    assert captured["raise_worker_error_fn"] is te._raise_worker_error
+    assert captured["terminate_worker_process_fn"] is te._terminate_worker_process
     assert captured["logger"] is te.logger
     assert captured["error_factory"] is te.TranscriptionError
     assert captured["terminate_grace_seconds"] == te._TERMINATE_GRACE_SECONDS
@@ -838,6 +942,122 @@ def test_extract_transcript_in_process_delegates_to_internal_service(
     assert callable(captured["transcribe_with_profile_fn"])
     assert captured["release_memory_fn"] is te._release_transcription_runtime_memory
     assert captured["logger"] is te.logger
+
+
+def test_extract_transcript_in_process_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In-process transcript wrapper should delegate boundary assembly to the internal owner."""
+    captured: dict[str, object] = {}
+    expected = [TranscriptWord("hello", 0.0, 0.5)]
+    settings = cast(te.AppConfig, SimpleNamespace())
+    profile = te.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large-v2",
+        use_demucs=True,
+        use_vad=True,
+    )
+
+    def _fake_boundary_impl(**kwargs: object) -> list[TranscriptWord]:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        te,
+        "_extract_transcript_in_process_boundary_impl",
+        _fake_boundary_impl,
+    )
+
+    resolved = te._extract_transcript_in_process(
+        file_path="sample.wav",
+        language="en",
+        profile=profile,
+        settings=settings,
+    )
+
+    assert resolved == expected
+    assert captured["file_path"] == "sample.wav"
+    assert captured["language"] == "en"
+    assert captured["profile"] == profile
+    assert captured["settings"] is settings
+    assert captured["extract_transcript_in_process_impl"] is te._extract_transcript_in_process_impl
+    assert captured["setup_required_checker"] is te._transcription_setup_required
+    assert captured["prepare_assets_runner"] is te._prepare_transcription_assets
+    assert captured["load_whisper_model_fn"] is te.load_whisper_model
+    assert captured["transcribe_with_profile_fn"] is te._transcribe_file_with_profile
+    assert captured["release_memory_fn"] is te._release_transcription_runtime_memory
+    assert captured["phase_started_fn"] is te.log_phase_started
+    assert captured["phase_completed_fn"] is te.log_phase_completed
+    assert captured["phase_failed_fn"] is te.log_phase_failed
+    assert captured["logger"] is te.logger
+
+
+def test_transcription_setup_required_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Setup-required wrapper should delegate boundary assembly to the runtime owner."""
+    captured: dict[str, object] = {}
+    profile = te.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large-v2",
+    )
+    settings = cast(te.AppConfig, SimpleNamespace())
+
+    def _fake_boundary_impl(**kwargs: object) -> bool:
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        te,
+        "_transcription_setup_required_boundary_impl",
+        _fake_boundary_impl,
+    )
+
+    required = te._transcription_setup_required(
+        active_profile=profile,
+        settings=settings,
+    )
+
+    assert required is True
+    assert captured["active_profile"] == profile
+    assert captured["settings"] is settings
+    assert captured["transcription_setup_required_impl"] is te._transcription_setup_required_impl
+    assert captured["runtime_request_resolver"] is te._runtime_request_from_profile
+    assert captured["compatibility_checker"] is te._check_adapter_compatibility
+    assert captured["adapter_resolver"] is te.resolve_transcription_backend_adapter
+
+
+def test_prepare_transcription_assets_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Asset-preparation wrapper should delegate boundary assembly to the runtime owner."""
+    captured: dict[str, object] = {}
+    profile = te.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large-v2",
+    )
+    settings = cast(te.AppConfig, SimpleNamespace())
+
+    def _fake_boundary_impl(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        te,
+        "_prepare_transcription_assets_boundary_impl",
+        _fake_boundary_impl,
+    )
+
+    te._prepare_transcription_assets(
+        active_profile=profile,
+        settings=settings,
+    )
+
+    assert captured["active_profile"] == profile
+    assert captured["settings"] is settings
+    assert captured["prepare_transcription_assets_impl"] is te._prepare_transcription_assets_impl
+    assert captured["runtime_request_resolver"] is te._runtime_request_from_profile
+    assert captured["compatibility_checker"] is te._check_adapter_compatibility
+    assert captured["adapter_resolver"] is te.resolve_transcription_backend_adapter
 
 
 def test_mark_compatibility_issues_as_emitted_suppresses_duplicate_operational_logs(
@@ -1037,16 +1257,12 @@ def test_extract_transcript_uses_process_isolation_for_faster_whisper(
     def _fail_in_process(**_kwargs: object) -> list[TranscriptWord]:
         raise AssertionError("in-process path should not be used for faster-whisper")
 
-    monkeypatch.setattr(
-        te, "_run_faster_whisper_process_isolated", _fake_isolated_runner
-    )
+    monkeypatch.setattr(te, "_run_faster_whisper_process_isolated", _fake_isolated_runner)
     monkeypatch.setattr(te, "_extract_transcript_in_process", _fail_in_process)
     monkeypatch.setattr(
         te,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("private helper must use explicit settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("private helper must use explicit settings")),
     )
 
     settings = cast(te.AppConfig, SimpleNamespace(default_language="en"))
@@ -1079,16 +1295,12 @@ def test_extract_transcript_routes_non_faster_profiles_in_process(
         captured.update(kwargs)
         return expected
 
-    monkeypatch.setattr(
-        te, "_run_faster_whisper_process_isolated", _fail_isolated_runner
-    )
+    monkeypatch.setattr(te, "_run_faster_whisper_process_isolated", _fail_isolated_runner)
     monkeypatch.setattr(te, "_extract_transcript_in_process", _fake_in_process_runner)
     monkeypatch.setattr(
         te,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("private helper must use explicit settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("private helper must use explicit settings")),
     )
 
     settings = cast(te.AppConfig, SimpleNamespace(default_language="en"))
@@ -1124,13 +1336,9 @@ def test_transcribe_with_profile_uses_explicit_settings_without_ambient_lookup(
     monkeypatch.setattr(
         te,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("private helper must use explicit settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("private helper must use explicit settings")),
     )
-    monkeypatch.setattr(
-        te, "_runtime_request_from_profile", lambda *_a: runtime_request
-    )
+    monkeypatch.setattr(te, "_runtime_request_from_profile", lambda *_a: runtime_request)
     monkeypatch.setattr(te, "_check_adapter_compatibility", lambda **_kwargs: None)
     monkeypatch.setattr(
         te,
@@ -1188,9 +1396,7 @@ def test_transcribe_with_profile_resolves_defaults_from_explicit_settings(
     monkeypatch.setattr(
         te,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("private helper must use explicit settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("private helper must use explicit settings")),
     )
     monkeypatch.setattr(te, "_runtime_request_from_profile", _fake_runtime_request)
     monkeypatch.setattr(te, "_check_adapter_compatibility", lambda **_kwargs: None)
@@ -1219,22 +1425,53 @@ def test_transcribe_with_profile_resolves_defaults_from_explicit_settings(
     assert captured["settings"] is settings
 
 
-def test_transcription_runtime_risk_ownership_map_partitions_symbols() -> None:
-    """Ownership slices should remain deterministic and symbol-disjoint."""
-    ownership_map = te.transcription_runtime_risk_ownership_map()
-    assert tuple(slice_spec.slice_id for slice_spec in ownership_map) == (
-        "profile_runtime_resolution",
-        "compatibility_issue_hygiene",
-        "process_isolation_orchestration",
-        "in_process_orchestration",
+def test_transcribe_with_profile_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Private transcription helper should delegate boundary assembly to the internal owner."""
+    captured: dict[str, object] = {}
+    settings = cast(te.AppConfig, SimpleNamespace(default_language="en"))
+    expected = [TranscriptWord("hello", 0.0, 0.5)]
+    model = object()
+    profile = te.TranscriptionProfile(
+        backend_id="stable_whisper",
+        model_name="large-v2",
+        use_demucs=False,
+        use_vad=True,
     )
 
-    flattened_symbols = tuple(
-        symbol for slice_spec in ownership_map for symbol in slice_spec.symbols
+    def _fake_boundary_impl(*args: object, **kwargs: object) -> list[TranscriptWord]:
+        captured["args"] = args
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        te,
+        "_transcribe_with_profile_boundary_impl",
+        _fake_boundary_impl,
     )
-    assert flattened_symbols
-    assert len(flattened_symbols) == len(set(flattened_symbols))
-    assert all(hasattr(te, symbol) for symbol in flattened_symbols)
+
+    transcript = te._transcribe_file_with_profile(
+        model,
+        "en",
+        "sample.wav",
+        profile,
+        settings=settings,
+    )
+
+    assert transcript == expected
+    assert captured["args"] == (model, "en", "sample.wav", profile)
+    assert captured["settings"] is settings
+    assert captured["transcribe_with_profile_entrypoint"] is te._transcribe_with_profile_entrypoint
+    assert (
+        captured["resolve_profile_for_settings"] is te._resolve_transcription_profile_for_settings
+    )
+    assert captured["runtime_request_resolver"] is te._runtime_request_from_profile
+    assert captured["compatibility_checker"] is te._check_adapter_compatibility
+    assert captured["adapter_resolver"] is te.resolve_transcription_backend_adapter
+    assert captured["passthrough_error_cls"] is te.TranscriptionError
+    assert captured["logger"] is te.logger
+    assert captured["error_factory"] is te.TranscriptionError
 
 
 class _FakeIsolatedParentConnection:
@@ -1361,9 +1598,7 @@ def test_faster_whisper_isolated_run_joins_worker_before_terminate_on_success(
             te.AppConfig,
             SimpleNamespace(
                 torch_runtime=SimpleNamespace(device="cpu", dtype="auto"),
-                models=SimpleNamespace(
-                    whisper_download_root=Path("/tmp/whisper-cache")
-                ),
+                models=SimpleNamespace(whisper_download_root=Path("/tmp/whisper-cache")),
             ),
         ),
     )
@@ -1409,9 +1644,7 @@ def test_faster_whisper_isolated_run_terminates_worker_after_join_timeout(
             te.AppConfig,
             SimpleNamespace(
                 torch_runtime=SimpleNamespace(device="cpu", dtype="auto"),
-                models=SimpleNamespace(
-                    whisper_download_root=Path("/tmp/whisper-cache")
-                ),
+                models=SimpleNamespace(whisper_download_root=Path("/tmp/whisper-cache")),
             ),
         ),
     )
@@ -1451,9 +1684,7 @@ def test_runtime_request_for_isolated_faster_whisper_honors_cuda_request() -> No
     """Process-isolated faster runtime request should preserve explicit CUDA selectors."""
     settings = cast(
         te.AppConfig,
-        SimpleNamespace(
-            torch_runtime=SimpleNamespace(device="cuda:0", dtype="float16")
-        ),
+        SimpleNamespace(torch_runtime=SimpleNamespace(device="cuda:0", dtype="float16")),
     )
     profile = te.TranscriptionProfile(
         backend_id="faster_whisper",
@@ -1497,15 +1728,12 @@ def test_runtime_request_for_isolated_faster_whisper_logs_non_cuda_fallback(
     assert runtime_request.device_type == "cpu"
     assert runtime_request.precision_candidates == ("float32",)
     assert any(
-        "requested device 'mps' is unsupported; using cpu/float32"
-        in record.getMessage()
+        "requested device 'mps' is unsupported; using cpu/float32" in record.getMessage()
         for record in caplog.records
     )
 
 
-def test_runtime_request_for_isolated_faster_whisper_rejects_non_faster_backend() -> (
-    None
-):
+def test_runtime_request_for_isolated_faster_whisper_rejects_non_faster_backend() -> None:
     """Isolated runtime request helper should fail fast for non-faster backends."""
     settings = cast(
         te.AppConfig,
@@ -1550,9 +1778,7 @@ def test_run_faster_whisper_process_isolated_rejects_non_faster_backend_before_s
             profile=profile,
             settings=cast(
                 te.AppConfig,
-                SimpleNamespace(
-                    torch_runtime=SimpleNamespace(device="cpu", dtype="auto")
-                ),
+                SimpleNamespace(torch_runtime=SimpleNamespace(device="cpu", dtype="auto")),
             ),
         )
 
@@ -1581,9 +1807,7 @@ def test_transcription_worker_entry_blocks_torch_for_faster_whisper(
 
         def prepare_assets(self, *, runtime_request: object, settings: object) -> None:
             del runtime_request, settings
-            raise AssertionError(
-                "prepare_assets should not run when setup is not required"
-            )
+            raise AssertionError("prepare_assets should not run when setup is not required")
 
         def load_model(self, *, runtime_request: object, settings: object) -> object:
             del runtime_request
@@ -1612,9 +1836,7 @@ def test_transcription_worker_entry_blocks_torch_for_faster_whisper(
     monkeypatch.setattr(
         te,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("worker must not use ambient settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("worker must not use ambient settings")),
     )
     monkeypatch.setattr(
         te,
@@ -1669,6 +1891,31 @@ def test_transcription_worker_entry_blocks_torch_for_faster_whisper(
     assert messages[2] == ("ok", [("hello", 0.0, 0.5)])
 
 
+def test_transcription_worker_entry_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public worker-entry wrapper should delegate casting/setup to the internal owner."""
+    captured: dict[str, object] = {}
+    payload = object()
+    connection = object()
+
+    def _fake_boundary_impl(*args: object, **kwargs: object) -> None:
+        captured["args"] = args
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        te,
+        "_transcription_worker_entry_boundary_impl",
+        _fake_boundary_impl,
+    )
+
+    te._transcription_worker_entry(payload, connection)
+
+    assert captured["args"] == (payload, connection)
+    assert captured["transcription_worker_entry_impl"] is te._transcription_worker_entry_impl
+    assert captured["adapter_resolver"] is te._resolve_transcription_adapter
+
+
 def test_faster_whisper_setup_required_when_cache_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1676,9 +1923,7 @@ def test_faster_whisper_setup_required_when_cache_missing(
     """faster-whisper setup should run when local cache lookup misses."""
     settings = cast(
         te.AppConfig,
-        SimpleNamespace(
-            models=SimpleNamespace(whisper_download_root=tmp_path / "model-cache")
-        ),
+        SimpleNamespace(models=SimpleNamespace(whisper_download_root=tmp_path / "model-cache")),
     )
     captured: dict[str, object] = {}
 
@@ -1724,9 +1969,7 @@ def test_faster_whisper_prepare_transcription_assets_downloads(
     """faster-whisper setup should trigger download in non-local-files mode."""
     settings = cast(
         te.AppConfig,
-        SimpleNamespace(
-            models=SimpleNamespace(whisper_download_root=tmp_path / "model-cache")
-        ),
+        SimpleNamespace(models=SimpleNamespace(whisper_download_root=tmp_path / "model-cache")),
     )
     captured: dict[str, object] = {}
 

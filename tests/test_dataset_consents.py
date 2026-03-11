@@ -114,7 +114,5 @@ def test_ensure_dataset_consents_raises_for_missing_persisted_consent(
         )
     ]
 
-    with pytest.raises(
-        DatasetConsentError, match="ser configure --accept-dataset-policy"
-    ):
+    with pytest.raises(DatasetConsentError, match="ser configure --accept-dataset-policy"):
         ensure_dataset_consents(settings=settings, utterances=utterances)

@@ -10,9 +10,13 @@ import numpy as np
 import pytest
 from sklearn.neural_network import MLPClassifier
 
+import ser.models.artifact_persistence as artifact_persistence
+import ser.models.training_reporting as training_reporting
+import ser.models.training_support as training_support
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.features import FeatureFrame
 from ser.models import emotion_model as em
+from ser.models.dataset_splitting import MediumSplitMetadata
 from ser.models.medium_noise_controls import MediumNoiseControlStats
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, SegmentPrediction
 
@@ -66,15 +70,14 @@ def _set_model_settings(
 ) -> None:
     """Injects model settings for load-model tests."""
     resolved_secure_path = (
-        model_path.with_suffix(".skops")
-        if secure_model_path is None
-        else secure_model_path
+        model_path.with_suffix(".skops") if secure_model_path is None else secure_model_path
     )
     resolved_report_path = (
         model_path.parent / "training_report.json"
         if training_report_path is None
         else training_report_path
     )
+    model_cache_root = model_path.parent / "model-cache"
 
     monkeypatch.setattr(
         em,
@@ -86,10 +89,14 @@ def _set_model_settings(
                 folder=model_path.parent,
                 model_file=model_path,
                 model_file_name=model_path.name,
+                huggingface_cache_root=model_cache_root / "huggingface",
+                modelscope_cache_root=model_cache_root / "modelscope" / "hub",
                 secure_model_file=resolved_secure_path,
                 secure_model_file_name=resolved_secure_path.name,
+                torch_cache_root=model_cache_root / "torch",
                 training_report_file=resolved_report_path,
             ),
+            torch_runtime=SimpleNamespace(enable_mps_fallback=False),
         ),
     )
 
@@ -192,16 +199,14 @@ def test_load_model_falls_back_to_pickle_when_secure_loader_fails(
         secure_model_path=secure_model_path,
     )
     monkeypatch.setattr(
-        em,
-        "_load_secure_model",
+        em._training_support,
+        "load_secure_model",
         lambda _candidate, _settings: (_ for _ in ()).throw(ValueError),
     )
     monkeypatch.setattr(
-        em,
-        "_load_pickle_model",
-        lambda _candidate: em.LoadedModel(
-            model=_build_classifier(), expected_feature_size=5
-        ),
+        em._training_support,
+        "load_pickle_model",
+        lambda _candidate: em.LoadedModel(model=_build_classifier(), expected_feature_size=5),
     )
 
     loaded = em.load_model()
@@ -349,7 +354,7 @@ def test_read_training_report_feature_size(
         encoding="utf-8",
     )
 
-    feature_size = em._read_training_report_feature_size(report_path)
+    feature_size = artifact_persistence.read_training_report_feature_size(report_path)
 
     assert feature_size == 193
 
@@ -374,22 +379,19 @@ def test_persist_model_artifacts_preserves_pickle_and_secure_fallback(
     monkeypatch.setattr(
         em,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("helper must use explicit settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("helper must use explicit settings")),
     )
 
     def _persist_pickle(path: Path, artifact: dict[str, object]) -> None:
         captured["pickle_path"] = path
         captured["artifact"] = artifact
 
-    monkeypatch.setattr(em, "persist_pickle_artifact", _persist_pickle)
-    monkeypatch.setattr(em, "persist_secure_artifact", lambda _path, _model: False)
-
-    persisted = em._persist_model_artifacts(
+    persisted = training_support.persist_model_artifacts(
         model=_build_classifier(),
         artifact={"artifact_version": em.MODEL_ARTIFACT_VERSION, "metadata": {}},
         settings=settings,
+        persist_pickle=_persist_pickle,
+        persist_secure=lambda _path, _model: False,
     )
 
     assert captured["pickle_path"] == model_path
@@ -397,28 +399,14 @@ def test_persist_model_artifacts_preserves_pickle_and_secure_fallback(
     assert persisted.secure_path is None
 
 
-def test_build_training_report_tracks_corpus_vs_effective_samples(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_training_report_tracks_corpus_vs_effective_samples() -> None:
     """Report should capture corpus and effective sample counts for traceability."""
     settings = cast(
         em.AppConfig,
         SimpleNamespace(dataset=SimpleNamespace(glob_pattern="unused")),
     )
-    monkeypatch.setattr(
-        em,
-        "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("helper must use explicit settings")
-        ),
-    )
-    monkeypatch.setattr(
-        em.glob,
-        "glob",
-        lambda _pattern: [f"file_{idx}.wav" for idx in range(10)],
-    )
 
-    report = em._build_training_report(
+    report = training_support.build_training_report(
         accuracy=0.95,
         macro_f1=0.91,
         ser_metrics={
@@ -432,7 +420,7 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
         test_samples=3,
         feature_vector_size=193,
         labels=["happy", "happy", "sad"],
-        artifacts=em.PersistedArtifacts(
+        artifacts=training_support.PersistedArtifacts(
             pickle_path=Path("ser_model.pkl"),
             secure_path=None,
         ),
@@ -451,6 +439,7 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
             "pooling_strategy": "mean",
         },
         settings=settings,
+        globber=lambda _pattern: [f"file_{idx}.wav" for idx in range(10)],
     )
 
     assert report["dataset_corpus_samples"] == 10
@@ -481,24 +470,14 @@ def test_build_training_report_tracks_corpus_vs_effective_samples(
     }
 
 
-def test_build_training_report_includes_optional_data_controls(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_training_report_includes_optional_data_controls() -> None:
     """Report should include optional data-controls block when provided."""
     settings = cast(
         em.AppConfig,
         SimpleNamespace(dataset=SimpleNamespace(glob_pattern="unused")),
     )
-    monkeypatch.setattr(
-        em,
-        "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("helper must use explicit settings")
-        ),
-    )
-    monkeypatch.setattr(em.glob, "glob", lambda _pattern: ["file_0.wav"])
 
-    report = em._build_training_report(
+    report = training_support.build_training_report(
         accuracy=0.5,
         macro_f1=0.5,
         ser_metrics={
@@ -512,7 +491,7 @@ def test_build_training_report_includes_optional_data_controls(
         test_samples=2,
         feature_vector_size=4,
         labels=["happy", "sad", "happy", "sad"],
-        artifacts=em.PersistedArtifacts(
+        artifacts=training_support.PersistedArtifacts(
             pickle_path=Path("ser_model.pkl"),
             secure_path=None,
         ),
@@ -532,6 +511,7 @@ def test_build_training_report_includes_optional_data_controls(
         },
         data_controls={"medium_noise_controls": {"min_window_std": 0.1}},
         settings=settings,
+        globber=lambda _pattern: ["file_0.wav"],
     )
 
     assert report["data_controls"] == {"medium_noise_controls": {"min_window_std": 0.1}}
@@ -539,7 +519,7 @@ def test_build_training_report_includes_optional_data_controls(
 
 def test_build_grouped_evaluation_controls_from_split_metadata() -> None:
     """Grouped-evaluation controls should map split metadata fields verbatim."""
-    split_metadata = em.MediumSplitMetadata(
+    split_metadata = MediumSplitMetadata(
         split_strategy="group_shuffle_split",
         speaker_grouped=True,
         speaker_id_coverage=0.9,
@@ -548,7 +528,7 @@ def test_build_grouped_evaluation_controls_from_split_metadata() -> None:
         speaker_overlap_count=1,
     )
 
-    controls = em._build_grouped_evaluation_controls(split_metadata)
+    controls = training_reporting.build_grouped_evaluation_controls(split_metadata)
 
     assert controls == {
         "split_strategy": "group_shuffle_split",
@@ -577,7 +557,7 @@ def test_build_medium_noise_controls_uses_train_test_stats() -> None:
         forced_keep_windows=0,
     )
 
-    controls = em._build_medium_noise_controls(
+    controls = training_reporting.build_medium_noise_controls(
         min_window_std=0.2,
         max_windows_per_clip=128,
         train_stats=train_stats,
@@ -606,7 +586,7 @@ def test_build_medium_noise_controls_uses_train_test_stats() -> None:
 
 def test_evaluate_training_predictions_returns_core_metrics() -> None:
     """Training evaluation helper should return accuracy/macro_f1/uar payload."""
-    evaluation = em._evaluate_training_predictions(
+    evaluation = training_support.evaluate_training_predictions(
         y_true=["happy", "sad", "happy", "sad"],
         y_pred=["happy", "sad", "sad", "sad"],
     )
@@ -621,13 +601,13 @@ def test_attach_grouped_training_metrics_adds_group_metrics() -> None:
     """Grouped training metrics helper should append corpus/language sections."""
     ser_metrics: dict[str, object] = {"uar": 0.5}
     test_meta = [
-        em.WindowMeta(sample_id="s1", corpus="ravdess", language="en"),
-        em.WindowMeta(sample_id="s2", corpus="crema-d", language="en"),
-        em.WindowMeta(sample_id="s3", corpus="ravdess", language="es"),
-        em.WindowMeta(sample_id="s4", corpus="crema-d", language="es"),
+        training_support.WindowMeta(sample_id="s1", corpus="ravdess", language="en"),
+        training_support.WindowMeta(sample_id="s2", corpus="crema-d", language="en"),
+        training_support.WindowMeta(sample_id="s3", corpus="ravdess", language="es"),
+        training_support.WindowMeta(sample_id="s4", corpus="crema-d", language="es"),
     ]
 
-    updated = em._attach_grouped_training_metrics(
+    updated = training_support.attach_grouped_training_metrics(
         ser_metrics=ser_metrics,
         y_true=["happy", "sad", "sad", "happy"],
         y_pred=["happy", "sad", "sad", "happy"],
@@ -655,7 +635,7 @@ def test_attach_grouped_training_metrics_adds_group_metrics() -> None:
 def test_extract_artifact_metadata_requires_metadata_payload() -> None:
     """Artifact metadata extraction should fail closed for missing metadata field."""
     with pytest.raises(RuntimeError, match="metadata is missing"):
-        em._extract_artifact_metadata({"artifact_version": 2})
+        training_support.extract_artifact_metadata({"artifact_version": 2})
 
 
 def test_build_dataset_controls_reports_registry_mode(
@@ -689,9 +669,7 @@ def test_build_dataset_controls_reports_registry_mode(
     monkeypatch.setattr(
         em,
         "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("helper must use explicit settings")
-        ),
+        lambda: (_ for _ in ()).throw(AssertionError("helper must use explicit settings")),
     )
     monkeypatch.setattr(
         "ser.data.dataset_registry.load_dataset_registry",
@@ -702,7 +680,7 @@ def test_build_dataset_controls_reports_registry_mode(
         lambda settings: (Path("manifests/ravdess.jsonl"),),
     )
 
-    controls = em._build_dataset_controls(utterances, settings=settings)
+    controls = training_support.build_dataset_controls(utterances, settings=settings)
 
     assert controls["mode"] == "registry"
     assert controls["manifest_paths"] == ["manifests/ravdess.jsonl"]
@@ -731,11 +709,11 @@ def test_predict_emotions_detailed_uses_predict_proba(
         classes=["happy", "sad"],
     )
 
-    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
+    monkeypatch.setattr(em, "extract_feature_frames", lambda _file, *, settings=None: frames)
     monkeypatch.setattr(
         em,
         "load_model",
-        lambda: em.LoadedModel(
+        lambda *, settings=None: em.LoadedModel(
             model=model,
             expected_feature_size=2,
         ),
@@ -748,9 +726,7 @@ def test_predict_emotions_detailed_uses_predict_proba(
     assert [item.confidence for item in detailed.frames] == pytest.approx([0.8, 0.6])
     assert detailed.frames[0].probabilities == {"happy": 0.8, "sad": 0.2}
     assert detailed.frames[1].probabilities == {"happy": 0.4, "sad": 0.6}
-    assert [
-        (seg.emotion, seg.start_seconds, seg.end_seconds) for seg in detailed.segments
-    ] == [
+    assert [(seg.emotion, seg.start_seconds, seg.end_seconds) for seg in detailed.segments] == [
         ("happy", 0.0, 1.0),
         ("sad", 1.0, 2.0),
     ]
@@ -778,11 +754,11 @@ def test_predict_emotions_detailed_falls_back_without_predict_proba(
     ]
     model = PredictOnlyModel(predictions=["neutral", "neutral"])
 
-    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
+    monkeypatch.setattr(em, "extract_feature_frames", lambda _file, *, settings=None: frames)
     monkeypatch.setattr(
         em,
         "load_model",
-        lambda: em.LoadedModel(
+        lambda *, settings=None: em.LoadedModel(
             model=model,
             expected_feature_size=2,
         ),

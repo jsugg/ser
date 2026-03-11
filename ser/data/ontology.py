@@ -27,9 +27,7 @@ def normalize_label(label: str) -> str:
 def ensure_label_allowed(*, label: str, ontology: LabelOntology) -> None:
     """Raises when a label is not part of the canonical ontology."""
     if label not in ontology.allowed_labels:
-        raise ValueError(
-            f"Label {label!r} is not part of ontology {ontology.ontology_id!r}."
-        )
+        raise ValueError(f"Label {label!r} is not part of ontology {ontology.ontology_id!r}.")
 
 
 def remap_label(
@@ -65,6 +63,4 @@ def remap_label(
         other = normalize_label(ontology.other_label)
         ensure_label_allowed(label=other, ontology=ontology)
         return other
-    raise ValueError(
-        f"Unknown label {raw_label!r} under ontology {ontology.ontology_id!r}."
-    )
+    raise ValueError(f"Unknown label {raw_label!r} under ontology {ontology.ontology_id!r}.")

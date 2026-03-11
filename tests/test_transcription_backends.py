@@ -136,10 +136,7 @@ def test_stable_whisper_compatibility_reports_torio_ffmpeg_operational_issue(
         issue.code == "torio_ffmpeg_abi_mismatch" and issue.impact == "informational"
         for issue in report.operational_issues
     )
-    assert any(
-        issue.code == "torio_ffmpeg_probe_debug_traceback"
-        for issue in report.noise_issues
-    )
+    assert any(issue.code == "torio_ffmpeg_probe_debug_traceback" for issue in report.noise_issues)
 
 
 def test_stable_whisper_extract_missing_dynamic_library_parses_darwin_dlopen() -> None:
@@ -182,9 +179,7 @@ def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
     )
     monkeypatch.setattr(
         "ser.transcript.backends.stable_whisper_torio_probe.format_torio_ffmpeg_remediation",
-        lambda *, missing_library: (
-            f"lane-aware-remediation:{missing_library or 'none'}"
-        ),
+        lambda *, missing_library: (f"lane-aware-remediation:{missing_library or 'none'}"),
     )
 
     def _raise_dlopen(_path: str) -> object:
@@ -277,8 +272,7 @@ def test_faster_whisper_openmp_conflict_is_blocking(
 
     assert report.has_blocking_issues is True
     assert any(
-        issue.code == FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
-        and issue.impact == "blocking"
+        issue.code == FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE and issue.impact == "blocking"
         for issue in report.functional_issues
     )
 
@@ -609,8 +603,7 @@ def test_stable_whisper_load_model_retries_on_cpu_after_retryable_mps_failure(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda _model: (_ for _ in ()).throw(failure_type(failure_message)),
     )
 
@@ -691,8 +684,7 @@ def test_stable_whisper_load_model_falls_back_on_compat_activation_error(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         _raise_compat_activation_error,
     )
 
@@ -760,8 +752,7 @@ def test_stable_whisper_load_model_raises_on_unknown_compat_activation_error(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda _model: (_ for _ in ()).throw(ValueError("unexpected failure")),
     )
 
@@ -826,8 +817,7 @@ def test_stable_whisper_load_model_enables_mps_compatibility_on_success(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda _model: moved_model,
     )
     monkeypatch.setattr(
@@ -919,8 +909,7 @@ def test_stable_whisper_load_model_mps_admission_control_prefers_cpu(
         return model
 
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         _record_enable_call,
     )
 
@@ -1091,13 +1080,11 @@ def test_stable_whisper_transcribe_uses_mps_timing_compatibility_context(
             context_events.append("exit")
 
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "is_stable_whisper_mps_compatibility_enabled",
+        "ser.transcript.backends.stable_whisper." "is_stable_whisper_mps_compatibility_enabled",
         lambda _model: True,
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "stable_whisper_mps_timing_compatibility_context",
+        "ser.transcript.backends.stable_whisper." "stable_whisper_mps_timing_compatibility_context",
         _fake_context,
     )
 
@@ -1129,9 +1116,7 @@ def test_stable_whisper_transcribe_uses_mps_timing_compatibility_context(
 def test_stable_whisper_runtime_error_summary_is_single_line() -> None:
     """Stable adapter retry logs should keep runtime errors concise and single-line."""
     adapter = StableWhisperAdapter()
-    summary = adapter._summarize_runtime_error(
-        RuntimeError("line1\nline2 " + ("x" * 500))
-    )
+    summary = adapter._summarize_runtime_error(RuntimeError("line1\nline2 " + ("x" * 500)))
 
     assert "\n" not in summary
     assert len(summary) <= 180
@@ -1189,8 +1174,7 @@ def test_stable_whisper_accurate_mps_move_failure_uses_cpu_transcribe_directly(
         SimpleNamespace(load_model=_fake_load_model),
     )
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper."
-        "enable_stable_whisper_mps_compatibility",
+        "ser.transcript.backends.stable_whisper." "enable_stable_whisper_mps_compatibility",
         lambda _model: (_ for _ in ()).throw(RuntimeError("MPS backend out of memory")),
     )
     monkeypatch.setattr(adapter, "_normalize_result", lambda raw: raw)

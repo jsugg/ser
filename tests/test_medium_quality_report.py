@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal, cast
 
 import pytest
 
+import ser.models.training_support as training_support
 from ser.config import AppConfig
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
-from ser.models import emotion_model as em
 
 
 def _sample_utterance(
@@ -22,9 +23,7 @@ def _sample_utterance(
     corpus: str = "ravdess",
 ) -> Utterance:
     """Builds deterministic RAVDESS-like utterances."""
-    path = Path(
-        f"ser/dataset/ravdess/Actor_{actor_id:02d}/03-01-03-01-01-01-{actor_id:02d}.wav"
-    )
+    path = Path(f"ser/dataset/ravdess/Actor_{actor_id:02d}/03-01-03-01-01-01-{actor_id:02d}.wav")
     resolved_speaker = speaker_id
     if speaker_id == "auto":
         resolved_speaker = f"ravdess:{actor_id:02d}"
@@ -63,9 +62,10 @@ def test_medium_split_prefers_grouped_strategy_when_speaker_ids_are_available() 
         _sample_utterance(4, "sad"),
     ]
 
-    train_samples, test_samples, split_metadata = em._split_utterances(
+    train_samples, test_samples, split_metadata = training_support.split_utterances(
         samples,
         settings=settings,
+        logger=logging.getLogger(__name__),
     )
 
     assert train_samples
@@ -95,7 +95,11 @@ def test_medium_split_falls_back_when_speaker_metadata_is_incomplete() -> None:
         _sample_utterance(4, "sad"),
     ]
 
-    _, _, split_metadata = em._split_utterances(samples, settings=settings)
+    _, _, split_metadata = training_support.split_utterances(
+        samples,
+        settings=settings,
+        logger=logging.getLogger(__name__),
+    )
 
     assert split_metadata.split_strategy == "hash_stratified_split"
     assert split_metadata.speaker_grouped is False
@@ -121,9 +125,10 @@ def test_medium_split_prefers_explicit_manifest_split() -> None:
         _sample_utterance(2, "sad", split="test"),
     ]
 
-    train_samples, test_samples, split_metadata = em._split_utterances(
+    train_samples, test_samples, split_metadata = training_support.split_utterances(
         samples,
         settings=settings,
+        logger=logging.getLogger(__name__),
     )
 
     assert len(train_samples) == 2

@@ -17,37 +17,27 @@ from pathlib import Path
 
 from ser.data import archive_extraction as archive_extraction_helpers
 from ser.data import jl_corpus_downloads as jl_corpus_download_helpers
-from ser.data import (
-    mendeley_dataset_preparation as mendeley_dataset_preparation_helpers,
-)
+from ser.data import mendeley_dataset_preparation as mendeley_dataset_preparation_helpers
 from ser.data import mendeley_downloads as mendeley_download_helpers
 from ser.data import openslr_dataset_preparation as openslr_dataset_preparation_helpers
 from ser.data import openslr_downloads as openslr_download_helpers
 from ser.data import openslr_resolution as openslr_resolution_helpers
-from ser.data import (
-    provider_dataset_preparation as provider_dataset_preparation_helpers,
-)
+from ser.data import provider_dataset_preparation as provider_dataset_preparation_helpers
 from ser.data import provider_downloads as provider_download_helpers
 from ser.data import zenodo_downloads as zenodo_download_helpers
 from ser.data.provider_dataset_preparation import (
     AutoDownloadArtifacts,
     GeneratedLabelsStats,
 )
-from ser.data.public_dataset_label_inference import (
-    infer_att_hack_label as _infer_att_hack_label,
-)
-from ser.data.public_dataset_label_inference import (
-    infer_coraa_ser_label as _infer_coraa_ser_label,
-)
+from ser.data.public_dataset_label_inference import infer_att_hack_label as _infer_att_hack_label
+from ser.data.public_dataset_label_inference import infer_coraa_ser_label as _infer_coraa_ser_label
 from ser.data.public_dataset_label_inference import (
     infer_escorpus_pe_label as _infer_escorpus_pe_label,
 )
 from ser.data.public_dataset_label_inference import (
     infer_label_from_path_tokens as _infer_label_from_path_tokens,
 )
-from ser.data.public_dataset_label_inference import (
-    infer_mesd_label as _infer_mesd_label,
-)
+from ser.data.public_dataset_label_inference import infer_mesd_label as _infer_mesd_label
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -223,9 +213,7 @@ def _write_labels_csv(*, labels_csv_path: Path, labels_by_file: dict[str, str]) 
         writer = csv.DictWriter(handle, fieldnames=["FileName", "emotion"])
         writer.writeheader()
         for file_name in sorted(labels_by_file):
-            writer.writerow(
-                {"FileName": file_name, "emotion": labels_by_file[file_name]}
-            )
+            writer.writerow({"FileName": file_name, "emotion": labels_by_file[file_name]})
     os.replace(tmp_path, labels_csv_path)
 
 
@@ -574,9 +562,7 @@ def prepare_mesd_from_mendeley(*, dataset_root: Path) -> AutoDownloadArtifacts:
     )
 
 
-def prepare_oreau_french_esd_from_zenodo(
-    *, dataset_root: Path
-) -> AutoDownloadArtifacts:
+def prepare_oreau_french_esd_from_zenodo(*, dataset_root: Path) -> AutoDownloadArtifacts:
     """Downloads Oreau French ESD from Zenodo and generates inferred labels."""
     return zenodo_download_helpers.prepare_oreau_french_esd_from_zenodo(
         dataset_root=dataset_root,

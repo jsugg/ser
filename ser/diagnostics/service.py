@@ -7,10 +7,8 @@ import shutil
 from dataclasses import replace
 from typing import Literal, cast
 
-from ser.config import (
-    AppConfig,
-    resolve_profile_transcription_config,
-)
+from ser._internal.config.bootstrap import resolve_profile_transcription_config
+from ser.config import AppConfig
 from ser.data.dataset_prepare import collect_dataset_registry_health_issues
 from ser.diagnostics.domain import (
     DiagnosticFinding,
@@ -109,10 +107,7 @@ def format_report_text(report: DiagnosticReport) -> str:
     counts = report.counts_by_severity()
     lines: list[str] = [
         "SER diagnostics report",
-        (
-            "summary: "
-            f"info={counts['info']} warning={counts['warning']} error={counts['error']}"
-        ),
+        ("summary: " f"info={counts['info']} warning={counts['warning']} error={counts['error']}"),
     ]
     if not report.findings:
         lines.append("status: ok (no findings)")
@@ -144,10 +139,7 @@ def format_report_brief(
     counts = report.counts_by_severity()
     lines: list[str] = [
         "SER diagnostics preflight summary",
-        (
-            "summary: "
-            f"info={counts['info']} warning={counts['warning']} error={counts['error']}"
-        ),
+        ("summary: " f"info={counts['info']} warning={counts['warning']} error={counts['error']}"),
     ]
     if not report.findings:
         lines.append("status: ok (no findings)")
@@ -243,8 +235,7 @@ def _check_runtime_capability(settings: AppConfig) -> tuple[DiagnosticFinding, .
         DiagnosticFinding(
             code="runtime_capability_unavailable",
             severity="error",
-            message=capability.message
-            or "Selected runtime profile capability is unavailable.",
+            message=capability.message or "Selected runtime profile capability is unavailable.",
             blocking=True,
         ),
     )
@@ -262,9 +253,7 @@ def _check_ffmpeg_binary() -> tuple[DiagnosticFinding, ...]:
                 "ffmpeg executable was not found on PATH; transcription workflows "
                 "require ffmpeg."
             ),
-            remediation=(
-                "Install ffmpeg and rerun diagnostics (`brew install ffmpeg` on macOS).",
-            ),
+            remediation=("Install ffmpeg and rerun diagnostics (`brew install ffmpeg` on macOS).",),
             blocking=True,
         ),
     )
@@ -277,16 +266,10 @@ def _check_transcription_backend_compatibility(
 ) -> tuple[DiagnosticFinding, ...]:
     """Collects transcription backend compatibility findings for active profile."""
     profile_name = resolve_profile_name(settings)
-    backend_id, model_name, use_demucs, use_vad = resolve_profile_transcription_config(
-        profile_name
-    )
+    backend_id, model_name, use_demucs, use_vad = resolve_profile_transcription_config(profile_name)
     torch_runtime = settings.torch_runtime
-    requested_device = (
-        torch_runtime.device if isinstance(torch_runtime.device, str) else "cpu"
-    )
-    requested_dtype = (
-        torch_runtime.dtype if isinstance(torch_runtime.dtype, str) else "auto"
-    )
+    requested_device = torch_runtime.device if isinstance(torch_runtime.device, str) else "cpu"
+    requested_dtype = torch_runtime.dtype if isinstance(torch_runtime.dtype, str) else "auto"
     requested_threshold = settings.transcription.mps_low_memory_threshold_gb
     runtime_policy = resolve_transcription_runtime_policy(
         backend_id=backend_id,
@@ -364,8 +347,7 @@ def _is_advisory_faster_whisper_openmp_conflict(
 ) -> bool:
     """Returns whether one faster-whisper OpenMP conflict is non-blocking in CLI runtime."""
     return (
-        backend_id == "faster_whisper"
-        and issue_code == FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
+        backend_id == "faster_whisper" and issue_code == FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
     )
 
 

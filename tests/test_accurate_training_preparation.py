@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import glob
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -9,7 +11,13 @@ from typing import cast
 import numpy as np
 import pytest
 
+import ser.license_check as license_check
+import ser.models.accurate_training_execution as ate
 import ser.models.accurate_training_preparation as atp
+import ser.models.artifact_envelope as artifact_envelope
+import ser.models.artifact_persistence as artifact_persistence
+import ser.models.training_reporting as training_reporting
+import ser.models.training_support as training_support
 from ser.config import AppConfig
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.models.dataset_splitting import MediumSplitMetadata
@@ -186,12 +194,8 @@ def test_prepare_accurate_research_training_wires_backend_and_cache(
                 {
                     "backend_model_id": model_id,
                     "backend_device": runtime_device,
-                    "backend_modelscope_cache_root": (
-                        settings.models.modelscope_cache_root
-                    ),
-                    "backend_huggingface_cache_root": (
-                        settings.models.huggingface_cache_root
-                    ),
+                    "backend_modelscope_cache_root": (settings.models.modelscope_cache_root),
+                    "backend_huggingface_cache_root": (settings.models.huggingface_cache_root),
                 }
             ),
             cast(atp.Emotion2VecBackend, object()),
@@ -209,18 +213,65 @@ def test_prepare_accurate_research_training_wires_backend_and_cache(
     assert captured["consented"] == utterances
     assert captured["backend_model_id"] == "unit-test/emotion2vec-plus"
     assert captured["backend_device"] == "mps"
-    assert (
-        captured["backend_modelscope_cache_root"]
-        == settings.models.modelscope_cache_root
-    )
-    assert (
-        captured["backend_huggingface_cache_root"]
-        == settings.models.huggingface_cache_root
-    )
+    assert captured["backend_modelscope_cache_root"] == settings.models.modelscope_cache_root
+    assert captured["backend_huggingface_cache_root"] == settings.models.huggingface_cache_root
     assert captured["cache_dirs"] == [
         settings.tmp_folder / "accurate_research_embeddings",
         settings.tmp_folder / "accurate_research_embeddings",
     ]
+
+
+def test_build_prepared_accurate_profile_training_runner_uses_canonical_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Prepared-runner builder should assemble shared collaborators explicitly."""
+    settings = cast(
+        AppConfig,
+        SimpleNamespace(models=SimpleNamespace(training_report_file=tmp_path / "report.json")),
+    )
+    captured: dict[str, object] = {}
+    sentinel_runner = object()
+    logger = ate.logging.getLogger("tests.accurate_training_preparation.builder")
+
+    monkeypatch.setattr(
+        ate,
+        "build_prepared_accurate_training_runner",
+        lambda **kwargs: (
+            captured.update(kwargs),
+            sentinel_runner,
+        )[1],
+    )
+
+    resolved_runner = ate.build_prepared_accurate_profile_training_runner(
+        settings,
+        logger=logger,
+    )
+
+    assert resolved_runner is sentinel_runner
+    assert captured["logger"] is logger
+    assert callable(captured["create_classifier"])
+    assert captured["min_support_resolver"] is training_support.group_metrics_min_support
+    assert captured["evaluate_predictions"] is training_support.evaluate_training_predictions
+    assert captured["attach_grouped_metrics"] is training_support.attach_grouped_training_metrics
+    assert captured["build_model_artifact"] is artifact_envelope.build_model_artifact
+    assert captured["extract_artifact_metadata"] is training_support.extract_artifact_metadata
+    assert captured["build_provenance_metadata"] is license_check.build_provenance_metadata
+    assert (
+        captured["build_grouped_evaluation_controls"]
+        is training_reporting.build_grouped_evaluation_controls
+    )
+    assert captured["persist_training_report"] is artifact_persistence.persist_training_report
+    build_dataset_controls = captured["build_dataset_controls"]
+    assert isinstance(build_dataset_controls, partial)
+    assert build_dataset_controls.func is training_support.build_dataset_controls
+    assert build_dataset_controls.keywords == {"settings": settings}
+    build_training_report = captured["build_training_report"]
+    assert isinstance(build_training_report, partial)
+    assert build_training_report.func is training_support.build_training_report
+    assert build_training_report.keywords == {"settings": settings, "globber": glob.glob}
+    persist_model_artifacts = captured["persist_model_artifacts"]
+    assert callable(persist_model_artifacts)
 
 
 def test_train_accurate_research_profile_model_enforces_access_and_delegates(
@@ -262,9 +313,7 @@ def test_train_accurate_research_profile_model_enforces_access_and_delegates(
         settings=settings,
         logger=atp.logging.getLogger("tests.accurate_training_preparation.train"),
         parse_allowed_restricted_backends_env=lambda: {"emotion2vec"},
-        load_persisted_backend_consents=lambda *, settings: {
-            "emotion2vec": {"consented": True}
-        },
+        load_persisted_backend_consents=lambda *, settings: {"emotion2vec": {"consented": True}},
         ensure_backend_access=lambda **kwargs: access_call.update(kwargs),
         restricted_backend_id="emotion2vec",
         load_utterances_for_training=lambda: utterances,
@@ -382,10 +431,7 @@ def test_train_accurate_whisper_profile_model_delegates_prepare_and_run(
 
     assert prepare_call["settings"] is settings
     assert prepare_call["load_utterances_for_training"] is not None
-    assert (
-        prepare_call["embedding_cache_path"]
-        == settings.tmp_folder / "accurate_embeddings"
-    )
+    assert prepare_call["embedding_cache_path"] == settings.tmp_folder / "accurate_embeddings"
     assert run_call == {
         "prepared": prepared,
         "utterances": utterances,
@@ -400,9 +446,7 @@ def test_run_accurate_profile_training_from_prepared_delegates_to_orchestration(
     """Prepared accurate payload should delegate to orchestration helper unchanged."""
     utterances = [_utterance("train", "happy"), _utterance("test", "sad")]
     split_metadata = _split_metadata()
-    prepared = atp.AccurateTrainingPreparation[
-        Utterance, MediumSplitMetadata, dict[str, str]
-    ](
+    prepared = atp.AccurateTrainingPreparation[Utterance, MediumSplitMetadata, dict[str, str]](
         train_utterances=[utterances[0]],
         test_utterances=[utterances[1]],
         split_metadata=split_metadata,
@@ -422,17 +466,17 @@ def test_run_accurate_profile_training_from_prepared_delegates_to_orchestration(
         return {"status": "ok"}
 
     monkeypatch.setattr(
-        atp,
+        ate,
         "run_accurate_profile_training",
         _fake_run_accurate_profile_training,
     )
 
     report_destination = tmp_path / "training_report.json"
-    result = atp.run_accurate_profile_training_from_prepared(
+    result = ate.run_accurate_profile_training_from_prepared(
         prepared=prepared,
         utterances=utterances,
         settings=_settings_stub(tmp_path),
-        logger=atp.logging.getLogger("tests.accurate_training_preparation.run"),
+        logger=ate.logging.getLogger("tests.accurate_training_preparation.run"),
         profile_label="Accurate",
         backend_id="hf_whisper",
         profile_id="accurate",
@@ -441,7 +485,7 @@ def test_run_accurate_profile_training_from_prepared_delegates_to_orchestration(
         frame_stride_seconds=0.5,
         create_classifier=lambda: object(),
         min_support=3,
-        evaluate_predictions=lambda **_kwargs: atp.TrainingEvaluation(
+        evaluate_predictions=lambda **_kwargs: ate.TrainingEvaluation(
             accuracy=1.0,
             macro_f1=1.0,
             uar=1.0,
@@ -451,7 +495,7 @@ def test_run_accurate_profile_training_from_prepared_delegates_to_orchestration(
         build_model_artifact=lambda **_kwargs: {"metadata": {}},
         extract_artifact_metadata=lambda _artifact: {"profile": "accurate"},
         persist_model_artifacts=lambda _model, _artifact: cast(
-            atp.PersistedArtifactsLike,
+            ate.PersistedArtifactsLike,
             SimpleNamespace(
                 pickle_path=tmp_path / "model.pkl",
                 secure_path=None,
@@ -459,9 +503,7 @@ def test_run_accurate_profile_training_from_prepared_delegates_to_orchestration(
         ),
         build_provenance_metadata=lambda **_kwargs: {"source": "unit-test"},
         build_dataset_controls=lambda _utterances: {"dataset": "ok"},
-        build_grouped_evaluation_controls=lambda _split: {
-            "split_strategy": _split.split_strategy
-        },
+        build_grouped_evaluation_controls=lambda _split: {"split_strategy": _split.split_strategy},
         build_training_report=lambda **_kwargs: {"report": "ok"},
         persist_training_report=lambda _report, _path: None,
         report_destination=report_destination,

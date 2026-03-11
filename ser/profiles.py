@@ -138,9 +138,7 @@ _ALLOWED_ENABLE_FLAGS: frozenset[str] = frozenset(
         "SER_ENABLE_ACCURATE_RESEARCH_PROFILE",
     }
 )
-_ALLOWED_TRANSCRIPTION_BACKENDS: frozenset[str] = frozenset(
-    {"stable_whisper", "faster_whisper"}
-)
+_ALLOWED_TRANSCRIPTION_BACKENDS: frozenset[str] = frozenset({"stable_whisper", "faster_whisper"})
 _ALLOWED_TORCH_DTYPE_SELECTORS: frozenset[str] = frozenset(
     {"auto", "float16", "float32", "bfloat16"}
 )
@@ -170,9 +168,7 @@ def _read_catalog_payload() -> dict[str, object]:
     except FileNotFoundError as err:
         raise RuntimeError(f"Profile definitions file not found at {path}.") from err
     except Exception as err:
-        raise RuntimeError(
-            f"Invalid YAML in profile definitions file at {path}: {err}"
-        ) from err
+        raise RuntimeError(f"Invalid YAML in profile definitions file at {path}: {err}") from err
     if not isinstance(payload, dict):
         raise RuntimeError(
             "Profile definitions payload must be a mapping with top-level keys "
@@ -192,9 +188,7 @@ def _read_optional_text(
     if raw_value is None:
         return None
     if not isinstance(raw_value, str) or not raw_value.strip():
-        raise RuntimeError(
-            f"Profile definition entry {entry_name!r} has invalid {key!r}."
-        )
+        raise RuntimeError(f"Profile definition entry {entry_name!r} has invalid {key!r}.")
     return raw_value.strip()
 
 
@@ -209,18 +203,12 @@ def _read_required_float(
     """Reads and validates one required numeric float field."""
     raw_value = raw_mapping.get(key)
     if not isinstance(raw_value, int | float):
-        raise RuntimeError(
-            f"Profile definition entry {entry_name!r} has invalid {key!r}."
-        )
+        raise RuntimeError(f"Profile definition entry {entry_name!r} has invalid {key!r}.")
     parsed = float(raw_value)
     if minimum is not None and parsed < minimum:
-        raise RuntimeError(
-            f"Profile definition entry {entry_name!r} has invalid {key!r}."
-        )
+        raise RuntimeError(f"Profile definition entry {entry_name!r} has invalid {key!r}.")
     if maximum is not None and parsed > maximum:
-        raise RuntimeError(
-            f"Profile definition entry {entry_name!r} has invalid {key!r}."
-        )
+        raise RuntimeError(f"Profile definition entry {entry_name!r} has invalid {key!r}.")
     return parsed
 
 
@@ -234,13 +222,9 @@ def _read_required_int(
     """Reads and validates one required integer field."""
     raw_value = raw_mapping.get(key)
     if not isinstance(raw_value, int):
-        raise RuntimeError(
-            f"Profile definition entry {entry_name!r} has invalid {key!r}."
-        )
+        raise RuntimeError(f"Profile definition entry {entry_name!r} has invalid {key!r}.")
     if minimum is not None and raw_value < minimum:
-        raise RuntimeError(
-            f"Profile definition entry {entry_name!r} has invalid {key!r}."
-        )
+        raise RuntimeError(f"Profile definition entry {entry_name!r} has invalid {key!r}.")
     return raw_value
 
 
@@ -285,9 +269,7 @@ def _validate_runtime_defaults(
 ) -> ProfileRuntimeDefaults:
     """Validates runtime defaults for one profile."""
     if not isinstance(raw, dict):
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'runtime_defaults'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'runtime_defaults'.")
     runtime_defaults = cast(dict[str, object], raw)
     enter_confidence = _read_required_float(
         runtime_defaults,
@@ -304,14 +286,10 @@ def _validate_runtime_defaults(
         maximum=1.0,
     )
     if enter_confidence < exit_confidence:
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid hysteresis thresholds."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid hysteresis thresholds.")
     process_isolation = runtime_defaults.get("process_isolation")
     if not isinstance(process_isolation, bool):
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'process_isolation'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'process_isolation'.")
     return ProfileRuntimeDefaults(
         timeout_seconds=_read_required_float(
             runtime_defaults,
@@ -384,23 +362,17 @@ def _validate_transcription_defaults(
         entry_name=name,
     )
     if backend_id_raw is None or backend_id_raw not in _ALLOWED_TRANSCRIPTION_BACKENDS:
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'backend_id'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'backend_id'.")
     model_name = _read_optional_text(
         transcription_defaults,
         key="model_name",
         entry_name=name,
     )
     if model_name is None:
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'model_name'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'model_name'.")
     use_demucs = transcription_defaults.get("use_demucs")
     if not isinstance(use_demucs, bool):
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'use_demucs'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'use_demucs'.")
     use_vad = transcription_defaults.get("use_vad")
     if not isinstance(use_vad, bool):
         raise RuntimeError(f"Profile definition entry {name!r} has invalid 'use_vad'.")
@@ -419,9 +391,7 @@ def _validate_runtime_env(
 ) -> ProfileRuntimeEnvDefinition:
     """Validates runtime environment variable mapping for one profile."""
     if not isinstance(raw, dict):
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'runtime_env'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'runtime_env'.")
     runtime_env = cast(dict[str, object], raw)
     return ProfileRuntimeEnvDefinition(
         timeout_seconds=_read_optional_text(
@@ -489,9 +459,7 @@ def _validate_transcription_env(
 ) -> ProfileTranscriptionEnvDefinition:
     """Validates transcription env override mapping for one profile."""
     if not isinstance(raw, dict):
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'transcription_env'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'transcription_env'.")
     transcription_env = cast(dict[str, object], raw)
     return ProfileTranscriptionEnvDefinition(
         backend_id=_read_optional_text(
@@ -541,9 +509,7 @@ def _validate_feature_runtime_defaults(
         entry_name=name,
     )
     torch_device = (
-        _normalize_torch_device_selector(torch_device_raw)
-        if torch_device_raw is not None
-        else None
+        _normalize_torch_device_selector(torch_device_raw) if torch_device_raw is not None else None
     )
     if torch_device_raw is not None and torch_device is None:
         raise RuntimeError(
@@ -551,9 +517,7 @@ def _validate_feature_runtime_defaults(
             "'feature_runtime_defaults.torch_device'."
         )
     torch_dtype = (
-        _normalize_torch_dtype_selector(torch_dtype_raw)
-        if torch_dtype_raw is not None
-        else None
+        _normalize_torch_dtype_selector(torch_dtype_raw) if torch_dtype_raw is not None else None
     )
     if torch_dtype_raw is not None and torch_dtype is None:
         raise RuntimeError(
@@ -579,14 +543,10 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
     raw_mapping = cast(dict[str, object], raw)
     description = raw_mapping.get("description")
     if not isinstance(description, str) or not description.strip():
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'description'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'description'.")
     backend_id = raw_mapping.get("backend_id")
     if not isinstance(backend_id, str) or not backend_id.strip():
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'backend_id'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'backend_id'.")
     required_modules_raw = raw_mapping.get("required_modules")
     if not isinstance(required_modules_raw, list):
         raise RuntimeError(
@@ -596,8 +556,7 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
     for item in required_modules_raw:
         if not isinstance(item, str) or not item.strip():
             raise RuntimeError(
-                f"Profile definition entry {name!r} has invalid module in "
-                "'required_modules'."
+                f"Profile definition entry {name!r} has invalid module in " "'required_modules'."
             )
         required_modules.append(item.strip())
     enable_flag_raw = raw_mapping.get("enable_flag")
@@ -606,14 +565,10 @@ def _validate_catalog_entry(name: ProfileName, raw: object) -> ProfileCatalogEnt
     elif isinstance(enable_flag_raw, str) and enable_flag_raw in _ALLOWED_ENABLE_FLAGS:
         enable_flag = cast(ProfileEnableFlag, enable_flag_raw)
     else:
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'enable_flag'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'enable_flag'.")
     enabled_by_default = raw_mapping.get("enabled_by_default")
     if not isinstance(enabled_by_default, bool):
-        raise RuntimeError(
-            f"Profile definition entry {name!r} has invalid 'enabled_by_default'."
-        )
+        raise RuntimeError(f"Profile definition entry {name!r} has invalid 'enabled_by_default'.")
     model_definition = _validate_model_definition(
         name=name,
         raw=raw_mapping.get("model"),
@@ -662,9 +617,7 @@ def _load_profile_catalog() -> MappingProxyType[ProfileName, ProfileCatalogEntry
         )
     profiles_raw = payload.get("profiles")
     if not isinstance(profiles_raw, dict):
-        raise RuntimeError(
-            "Profile definitions payload must contain mapping key 'profiles'."
-        )
+        raise RuntimeError("Profile definitions payload must contain mapping key 'profiles'.")
     profile_names: set[str] = set(profiles_raw.keys())
     expected_names: set[str] = set(_PROFILE_ORDER)
     missing = expected_names - profile_names
@@ -684,9 +637,7 @@ def _load_profile_catalog() -> MappingProxyType[ProfileName, ProfileCatalogEntry
     return MappingProxyType(parsed)
 
 
-_PROFILE_CATALOG: MappingProxyType[ProfileName, ProfileCatalogEntry] = (
-    _load_profile_catalog()
-)
+_PROFILE_CATALOG: MappingProxyType[ProfileName, ProfileCatalogEntry] = _load_profile_catalog()
 _PROFILE_MAP: MappingProxyType[str, RuntimeProfile] = MappingProxyType(
     {
         profile_name: RuntimeProfile(

@@ -105,16 +105,9 @@ class Utterance:
         )
         sample_id = _read_text_field(record, "sample_id")
         corpus = _read_text_field(record, "corpus")
-        audio_path_text = _read_text_field(record, "audio_path") or _read_text_field(
-            record, "path"
-        )
+        audio_path_text = _read_text_field(record, "audio_path") or _read_text_field(record, "path")
         label_text = _read_text_field(record, "label")
-        if (
-            sample_id is None
-            or corpus is None
-            or audio_path_text is None
-            or label_text is None
-        ):
+        if sample_id is None or corpus is None or audio_path_text is None or label_text is None:
             raise ValueError(
                 "Manifest record must include sample_id, corpus, audio_path, and label fields."
             )
@@ -124,9 +117,7 @@ class Utterance:
         language = _read_text_field(record, "language")
         split_raw = _read_text_field(record, "split")
         split: SplitName | None = (
-            cast(SplitName, split_raw)
-            if split_raw in {"train", "dev", "test"}
-            else None
+            cast(SplitName, split_raw) if split_raw in {"train", "dev", "test"} else None
         )
         start_seconds = _read_float_field(record, "start_seconds")
         duration_seconds = _read_float_field(record, "duration_seconds")

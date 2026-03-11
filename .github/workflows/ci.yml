@@ -170,9 +170,6 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-contract-gates-
 
-      - name: Enforce structural ownership contract gates
-        run: make topology-contracts
-
       - name: Enforce API import boundary lint gate
         run: make import-lint
 

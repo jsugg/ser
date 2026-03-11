@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ser.config import AppConfig, resolve_profile_transcription_config
+from ser._internal.config.bootstrap import resolve_profile_transcription_config
+from ser.config import AppConfig
 from ser.diagnostics.domain import DiagnosticReport, PreflightMode
 from ser.profiles import resolve_profile_name
 
@@ -52,8 +53,8 @@ def suppress_preflight_transcription_operational_relogs(
     if not issue_codes:
         return
     profile_name = resolve_profile_name(settings)
-    backend_id, _model_name, _use_demucs, _use_vad = (
-        resolve_profile_transcription_config(profile_name)
+    backend_id, _model_name, _use_demucs, _use_vad = resolve_profile_transcription_config(
+        profile_name
     )
     from ser.transcript.transcript_extractor import mark_compatibility_issues_as_emitted
 

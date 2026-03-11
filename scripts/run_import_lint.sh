@@ -8,3 +8,6 @@ readonly IMPORT_LINT_PATHS=(
 )
 
 uv run --frozen --extra dev ruff check --select TID251 "${IMPORT_LINT_PATHS[@]}"
+uv run --frozen --extra dev pytest -q \
+  tests/test_api_import_boundary.py \
+  tests/test_import_lint_policy.py

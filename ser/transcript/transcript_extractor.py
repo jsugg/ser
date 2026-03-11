@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import gc
 import logging
 import multiprocessing as mp
-import sys
 from dataclasses import dataclass
-from multiprocessing.connection import Connection
-from multiprocessing.process import BaseProcess
-from pathlib import Path
-from types import ModuleType
 from typing import TYPE_CHECKING, Literal, Never, Protocol, cast
 
 from ser._internal.transcription.compatibility import (
@@ -18,6 +12,15 @@ from ser._internal.transcription.compatibility import (
 )
 from ser._internal.transcription.compatibility import (
     mark_compatibility_issues_as_emitted as _mark_compatibility_issues_as_emitted_impl,
+)
+from ser._internal.transcription.extractor_entrypoints import (
+    extract_transcript as _extract_transcript_entrypoint,
+)
+from ser._internal.transcription.extractor_entrypoints import (
+    format_transcript as _format_transcript_entrypoint,
+)
+from ser._internal.transcription.extractor_entrypoints import (
+    transcribe_with_profile as _transcribe_with_profile_entrypoint,
 )
 from ser._internal.transcription.in_process_orchestration import (
     extract_transcript_in_process as _extract_transcript_in_process_impl,
@@ -30,6 +33,9 @@ from ser._internal.transcription.in_process_orchestration import (
 )
 from ser._internal.transcription.in_process_orchestration import (
     transcription_setup_required as _transcription_setup_required_impl,
+)
+from ser._internal.transcription.process_isolation import (
+    WorkerMessage,
 )
 from ser._internal.transcription.process_isolation import (
     raise_worker_error as _raise_worker_error_impl,
@@ -51,6 +57,63 @@ from ser._internal.transcription.process_isolation import (
 )
 from ser._internal.transcription.process_isolation import (
     transcription_worker_entry as _transcription_worker_entry_impl,
+)
+from ser._internal.transcription.process_worker import (
+    TranscriptionProcessPayload as _TranscriptionProcessPayload,
+)
+from ser._internal.transcription.process_worker import (
+    TranscriptionWorkerModelsConfig as _TranscriptionWorkerModelsConfig,
+)
+from ser._internal.transcription.process_worker import (
+    TranscriptionWorkerSettings as _TranscriptionWorkerSettings,
+)
+from ser._internal.transcription.process_worker import (
+    build_transcription_process_payload as _build_transcription_process_payload,
+)
+from ser._internal.transcription.process_worker import (
+    release_transcription_runtime_memory as _release_transcription_runtime_memory_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    raise_worker_error_from_public_boundary as _raise_worker_error_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    recv_worker_message_from_public_boundary as _recv_worker_message_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    resolve_transcription_adapter_from_public_boundary as _resolve_transcription_adapter_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    run_faster_whisper_process_isolated_from_public_boundary as _run_faster_whisper_process_isolated_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    spawn_context_for_public_boundary as _spawn_context_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    terminate_worker_process_from_public_boundary as _terminate_worker_process_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    transcription_worker_entry_from_public_boundary as _transcription_worker_entry_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    check_adapter_compatibility_from_public_boundary as _check_adapter_compatibility_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    extract_transcript_in_process_from_public_boundary as _extract_transcript_in_process_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    load_whisper_model_from_public_boundary as _load_whisper_model_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    prepare_transcription_assets_from_public_boundary as _prepare_transcription_assets_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    resolve_transcription_profile_from_public_boundary as _resolve_transcription_profile_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    transcribe_with_profile_from_public_boundary as _transcribe_with_profile_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_runtime import (
+    transcription_setup_required_from_public_boundary as _transcription_setup_required_boundary_impl,
 )
 from ser._internal.transcription.runtime_profile import (
     resolve_backend_id as _resolve_backend_id_impl,
@@ -87,6 +150,12 @@ logger: logging.Logger = get_logger(__name__)
 _TERMINATE_GRACE_SECONDS = 5.0
 _KILL_GRACE_SECONDS = 2.0
 
+_PROCESS_WORKER_NAMESPACE = (
+    _TranscriptionProcessPayload,
+    _TranscriptionWorkerModelsConfig,
+    _TranscriptionWorkerSettings,
+)
+
 
 class TranscriptionError(RuntimeError):
     """Raised when transcript extraction fails for operational reasons."""
@@ -110,102 +179,15 @@ class TranscriptionProfile:
     use_vad: bool = True
 
 
-@dataclass(frozen=True)
-class _TranscriptionProcessPayload:
-    """Serializable payload for one process-isolated transcription attempt."""
-
-    file_path: str
-    language: str
-    profile: TranscriptionProfile
-    runtime_request: BackendRuntimeRequest
-    settings: _TranscriptionWorkerSettings
-
-
-@dataclass(frozen=True, slots=True)
-class _TranscriptionWorkerModelsConfig:
-    """Serializable model settings required by process-isolated backends."""
-
-    whisper_download_root: Path
-
-
-@dataclass(frozen=True, slots=True)
-class _TranscriptionWorkerSettings:
-    """Serializable settings snapshot required by process-isolated workers."""
-
-    models: _TranscriptionWorkerModelsConfig
-
-
-@dataclass(frozen=True, slots=True)
-class TranscriptionRuntimeOwnershipSlice:
-    """Ownership record used to stage transcription-runtime extraction safely."""
-
-    slice_id: str
-    target_module: str
-    symbols: tuple[str, ...]
-
-
-type _WorkerPhase = Literal["setup_complete", "model_loaded"]
-type _WorkerPhaseMessage = tuple[Literal["phase"], _WorkerPhase]
-type _WorkerSuccessMessage = tuple[Literal["ok"], list[tuple[str, float, float]]]
-type _WorkerErrorMessage = tuple[Literal["err"], str, str, str]
-type _WorkerMessage = _WorkerPhaseMessage | _WorkerSuccessMessage | _WorkerErrorMessage
+type _WorkerMessage = WorkerMessage
 type _CompatibilityIssueKind = Literal["noise", "operational"]
 
 _EMITTED_COMPATIBILITY_ISSUE_KEYS: set[tuple[str, str, str]] = set()
-TRANSCRIPTION_RUNTIME_RISK_OWNERSHIP_MAP: tuple[
-    TranscriptionRuntimeOwnershipSlice, ...
-] = (
-    TranscriptionRuntimeOwnershipSlice(
-        slice_id="profile_runtime_resolution",
-        target_module="ser._internal.transcription.runtime_profile",
-        symbols=(
-            "resolve_transcription_profile",
-            "_runtime_request_from_profile",
-        ),
-    ),
-    TranscriptionRuntimeOwnershipSlice(
-        slice_id="compatibility_issue_hygiene",
-        target_module="ser._internal.transcription.compatibility",
-        symbols=(
-            "_check_adapter_compatibility",
-            "mark_compatibility_issues_as_emitted",
-        ),
-    ),
-    TranscriptionRuntimeOwnershipSlice(
-        slice_id="process_isolation_orchestration",
-        target_module="ser._internal.transcription.process_isolation",
-        symbols=(
-            "_should_use_process_isolated_path",
-            "_runtime_request_for_isolated_faster_whisper",
-            "_run_faster_whisper_process_isolated",
-            "_recv_worker_message",
-            "_raise_worker_error",
-            "_terminate_worker_process",
-            "_transcription_worker_entry",
-        ),
-    ),
-    TranscriptionRuntimeOwnershipSlice(
-        slice_id="in_process_orchestration",
-        target_module="ser._internal.transcription.in_process_orchestration",
-        symbols=(
-            "_transcription_setup_required",
-            "_prepare_transcription_assets",
-            "load_whisper_model",
-            "_extract_transcript",
-            "_extract_transcript_in_process",
-            "_release_transcription_runtime_memory",
-            "_transcribe_file_with_profile",
-            "transcribe_with_model",
-        ),
-    ),
-)
 
 
-def transcription_runtime_risk_ownership_map() -> (
-    tuple[TranscriptionRuntimeOwnershipSlice, ...]
-):
-    """Returns planned ownership slices for transcription-runtime risk containment."""
-    return TRANSCRIPTION_RUNTIME_RISK_OWNERSHIP_MAP
+def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
+    """Returns explicit settings or falls back to ambient public-boundary config."""
+    return settings if settings is not None else get_settings()
 
 
 def _resolve_transcription_profile_for_settings(
@@ -216,14 +198,13 @@ def _resolve_transcription_profile_for_settings(
     """Resolves one transcription profile against an explicit settings snapshot."""
     return cast(
         TranscriptionProfile,
-        _resolve_transcription_profile_impl(
+        _resolve_transcription_profile_boundary_impl(
             profile,
-            settings_resolver=lambda: settings,
+            settings=settings,
+            resolve_transcription_profile_impl=_resolve_transcription_profile_impl,
             profile_factory=TranscriptionProfile,
-            backend_id_resolver=lambda raw_backend_id: _resolve_backend_id_impl(
-                raw_backend_id,
-                error_factory=TranscriptionError,
-            ),
+            backend_id_resolver=_resolve_backend_id_impl,
+            error_factory=TranscriptionError,
         ),
     )
 
@@ -234,10 +215,9 @@ def resolve_transcription_profile(
     settings: AppConfig | None = None,
 ) -> TranscriptionProfile:
     """Resolves profile overrides or falls back to configured defaults."""
-    active_settings = settings if settings is not None else get_settings()
     return _resolve_transcription_profile_for_settings(
         profile,
-        settings=active_settings,
+        settings=_resolve_boundary_settings(settings),
     )
 
 
@@ -261,15 +241,16 @@ def _check_adapter_compatibility(
     runtime_request: BackendRuntimeRequest | None = None,
 ) -> CompatibilityReport:
     """Validates backend compatibility and logs non-blocking compatibility issues."""
-    return _check_adapter_compatibility_impl(
+    return _check_adapter_compatibility_boundary_impl(
         active_profile=active_profile,
         settings=settings,
         runtime_request=runtime_request,
+        check_adapter_compatibility_impl=_check_adapter_compatibility_impl,
         runtime_request_resolver=_runtime_request_from_profile,
         adapter_resolver=resolve_transcription_backend_adapter,
-        error_factory=TranscriptionError,
         emitted_issue_keys=_EMITTED_COMPATIBILITY_ISSUE_KEYS,
         logger=logger,
+        error_factory=TranscriptionError,
     )
 
 
@@ -294,18 +275,13 @@ def _transcription_setup_required(
     settings: AppConfig,
 ) -> bool:
     """Returns whether a setup/download phase is needed before model load."""
-    return _transcription_setup_required_impl(
+    return _transcription_setup_required_boundary_impl(
         active_profile=active_profile,
         settings=settings,
-        runtime_request_resolver=lambda profile, app_settings: _runtime_request_from_profile(
-            cast(TranscriptionProfile, profile),
-            app_settings,
-        ),
+        transcription_setup_required_impl=_transcription_setup_required_impl,
+        runtime_request_resolver=_runtime_request_from_profile,
         compatibility_checker=_check_adapter_compatibility,
-        adapter_resolver=lambda backend_id: cast(
-            object,
-            resolve_transcription_backend_adapter(backend_id),
-        ),
+        adapter_resolver=resolve_transcription_backend_adapter,
     )
 
 
@@ -315,18 +291,13 @@ def _prepare_transcription_assets(
     settings: AppConfig,
 ) -> None:
     """Ensures required stable-whisper model assets are present locally."""
-    _prepare_transcription_assets_impl(
+    _prepare_transcription_assets_boundary_impl(
         active_profile=active_profile,
         settings=settings,
-        runtime_request_resolver=lambda profile, app_settings: _runtime_request_from_profile(
-            cast(TranscriptionProfile, profile),
-            app_settings,
-        ),
+        prepare_transcription_assets_impl=_prepare_transcription_assets_impl,
+        runtime_request_resolver=_runtime_request_from_profile,
         compatibility_checker=_check_adapter_compatibility,
-        adapter_resolver=lambda backend_id: cast(
-            object,
-            resolve_transcription_backend_adapter(backend_id),
-        ),
+        adapter_resolver=resolve_transcription_backend_adapter,
     )
 
 
@@ -336,25 +307,14 @@ def _load_whisper_model_for_settings(
     settings: AppConfig,
 ) -> object:
     """Loads one transcription model for an explicit settings snapshot."""
-    return _load_whisper_model_impl(
+    return _load_whisper_model_boundary_impl(
         profile=profile,
-        settings_resolver=lambda: settings,
-        profile_resolver=lambda value: cast(
-            object,
-            _resolve_transcription_profile_for_settings(
-                cast(TranscriptionProfile | None, value),
-                settings=settings,
-            ),
-        ),
-        runtime_request_resolver=lambda active_profile, app_settings: _runtime_request_from_profile(
-            cast(TranscriptionProfile, active_profile),
-            app_settings,
-        ),
+        settings=settings,
+        load_whisper_model_impl=_load_whisper_model_impl,
+        resolve_profile_for_settings=_resolve_transcription_profile_for_settings,
+        runtime_request_resolver=_runtime_request_from_profile,
         compatibility_checker=_check_adapter_compatibility,
-        adapter_resolver=lambda backend_id: cast(
-            object,
-            resolve_transcription_backend_adapter(backend_id),
-        ),
+        adapter_resolver=resolve_transcription_backend_adapter,
         logger=logger,
         error_factory=TranscriptionError,
     )
@@ -370,10 +330,9 @@ def load_whisper_model(
     Returns:
         The loaded Whisper model instance.
     """
-    active_settings = settings if settings is not None else get_settings()
     return _load_whisper_model_for_settings(
         profile=profile,
-        settings=active_settings,
+        settings=_resolve_boundary_settings(settings),
     )
 
 
@@ -395,35 +354,6 @@ def _runtime_request_for_isolated_faster_whisper(
     )
 
 
-def _build_transcription_worker_settings(
-    settings: AppConfig,
-) -> _TranscriptionWorkerSettings:
-    """Builds the serializable settings subset needed by worker processes."""
-    return _TranscriptionWorkerSettings(
-        models=_TranscriptionWorkerModelsConfig(
-            whisper_download_root=settings.models.whisper_download_root,
-        ),
-    )
-
-
-def _build_transcription_process_payload(
-    *,
-    file_path: str,
-    language: str,
-    profile: TranscriptionProfile,
-    runtime_request: BackendRuntimeRequest,
-    settings: AppConfig,
-) -> _TranscriptionProcessPayload:
-    """Builds a serializable worker payload from the active runtime settings."""
-    return _TranscriptionProcessPayload(
-        file_path=file_path,
-        language=language,
-        profile=profile,
-        runtime_request=runtime_request,
-        settings=_build_transcription_worker_settings(settings),
-    )
-
-
 def _run_faster_whisper_process_isolated(
     *,
     file_path: str,
@@ -432,29 +362,30 @@ def _run_faster_whisper_process_isolated(
     settings: AppConfig,
 ) -> list[TranscriptWord]:
     """Runs faster-whisper setup/load/transcribe inside one spawned worker process."""
-    return _run_faster_whisper_process_isolated_impl(
+    return _run_faster_whisper_process_isolated_boundary_impl(
         file_path=file_path,
         language=language,
         profile=profile,
-        settings_resolver=lambda: settings,
+        settings=settings,
+        run_faster_whisper_process_isolated_impl=_run_faster_whisper_process_isolated_impl,
         runtime_request_resolver=_runtime_request_for_isolated_faster_whisper,
         payload_factory=_build_transcription_process_payload,
-        get_spawn_context=_spawn_context,
+        spawn_context_resolver=_spawn_context,
         worker_entry=_transcription_worker_entry,
         recv_worker_message_fn=_recv_worker_message,
         raise_worker_error_fn=_raise_worker_error,
         terminate_worker_process_fn=_terminate_worker_process,
-        transcript_word_factory=TranscriptWord,
         logger=logger,
         error_factory=TranscriptionError,
         terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
     )
 
 
-def _recv_worker_message(connection: Connection, *, stage: str) -> _WorkerMessage:
+def _recv_worker_message(connection: object, *, stage: str) -> _WorkerMessage:
     """Receives one worker message and validates tuple envelope shape."""
-    return _recv_worker_message_impl(
+    return _recv_worker_message_boundary_impl(
         connection,
+        recv_worker_message_impl=_recv_worker_message_impl,
         stage=stage,
         error_factory=TranscriptionError,
     )
@@ -462,13 +393,18 @@ def _recv_worker_message(connection: Connection, *, stage: str) -> _WorkerMessag
 
 def _raise_worker_error(message: _WorkerMessage) -> Never:
     """Raises one transcription-domain error from a worker payload."""
-    _raise_worker_error_impl(message, error_factory=TranscriptionError)
+    _raise_worker_error_boundary_impl(
+        message,
+        raise_worker_error_impl=_raise_worker_error_impl,
+        error_factory=TranscriptionError,
+    )
 
 
 def _terminate_worker_process(process: object) -> None:
     """Terminates a worker process with kill fallback."""
-    _terminate_worker_process_impl(
-        cast(BaseProcess, process),
+    _terminate_worker_process_boundary_impl(
+        process,
+        terminate_worker_process_impl=_terminate_worker_process_impl,
         terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
         kill_grace_seconds=_KILL_GRACE_SECONDS,
     )
@@ -476,12 +412,15 @@ def _terminate_worker_process(process: object) -> None:
 
 def _spawn_context() -> object:
     """Returns the spawn context used for faster-whisper process isolation."""
-    return mp.get_context("spawn")
+    return _spawn_context_boundary_impl(get_context=mp.get_context)
 
 
 def _resolve_transcription_adapter(backend_id: TranscriptionBackendId) -> object:
     """Resolves one transcription adapter for worker execution."""
-    return cast(object, resolve_transcription_backend_adapter(backend_id))
+    return _resolve_transcription_adapter_boundary_impl(
+        backend_id,
+        adapter_resolver=resolve_transcription_backend_adapter,
+    )
 
 
 def _transcription_worker_entry(
@@ -489,11 +428,10 @@ def _transcription_worker_entry(
     connection: object,
 ) -> None:
     """Executes faster-whisper transcription inside one isolated worker process."""
-    active_payload = cast(_TranscriptionProcessPayload, payload)
-    _transcription_worker_entry_impl(
-        active_payload,
-        cast(Connection, connection),
-        settings_resolver=lambda: active_payload.settings,
+    _transcription_worker_entry_boundary_impl(
+        payload,
+        connection,
+        transcription_worker_entry_impl=_transcription_worker_entry_impl,
         adapter_resolver=_resolve_transcription_adapter,
     )
 
@@ -515,7 +453,7 @@ def extract_transcript(
     Returns:
         A list of transcript word entries with timing metadata.
     """
-    active_settings = settings if settings is not None else get_settings()
+    active_settings = _resolve_boundary_settings(settings)
     active_language: str = language or active_settings.default_language
     return _extract_transcript(
         file_path,
@@ -533,22 +471,15 @@ def _extract_transcript(
     settings: AppConfig,
 ) -> list[TranscriptWord]:
     """Internal transcript workflow with backend-specific execution strategy."""
-    active_profile = _resolve_transcription_profile_for_settings(
+    return _extract_transcript_entrypoint(
+        file_path,
+        language,
         profile,
         settings=settings,
-    )
-    if _should_use_process_isolated_path(active_profile):
-        return _run_faster_whisper_process_isolated(
-            file_path=file_path,
-            language=language,
-            profile=active_profile,
-            settings=settings,
-        )
-    return _extract_transcript_in_process(
-        file_path=file_path,
-        language=language,
-        profile=active_profile,
-        settings=settings,
+        resolve_profile_fn=_resolve_transcription_profile_for_settings,
+        should_use_process_isolated_path_fn=_should_use_process_isolated_path,
+        run_process_isolated_fn=_run_faster_whisper_process_isolated,
+        run_in_process_fn=_extract_transcript_in_process,
     )
 
 
@@ -560,26 +491,16 @@ def _extract_transcript_in_process(
     settings: AppConfig,
 ) -> list[TranscriptWord]:
     """Runs one in-process transcript workflow with phase-aware logging."""
-    return _extract_transcript_in_process_impl(
+    return _extract_transcript_in_process_boundary_impl(
         file_path=file_path,
         language=language,
         profile=profile,
-        settings_resolver=lambda: settings,
+        settings=settings,
+        extract_transcript_in_process_impl=_extract_transcript_in_process_impl,
         setup_required_checker=_transcription_setup_required,
         prepare_assets_runner=_prepare_transcription_assets,
-        load_model_fn=lambda active_profile: load_whisper_model(
-            cast(TranscriptionProfile | None, active_profile),
-            settings=settings,
-        ),
-        transcribe_with_profile_fn=lambda model, lang, path, active_profile: (
-            _transcribe_file_with_profile(
-                model,
-                lang,
-                path,
-                cast(TranscriptionProfile | None, active_profile),
-                settings=settings,
-            )
-        ),
+        load_whisper_model_fn=load_whisper_model,
+        transcribe_with_profile_fn=_transcribe_file_with_profile,
         release_memory_fn=_release_transcription_runtime_memory,
         phase_started_fn=log_phase_started,
         phase_completed_fn=log_phase_completed,
@@ -590,35 +511,7 @@ def _extract_transcript_in_process(
 
 def _release_transcription_runtime_memory(*, model: object | None) -> None:
     """Releases best-effort Torch runtime memory after one in-process transcript run."""
-    del model
-    gc.collect()
-    torch_module = sys.modules.get("torch")
-    if not isinstance(torch_module, ModuleType):
-        return
-    mps_module = getattr(torch_module, "mps", None)
-    if isinstance(mps_module, ModuleType):
-        is_available = getattr(mps_module, "is_available", None)
-        empty_cache = getattr(mps_module, "empty_cache", None)
-        try:
-            if callable(is_available) and is_available() and callable(empty_cache):
-                empty_cache()
-        except Exception:
-            logger.debug(
-                "Ignored failure while emptying torch MPS cache after transcription.",
-                exc_info=True,
-            )
-    cuda_module = getattr(torch_module, "cuda", None)
-    if isinstance(cuda_module, ModuleType):
-        is_available = getattr(cuda_module, "is_available", None)
-        empty_cache = getattr(cuda_module, "empty_cache", None)
-        try:
-            if callable(is_available) and is_available() and callable(empty_cache):
-                empty_cache()
-        except Exception:
-            logger.debug(
-                "Ignored failure while emptying torch CUDA cache after transcription.",
-                exc_info=True,
-            )
+    _release_transcription_runtime_memory_impl(model=model, logger=logger)
 
 
 def __transcribe_file(
@@ -647,30 +540,21 @@ def _transcribe_file_with_profile(
     settings: AppConfig,
 ) -> list[TranscriptWord]:
     """Runs a Whisper transcription call using an explicit runtime profile."""
-    active_profile = _resolve_transcription_profile_for_settings(
+    return _transcribe_with_profile_boundary_impl(
+        model,
+        language,
+        file_path,
         profile,
         settings=settings,
+        transcribe_with_profile_entrypoint=_transcribe_with_profile_entrypoint,
+        resolve_profile_for_settings=_resolve_transcription_profile_for_settings,
+        runtime_request_resolver=_runtime_request_from_profile,
+        compatibility_checker=_check_adapter_compatibility,
+        adapter_resolver=resolve_transcription_backend_adapter,
+        passthrough_error_cls=TranscriptionError,
+        logger=logger,
+        error_factory=TranscriptionError,
     )
-    runtime_request = _runtime_request_from_profile(active_profile, settings)
-    _check_adapter_compatibility(
-        active_profile=active_profile,
-        settings=settings,
-        runtime_request=runtime_request,
-    )
-    adapter = resolve_transcription_backend_adapter(active_profile.backend_id)
-    try:
-        return adapter.transcribe(
-            model=model,
-            runtime_request=runtime_request,
-            file_path=file_path,
-            language=language,
-            settings=settings,
-        )
-    except TranscriptionError:
-        raise
-    except Exception as err:
-        logger.error(msg=f"Error processing speech extraction: {err}", exc_info=True)
-        raise TranscriptionError("Failed to transcribe audio.") from err
 
 
 def transcribe_with_model(
@@ -682,13 +566,12 @@ def transcribe_with_model(
     settings: AppConfig | None = None,
 ) -> list[TranscriptWord]:
     """Transcribes one file with a pre-loaded model for profiling workloads."""
-    active_settings = settings if settings is not None else get_settings()
     return _transcribe_file_with_profile(
         model,
         language,
         file_path,
         profile=profile,
-        settings=active_settings,
+        settings=_resolve_boundary_settings(settings),
     )
 
 
@@ -701,19 +584,9 @@ def format_transcript(result: WhisperResult) -> list[TranscriptWord]:
     Returns:
         A list of transcript word entries with timing metadata.
     """
-    try:
-        words = cast(list[WhisperWord], result.all_words())
-    except AttributeError as err:
-        logger.error(msg=f"Error extracting words from result: {err}", exc_info=True)
-        raise TranscriptionError("Invalid Whisper result object.") from err
-
-    text_with_timestamps: list[TranscriptWord] = [
-        TranscriptWord(
-            word=str(word.word),
-            start_seconds=float(word.start),
-            end_seconds=float(word.end),
-        )
-        for word in words
-        if word.start is not None and word.end is not None
-    ]
-    return text_with_timestamps
+    return _format_transcript_entrypoint(
+        result,
+        transcript_word_factory=TranscriptWord,
+        logger=logger,
+        error_factory=TranscriptionError,
+    )

@@ -33,18 +33,14 @@ def load_manifest_jsonl(
                     f"Invalid JSON in manifest {path} at line {line_number}: {err}"
                 ) from err
             if not isinstance(payload, dict):
-                raise ValueError(
-                    f"Manifest {path} line {line_number} must be a JSON object."
-                )
+                raise ValueError(f"Manifest {path} line {line_number} must be a JSON object.")
             utterance = Utterance.from_record(
                 cast(dict[str, object], payload),
                 base_dir=resolved_base,
                 ontology=ontology,
             )
             if utterance.sample_id in seen_ids:
-                raise ValueError(
-                    f"Duplicate sample_id {utterance.sample_id!r} in manifest {path}."
-                )
+                raise ValueError(f"Duplicate sample_id {utterance.sample_id!r} in manifest {path}.")
             seen_ids.add(utterance.sample_id)
             utterances.append(utterance)
     return utterances

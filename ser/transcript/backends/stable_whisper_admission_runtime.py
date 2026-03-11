@@ -70,9 +70,7 @@ def mps_compatibility_fallback_reason(
     err: Exception,
     *,
     retryable_precision_checker: ExceptionPredicate = is_retryable_precision_failure,
-    compatibility_activation_checker: ExceptionPredicate = (
-        is_compatibility_activation_error
-    ),
+    compatibility_activation_checker: ExceptionPredicate = (is_compatibility_activation_error),
 ) -> str | None:
     """Returns one CPU-fallback reason for MPS compatibility activation failures."""
     if retryable_precision_checker(err):

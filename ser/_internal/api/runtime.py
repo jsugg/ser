@@ -8,6 +8,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from ser._internal.config.bootstrap import resolve_profile_transcription_config
+from ser._internal.config.schema import AppConfig, profile_artifact_file_names
 from ser._internal.runtime.commands import (
     WorkflowErrorDisposition,
 )
@@ -17,9 +19,7 @@ from ser._internal.runtime.commands import (
 from ser._internal.runtime.commands import (
     classify_training_exception as classify_training_exception,
 )
-from ser._internal.runtime.commands import (
-    run_inference_command as _run_inference_command,
-)
+from ser._internal.runtime.commands import run_inference_command as _run_inference_command
 from ser._internal.runtime.commands import run_training_command as _run_training_command
 from ser._internal.runtime.commands import (
     run_transcription_runtime_calibration_cli as _run_transcription_runtime_calibration_cli,
@@ -41,11 +41,6 @@ from ser._internal.runtime.restricted_backends import (
 )
 from ser._internal.runtime.restricted_backends import (
     run_restricted_backend_cli_gate as _run_restricted_backend_cli_gate,
-)
-from ser.config import (
-    AppConfig,
-    profile_artifact_file_names,
-    resolve_profile_transcription_config,
 )
 from ser.profiles import ProfileName, get_profile_catalog, resolve_profile_name
 from ser.utils.logger import get_logger
@@ -109,9 +104,7 @@ def apply_cli_profile_override(
         profile=cli_profile,
         medium_model_id=resolved_settings.models.medium_model_id,
         accurate_model_id=resolved_settings.models.accurate_model_id,
-        accurate_research_model_id=(
-            resolved_settings.models.accurate_research_model_id
-        ),
+        accurate_research_model_id=(resolved_settings.models.accurate_research_model_id),
     )
     (
         profile_transcription_backend_id,
@@ -277,9 +270,7 @@ def run_training_workflow(
     callers, but training now uses the pipeline for every profile so orchestration
     remains single-owned.
     """
-    builder = (
-        pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
-    )
+    builder = pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
     builder(settings).run_training()
 
 
@@ -311,9 +302,7 @@ def run_inference_workflow(
     """Runs CLI-equivalent inference workflow through one API boundary."""
     from ser.runtime import InferenceRequest
 
-    builder = (
-        pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
-    )
+    builder = pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
     request = InferenceRequest(
         file_path=str(file_path),
         language=language,

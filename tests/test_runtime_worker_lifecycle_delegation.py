@@ -83,9 +83,7 @@ def test_accurate_recv_worker_message_delegates_to_internal_service(
     assert captured["connection"] is connection
     assert captured["stage"] == "setup"
     assert captured["worker_label"] == "Accurate inference"
-    assert (
-        captured["error_factory"] is accurate_inference.AccurateInferenceExecutionError
-    )
+    assert captured["error_factory"] is accurate_inference.AccurateInferenceExecutionError
 
 
 def test_medium_raise_worker_error_delegates_to_internal_service(
@@ -103,10 +101,7 @@ def test_medium_raise_worker_error_delegates_to_internal_service(
     assert captured["error_type"] == "ValueError"
     assert captured["message"] == "bad payload"
     assert captured["worker_label"] == "Medium inference"
-    assert (
-        captured["unknown_error_factory"]
-        is medium_inference.MediumInferenceExecutionError
-    )
+    assert captured["unknown_error_factory"] is medium_inference.MediumInferenceExecutionError
     known_error_factories = cast(dict[str, object], captured["known_error_factories"])
     assert "MediumTransientBackendError" in known_error_factories
     assert "MediumInferenceTimeoutError" in known_error_factories
@@ -157,14 +152,8 @@ def test_medium_process_timeout_delegates_setup_compute_handshake(
     assert captured["context"] is sentinel_context
     assert captured["worker_label"] == "Medium inference"
     assert captured["timeout_seconds"] == 7.0
-    assert (
-        captured["timeout_error_factory"]
-        is medium_inference.MediumInferenceTimeoutError
-    )
-    assert (
-        captured["execution_error_factory"]
-        is medium_inference.MediumInferenceExecutionError
-    )
+    assert captured["timeout_error_factory"] is medium_inference.MediumInferenceTimeoutError
+    assert captured["execution_error_factory"] is medium_inference.MediumInferenceExecutionError
     assert captured["worker_target"] is medium_inference._worker_entry
 
 
@@ -209,20 +198,12 @@ def test_accurate_process_timeout_delegates_setup_compute_handshake(
         expected_backend_model_id=settings.models.accurate_model_id,
     )
 
-    resolved = accurate_inference._run_with_process_timeout(
-        payload, timeout_seconds=7.0
-    )
+    resolved = accurate_inference._run_with_process_timeout(payload, timeout_seconds=7.0)
 
     assert resolved == expected
     assert captured["context"] is sentinel_context
     assert captured["worker_label"] == "Accurate inference"
     assert captured["timeout_seconds"] == 7.0
-    assert (
-        captured["timeout_error_factory"]
-        is accurate_inference.AccurateInferenceTimeoutError
-    )
-    assert (
-        captured["execution_error_factory"]
-        is accurate_inference.AccurateInferenceExecutionError
-    )
+    assert captured["timeout_error_factory"] is accurate_inference.AccurateInferenceTimeoutError
+    assert captured["execution_error_factory"] is accurate_inference.AccurateInferenceExecutionError
     assert captured["worker_target"] is accurate_inference._worker_entry

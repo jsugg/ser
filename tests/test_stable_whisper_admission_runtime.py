@@ -119,11 +119,5 @@ def test_should_enforce_stable_whisper_transcribe_admission_passthrough() -> Non
         confidence="low",
     )
 
-    assert (
-        admission_runtime.should_enforce_stable_whisper_transcribe_admission(enforced)
-        is True
-    )
-    assert (
-        admission_runtime.should_enforce_stable_whisper_transcribe_admission(advisory)
-        is False
-    )
+    assert admission_runtime.should_enforce_stable_whisper_transcribe_admission(enforced) is True
+    assert admission_runtime.should_enforce_stable_whisper_transcribe_admission(advisory) is False

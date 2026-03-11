@@ -9,9 +9,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import cast
 
-_SUPPORTED_TORCH_DEVICE_SELECTORS: frozenset[str] = frozenset(
-    {"auto", "cpu", "mps", "cuda", "xpu"}
-)
+_SUPPORTED_TORCH_DEVICE_SELECTORS: frozenset[str] = frozenset({"auto", "cpu", "mps", "cuda", "xpu"})
 _INDEXED_TORCH_DEVICE_SELECTOR_PATTERN = re.compile(r"(cuda|xpu):\d+")
 
 
@@ -81,21 +79,15 @@ def _resolve_device_spec(torch_module: object, requested_device: str) -> str:
         return "cpu"
     if normalized == "cuda" or normalized.startswith("cuda:"):
         if not _cuda_is_available(torch_module):
-            raise RuntimeError(
-                "SER_TORCH_DEVICE requested CUDA, but CUDA is unavailable."
-            )
+            raise RuntimeError("SER_TORCH_DEVICE requested CUDA, but CUDA is unavailable.")
         return normalized
     if normalized == "xpu" or normalized.startswith("xpu:"):
         if not _xpu_is_available(torch_module):
-            raise RuntimeError(
-                "SER_TORCH_DEVICE requested XPU, but XPU is unavailable."
-            )
+            raise RuntimeError("SER_TORCH_DEVICE requested XPU, but XPU is unavailable.")
         return normalized
     if normalized == "mps":
         if not _mps_is_available(torch_module):
-            raise RuntimeError(
-                "SER_TORCH_DEVICE requested MPS, but MPS is unavailable."
-            )
+            raise RuntimeError("SER_TORCH_DEVICE requested MPS, but MPS is unavailable.")
         return "mps"
     return "cpu"
 
@@ -128,13 +120,9 @@ def _resolve_dtype_name(
         )
     elif normalized == "bfloat16":
         if device_type in {"mps", "xpu"}:
-            raise RuntimeError(
-                "SER_TORCH_DTYPE=bfloat16 is unsupported for MPS/XPU runtimes."
-            )
+            raise RuntimeError("SER_TORCH_DTYPE=bfloat16 is unsupported for MPS/XPU runtimes.")
         if device_type == "cuda" and not _cuda_bf16_is_supported(torch_module):
-            raise RuntimeError(
-                "SER_TORCH_DTYPE=bfloat16 requested, but CUDA bf16 is unsupported."
-            )
+            raise RuntimeError("SER_TORCH_DTYPE=bfloat16 requested, but CUDA bf16 is unsupported.")
         if getattr(torch_module, "bfloat16", None) is None:
             raise RuntimeError("Installed torch build does not expose bfloat16 dtype.")
     return normalized

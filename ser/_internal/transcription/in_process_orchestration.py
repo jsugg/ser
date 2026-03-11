@@ -176,9 +176,7 @@ def extract_transcript_in_process(
         active_profile=active_profile,
         settings=settings,
     ):
-        setup_started_at = phase_started_fn(
-            logger, phase_name=PHASE_TRANSCRIPTION_SETUP
-        )
+        setup_started_at = phase_started_fn(logger, phase_name=PHASE_TRANSCRIPTION_SETUP)
         try:
             prepare_assets_runner(
                 active_profile=active_profile,

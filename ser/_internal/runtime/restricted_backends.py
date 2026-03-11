@@ -132,9 +132,9 @@ def prepare_restricted_backend_opt_in_state(
             use_profile_pipeline=profile_resolution_enabled,
             consent_source=profile_consent_source,
         )
-    should_exit_zero = (
-        accept_restricted_backends or accept_all_restricted_backends
-    ) and (not train_requested and not file_path)
+    should_exit_zero = (accept_restricted_backends or accept_all_restricted_backends) and (
+        not train_requested and not file_path
+    )
     return RestrictedBackendOptInState(
         required_backend_ids=required_backend_ids,
         persisted_all_count=persisted_all_count,

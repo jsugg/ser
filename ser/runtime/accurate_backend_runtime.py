@@ -40,9 +40,7 @@ def runtime_config_for_profile(
         return settings.accurate_runtime
     if expected_profile == "accurate-research":
         return settings.accurate_research_runtime
-    raise unsupported_profile_error(
-        f"Unsupported accurate runtime profile {expected_profile!r}."
-    )
+    raise unsupported_profile_error(f"Unsupported accurate runtime profile {expected_profile!r}.")
 
 
 def build_backend_for_profile(
@@ -63,12 +61,8 @@ def build_backend_for_profile(
         backend_id=expected_backend_id,
         requested_device=settings.torch_runtime.device,
         requested_dtype=settings.torch_runtime.dtype,
-        backend_override_device=(
-            backend_override.device if backend_override is not None else None
-        ),
-        backend_override_dtype=(
-            backend_override.dtype if backend_override is not None else None
-        ),
+        backend_override_device=(backend_override.device if backend_override is not None else None),
+        backend_override_dtype=(backend_override.dtype if backend_override is not None else None),
     )
     if expected_backend_id == "hf_whisper":
         model_id = (

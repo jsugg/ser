@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Generator
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -132,9 +133,7 @@ def test_accurate_timeout_retries_up_to_configured_budget(
 
     with pytest.raises(AccurateInferenceTimeoutError, match="timeout"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -172,15 +171,11 @@ def test_accurate_transient_backend_failure_respects_retry_upper_bound(
         "ser.runtime.accurate_inference._run_with_timeout_impl",
         lambda **kwargs: kwargs["operation"](),
     )
-    monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt
-    )
+    monkeypatch.setattr("ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt)
 
     with pytest.raises(AccurateInferenceExecutionError, match="retry budget"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -217,9 +212,7 @@ def test_accurate_non_retryable_value_error_exits_without_retries(
         "ser.runtime.accurate_inference._run_with_timeout_impl",
         lambda **kwargs: kwargs["operation"](),
     )
-    monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt
-    )
+    monkeypatch.setattr("ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt)
     monkeypatch.setattr(
         "ser.runtime.policy.time.sleep",
         lambda _delay: calls.__setitem__("sleeps", calls["sleeps"] + 1),
@@ -227,9 +220,7 @@ def test_accurate_non_retryable_value_error_exits_without_retries(
 
     with pytest.raises(ValueError, match="Feature vector size mismatch"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -267,15 +258,11 @@ def test_accurate_dependency_error_is_not_retried(
         "ser.runtime.accurate_inference._run_with_timeout_impl",
         lambda **kwargs: kwargs["operation"](),
     )
-    monkeypatch.setattr(
-        "ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt
-    )
+    monkeypatch.setattr("ser.runtime.accurate_inference._run_accurate_inference_once", fake_attempt)
 
     with pytest.raises(AccurateRuntimeDependencyError, match="transformers"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -308,9 +295,7 @@ def test_accurate_inference_rejects_non_accurate_artifact_metadata(
 
     with pytest.raises(AccurateModelUnavailableError, match="hf_whisper"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             config.reload_settings(),
         )
 
@@ -324,9 +309,7 @@ def test_accurate_inference_returns_expected_schema(
         monkeypatch,
         backend_model_id=settings.models.accurate_model_id,
     )
-    expected = InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-    )
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_with_timeout_impl",
         lambda **kwargs: kwargs["operation"](),
@@ -351,9 +334,7 @@ def test_accurate_backend_setup_runs_before_timeout_wrapper(
     settings = config.reload_settings()
     backend_model_id = settings.models.accurate_model_id
     setup_calls = {"count": 0}
-    expected = InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-    )
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
 
     class _BackendStub:
         def prepare_runtime(self) -> None:
@@ -494,9 +475,7 @@ def test_accurate_inference_rejects_mismatched_backend_model_id(
     )
     with pytest.raises(AccurateModelUnavailableError, match="backend_model_id"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -520,9 +499,7 @@ def test_accurate_inference_requires_backend_model_id_metadata(
     )
     with pytest.raises(AccurateModelUnavailableError, match="backend_model_id"):
         run_accurate_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -615,9 +592,7 @@ def test_accurate_single_flight_serializes_same_profile_model_calls(
         time.sleep(0.05)
         with counter_lock:
             counters["active"] -= 1
-        return InferenceResult(
-            schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-        )
+        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
 
     monkeypatch.setattr(
         "ser.runtime.accurate_inference._run_accurate_inference_once",
@@ -625,16 +600,12 @@ def test_accurate_single_flight_serializes_same_profile_model_calls(
     )
 
     errors: list[Exception] = []
-    request = InferenceRequest(
-        file_path="sample.wav", language="en", save_transcript=False
-    )
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
 
     def invoke() -> None:
         try:
             run_accurate_inference(request, settings)
-        except (
-            Exception
-        ) as err:  # pragma: no cover - defensive capture for assertion clarity
+        except Exception as err:  # pragma: no cover - defensive capture for assertion clarity
             errors.append(err)
 
     first = threading.Thread(target=invoke)
@@ -658,14 +629,10 @@ def test_accurate_profile_pipeline_uses_process_timeout_runner(
     settings = config.reload_settings()
 
     calls = {"process": 0, "sleep": 0}
-    expected = InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-    )
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError(
-            "In-process load_model path should not run in process mode."
-        )
+        raise AssertionError("In-process load_model path should not run in process mode.")
 
     def fake_process_runner(*_args: object, **_kwargs: object) -> InferenceResult:
         calls["process"] += 1
@@ -708,18 +675,14 @@ def test_accurate_profile_pipeline_retries_on_cpu_after_mps_oom(
 
     devices: list[str] = []
     infos: list[str] = []
-    expected = InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-    )
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
     oom_message = (
         "MPS backend out of memory (MPS allocated: 3.13 GB, other allocations: "
         "220.17 MB, max allowed: 3.40 GB). Tried to allocate 85.83 MB on private pool."
     )
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError(
-            "In-process load_model path should not run in process mode."
-        )
+        raise AssertionError("In-process load_model path should not run in process mode.")
 
     def fake_process_runner(
         payload: accurate_inference.AccurateProcessPayload,
@@ -750,8 +713,7 @@ def test_accurate_profile_pipeline_retries_on_cpu_after_mps_oom(
     assert result == expected
     assert devices == [settings.torch_runtime.device, "cpu"]
     assert any(
-        "retry on CPU after MPS OOM (required=85.8MB available=" in message
-        for message in infos
+        "retry on CPU after MPS OOM (required=85.8MB available=" in message for message in infos
     )
 
 
@@ -762,15 +724,11 @@ def test_accurate_profile_pipeline_allows_timeout_disable(
     monkeypatch.setenv("SER_ENABLE_PROFILE_PIPELINE", "true")
     monkeypatch.setenv("SER_ACCURATE_TIMEOUT_SECONDS", "0")
     settings = config.reload_settings()
-    expected = InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-    )
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
     calls = {"process": 0}
 
     def fail_if_called(**_kwargs: object) -> object:
-        raise AssertionError(
-            "In-process load_model path should not run in process mode."
-        )
+        raise AssertionError("In-process load_model path should not run in process mode.")
 
     def fake_process_runner(*_args: object, **_kwargs: object) -> InferenceResult:
         timeout_seconds = _kwargs.get("timeout_seconds")
@@ -793,13 +751,68 @@ def test_accurate_profile_pipeline_allows_timeout_disable(
     assert calls["process"] == 1
 
 
+def test_accurate_retryable_operation_delegates_to_worker_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retryable accurate wrapper should delegate attempt execution to worker helper seam."""
+    settings = config.reload_settings()
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[],
+        frames=[],
+    )
+    prepared = cast(
+        accurate_inference._PreparedAccurateOperation,
+        accurate_inference.PreparedAccurateOperation(
+            loaded_model=cast(accurate_inference.LoadedModel, object()),
+            backend=cast(accurate_inference.FeatureBackend, object()),
+            audio=np.ones(8, dtype=np.float32),
+            sample_rate=4,
+            runtime_config=settings.accurate_runtime,
+        ),
+    )
+    retry_state = cast(
+        accurate_inference.AccurateRetryOperationState[
+            accurate_inference.AccurateProcessPayload,
+            accurate_inference.FeatureBackend,
+        ],
+        accurate_inference.AccurateRetryOperationState(
+            process_payload=None,
+            active_backend=prepared.backend,
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "ser.runtime.accurate_inference._run_inference_operation_impl",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    result = accurate_inference._run_accurate_retryable_operation(
+        enforce_timeout=True,
+        use_process_isolation=False,
+        retry_state=retry_state,
+        prepared_operation=prepared,
+        timeout_seconds=11.0,
+        expected_profile="accurate",
+    )
+
+    assert result == expected
+    assert captured["enforce_timeout"] is True
+    assert captured["use_process_isolation"] is False
+    assert captured["process_payload"] is None
+    assert captured["prepared_operation"] is prepared
+    assert captured["active_backend"] is prepared.backend
+    assert captured["timeout_seconds"] == 11.0
+    assert captured["expected_profile"] == "accurate"
+    assert captured["inference_phase_name"] == accurate_inference.PHASE_EMOTION_INFERENCE
+
+
 def test_accurate_process_timeout_applies_after_setup_phase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Process timeout budget should start only after setup phase is acknowledged."""
-    expected = InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-    )
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
     poll_calls: list[float | None] = []
     settings = config.reload_settings()
 
@@ -867,9 +880,7 @@ def test_accurate_process_timeout_applies_after_setup_phase(
         lambda _name: _Context(),
     )
     payload = accurate_inference.AccurateProcessPayload(
-        request=InferenceRequest(
-            file_path="sample.wav", language="en", save_transcript=False
-        ),
+        request=InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
         settings=settings,
         expected_backend_id="hf_whisper",
         expected_profile="accurate",

@@ -84,9 +84,7 @@ def test_prepare_process_operation_maps_model_load_failures() -> None:
                 device="cpu",
                 dtype="float32",
             ),
-            warn_on_runtime_selector_mismatch=lambda _loaded_model, _device, _dtype: (
-                None
-            ),
+            warn_on_runtime_selector_mismatch=lambda _loaded_model, _device, _dtype: (None),
             read_audio_file=lambda _file_path: (np.ones(8, dtype=np.float32), 16_000),
             build_medium_backend=lambda _settings, _model_id, _device, _dtype: object(),
             prepare_medium_backend_runtime=lambda _backend: None,
@@ -131,9 +129,9 @@ def test_prepare_in_process_operation_reuses_injected_model_and_backend() -> Non
             captured.update({"device": device, "dtype": dtype})
         ),
         read_audio_file=lambda _file_path: (np.ones(8, dtype=np.float32), 16_000),
-        build_medium_backend=lambda _settings, _model_id, _device, _dtype: (
-            _ for _ in ()
-        ).throw(AssertionError("build_medium_backend should not be called")),
+        build_medium_backend=lambda _settings, _model_id, _device, _dtype: (_ for _ in ()).throw(
+            AssertionError("build_medium_backend should not be called")
+        ),
         model_unavailable_error_factory=FileNotFoundError,
         model_load_error_factory=RuntimeError,
     )
@@ -272,9 +270,7 @@ def test_prepare_and_run_process_operation_delegates_compute() -> None:
         ),
         read_audio_file=lambda _file_path: (np.ones(8, dtype=np.float32), 16_000),
         build_medium_backend=lambda _settings, _model_id, _device, _dtype: backend,
-        prepare_medium_backend_runtime=lambda _backend: captured.update(
-            {"runtime_prepared": True}
-        ),
+        prepare_medium_backend_runtime=lambda _backend: captured.update({"runtime_prepared": True}),
         model_unavailable_error_factory=FileNotFoundError,
         model_load_error_factory=RuntimeError,
     )
@@ -310,9 +306,7 @@ def test_finalize_in_process_setup_prepares_backend_and_logs_completion() -> Non
         sample_rate=16_000,
         runtime_config=settings.medium_runtime,
     )
-    state = MediumRetryOperationState[_PayloadStub, object, object](
-        prepared_operation=prepared
-    )
+    state = MediumRetryOperationState[_PayloadStub, object, object](prepared_operation=prepared)
     phase_events: list[str] = []
     logger = logging.getLogger("ser.tests.medium_worker_operation")
 
@@ -362,9 +356,7 @@ def test_build_transient_failure_handler_demotes_process_payload_to_cpu() -> Non
         ),
         expected_backend_model_id=settings.models.medium_model_id,
     )
-    state = MediumRetryOperationState[_PayloadStub, object, object](
-        process_payload=payload
-    )
+    state = MediumRetryOperationState[_PayloadStub, object, object](process_payload=payload)
     on_transient_failure = build_transient_failure_handler(
         state=state,
         use_process_isolation=True,
@@ -382,9 +374,7 @@ def test_build_transient_failure_handler_demotes_process_payload_to_cpu() -> Non
                 torch_runtime=config.TorchRuntimeConfig(
                     device="cpu",
                     dtype="float32",
-                    enable_mps_fallback=(
-                        payload.settings.torch_runtime.enable_mps_fallback
-                    ),
+                    enable_mps_fallback=(payload.settings.torch_runtime.enable_mps_fallback),
                 ),
             ),
         ),
@@ -585,9 +575,7 @@ def test_run_inference_operation_in_process_timeout_logs_failure() -> None:
             log_phase_completed=lambda *_args, **_kwargs: 0.0,
             log_phase_failed=_log_phase_failed,
             run_with_process_timeout=lambda _payload, _timeout_seconds: object(),
-            run_process_operation=lambda _prepared: (_ for _ in ()).throw(
-                RuntimeError("boom")
-            ),
+            run_process_operation=lambda _prepared: (_ for _ in ()).throw(RuntimeError("boom")),
             run_with_timeout=lambda operation, _timeout_seconds: operation(),
             runtime_error_factory=RuntimeError,
         )

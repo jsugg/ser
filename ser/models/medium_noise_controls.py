@@ -27,9 +27,7 @@ def merge_medium_noise_stats(
     return MediumNoiseControlStats(
         total_windows=base.total_windows + incoming.total_windows,
         kept_windows=base.kept_windows + incoming.kept_windows,
-        dropped_low_std_windows=(
-            base.dropped_low_std_windows + incoming.dropped_low_std_windows
-        ),
+        dropped_low_std_windows=(base.dropped_low_std_windows + incoming.dropped_low_std_windows),
         dropped_cap_windows=base.dropped_cap_windows + incoming.dropped_cap_windows,
         forced_keep_windows=base.forced_keep_windows + incoming.forced_keep_windows,
     )
@@ -49,9 +47,7 @@ def apply_medium_noise_controls(
         raise RuntimeError("Medium pooled feature matrix contains zero rows.")
     feature_width = int(pooled_features.shape[1])
     if feature_width % 2 != 0:
-        raise RuntimeError(
-            "Medium pooled feature width must be even (mean+std concatenation)."
-        )
+        raise RuntimeError("Medium pooled feature width must be even (mean+std concatenation).")
 
     std_components = pooled_features[:, feature_width // 2 :]
     std_scores = np.linalg.norm(std_components, axis=1) / np.sqrt(feature_width / 2.0)

@@ -1,0 +1,25 @@
+# Authoritative public-to-internal soft-boundary allowlist for contract tests.
+ser/__main__.py
+ser/api.py
+ser/config.py
+ser/data/application.py
+ser/diagnostics/service.py
+ser/models/emotion_model.py
+ser/models/profile_runtime.py
+ser/models/training_entrypoints.py
+ser/repr/emotion2vec.py
+ser/runtime/accurate_inference.py
+ser/runtime/accurate_process_timeout.py
+ser/runtime/accurate_retry_operation.py
+ser/runtime/accurate_worker_lifecycle.py
+ser/runtime/accurate_worker_operation.py
+ser/runtime/fast_inference.py
+ser/runtime/medium_inference.py
+ser/runtime/medium_process_timeout.py
+ser/runtime/medium_worker_lifecycle.py
+ser/runtime/medium_worker_operation.py
+ser/runtime/pipeline.py
+ser/runtime/profile_quality_gate.py
+ser/transcript/backends/stable_whisper.py
+ser/transcript/profiling.py
+ser/transcript/transcript_extractor.py

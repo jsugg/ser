@@ -65,9 +65,7 @@ class _FakeEncoder:
             dtype=np.float32,
         ).reshape(frame_count, self.hidden_size)
         offset = float(len(self.call_sizes) - 1) * 100.0
-        return _FakeEncoderOutput(
-            last_hidden_state=np.expand_dims(base + offset, axis=0)
-        )
+        return _FakeEncoderOutput(last_hidden_state=np.expand_dims(base + offset, axis=0))
 
 
 class _NaNThenFiniteEncoder(_FakeEncoder):
@@ -239,9 +237,7 @@ def test_whisper_backend_prefers_encoder_only_loader(
             return _TransformersModule()
         raise AssertionError(f"Unexpected import requested: {module_name!r}")
 
-    monkeypatch.setattr(
-        hf_whisper_module.importlib, "import_module", fake_import_module
-    )
+    monkeypatch.setattr(hf_whisper_module.importlib, "import_module", fake_import_module)
     monkeypatch.setattr(
         hf_whisper_module.WhisperBackend,
         "_ensure_dependencies_available",
@@ -295,9 +291,7 @@ def test_whisper_backend_falls_back_to_seq2seq_when_backbone_load_fails(
             return _TransformersModule()
         raise AssertionError(f"Unexpected import requested: {module_name!r}")
 
-    monkeypatch.setattr(
-        hf_whisper_module.importlib, "import_module", fake_import_module
-    )
+    monkeypatch.setattr(hf_whisper_module.importlib, "import_module", fake_import_module)
     monkeypatch.setattr(
         hf_whisper_module.WhisperBackend,
         "_ensure_dependencies_available",
@@ -361,9 +355,7 @@ def test_whisper_backend_rejects_incomplete_checkpoint_load(
             return _TransformersModule()
         raise AssertionError(f"Unexpected import requested: {module_name!r}")
 
-    monkeypatch.setattr(
-        hf_whisper_module.importlib, "import_module", fake_import_module
-    )
+    monkeypatch.setattr(hf_whisper_module.importlib, "import_module", fake_import_module)
     monkeypatch.setattr(
         hf_whisper_module.WhisperBackend,
         "_ensure_dependencies_available",

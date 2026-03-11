@@ -267,12 +267,8 @@ def runtime_request_for_isolated_faster_whisper(
     torch_runtime = getattr(settings, "torch_runtime", None)
     requested_device = getattr(torch_runtime, "device", "cpu")
     requested_dtype = getattr(torch_runtime, "dtype", "auto")
-    device_text = (
-        requested_device.strip().lower() if isinstance(requested_device, str) else "cpu"
-    )
-    dtype_text = (
-        requested_dtype.strip().lower() if isinstance(requested_dtype, str) else "auto"
-    )
+    device_text = requested_device.strip().lower() if isinstance(requested_device, str) else "cpu"
+    dtype_text = requested_dtype.strip().lower() if isinstance(requested_dtype, str) else "auto"
     if device_text.startswith("cuda"):
         device_spec = requested_device.strip() or "cuda"
         if dtype_text not in {"auto", "float16", "float32"} and dtype_text:
@@ -282,9 +278,7 @@ def runtime_request_for_isolated_faster_whisper(
                 dtype_text,
             )
         precision_candidates = (
-            (dtype_text,)
-            if dtype_text in {"float16", "float32"}
-            else ("float16", "float32")
+            (dtype_text,) if dtype_text in {"float16", "float32"} else ("float16", "float32")
         )
         return BackendRuntimeRequest(
             model_name=profile.model_name,
@@ -322,17 +316,13 @@ def recv_worker_message(
     try:
         raw_message = connection.recv()
     except EOFError as err:
-        raise error_factory(
-            f"Transcription worker exited before sending {stage} payload."
-        ) from err
+        raise error_factory(f"Transcription worker exited before sending {stage} payload.") from err
     if not isinstance(raw_message, tuple) or not raw_message:
         raise error_factory("Transcription worker returned malformed payload.")
     return cast(WorkerMessage, raw_message)
 
 
-def raise_worker_error(
-    message: WorkerMessage, *, error_factory: _ErrorFactory
-) -> Never:
+def raise_worker_error(message: WorkerMessage, *, error_factory: _ErrorFactory) -> Never:
     """Raises one transcription-domain error from a worker payload."""
     if (
         isinstance(message, tuple)
@@ -383,9 +373,7 @@ def transcription_worker_entry(
         sys.modules["torch"] = cast(ModuleType, None)
         settings = settings_resolver()
         runtime_request = payload.runtime_request
-        adapter = cast(
-            _TranscriptionAdapter, adapter_resolver(payload.profile.backend_id)
-        )
+        adapter = cast(_TranscriptionAdapter, adapter_resolver(payload.profile.backend_id))
         if adapter.setup_required(runtime_request=runtime_request, settings=settings):
             adapter.prepare_assets(runtime_request=runtime_request, settings=settings)
         connection.send(("phase", "setup_complete"))
@@ -435,9 +423,7 @@ def run_faster_whisper_process_isolated(
 ) -> list[_TTranscriptWord]:
     """Runs faster-whisper setup/load/transcribe inside one spawned worker process."""
     if profile.backend_id != "faster_whisper":
-        raise error_factory(
-            "Process-isolated transcription only supports faster-whisper backend."
-        )
+        raise error_factory("Process-isolated transcription only supports faster-whisper backend.")
     settings = settings_resolver()
     runtime_request = runtime_request_resolver(profile, settings)
     logger.debug(

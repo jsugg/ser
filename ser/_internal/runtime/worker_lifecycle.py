@@ -76,14 +76,10 @@ def parse_worker_completion_message(
     kind = worker_message[0]
     if kind == "ok":
         if len(worker_message) != 2:
-            raise error_factory(
-                f"{worker_label} worker returned malformed success payload."
-            )
+            raise error_factory(f"{worker_label} worker returned malformed success payload.")
         result = worker_message[1]
         if not isinstance(result, result_type):
-            raise error_factory(
-                f"{worker_label} worker returned unexpected result type."
-            )
+            raise error_factory(f"{worker_label} worker returned unexpected result type.")
         return result
     if kind == "phase":
         raise error_factory(
@@ -91,9 +87,7 @@ def parse_worker_completion_message(
         )
     if kind == "err":
         if len(worker_message) != 3:
-            raise error_factory(
-                f"{worker_label} worker returned malformed error payload."
-            )
+            raise error_factory(f"{worker_label} worker returned malformed error payload.")
         raise_worker_error(
             cast(str, worker_message[1]),
             cast(str, worker_message[2]),
@@ -136,9 +130,7 @@ def raise_worker_error(
     known_error_factory = known_error_factories.get(error_type)
     if known_error_factory is not None:
         raise known_error_factory(message)
-    raise unknown_error_factory(
-        f"{worker_label} worker failed with {error_type}: {message}"
-    )
+    raise unknown_error_factory(f"{worker_label} worker failed with {error_type}: {message}")
 
 
 def terminate_worker_process(

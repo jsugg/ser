@@ -81,12 +81,8 @@ def test_build_emodb_2_manifest_jsonl_maps_dataset_labels(tmp_path: Path) -> Non
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {EMODB_2_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        EMODB_2_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        EMODB_2_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {EMODB_2_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {EMODB_2_DATASET_LICENSE_ID}
     assert {item.label for item in utterances} == {"happy", "neutral"}
 
 
@@ -120,12 +116,8 @@ def test_build_jl_corpus_manifest_jsonl_maps_anxious_to_fearful(
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {JL_CORPUS_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        JL_CORPUS_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        JL_CORPUS_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {JL_CORPUS_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {JL_CORPUS_DATASET_LICENSE_ID}
     assert {item.label for item in utterances} == {"angry", "fearful"}
 
 
@@ -192,12 +184,8 @@ def test_build_pavoque_manifest_jsonl_maps_sleepy_to_neutral(
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {PAVOQUE_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        PAVOQUE_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        PAVOQUE_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {PAVOQUE_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {PAVOQUE_DATASET_LICENSE_ID}
     assert {item.label for item in utterances} == {"angry", "neutral"}
 
 
@@ -231,12 +219,8 @@ def test_build_att_hack_manifest_jsonl_preserves_social_attitudes(
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {ATT_HACK_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        ATT_HACK_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        ATT_HACK_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {ATT_HACK_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {ATT_HACK_DATASET_LICENSE_ID}
     assert {item.label for item in utterances} == {"friendly", "dominant"}
 
 
@@ -270,12 +254,8 @@ def test_build_coraa_ser_manifest_jsonl_preserves_non_neutral_labels(
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {CORAA_SER_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        CORAA_SER_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        CORAA_SER_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {CORAA_SER_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {CORAA_SER_DATASET_LICENSE_ID}
     assert {item.label for item in utterances} == {"neutral", "non_neutral_female"}
 
 

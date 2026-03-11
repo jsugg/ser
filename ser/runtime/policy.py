@@ -44,10 +44,7 @@ def run_with_retry_policy[ResultT](
                 runtime_config.max_timeout_retries + 1,
                 err,
             )
-            if (
-                not allow_retries
-                or timeout_failures > runtime_config.max_timeout_retries
-            ):
+            if not allow_retries or timeout_failures > runtime_config.max_timeout_retries:
                 raise err
         except transient_error_type as err:
             transient_failures += 1
@@ -61,8 +58,7 @@ def run_with_retry_policy[ResultT](
                 err,
             )
             should_retry = (
-                allow_retries
-                and transient_failures <= runtime_config.max_transient_retries
+                allow_retries and transient_failures <= runtime_config.max_transient_retries
             )
             if should_retry and on_transient_failure is not None:
                 on_transient_failure(err, attempt, transient_failures)

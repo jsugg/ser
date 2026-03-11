@@ -192,9 +192,7 @@ def test_download_dataset_logs_strategy_phase_success(
 
     settings = _settings(tmp_path)
     dataset_root = tmp_path / "datasets" / "ravdess"
-    monkeypatch.setattr(
-        dp, "_resolve_dataset_strategy", lambda dataset_id: _FakeDownloadStrategy()
-    )
+    monkeypatch.setattr(dp, "_resolve_dataset_strategy", lambda dataset_id: _FakeDownloadStrategy())
 
     with caplog.at_level("INFO", logger=dp.logger.name):
         result = dp.download_dataset(
@@ -294,16 +292,12 @@ def test_prepare_manifest_logs_strategy_phase_success(
                 labels_csv_path,
                 audio_base_dir,
             )
-            return PreparedManifestResult(
-                manifest_paths=(manifest_path,), options=options
-            )
+            return PreparedManifestResult(manifest_paths=(manifest_path,), options=options)
 
     settings = _settings(tmp_path)
     dataset_root = tmp_path / "datasets" / "ravdess"
     manifest_path = tmp_path / "manifests" / "ravdess.jsonl"
-    monkeypatch.setattr(
-        dp, "_resolve_dataset_strategy", lambda dataset_id: _FakePrepareStrategy()
-    )
+    monkeypatch.setattr(dp, "_resolve_dataset_strategy", lambda dataset_id: _FakePrepareStrategy())
     monkeypatch.setattr(dp, "upsert_dataset_registry_entry", lambda **kwargs: None)
 
     with caplog.at_level("INFO", logger=dp.logger.name):

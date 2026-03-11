@@ -85,9 +85,7 @@ def run_with_retries[T](
             return action()
         except error.HTTPError as err:
             if not is_retryable_http_status(err.code):
-                raise RuntimeError(
-                    f"{description} failed with HTTP {err.code}"
-                ) from err
+                raise RuntimeError(f"{description} failed with HTTP {err.code}") from err
             last_error = err
         except (error.URLError, TimeoutError, OSError) as err:
             last_error = err
@@ -104,9 +102,7 @@ def run_with_retries[T](
                 sleep_seconds,
             )
             time.sleep(sleep_seconds)
-    raise RuntimeError(
-        f"{description} failed after {retries} attempts."
-    ) from last_error
+    raise RuntimeError(f"{description} failed after {retries} attempts.") from last_error
 
 
 def request_json_with_retries(
@@ -297,15 +293,11 @@ def download_google_drive_folder(
         text=True,
     )
     if completed.returncode != 0:
-        raise RuntimeError(
-            f"gdown folder download failed. stderr: {completed.stderr.strip()}"
-        )
+        raise RuntimeError(f"gdown folder download failed. stderr: {completed.stderr.strip()}")
 
     files = [path for path in sorted(destination_root.rglob("*")) if path.is_file()]
     if not files:
-        raise RuntimeError(
-            f"gdown completed but no files were downloaded to {destination_root}."
-        )
+        raise RuntimeError(f"gdown completed but no files were downloaded to {destination_root}.")
     return files
 
 
@@ -358,9 +350,7 @@ def download_kaggle_archive(
             "JL-Corpus download requires Kaggle credentials. "
             "Set KAGGLE_USERNAME/KAGGLE_KEY or install/configure Kaggle CLI."
         )
-    expected_cli_archive = (
-        destination_path.parent / f"{dataset_ref.replace('/', '-')}.zip"
-    )
+    expected_cli_archive = destination_path.parent / f"{dataset_ref.replace('/', '-')}.zip"
     completed = run(
         [
             kaggle_bin,

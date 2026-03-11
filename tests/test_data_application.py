@@ -12,7 +12,7 @@ from ser.config import AppConfig
 from ser.data import application as data_application
 from ser.data.dataset_capabilities import list_dataset_capability_profiles
 from ser.data.dataset_consents import load_persisted_dataset_consents
-from ser.data.dataset_prepare import SUPPORTED_DATASETS
+from ser.data.dataset_prepare import SUPPORTED_DATASETS, default_dataset_root
 from ser.data.dataset_registry import upsert_dataset_registry_entry
 
 
@@ -86,8 +86,7 @@ def test_run_dataset_prepare_workflow_propagates_source_pin_to_manifest_prepare(
     dataset_root = tmp_path / "datasets" / "msp"
 
     monkeypatch.setattr(
-        data_application,
-        "resolve_label_ontology",
+        "ser._internal.data.application.prepare.resolve_label_ontology",
         lambda _settings: "ontology-stub",
     )
 
@@ -99,8 +98,14 @@ def test_run_dataset_prepare_workflow_propagates_source_pin_to_manifest_prepare(
         captured["prepare_kwargs"] = kwargs
         return [manifest_path]
 
-    monkeypatch.setattr(data_application, "download_dataset", _capture_download)
-    monkeypatch.setattr(data_application, "prepare_dataset_manifest", _capture_prepare)
+    monkeypatch.setattr(
+        "ser._internal.data.application.prepare.download_dataset",
+        _capture_download,
+    )
+    monkeypatch.setattr(
+        "ser._internal.data.application.prepare.prepare_dataset_manifest",
+        _capture_prepare,
+    )
 
     result = data_application.run_dataset_prepare_workflow(
         settings=settings,
@@ -141,7 +146,7 @@ def test_collect_dataset_registry_snapshot_returns_typed_entries_and_issues(
         },
     )
     monkeypatch.setattr(
-        data_application,
+        "ser._internal.data.application.registry_snapshot."
         "collect_dataset_registry_health_issues",
         lambda **kwargs: (
             SimpleNamespace(
@@ -224,8 +229,7 @@ def test_collect_dataset_capability_snapshot_defaults_to_installed_only(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        data_application,
-        "collect_dataset_registry_snapshot",
+        "ser._internal.data.application.capability_snapshot." "collect_dataset_registry_snapshot",
         lambda **kwargs: data_application.DatasetRegistrySnapshot(
             entries=(
                 data_application.DatasetRegistrySnapshotEntry(
@@ -317,8 +321,7 @@ def test_collect_dataset_capability_snapshot_marks_zero_byte_audio_not_installed
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        data_application,
-        "collect_dataset_registry_snapshot",
+        "ser._internal.data.application.capability_snapshot." "collect_dataset_registry_snapshot",
         lambda **kwargs: data_application.DatasetRegistrySnapshot(
             entries=(
                 data_application.DatasetRegistrySnapshotEntry(
@@ -438,7 +441,7 @@ def test_run_dataset_uninstall_workflow_removes_default_paths_when_registry_path
     stale_manifest_path = tmp_path / "stale" / "msp-podcast.jsonl"
     stale_manifest_path.parent.mkdir(parents=True, exist_ok=True)
     stale_manifest_path.write_text("{}", encoding="utf-8")
-    default_root = data_application.default_dataset_root(settings, "msp-podcast")
+    default_root = default_dataset_root(settings, "msp-podcast")
     default_root.mkdir(parents=True, exist_ok=True)
     (default_root / "partial.bin").write_bytes(b"partial")
     upsert_dataset_registry_entry(

@@ -36,9 +36,7 @@ def move_model_to_mps_with_alignment_placeholder(model: object) -> object:
     """Moves one model to MPS while preserving sparse alignment buffers on CPU."""
     to_method = getattr(model, "to", None)
     if not callable(to_method):
-        raise RuntimeError(
-            "Loaded stable-whisper model does not expose a callable to()."
-        )
+        raise RuntimeError("Loaded stable-whisper model does not expose a callable to().")
 
     register_buffer = getattr(model, "register_buffer", None)
     alignment_heads_obj = getattr(model, "alignment_heads", None)
@@ -134,9 +132,7 @@ def stable_whisper_mps_timing_compatibility_context() -> Any:
     """Patches stable-whisper timing aliases for MPS-compatible word alignment."""
     with _TIMING_PATCH_LOCK:
         timing_module = importlib.import_module("stable_whisper.timing")
-        compatibility_module = importlib.import_module(
-            "stable_whisper.whisper_compatibility"
-        )
+        compatibility_module = importlib.import_module("stable_whisper.whisper_compatibility")
         timing_module_any = cast(Any, timing_module)
         compatibility_module_any = cast(Any, compatibility_module)
         whisper_timing_module = importlib.import_module("whisper.timing")
@@ -277,9 +273,7 @@ def _build_cpu_offloaded_compute_qks(
                 sampled_logits = logits[len(sot_sequence) :, :eot]
                 token_probs = sampled_logits.softmax(dim=-1)
                 token_index = np.arange(len(text_token_ids))
-                cache["text_token_probs"] = token_probs[
-                    token_index, text_token_ids
-                ].tolist()
+                cache["text_token_probs"] = token_probs[token_index, text_token_ids].tolist()
         finally:
             for hook in hooks:
                 _remove_hook_safely(hook)
@@ -386,9 +380,7 @@ def _std_mean_var_mean_fallback(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Computes std/mean on MPS using var_mean+sqrt when std_mean is unsupported."""
     if args:
-        raise RuntimeError(
-            "std_mean fallback only supports keyword-argument invocation."
-        )
+        raise RuntimeError("std_mean fallback only supports keyword-argument invocation.")
     dim = kwargs.get("dim", None)
     keepdim = bool(kwargs.get("keepdim", False))
     correction_arg = kwargs.get("correction", None)
@@ -422,9 +414,7 @@ def _std_mean_cpu_fallback(
         tuple[torch.Tensor, torch.Tensor],
         original_std_mean(input_tensor.float().cpu(), *args, **kwargs),
     )
-    target_dtype = (
-        input_tensor.dtype if input_tensor.is_floating_point() else cpu_std.dtype
-    )
+    target_dtype = input_tensor.dtype if input_tensor.is_floating_point() else cpu_std.dtype
     std = cpu_std.to(device=input_tensor.device, dtype=target_dtype)
     mean = cpu_mean.to(device=input_tensor.device, dtype=target_dtype)
     return std, mean

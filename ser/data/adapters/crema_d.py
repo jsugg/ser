@@ -73,8 +73,7 @@ def build_crema_d_utterances(
         emotion_code = _extract_emotion_code(file_name)
         if emotion_code is None:
             parse_errors.append(
-                "Skipping file with unexpected name format "
-                f"(missing emotion code): {file_name}"
+                "Skipping file with unexpected name format " f"(missing emotion code): {file_name}"
             )
             continue
         mapped_label = remap_label(
@@ -86,9 +85,7 @@ def build_crema_d_utterances(
             continue
 
         actor_raw = _extract_actor_id(file_name)
-        speaker_id = (
-            f"{CREMA_D_CORPUS_ID}:{actor_raw}" if actor_raw is not None else None
-        )
+        speaker_id = f"{CREMA_D_CORPUS_ID}:{actor_raw}" if actor_raw is not None else None
         try:
             rel = audio_path.expanduser().relative_to(root)
             sample_id = f"{CREMA_D_CORPUS_ID}:{rel.as_posix()}"

@@ -1,9 +1,13 @@
 """Unit tests for transcription profiling and threshold gating."""
 
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from ser._internal.transcription import public_boundary_profiling as public_boundary_helpers
 from ser.transcript import profiling as tp
 
 
@@ -73,6 +77,37 @@ def test_default_profile_candidates_match_profile_catalog_defaults(
     ]
 
 
+def test_default_profile_candidates_delegate_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Candidate wrapper should delegate catalog assembly to the boundary owner."""
+    captured: dict[str, object] = {}
+    expected = (
+        tp.TranscriptionProfileCandidate(
+            name="candidate-fast",
+            source_profile="fast",
+            backend_id="faster_whisper",
+            model_name="distil-large-v3",
+            use_demucs=False,
+            use_vad=True,
+        ),
+    )
+
+    def _fake_boundary_impl(
+        **kwargs: object,
+    ) -> tuple[tp.TranscriptionProfileCandidate, ...]:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(tp, "_build_profile_candidates_boundary_impl", _fake_boundary_impl)
+
+    candidates = tp.default_profile_candidates()
+
+    assert candidates == expected
+    assert captured["profiles"] == tp.DEFAULT_BENCHMARK_PROFILES
+    assert captured["candidate_factory"] is tp.TranscriptionProfileCandidate
+
+
 def test_default_profile_candidates_follow_runtime_backend_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -84,6 +119,22 @@ def test_default_profile_candidates_follow_runtime_backend_override(
 
     assert all(candidate.backend_id == "stable_whisper" for candidate in candidates)
     assert all(candidate.model_name == "base" for candidate in candidates)
+
+
+def test_runtime_calibration_candidates_follow_selected_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calibration candidates should reflect the requested profile ordering."""
+
+    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
+    monkeypatch.delenv("WHISPER_MODEL", raising=False)
+
+    candidates = tp.runtime_calibration_candidates(("fast", "accurate"))
+
+    assert [candidate.source_profile for candidate in candidates] == [
+        "fast",
+        "accurate",
+    ]
 
 
 def test_word_error_rate_handles_normalization_and_exact_match() -> None:
@@ -142,6 +193,35 @@ def test_collect_ravdess_reference_files_stratified_limit_is_deterministic(
     assert len(first) == 4
 
 
+def test_parse_ravdess_metadata_extracts_expected_fields() -> None:
+    """Public metadata wrapper should preserve the existing dataclass contract."""
+
+    metadata = tp._parse_ravdess_metadata(Path("03-01-06-01-02-01-24.wav"))
+
+    assert metadata == tp.RavdessMetadata(
+        emotion_code="06",
+        statement_code="02",
+        actor_id="24",
+    )
+
+
+def test_summarize_subset_coverage_counts_unique_groups() -> None:
+    """Public coverage wrapper should preserve actor/emotion/statement counting."""
+
+    files = [
+        Path("03-01-06-01-02-01-24.wav"),
+        Path("03-01-05-01-01-01-24.wav"),
+        Path("03-01-05-01-02-01-05.wav"),
+        Path("invalid.wav"),
+    ]
+
+    assert tp._summarize_subset_coverage(files) == {
+        "actors": 2,
+        "emotions": 2,
+        "statements": 2,
+    }
+
+
 def test_profile_transcription_candidate_delegates_to_internal_helper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -165,8 +245,7 @@ def test_profile_transcription_candidate_delegates_to_internal_helper(
         return stats
 
     monkeypatch.setattr(
-        "ser._internal.transcription.default_profiling."
-        "profile_candidate_transcriptions",
+        "ser._internal.transcription.default_profiling." "profile_candidate_transcriptions",
         _profile_candidate_transcriptions,
     )
     candidate = tp.TranscriptionProfileCandidate(
@@ -228,12 +307,8 @@ def test_derive_accuracy_gate_uses_baseline_drop_and_floor() -> None:
 def test_recommend_default_profile_selects_fast_candidate_when_gate_passes() -> None:
     """A faster profile should be selected only when it passes the accuracy gate."""
     baseline = _summary(name="baseline", mean_accuracy=0.96, avg_latency=4.0)
-    fast_candidate = _summary(
-        name="candidate-fast", mean_accuracy=0.95, avg_latency=2.8
-    )
-    slow_candidate = _summary(
-        name="candidate-slow", mean_accuracy=0.97, avg_latency=4.2
-    )
+    fast_candidate = _summary(name="candidate-fast", mean_accuracy=0.95, avg_latency=2.8)
+    slow_candidate = _summary(name="candidate-slow", mean_accuracy=0.97, avg_latency=4.2)
     gate = tp.derive_accuracy_gate(
         baseline,
         absolute_accuracy_floor=0.90,
@@ -329,6 +404,146 @@ def test_run_default_profile_benchmark_validates_threshold_arguments() -> None:
             limit=1,
             sampling_strategy="unknown",
         )
+
+
+def test_run_default_profile_benchmark_delegates_to_internal_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Public benchmark wrapper should delegate orchestration to the internal helper."""
+
+    gate = tp.AccuracyGate(
+        baseline_mean_accuracy=0.96,
+        minimum_mean_accuracy=0.94,
+        maximum_accuracy_drop=0.02,
+        absolute_accuracy_floor=0.90,
+    )
+    summary = _summary(name="baseline", mean_accuracy=0.96, avg_latency=4.0)
+    recommendation = tp.DefaultRecommendation(
+        baseline_profile="baseline",
+        selected_profile="baseline",
+        should_change_defaults=False,
+        reason="keep current defaults",
+        selected_mean_accuracy=0.96,
+        selected_average_latency_seconds=4.0,
+        selected_speedup_vs_baseline=1.0,
+        minimum_required_samples=10,
+    )
+    captured: dict[str, object] = {}
+    execution = tp.default_benchmark_helpers.DefaultBenchmarkExecution(
+        reference_file_count=3,
+        gate=gate,
+        summaries=(summary,),
+        recommendation=recommendation,
+        report_path=tmp_path / "report.json",
+    )
+
+    def _execute_default_profile_benchmark(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return execution
+
+    monkeypatch.setattr(
+        "ser._internal.transcription.default_benchmark." "execute_default_profile_benchmark",
+        _execute_default_profile_benchmark,
+    )
+    monkeypatch.setattr(
+        tp,
+        "get_settings",
+        lambda: SimpleNamespace(models=SimpleNamespace(folder=tmp_path)),
+    )
+
+    result = tp.run_default_profile_benchmark(
+        language="en",
+        sample_limit=3,
+        absolute_accuracy_floor=0.90,
+        maximum_accuracy_drop=0.02,
+        minimum_required_samples_for_recommendation=10,
+        sampling_strategy="head",
+        random_seed=7,
+        report_path=None,
+        settings=None,
+    )
+
+    assert result == tp.ProfilingResult(
+        reference_files=3,
+        gate=gate,
+        summaries=(summary,),
+        recommendation=recommendation,
+        report_path=tmp_path / "report.json",
+    )
+    assert captured["language"] == "en"
+    assert captured["sample_limit"] == 3
+    assert captured["absolute_accuracy_floor"] == 0.90
+    assert captured["maximum_accuracy_drop"] == 0.02
+    assert captured["minimum_required_samples_for_recommendation"] == 10
+    assert captured["sampling_strategy"] == "head"
+    assert captured["random_seed"] == 7
+    assert captured["report_path"] is None
+    assert captured["default_report_folder"] == tmp_path
+    assert captured["reference_glob"] == tp.RAVDESS_REFERENCE_GLOB
+
+
+def test_run_default_profile_benchmark_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Public benchmark wrapper should delegate boundary assembly to the internal owner."""
+    captured: dict[str, object] = {}
+    expected = tp.ProfilingResult(
+        reference_files=2,
+        gate=tp.AccuracyGate(
+            baseline_mean_accuracy=0.96,
+            minimum_mean_accuracy=0.94,
+            maximum_accuracy_drop=0.02,
+            absolute_accuracy_floor=0.90,
+        ),
+        summaries=(_summary(name="baseline", mean_accuracy=0.96, avg_latency=4.0),),
+        recommendation=tp.DefaultRecommendation(
+            baseline_profile="baseline",
+            selected_profile="baseline",
+            should_change_defaults=False,
+            reason="keep current defaults",
+            selected_mean_accuracy=0.96,
+            selected_average_latency_seconds=4.0,
+            selected_speedup_vs_baseline=1.0,
+            minimum_required_samples=10,
+        ),
+        report_path=tmp_path / "report.json",
+    )
+    settings = SimpleNamespace(models=SimpleNamespace(folder=tmp_path))
+
+    def _fake_boundary_impl(**kwargs: object) -> tp.ProfilingResult:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(tp, "_run_default_profile_benchmark_boundary_impl", _fake_boundary_impl)
+
+    result = tp.run_default_profile_benchmark(
+        language="en",
+        sample_limit=3,
+        absolute_accuracy_floor=0.90,
+        maximum_accuracy_drop=0.02,
+        minimum_required_samples_for_recommendation=10,
+        sampling_strategy="head",
+        random_seed=7,
+        report_path=None,
+        settings=cast(tp.AppConfig, settings),
+    )
+
+    assert result == expected
+    assert captured["language"] == "en"
+    assert captured["sample_limit"] == 3
+    assert captured["absolute_accuracy_floor"] == 0.90
+    assert captured["maximum_accuracy_drop"] == 0.02
+    assert captured["minimum_required_samples_for_recommendation"] == 10
+    assert captured["sampling_strategy"] == "head"
+    assert captured["random_seed"] == 7
+    assert captured["report_path"] is None
+    assert captured["active_settings"] is settings
+    assert captured["reference_glob"] == tp.RAVDESS_REFERENCE_GLOB
+    assert captured["default_profile_candidates"] is tp.default_profile_candidates
+    assert captured["profile_candidate"] is tp.profile_transcription_candidate
+    assert captured["summarize_subset_coverage"] is tp._summarize_subset_coverage
 
 
 def _calibration_metrics(
@@ -434,8 +649,7 @@ def test_calibrate_runtime_candidate_delegates_probe_execution(
         return stats
 
     monkeypatch.setattr(
-        "ser._internal.transcription.runtime_calibration."
-        "run_runtime_calibration_probes",
+        "ser._internal.transcription.runtime_calibration." "run_runtime_calibration_probes",
         _run_runtime_calibration_probes,
     )
     candidate = tp.TranscriptionProfileCandidate(
@@ -476,3 +690,259 @@ def test_calibrate_runtime_candidate_delegates_probe_execution(
     assert captured["iterations"] == 3
     assert captured["load_model"] is tp.load_whisper_model
     assert captured["transcribe"] is tp.transcribe_with_model
+
+
+def test_run_transcription_runtime_calibration_delegates_to_internal_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Public calibration wrapper should delegate orchestration to the internal helper."""
+
+    calibration_file = tmp_path / "sample.wav"
+    calibration_file.write_bytes(b"audio")
+    metrics = _calibration_metrics(
+        backend_id="stable_whisper",
+        model_name="large",
+        iterations=2,
+        mps_loaded_runs=2,
+        mps_completed_runs=2,
+        mps_to_cpu_failover_runs=0,
+        failed_runs=0,
+        hard_mps_oom_runs=0,
+    )
+    recommendation = tp.RuntimeCalibrationRecommendation(
+        profile=metrics.profile,
+        recommendation="prefer_mps",
+        confidence="high",
+        reason="stable",
+        metrics=metrics,
+    )
+    execution = tp.runtime_calibration_workflow_helpers.RuntimeCalibrationExecution(
+        recommendations=(recommendation,),
+        report_path=tmp_path / "runtime.json",
+    )
+    captured: dict[str, object] = {}
+
+    def _execute_runtime_calibration(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return execution
+
+    monkeypatch.setattr(
+        "ser._internal.transcription.runtime_calibration_workflow." "execute_runtime_calibration",
+        _execute_runtime_calibration,
+    )
+
+    settings = SimpleNamespace(models=SimpleNamespace(folder=tmp_path))
+    monkeypatch.setattr(tp, "get_settings", lambda: settings)
+
+    result = tp.run_transcription_runtime_calibration(
+        calibration_file=calibration_file,
+        language="en",
+        iterations_per_profile=2,
+        profile_names=("accurate", "fast"),
+        report_path=None,
+        settings=None,
+    )
+
+    assert result == tp.RuntimeCalibrationResult(
+        recommendations=(recommendation,),
+        report_path=tmp_path / "runtime.json",
+    )
+    assert captured["active_settings"] is settings
+    assert captured["calibration_file"] == calibration_file
+    assert captured["language"] == "en"
+    assert captured["iterations_per_profile"] == 2
+    assert captured["profile_names"] == ("accurate", "fast")
+    assert captured["report_path"] is None
+
+
+def test_run_transcription_runtime_calibration_delegates_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Public runtime-calibration wrapper should delegate boundary assembly to the internal owner."""
+    captured: dict[str, object] = {}
+    settings = cast(tp.AppConfig, SimpleNamespace(models=SimpleNamespace(folder=tmp_path)))
+    calibration_file = tmp_path / "sample.wav"
+    expected = tp.RuntimeCalibrationResult(
+        recommendations=(),
+        report_path=tmp_path / "runtime.json",
+    )
+
+    def _fake_boundary_impl(**kwargs: object) -> tp.RuntimeCalibrationResult:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(tp, "_run_runtime_calibration_boundary_impl", _fake_boundary_impl)
+
+    result = tp.run_transcription_runtime_calibration(
+        calibration_file=calibration_file,
+        language="en",
+        iterations_per_profile=2,
+        profile_names=("accurate", "fast"),
+        report_path=None,
+        settings=settings,
+    )
+
+    assert result == expected
+    assert captured["calibration_file"] == calibration_file
+    assert captured["language"] == "en"
+    assert captured["iterations_per_profile"] == 2
+    assert captured["profile_names"] == ("accurate", "fast")
+    assert captured["report_path"] is None
+    assert captured["active_settings"] is settings
+    assert captured["settings_override"] is tp.settings_override
+    assert captured["runtime_calibration_candidates"] is tp.runtime_calibration_candidates
+    assert captured["derive_runtime_recommendation"] is tp.derive_runtime_recommendation
+
+
+def test_run_cli_from_public_boundary_dispatches_benchmark_mode() -> None:
+    """CLI boundary owner should parse benchmark arguments and print summary lines."""
+    captured: dict[str, object] = {}
+    printed_lines: list[str] = []
+
+    def _run_default_profile_benchmark(**kwargs: object) -> str:
+        captured["benchmark_kwargs"] = kwargs
+        return "benchmark-result"
+
+    def _run_runtime_calibration(**_kwargs: object) -> object:
+        raise AssertionError("runtime calibration path should not run")
+
+    public_boundary_helpers.run_cli_from_public_boundary(
+        argv=(
+            "--language",
+            "es",
+            "--sample-limit",
+            "3",
+            "--accuracy-floor",
+            "0.91",
+            "--max-accuracy-drop",
+            "0.03",
+            "--min-samples-for-recommendation",
+            "11",
+            "--sampling-strategy",
+            "head",
+            "--random-seed",
+            "9",
+            "--report-path",
+            "profile.json",
+        ),
+        run_default_profile_benchmark=_run_default_profile_benchmark,
+        run_runtime_calibration=_run_runtime_calibration,
+        parse_calibration_profiles=lambda raw_profiles: ("fast",),
+        profiling_summary_lines=lambda result: (f"summary:{result}",),
+        runtime_calibration_summary_lines=lambda _result: ("unexpected",),
+        print_fn=printed_lines.append,
+    )
+
+    benchmark_kwargs = cast(dict[str, object], captured["benchmark_kwargs"])
+    assert benchmark_kwargs == {
+        "language": "es",
+        "sample_limit": 3,
+        "absolute_accuracy_floor": 0.91,
+        "maximum_accuracy_drop": 0.03,
+        "minimum_required_samples_for_recommendation": 11,
+        "sampling_strategy": "head",
+        "random_seed": 9,
+        "report_path": Path("profile.json"),
+    }
+    assert printed_lines == ["summary:benchmark-result"]
+
+
+def test_run_cli_from_public_boundary_dispatches_runtime_calibration_mode() -> None:
+    """CLI boundary owner should parse calibration mode and print runtime summary."""
+    captured: dict[str, object] = {}
+    printed_lines: list[str] = []
+
+    def _run_default_profile_benchmark(**_kwargs: object) -> object:
+        raise AssertionError("benchmark path should not run")
+
+    def _run_runtime_calibration(**kwargs: object) -> str:
+        captured["runtime_kwargs"] = kwargs
+        return "calibration-result"
+
+    raw_profiles: list[str] = []
+
+    def _parse_calibration_profiles(
+        raw_profiles_csv: str,
+    ) -> tuple[tp.ArtifactProfileName, ...]:
+        raw_profiles.append(raw_profiles_csv)
+        return cast(tuple[tp.ArtifactProfileName, ...], ("accurate", "fast"))
+
+    public_boundary_helpers.run_cli_from_public_boundary(
+        argv=(
+            "--mode",
+            "runtime-calibration",
+            "--language",
+            "pt",
+            "--calibration-file",
+            "sample.wav",
+            "--calibration-iterations",
+            "4",
+            "--calibration-profiles",
+            "accurate,fast",
+            "--report-path",
+            "runtime.json",
+        ),
+        run_default_profile_benchmark=_run_default_profile_benchmark,
+        run_runtime_calibration=_run_runtime_calibration,
+        parse_calibration_profiles=_parse_calibration_profiles,
+        profiling_summary_lines=lambda _result: ("unexpected",),
+        runtime_calibration_summary_lines=lambda result: (f"runtime:{result}",),
+        print_fn=printed_lines.append,
+    )
+
+    runtime_kwargs = cast(dict[str, object], captured["runtime_kwargs"])
+    assert raw_profiles == ["accurate,fast"]
+    assert runtime_kwargs == {
+        "calibration_file": Path("sample.wav"),
+        "language": "pt",
+        "iterations_per_profile": 4,
+        "profile_names": ("accurate", "fast"),
+        "report_path": Path("runtime.json"),
+    }
+    assert printed_lines == ["runtime:calibration-result"]
+
+
+def test_run_cli_from_public_boundary_requires_calibration_file() -> None:
+    """Calibration mode should fail fast when no calibration file is provided."""
+    with pytest.raises(
+        ValueError, match="--calibration-file is required for runtime-calibration mode"
+    ):
+        public_boundary_helpers.run_cli_from_public_boundary(
+            argv=("--mode", "runtime-calibration"),
+            run_default_profile_benchmark=lambda **_kwargs: "unused",
+            run_runtime_calibration=lambda **_kwargs: "unused",
+            parse_calibration_profiles=lambda _raw_profiles: cast(
+                tuple[tp.ArtifactProfileName, ...], ("fast",)
+            ),
+            profiling_summary_lines=lambda result: (str(result),),
+            runtime_calibration_summary_lines=lambda result: (str(result),),
+        )
+
+
+def test_main_delegates_cli_dispatch_to_boundary_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public profiling main should delegate CLI wiring to the internal owner."""
+    captured: dict[str, object] = {}
+
+    def _fake_cli_boundary_impl(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(tp, "_run_cli_from_public_boundary_impl", _fake_cli_boundary_impl)
+
+    tp.main()
+
+    assert captured["run_default_profile_benchmark"] is tp.run_default_profile_benchmark
+    assert captured["run_runtime_calibration"] is tp.run_transcription_runtime_calibration
+    assert captured["parse_calibration_profiles"] is tp.parse_calibration_profiles
+    profiling_summary_lines = cast(
+        Callable[[object], tuple[str, ...]], captured["profiling_summary_lines"]
+    )
+    runtime_summary_lines = cast(
+        Callable[[object], tuple[str, ...]],
+        captured["runtime_calibration_summary_lines"],
+    )
+    assert profiling_summary_lines is tp.profiling_reporting_helpers.profiling_summary_lines
+    assert runtime_summary_lines is tp.profiling_reporting_helpers.runtime_calibration_summary_lines

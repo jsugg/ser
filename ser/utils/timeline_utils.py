@@ -72,9 +72,7 @@ def save_timeline_to_csv(
         for entry in timeline:
             rounded_time: float = round(float(entry.timestamp_seconds), 2)
             writer.writerow([rounded_time, entry.emotion, entry.speech])
-            logger.debug(
-                msg=f"Written row: {[rounded_time, entry.emotion, entry.speech]}"
-            )
+            logger.debug(msg=f"Written row: {[rounded_time, entry.emotion, entry.speech]}")
 
     logger.info(msg=f"Timeline successfully saved to {output_path}")
     return str(output_path)
@@ -133,9 +131,7 @@ def build_timeline(
 
     words_by_timestamp: dict[int, list[str]] = defaultdict(list)
     for word in sorted(text_with_timestamps, key=lambda item: item.start_seconds):
-        words_by_timestamp[_to_milliseconds(float(word.start_seconds))].append(
-            word.word.strip()
-        )
+        words_by_timestamp[_to_milliseconds(float(word.start_seconds))].append(word.word.strip())
 
     canonical_emotions = canonicalize_segments(emotion_with_timestamps)
     emotion_segments: list[tuple[str, int, int]] = []
@@ -146,9 +142,7 @@ def build_timeline(
             end_ms = start_ms + 1
         emotion_segments.append((emotion.emotion, start_ms, end_ms))
 
-    terminal_emotion_timestamps = (
-        {emotion_segments[-1][2]} if emotion_segments else set()
-    )
+    terminal_emotion_timestamps = {emotion_segments[-1][2]} if emotion_segments else set()
 
     all_timestamps: list[int] = sorted(
         set(words_by_timestamp.keys())
@@ -160,9 +154,7 @@ def build_timeline(
     logger.debug(msg=f"Text with timestamps: {text_with_timestamps}")
     logger.debug(msg=f"Emotion with timestamps: {emotion_with_timestamps}")
 
-    emotion_lookup: dict[int, str] = _emotion_lookup_by_timestamp(
-        all_timestamps, emotion_segments
-    )
+    emotion_lookup: dict[int, str] = _emotion_lookup_by_timestamp(all_timestamps, emotion_segments)
     timeline: list[TimelineEntry] = []
     for timestamp_ms in all_timestamps:
         text: str = " ".join(words_by_timestamp.get(timestamp_ms, [])).strip()
@@ -225,18 +217,16 @@ def print_timeline(timeline: list[TimelineEntry]) -> None:
         len("Emotion"),
         *(len(entry.emotion.capitalize()) for entry in timeline),
     )
-    max_text_width: int = max(
-        len("Speech"), *(len(entry.speech.strip()) for entry in timeline)
-    )
+    max_text_width: int = max(len("Speech"), *(len(entry.speech.strip()) for entry in timeline))
 
     print(color_txt("Time", "black", "green", max_time_width), end="")
     print(color_txt("Emotion", "black", "yellow", max_emotion_width), end="")
     print(color_txt("Speech", "black", "blue", max_text_width))
 
     for entry in timeline:
-        time_str: str = display_elapsed_time(
-            float(entry.timestamp_seconds), _format="short"
-        ).ljust(max_time_width)
+        time_str: str = display_elapsed_time(float(entry.timestamp_seconds), _format="short").ljust(
+            max_time_width
+        )
         emotion_str: str = f"{entry.emotion.capitalize()}".ljust(max_emotion_width)
         text_str: str = f"{entry.speech.strip()}".ljust(max_text_width)
 

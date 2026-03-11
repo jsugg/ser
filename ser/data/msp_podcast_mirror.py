@@ -254,9 +254,7 @@ def generate_msp_labels_csv_from_metadata_jsonl(
         writer = csv.DictWriter(target_fp, fieldnames=["FileName", "emotion"])
         writer.writeheader()
         for audio_relpath in sorted(labels_by_file):
-            writer.writerow(
-                {"FileName": audio_relpath, "emotion": labels_by_file[audio_relpath]}
-            )
+            writer.writerow({"FileName": audio_relpath, "emotion": labels_by_file[audio_relpath]})
     if duplicate_conflict_rows > 0:
         logger.warning(
             "MSP mirror labels dropped %s conflicting duplicate row(s) by audio_relpath.",
@@ -315,9 +313,7 @@ def _download_snapshot(
         size = size_raw if isinstance(size_raw, int) and size_raw >= 0 else None
         remote_files.append(_RemoteFile(path=path, size=size))
     remote_files.sort(key=lambda item: item.path)
-    required_snapshot_bytes = sum(
-        remote.size for remote in remote_files if remote.size is not None
-    )
+    required_snapshot_bytes = sum(remote.size for remote in remote_files if remote.size is not None)
     # Conservative estimate: snapshot parquet + extracted audio in dataset_root.
     required_free_bytes = required_snapshot_bytes * 2
     free_bytes = shutil.disk_usage(repo_dir).free
@@ -348,9 +344,7 @@ def _download_snapshot(
             continue
         local_size = local_path.stat().st_size
         if local_size != remote.size:
-            size_mismatches.append(
-                f"{remote.path}: local={local_size} remote={remote.size}"
-            )
+            size_mismatches.append(f"{remote.path}: local={local_size} remote={remote.size}")
     if missing_files or size_mismatches:
         raise RuntimeError(
             "MSP mirror validation failed: "
@@ -380,9 +374,7 @@ def _extract_metadata_and_audio(
 
     audio_dir.mkdir(parents=True, exist_ok=True)
     metadata_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata_tmp_path = metadata_jsonl_path.with_suffix(
-        metadata_jsonl_path.suffix + ".tmp"
-    )
+    metadata_tmp_path = metadata_jsonl_path.with_suffix(metadata_jsonl_path.suffix + ".tmp")
 
     rows_seen = 0
     files_written = 0
@@ -397,12 +389,8 @@ def _extract_metadata_and_audio(
                         f"MSP mirror shard missing `audio` column: {shard_path.name}"
                     )
                 if "file" not in column_names:
-                    raise RuntimeError(
-                        f"MSP mirror shard missing `file` column: {shard_path.name}"
-                    )
-                columns = {
-                    name: batch.column(index) for index, name in enumerate(column_names)
-                }
+                    raise RuntimeError(f"MSP mirror shard missing `file` column: {shard_path.name}")
+                columns = {name: batch.column(index) for index, name in enumerate(column_names)}
                 non_audio_columns = [name for name in column_names if name != "audio"]
                 for row_index in range(batch.num_rows):
                     audio_cell = columns["audio"][row_index].as_py()
@@ -416,8 +404,7 @@ def _extract_metadata_and_audio(
                     selected_name = file_value or audio_path_value
                     if not isinstance(selected_name, str) or not selected_name:
                         raise RuntimeError(
-                            "MSP mirror row missing filename in "
-                            f"{shard_path.name}:{row_index}."
+                            "MSP mirror row missing filename in " f"{shard_path.name}:{row_index}."
                         )
                     relpath = _safe_relative_path(selected_name)
                     output_audio_path = audio_dir / relpath
@@ -430,9 +417,8 @@ def _extract_metadata_and_audio(
                             f"{shard_path.name}:{row_index}."
                         )
                     audio_bytes = bytes(embedded_bytes)
-                    if (
-                        output_audio_path.is_file()
-                        and output_audio_path.stat().st_size == len(audio_bytes)
+                    if output_audio_path.is_file() and output_audio_path.stat().st_size == len(
+                        audio_bytes
                     ):
                         files_reused += 1
                     else:
@@ -451,9 +437,7 @@ def _extract_metadata_and_audio(
                     metadata_record["audio_relpath"] = relpath.as_posix()
                     metadata_record["audio_num_bytes"] = len(audio_bytes)
                     metadata_record["source_parquet_shard"] = shard_path.name
-                    metadata_fp.write(
-                        json.dumps(metadata_record, ensure_ascii=False) + "\n"
-                    )
+                    metadata_fp.write(json.dumps(metadata_record, ensure_ascii=False) + "\n")
                     rows_seen += 1
     os.replace(metadata_tmp_path, metadata_jsonl_path)
     return rows_seen, files_written, files_reused
@@ -510,9 +494,7 @@ def prepare_msp_podcast_from_hf_mirror(
         labels_csv_path=labels_csv_path,
     )
     if labels_written == 0:
-        raise RuntimeError(
-            "MSP mirror label generation produced zero rows; cannot build manifest."
-        )
+        raise RuntimeError("MSP mirror label generation produced zero rows; cannot build manifest.")
 
     manifest_payload: dict[str, Any] = {
         "generated_at_utc": _utc_now_iso(),
@@ -537,9 +519,7 @@ def prepare_msp_podcast_from_hf_mirror(
             "dropped_rows": dropped_rows,
         },
     }
-    manifest_tmp_path = manifest_json_path.with_suffix(
-        manifest_json_path.suffix + ".tmp"
-    )
+    manifest_tmp_path = manifest_json_path.with_suffix(manifest_json_path.suffix + ".tmp")
     with manifest_tmp_path.open("w", encoding="utf-8") as manifest_fp:
         json.dump(manifest_payload, manifest_fp, indent=2, ensure_ascii=False)
         manifest_fp.write("\n")

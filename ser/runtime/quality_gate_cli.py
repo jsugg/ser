@@ -48,9 +48,7 @@ def configure_cli_noise_controls() -> None:
 
 def build_arg_parser(defaults: QualityGateCliDefaults) -> argparse.ArgumentParser:
     """Builds CLI parser for fast-vs-medium quality gate evaluation."""
-    parser = argparse.ArgumentParser(
-        description="SER fast-vs-medium profile quality gate harness"
-    )
+    parser = argparse.ArgumentParser(description="SER fast-vs-medium profile quality gate harness")
     parser.add_argument(
         "--dataset-glob",
         default=defaults.dataset_glob,

@@ -1,4 +1,4 @@
-"""Tests for artifact-persistence helper ownership seams."""
+"""Tests for artifact-persistence helper delegation seams."""
 
 from __future__ import annotations
 
