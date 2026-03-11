@@ -58,9 +58,7 @@ def build_dataset_controls(
 ) -> dict[str, object]:
     """Builds deterministic dataset controls payload for training reports."""
     corpus_counts = dict(Counter(utterance.corpus for utterance in utterances))
-    language_counts = dict(
-        Counter((utterance.language or "unknown") for utterance in utterances)
-    )
+    language_counts = dict(Counter((utterance.language or "unknown") for utterance in utterances))
 
     resolved_manifest_paths = [str(path) for path in manifest_paths]
     mode = "manifest" if resolved_manifest_paths else "glob"
@@ -68,9 +66,7 @@ def build_dataset_controls(
         registry_manifest_paths = list(resolve_registry_manifest_paths())
         if registry_manifest_paths:
             mode = "registry"
-            resolved_manifest_paths = [
-                str(path) for path in sorted(set(registry_manifest_paths))
-            ]
+            resolved_manifest_paths = [str(path) for path in sorted(set(registry_manifest_paths))]
 
     return {
         "mode": mode,

@@ -67,9 +67,7 @@ _ESCORPUS_PE_VAD_PATTERN = re.compile(r"-(\d{2})-(\d{2})-(\d{2})$")
 
 def infer_label_from_path_tokens(path: Path) -> str | None:
     """Infers one canonical label from filename/parent-folder token hints."""
-    joined = " ".join(
-        [path.stem.lower(), *[part.lower() for part in path.parent.parts if part]]
-    )
+    joined = " ".join([path.stem.lower(), *[part.lower() for part in path.parent.parts if part]])
     tokens = [token for token in re.split(r"[^a-z0-9]+", joined) if token]
     for token in tokens:
         mapped = _TOKEN_LABEL_MAP.get(token)
@@ -111,9 +109,7 @@ def infer_mesd_label(path: Path) -> str | None:
 
 def infer_att_hack_label(path: Path) -> str | None:
     """Infers one ATT-HACK label from known keyword tokens."""
-    joined = " ".join(
-        [path.stem.lower(), *[part.lower() for part in path.parent.parts if part]]
-    )
+    joined = " ".join([path.stem.lower(), *[part.lower() for part in path.parent.parts if part]])
     tokens = [token for token in re.split(r"[^a-z0-9]+", joined) if token]
     known_labels = {"friendly", "distant", "dominant", "seductive"}
     for token in tokens:

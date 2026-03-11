@@ -39,9 +39,5 @@ def test_build_ravdess_utterances_sets_policy_and_license(tmp_path: Path) -> Non
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {RAVDESS_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        RAVDESS_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        RAVDESS_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {RAVDESS_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {RAVDESS_DATASET_LICENSE_ID}

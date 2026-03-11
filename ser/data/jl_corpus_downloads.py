@@ -18,9 +18,7 @@ JlCorpusDownloadStats = GeneratedLabelsStats
 
 
 class _RequestJson(Protocol):
-    def __call__(
-        self, url: str, *, headers: dict[str, str] | None = None
-    ) -> object: ...
+    def __call__(self, url: str, *, headers: dict[str, str] | None = None) -> object: ...
 
 
 class _DownloadFile(Protocol):
@@ -44,9 +42,7 @@ class _ComputeRelativeToDatasetRoot(Protocol):
 
 
 class _WriteLabelsCsv(Protocol):
-    def __call__(
-        self, *, labels_csv_path: Path, labels_by_file: dict[str, str]
-    ) -> None: ...
+    def __call__(self, *, labels_csv_path: Path, labels_by_file: dict[str, str]) -> None: ...
 
 
 class _DownloadKaggleArchive(Protocol):
@@ -166,21 +162,15 @@ def download_jl_corpus_via_hf_rows(
         )
         payload = request_json(f"{rows_api_url}?{query}")
         if not isinstance(payload, dict):
-            raise RuntimeError(
-                "Unexpected Hugging Face rows API payload for JL-Corpus."
-            )
+            raise RuntimeError("Unexpected Hugging Face rows API payload for JL-Corpus.")
         if num_rows_total is None:
             total_raw = payload.get("num_rows_total")
             if not isinstance(total_raw, int) or total_raw < 0:
-                raise RuntimeError(
-                    "Hugging Face rows API did not return a valid `num_rows_total`."
-                )
+                raise RuntimeError("Hugging Face rows API did not return a valid `num_rows_total`.")
             num_rows_total = total_raw
         rows_raw = payload.get("rows")
         if not isinstance(rows_raw, list):
-            raise RuntimeError(
-                "Hugging Face rows API did not return a valid `rows` payload."
-            )
+            raise RuntimeError("Hugging Face rows API did not return a valid `rows` payload.")
         if not rows_raw:
             break
 
@@ -229,9 +219,7 @@ def download_jl_corpus_via_hf_rows(
             break
 
     if not labels_by_file:
-        raise RuntimeError(
-            "Hugging Face JL-Corpus fallback produced no labeled audio samples."
-        )
+        raise RuntimeError("Hugging Face JL-Corpus fallback produced no labeled audio samples.")
     write_labels_csv(labels_csv_path=labels_csv_path, labels_by_file=labels_by_file)
     return JlCorpusDownloadStats(
         files_seen=files_seen,

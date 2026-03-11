@@ -19,15 +19,11 @@ def _read_unknown_label_policy_env() -> UnknownLabelPolicy:
 
 def resolve_label_ontology(settings: AppConfig) -> LabelOntology:
     """Resolves the active label ontology from settings and environment overrides."""
-    ontology_id = (
-        os.getenv("SER_LABEL_ONTOLOGY_ID", "default_v1").strip() or "default_v1"
-    )
+    ontology_id = os.getenv("SER_LABEL_ONTOLOGY_ID", "default_v1").strip() or "default_v1"
     allowed_labels_raw = os.getenv("SER_ALLOWED_LABELS", "").strip()
     if allowed_labels_raw:
         allowed = {
-            normalize_label(item)
-            for item in allowed_labels_raw.split(",")
-            if normalize_label(item)
+            normalize_label(item) for item in allowed_labels_raw.split(",") if normalize_label(item)
         }
     else:
         allowed = {normalize_label(label) for label in settings.emotions.values()}

@@ -78,9 +78,7 @@ def test_scoped_dependency_log_policy_hides_demoted_logs_at_info_level(
 ) -> None:
     """Demoted dependency DEBUG entries should stay hidden in INFO-level runs."""
     dependency_logger = logging.getLogger("faster_whisper")
-    policy = logger_utils.DependencyLogPolicy(
-        logger_prefixes=frozenset({"faster_whisper"})
-    )
+    policy = logger_utils.DependencyLogPolicy(logger_prefixes=frozenset({"faster_whisper"}))
 
     with caplog.at_level(logging.INFO):
         with logger_utils.scoped_dependency_log_policy(
@@ -97,9 +95,7 @@ def test_scoped_dependency_log_policy_keeps_demoted_logs_at_debug_level(
 ) -> None:
     """Demoted dependency entries should remain visible when DEBUG is enabled."""
     dependency_logger = logging.getLogger("faster_whisper")
-    policy = logger_utils.DependencyLogPolicy(
-        logger_prefixes=frozenset({"faster_whisper"})
-    )
+    policy = logger_utils.DependencyLogPolicy(logger_prefixes=frozenset({"faster_whisper"}))
 
     with caplog.at_level(logging.DEBUG):
         with logger_utils.scoped_dependency_log_policy(
@@ -125,9 +121,7 @@ def test_scoped_dependency_log_policy_respects_context_scope(
         with logger_utils.scoped_dependency_log_policy(
             policy=policy,
             keep_demoted=True,
-            context=logger_utils.DependencyPolicyContext(
-                phase_name="emotion_inference"
-            ),
+            context=logger_utils.DependencyPolicyContext(phase_name="emotion_inference"),
         ):
             dependency_logger.info("outside-scope")
         with logger_utils.scoped_dependency_log_policy(
@@ -160,9 +154,7 @@ def test_scoped_dependency_log_policy_applies_warning_policy_by_context() -> Non
         warnings.simplefilter("always")
         with logger_utils.scoped_dependency_log_policy(
             policy=policy,
-            context=logger_utils.DependencyPolicyContext(
-                phase_name="emotion_inference"
-            ),
+            context=logger_utils.DependencyPolicyContext(phase_name="emotion_inference"),
         ):
             warnings.warn_explicit(
                 message="invalid escape sequence '\\,'",

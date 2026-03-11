@@ -39,9 +39,5 @@ def test_build_crema_d_utterances_maps_codes_and_metadata(tmp_path: Path) -> Non
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {CREMA_D_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        CREMA_D_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        CREMA_D_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {CREMA_D_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {CREMA_D_DATASET_LICENSE_ID}

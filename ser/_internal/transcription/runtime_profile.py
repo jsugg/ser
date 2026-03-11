@@ -130,9 +130,7 @@ def runtime_request_from_profile(
     )
     runtime_policy = runtime_policy_resolver(
         backend_id=active_profile.backend_id,
-        requested_device=(
-            requested_device if isinstance(requested_device, str) else "cpu"
-        ),
+        requested_device=(requested_device if isinstance(requested_device, str) else "cpu"),
         requested_dtype=requested_dtype if isinstance(requested_dtype, str) else "auto",
         mps_low_memory_threshold_gb=(
             requested_mps_low_memory_threshold

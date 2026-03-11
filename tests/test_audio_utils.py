@@ -8,9 +8,7 @@ import pytest
 from ser.config import AudioReadConfig
 from ser.utils import audio_utils as au
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:path is deprecated.*:DeprecationWarning"
-)
+pytestmark = pytest.mark.filterwarnings("ignore:path is deprecated.*:DeprecationWarning")
 
 
 def test_prepare_audio_buffer_converts_stereo_to_mono() -> None:

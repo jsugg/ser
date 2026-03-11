@@ -39,8 +39,7 @@ class CompatibilityReport:
         if self.functional_issues:
             return True
         return any(
-            issue.impact == "blocking"
-            for issue in (*self.operational_issues, *self.noise_issues)
+            issue.impact == "blocking" for issue in (*self.operational_issues, *self.noise_issues)
         )
 
 

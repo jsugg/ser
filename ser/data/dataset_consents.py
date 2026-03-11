@@ -57,9 +57,7 @@ def load_persisted_dataset_consents(*, settings: AppConfig) -> PersistedDatasetC
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as err:
-        raise RuntimeError(
-            f"Dataset consent store at {path} is unreadable: {err}"
-        ) from err
+        raise RuntimeError(f"Dataset consent store at {path} is unreadable: {err}") from err
     if not isinstance(raw, dict):
         raise RuntimeError(f"Dataset consent store at {path} must be a JSON object.")
 
@@ -151,9 +149,7 @@ def compute_missing_dataset_consents(
     return missing_policies, missing_licenses
 
 
-def ensure_dataset_consents(
-    *, settings: AppConfig, utterances: list[Utterance]
-) -> None:
+def ensure_dataset_consents(*, settings: AppConfig, utterances: list[Utterance]) -> None:
     """Raises if the training set requires policy/license acknowledgements."""
 
     missing_policies, missing_licenses = compute_missing_dataset_consents(

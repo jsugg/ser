@@ -158,8 +158,7 @@ def _apply_confidence_hysteresis(
             continue
 
         can_switch = candidate_confidence >= enter_confidence and (
-            current_confidence <= exit_confidence
-            or candidate_confidence >= current_confidence
+            current_confidence <= exit_confidence or candidate_confidence >= current_confidence
         )
         if can_switch:
             current_label = candidate_label
@@ -237,9 +236,7 @@ def _merge_short_segments(
         else:
             previous = merged[index - 1]
             following = merged[index + 1]
-            target_index = (
-                index - 1 if previous.confidence >= following.confidence else index + 1
-            )
+            target_index = index - 1 if previous.confidence >= following.confidence else index + 1
 
         target = merged[target_index]
         merged_segment = _merge_into_target(target=target, source=current)
@@ -284,8 +281,7 @@ def _merge_into_target(
         confidence = float(fmean([target.confidence, source.confidence]))
     else:
         confidence = (
-            (target.confidence * target_duration)
-            + (source.confidence * source_duration)
+            (target.confidence * target_duration) + (source.confidence * source_duration)
         ) / total_duration
 
     probabilities = _merge_probability_maps(
@@ -322,10 +318,7 @@ def _merge_probability_maps(
     labels = sorted(set(target.keys()) | set(source.keys()))
     return {
         label: float(
-            (
-                (target.get(label, 0.0) * target_weight)
-                + (source.get(label, 0.0) * source_weight)
-            )
+            ((target.get(label, 0.0) * target_weight) + (source.get(label, 0.0) * source_weight))
             / total
         )
         for label in labels
@@ -345,7 +338,4 @@ def _aggregate_probabilities(
     if not valid:
         return None
     labels = sorted({label for item in valid for label in item.keys()})
-    return {
-        label: float(fmean(float(item.get(label, 0.0)) for item in valid))
-        for label in labels
-    }
+    return {label: float(fmean(float(item.get(label, 0.0)) for item in valid)) for label in labels}

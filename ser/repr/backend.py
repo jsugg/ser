@@ -30,9 +30,7 @@ class PoolingWindow:
         if self.start_seconds < 0.0:
             raise ValueError("PoolingWindow start_seconds must be non-negative.")
         if self.end_seconds <= self.start_seconds:
-            raise ValueError(
-                "PoolingWindow end_seconds must be greater than start_seconds."
-            )
+            raise ValueError("PoolingWindow end_seconds must be greater than start_seconds.")
 
 
 @dataclass(frozen=True)
@@ -50,9 +48,7 @@ class EncodedSequence:
             raise ValueError("EncodedSequence backend_id must be a non-empty string.")
 
         if self.embeddings.ndim != 2:
-            raise ValueError(
-                "EncodedSequence embeddings must be 2D (frames, features)."
-            )
+            raise ValueError("EncodedSequence embeddings must be 2D (frames, features).")
 
         if self.frame_start_seconds.ndim != 1 or self.frame_end_seconds.ndim != 1:
             raise ValueError("Frame timestamp arrays must be 1D.")
@@ -62,24 +58,16 @@ class EncodedSequence:
             raise ValueError("EncodedSequence must contain at least one frame.")
 
         if self.frame_start_seconds.size != frame_count:
-            raise ValueError(
-                "frame_start_seconds length must match embeddings frame count."
-            )
+            raise ValueError("frame_start_seconds length must match embeddings frame count.")
         if self.frame_end_seconds.size != frame_count:
-            raise ValueError(
-                "frame_end_seconds length must match embeddings frame count."
-            )
+            raise ValueError("frame_end_seconds length must match embeddings frame count.")
 
         if not np.all(np.isfinite(self.embeddings)):
             raise ValueError("EncodedSequence embeddings contain non-finite values.")
         if not np.all(np.isfinite(self.frame_start_seconds)):
-            raise ValueError(
-                "EncodedSequence frame_start_seconds contain non-finite values."
-            )
+            raise ValueError("EncodedSequence frame_start_seconds contain non-finite values.")
         if not np.all(np.isfinite(self.frame_end_seconds)):
-            raise ValueError(
-                "EncodedSequence frame_end_seconds contain non-finite values."
-            )
+            raise ValueError("EncodedSequence frame_end_seconds contain non-finite values.")
 
         if np.any(np.diff(self.frame_start_seconds) < 0.0):
             raise ValueError("frame_start_seconds must be non-decreasing.")

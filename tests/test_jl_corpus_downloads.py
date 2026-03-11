@@ -90,9 +90,7 @@ def test_download_jl_corpus_via_hf_rows_writes_labels_csv(
     def _compute_relative_to_dataset_root(*, dataset_root: Path, path: Path) -> str:
         return path.resolve().relative_to(dataset_root.resolve()).as_posix()
 
-    def _write_labels_csv(
-        *, labels_csv_path: Path, labels_by_file: dict[str, str]
-    ) -> None:
+    def _write_labels_csv(*, labels_csv_path: Path, labels_by_file: dict[str, str]) -> None:
         labels_csv_path.parent.mkdir(parents=True, exist_ok=True)
         with labels_csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=["FileName", "emotion"])
@@ -192,9 +190,7 @@ def test_prepare_jl_corpus_from_hf_rows_writes_manifest(
     def _compute_relative_to_dataset_root(*, dataset_root: Path, path: Path) -> str:
         return path.resolve().relative_to(dataset_root.resolve()).as_posix()
 
-    def _write_labels_csv(
-        *, labels_csv_path: Path, labels_by_file: dict[str, str]
-    ) -> None:
+    def _write_labels_csv(*, labels_csv_path: Path, labels_by_file: dict[str, str]) -> None:
         labels_csv_path.parent.mkdir(parents=True, exist_ok=True)
         with labels_csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=["FileName", "emotion"])
@@ -229,9 +225,7 @@ def test_prepare_jl_corpus_from_hf_rows_writes_manifest(
         page_size=100,
         request_json=_request_json,
         download_file=_download_file,
-        infer_label_from_path_tokens=(
-            lambda path: "angry" if "angry" in path.as_posix() else None
-        ),
+        infer_label_from_path_tokens=(lambda path: "angry" if "angry" in path.as_posix() else None),
         compute_relative_to_dataset_root=_compute_relative_to_dataset_root,
         write_labels_csv=_write_labels_csv,
         write_source_manifest=_write_source_manifest,

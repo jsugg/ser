@@ -28,9 +28,7 @@ class _Settings:
 def test_build_training_report_for_settings_uses_dataset_glob_pattern() -> None:
     """Settings-aware report helper should read the dataset glob from current settings."""
     report = training_reporting.build_training_report_for_settings(
-        read_settings=lambda: _Settings(
-            dataset=_DatasetConfig(glob_pattern="dataset/*.wav")
-        ),
+        read_settings=lambda: _Settings(dataset=_DatasetConfig(glob_pattern="dataset/*.wav")),
         artifact_version=2,
         artifact_schema_version="v2",
         accuracy=1.0,

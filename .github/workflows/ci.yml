@@ -35,6 +35,34 @@ jobs:
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: ./scripts/ci_classify_changes.sh "$GITHUB_OUTPUT"
 
+  architecture-docs:
+    needs: [changes]
+    if: needs.changes.outputs.run_full == 'true' || needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-architecture-docs-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-architecture-docs-
+
+      - name: Validate architecture docs
+        run: make architecture-docs
+
   code-quality:
     needs: [changes]
     if: needs.changes.outputs.run_full == 'true'
@@ -169,9 +197,6 @@ jobs:
           key: uv-${{ runner.os }}-contract-gates-${{ hashFiles('uv.lock') }}
           restore-keys: |
             uv-${{ runner.os }}-contract-gates-
-
-      - name: Enforce structural ownership contract gates
-        run: make topology-contracts
 
       - name: Enforce API import boundary lint gate
         run: make import-lint

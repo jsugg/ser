@@ -145,9 +145,7 @@ def _source_manifest_artifacts_payload(
     """Builds normalized artifact payload fields for one source manifest."""
     return {
         "dataset_root": str(dataset_root),
-        "labels_csv_path": (
-            str(labels_csv_path) if labels_csv_path is not None else None
-        ),
+        "labels_csv_path": (str(labels_csv_path) if labels_csv_path is not None else None),
     }
 
 
@@ -285,9 +283,7 @@ def prepare_pavoque_from_github_release(
         and asset.name.lower().endswith((".flac", ".wav", ".yaml", ".yml"))
     ]
     if not selected_assets:
-        raise RuntimeError(
-            "PAVOQUE latest release does not expose expected pavoque-* assets."
-        )
+        raise RuntimeError("PAVOQUE latest release does not expose expected pavoque-* assets.")
     extract_root = root / "raw" / "pavoque"
     extract_root.mkdir(parents=True, exist_ok=True)
     downloaded_audio_assets: list[Path] = []

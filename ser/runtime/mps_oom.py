@@ -34,11 +34,7 @@ def summarize_mps_oom_memory(message: str) -> str:
     allocated_mib = extract_memory_mib(message, _MPS_ALLOCATED_PATTERN)
     other_allocated_mib = extract_memory_mib(message, _MPS_OTHER_ALLOC_PATTERN) or 0.0
     max_allowed_mib = extract_memory_mib(message, _MPS_MAX_ALLOWED_PATTERN)
-    if (
-        required_mib is not None
-        and allocated_mib is not None
-        and max_allowed_mib is not None
-    ):
+    if required_mib is not None and allocated_mib is not None and max_allowed_mib is not None:
         available_mib = max(max_allowed_mib - allocated_mib - other_allocated_mib, 0.0)
         return (
             f"required={format_memory_mib(required_mib)} "

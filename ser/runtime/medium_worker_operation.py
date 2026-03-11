@@ -13,9 +13,7 @@ from numpy.typing import NDArray
 from ser._internal.runtime.retry_scaffold import (
     finalize_in_process_setup as _finalize_in_process_setup_impl,
 )
-from ser._internal.runtime.retry_scaffold import (
-    prepare_retry_state as _prepare_retry_state_impl,
-)
+from ser._internal.runtime.retry_scaffold import prepare_retry_state as _prepare_retry_state_impl
 from ser._internal.runtime.retry_scaffold import (
     run_retryable_operation as _run_retryable_operation_impl,
 )
@@ -106,9 +104,7 @@ def prepare_retry_state(
         ...,
         PreparedMediumOperation[_LoadedModelT, _BackendT],
     ],
-) -> tuple[
-    MediumRetryOperationState[_PayloadT, _LoadedModelT, _BackendT], float | None
-]:
+) -> tuple[MediumRetryOperationState[_PayloadT, _LoadedModelT, _BackendT], float | None]:
     """Builds initial retry state for medium runtime and performs untimed setup."""
     retry_state = MediumRetryOperationState[_PayloadT, _LoadedModelT, _BackendT]()
     process_payload, prepared_operation, setup_started_at = _prepare_retry_state_impl(
@@ -339,9 +335,7 @@ def run_inference_operation(
 
     def _run_once_inprocess() -> _ResultT:
         if prepared_operation is None:
-            raise runtime_error_factory(
-                "Medium inference operation prerequisites are missing."
-            )
+            raise runtime_error_factory("Medium inference operation prerequisites are missing.")
         return run_process_operation(prepared_operation)
 
     return _run_retryable_operation_impl(
@@ -445,16 +439,12 @@ def build_transient_failure_handler(
                     raise runtime_error_factory(
                         "Medium process payload is missing for CPU fallback."
                     )
-                state.process_payload = process_payload_cpu_fallback(
-                    state.process_payload
-                )
+                state.process_payload = process_payload_cpu_fallback(state.process_payload)
                 return
             active_backend = in_process_cpu_backend_builder()
             prepare_medium_backend_runtime(active_backend)
             if state.prepared_operation is None:
-                raise runtime_error_factory(
-                    "Medium inference operation prerequisites are missing."
-                )
+                raise runtime_error_factory("Medium inference operation prerequisites are missing.")
             state.prepared_operation = replace_prepared_backend(
                 state.prepared_operation,
                 active_backend,

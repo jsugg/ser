@@ -112,9 +112,7 @@ def test_temporal_pooling_windows_supports_short_clip_case() -> None:
         window_stride_seconds=1.0,
     )
 
-    assert [(window.start_seconds, window.end_seconds) for window in windows] == [
-        (0.0, 1.0)
-    ]
+    assert [(window.start_seconds, window.end_seconds) for window in windows] == [(0.0, 1.0)]
 
 
 def test_temporal_pooling_windows_rejects_non_positive_window_config() -> None:

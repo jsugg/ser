@@ -102,11 +102,7 @@ def _winner_for_same_start(
     return min(
         deduplicated,
         key=lambda candidate: (
-            -(
-                candidate.confidence
-                if candidate.confidence is not None
-                else float("-inf")
-            ),
+            -(candidate.confidence if candidate.confidence is not None else float("-inf")),
             candidate.emotion,
         ),
     )
@@ -137,10 +133,7 @@ def _append_candidate(
         canonical.append(incoming)
         return
 
-    if (
-        incoming.start_seconds == previous.end_seconds
-        and incoming.emotion == previous.emotion
-    ):
+    if incoming.start_seconds == previous.end_seconds and incoming.emotion == previous.emotion:
         previous.end_seconds = max(previous.end_seconds, incoming.end_seconds)
         return
 
@@ -164,22 +157,17 @@ def canonicalize_segments(segments: Sequence[SegmentLike]) -> list[CanonicalSegm
     if not validated:
         return []
 
-    validated.sort(
-        key=lambda candidate: (candidate.start_seconds, candidate.end_seconds)
-    )
+    validated.sort(key=lambda candidate: (candidate.start_seconds, candidate.end_seconds))
     selected_by_start: list[_CandidateSegment] = []
     group_start = 0
     while group_start < len(validated):
         group_end = group_start + 1
         group_start_seconds = validated[group_start].start_seconds
         while (
-            group_end < len(validated)
-            and validated[group_end].start_seconds == group_start_seconds
+            group_end < len(validated) and validated[group_end].start_seconds == group_start_seconds
         ):
             group_end += 1
-        selected_by_start.append(
-            _winner_for_same_start(validated[group_start:group_end])
-        )
+        selected_by_start.append(_winner_for_same_start(validated[group_start:group_end]))
         group_start = group_end
 
     canonical_mutable: list[_MutableCanonicalSegment] = []

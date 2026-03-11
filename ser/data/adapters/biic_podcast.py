@@ -149,11 +149,7 @@ def build_biic_podcast_utterances(
                 "end_time",
                 "EndTime",
             )
-            if (
-                duration_seconds is None
-                and start_seconds is not None
-                and end_seconds is not None
-            ):
+            if duration_seconds is None and start_seconds is not None and end_seconds is not None:
                 duration = end_seconds - start_seconds
                 duration_seconds = duration if duration > 0.0 else None
 
@@ -163,9 +159,7 @@ def build_biic_podcast_utterances(
             speaker_raw = (
                 row.get("Speaker") or row.get("Speaker_ID") or row.get("speaker") or ""
             ).strip()
-            speaker_id = (
-                f"{BIIC_PODCAST_CORPUS_ID}:{speaker_raw}" if speaker_raw else None
-            )
+            speaker_id = f"{BIIC_PODCAST_CORPUS_ID}:{speaker_raw}" if speaker_raw else None
             audio_path = (base_dir / file_name).expanduser()
             sample_id = _build_sample_id(
                 file_name=file_name,

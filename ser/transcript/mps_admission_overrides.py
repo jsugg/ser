@@ -142,9 +142,7 @@ def _resolve_recommendation(
         )
         return None
     backend_id = (
-        str(getattr(transcription_settings, "backend_id", "stable_whisper"))
-        .strip()
-        .lower()
+        str(getattr(transcription_settings, "backend_id", "stable_whisper")).strip().lower()
     )
     key = (backend_id, runtime_request.model_name)
     recommendation = recommendations.get(key)
@@ -307,15 +305,11 @@ def _read_report_cached(
         if existing is None:
             recommendations[key] = recommendation
             continue
-        if (
-            _CONFIDENCE_RANK[recommendation.confidence]
-            > _CONFIDENCE_RANK[existing.confidence]
-        ):
+        if _CONFIDENCE_RANK[recommendation.confidence] > _CONFIDENCE_RANK[existing.confidence]:
             recommendations[key] = recommendation
             continue
         if (
-            _CONFIDENCE_RANK[recommendation.confidence]
-            == _CONFIDENCE_RANK[existing.confidence]
+            _CONFIDENCE_RANK[recommendation.confidence] == _CONFIDENCE_RANK[existing.confidence]
             and _RECOMMENDATION_PRIORITY[recommendation.recommendation]
             > _RECOMMENDATION_PRIORITY[existing.recommendation]
         ):

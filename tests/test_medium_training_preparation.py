@@ -200,9 +200,7 @@ def test_run_medium_profile_training_from_prepared_delegates_to_orchestration(
         build_provenance_metadata=lambda **_kwargs: {"source": "unit-test"},
         build_dataset_controls=lambda _utterances: {"dataset": "ok"},
         build_medium_noise_controls=lambda **_kwargs: {"noise": "ok"},
-        build_grouped_evaluation_controls=lambda _split: {
-            "split_strategy": _split.split_strategy
-        },
+        build_grouped_evaluation_controls=lambda _split: {"split_strategy": _split.split_strategy},
         build_training_report=lambda **_kwargs: {"report": "ok"},
         persist_training_report=lambda _report, _path: None,
     )
@@ -318,9 +316,7 @@ def test_train_medium_profile_model_delegates_to_prepare_and_run(
         build_provenance_metadata=lambda **_kwargs: {"source": "unit-test"},
         build_dataset_controls=lambda _utterances: {"dataset": "ok"},
         build_medium_noise_controls=lambda **_kwargs: {"noise": "ok"},
-        build_grouped_evaluation_controls=lambda _split: {
-            "split_strategy": _split.split_strategy
-        },
+        build_grouped_evaluation_controls=lambda _split: {"split_strategy": _split.split_strategy},
         build_training_report=lambda **_kwargs: {"report": "ok"},
         persist_training_report=lambda _report, _path: None,
         profile_label="Medium",
@@ -334,8 +330,7 @@ def test_train_medium_profile_model_delegates_to_prepare_and_run(
     assert isinstance(prepare_kwargs, dict)
     assert prepare_kwargs["settings"] is settings
     assert (
-        prepare_kwargs["embedding_cache_path"]
-        == settings.tmp_folder / "medium_embeddings"
+        prepare_kwargs["embedding_cache_path"] == settings.tmp_folder / "medium_embeddings"
     )  # noqa: E501
     assert callable(prepare_kwargs["ensure_dataset_consents_for_training"])
     assert callable(prepare_kwargs["resolve_model_id"])
@@ -405,9 +400,7 @@ def test_train_medium_profile_entrypoint_preserves_training_contract(
         build_provenance_metadata=lambda **_kwargs: {"source": "unit-test"},
         build_dataset_controls=lambda _utterances: {"dataset": "ok"},
         build_medium_noise_controls=lambda **_kwargs: {"noise": "ok"},
-        build_grouped_evaluation_controls=lambda _split: {
-            "split_strategy": _split.split_strategy
-        },
+        build_grouped_evaluation_controls=lambda _split: {"split_strategy": _split.split_strategy},
         build_training_report=lambda **_kwargs: {"report": "ok"},
         persist_training_report=lambda _report, _path: None,
         profile_label="Medium",

@@ -47,12 +47,8 @@ def resolve_medium_feature_runtime_policy(
         backend_id="hf_xlsr",
         requested_device=settings.torch_runtime.device,
         requested_dtype=settings.torch_runtime.dtype,
-        backend_override_device=(
-            backend_override.device if backend_override is not None else None
-        ),
-        backend_override_dtype=(
-            backend_override.dtype if backend_override is not None else None
-        ),
+        backend_override_device=(backend_override.device if backend_override is not None else None),
+        backend_override_dtype=(backend_override.dtype if backend_override is not None else None),
     )
 
 
@@ -107,9 +103,7 @@ def warn_on_runtime_selector_mismatch(
 
     artifact_torch_device = metadata.get("torch_device")
     artifact_torch_dtype = metadata.get("torch_dtype")
-    if not isinstance(artifact_torch_device, str) or not isinstance(
-        artifact_torch_dtype, str
-    ):
+    if not isinstance(artifact_torch_device, str) or not isinstance(artifact_torch_dtype, str):
         return
 
     normalized_artifact_device = artifact_torch_device.strip().lower()
@@ -127,8 +121,7 @@ def warn_on_runtime_selector_mismatch(
         )
     if normalized_artifact_dtype != normalized_runtime_dtype:
         mismatch_components.append(
-            "dtype artifact="
-            f"{normalized_artifact_dtype!r} runtime={normalized_runtime_dtype!r}"
+            "dtype artifact=" f"{normalized_artifact_dtype!r} runtime={normalized_runtime_dtype!r}"
         )
     if mismatch_components:
         logger.warning(

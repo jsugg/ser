@@ -109,7 +109,7 @@ exclude = [
 ]
 
 [tool.black]
-line-length = 88
+line-length = 100
 target-version = ["py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
@@ -123,14 +123,14 @@ extend-exclude = '''
 
 [tool.isort]
 profile = "black"
-line_length = 88
+line_length = 100
 py_version = 312
 skip_gitignore = true
 src_paths = ["ser"]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 88
+line-length = 100
 extend-exclude = ["dist", "build", ".venv"]
 
 [tool.ruff.lint]
@@ -145,6 +145,9 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "ser/api.py" = ["TID251"]
+"ser/_internal/cli/data.py" = ["TID251"]
+"ser/_internal/cli/diagnostics.py" = ["TID251"]
+"ser/_internal/cli/runtime.py" = ["TID251"]
 "tests/test_api.py" = ["TID251"]
 
 [tool.ruff.format]
@@ -179,3 +182,6 @@ reportMissingTypeStubs = "none"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-config --strict-markers"
+markers = [
+  "topology_contract: topology, boundary, or architecture behavior tests",
+]

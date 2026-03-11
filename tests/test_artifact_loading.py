@@ -177,9 +177,7 @@ def test_resolve_model_for_loading_logs_candidate_failures_at_debug(
 
     def _load_pickle(candidate: _Candidate) -> _LoadedModel:
         if candidate is primary:
-            raise ValueError(
-                "Unexpected model object type in artifact envelope: NoneType."
-            )
+            raise ValueError("Unexpected model object type in artifact envelope: NoneType.")
         return expected
 
     logger = logging.getLogger("tests.artifact_loading.debug_fallback")
@@ -197,13 +195,9 @@ def test_resolve_model_for_loading_logs_candidate_failures_at_debug(
     assert resolved_candidate is fallback
     assert resolved_model is expected
     debug_messages = [
-        record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.DEBUG
+        record.getMessage() for record in caplog.records if record.levelno == logging.DEBUG
     ]
-    assert any(
-        "Failed to load pickle model artifact" in message for message in debug_messages
-    )
+    assert any("Failed to load pickle model artifact" in message for message in debug_messages)
     assert all(record.levelno < logging.WARNING for record in caplog.records)
 
 

@@ -246,9 +246,7 @@ def extract_archives_from_tree(
         if not archive_path.is_file():
             continue
         lower_name = archive_path.name.lower()
-        if not any(
-            lower_name.endswith(suffix) for suffix in SUPPORTED_ARCHIVE_SUFFIXES
-        ):
+        if not any(lower_name.endswith(suffix) for suffix in SUPPORTED_ARCHIVE_SUFFIXES):
             continue
         ensure_extracted(archive_path=archive_path, extract_root=extract_root)
         extracted_archives.append(archive_path)

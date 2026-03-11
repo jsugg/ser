@@ -127,9 +127,7 @@ def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
             4,
         ),
     )
-    monkeypatch.setattr(
-        "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
-    )
+    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend)
     monkeypatch.setattr(
         "ser.runtime.medium_inference.load_model",
         lambda **_kwargs: emotion_model.LoadedModel(
@@ -150,15 +148,10 @@ def test_run_medium_inference_uses_encode_once_and_returns_schema_result(
     assert result.frames[0].emotion == "happy"
     assert result.frames[2].emotion == "sad"
     assert [
-        (segment.emotion, segment.start_seconds, segment.end_seconds)
-        for segment in result.segments
+        (segment.emotion, segment.start_seconds, segment.end_seconds) for segment in result.segments
     ] == [("happy", 0.0, 2.0), ("sad", 2.0, 3.0)]
-    assert [segment.confidence for segment in result.segments] == pytest.approx(
-        [0.825, 0.8]
-    )
-    assert result.segments[0].probabilities == pytest.approx(
-        {"happy": 0.825, "sad": 0.175}
-    )
+    assert [segment.confidence for segment in result.segments] == pytest.approx([0.825, 0.8])
+    assert result.segments[0].probabilities == pytest.approx({"happy": 0.825, "sad": 0.175})
     assert result.segments[1].probabilities == pytest.approx({"happy": 0.2, "sad": 0.8})
     assert model.last_features is not None
     np.testing.assert_allclose(
@@ -184,9 +177,7 @@ def test_run_medium_inference_fails_fast_for_non_medium_artifact(
         probabilities=[[1.0, 0.0]],
         classes=["happy", "sad"],
     )
-    monkeypatch.setattr(
-        "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
-    )
+    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend)
     monkeypatch.setattr(
         "ser.runtime.medium_inference.load_model",
         lambda **_kwargs: emotion_model.LoadedModel(
@@ -229,9 +220,7 @@ def test_run_medium_inference_rejects_feature_size_mismatch(
             4,
         ),
     )
-    monkeypatch.setattr(
-        "ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend
-    )
+    monkeypatch.setattr("ser.runtime.medium_inference.XLSRBackend", lambda **_kwargs: backend)
     monkeypatch.setattr(
         "ser.runtime.medium_inference.load_model",
         lambda **_kwargs: emotion_model.LoadedModel(
@@ -318,12 +307,8 @@ def test_run_medium_inference_uses_configured_medium_model_id(
         backend_id="hf_xlsr",
         requested_device=settings.torch_runtime.device,
         requested_dtype=settings.torch_runtime.dtype,
-        backend_override_device=(
-            backend_override.device if backend_override is not None else None
-        ),
-        backend_override_dtype=(
-            backend_override.dtype if backend_override is not None else None
-        ),
+        backend_override_device=(backend_override.device if backend_override is not None else None),
+        backend_override_dtype=(backend_override.dtype if backend_override is not None else None),
     )
     assert captured["model_id"] == "unit-test/xlsr"
     assert captured["cache_dir"] == settings.models.huggingface_cache_root
@@ -354,9 +339,7 @@ def test_run_medium_inference_requires_backend_model_id_metadata(
 
     with pytest.raises(MediumModelUnavailableError, match="backend_model_id"):
         run_medium_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            ),
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False),
             settings,
         )
 
@@ -522,6 +505,170 @@ def test_run_medium_inference_delegates_operation_to_worker_helper(
     assert captured["inference_phase_name"] == medium_inference.PHASE_EMOTION_INFERENCE
 
 
+def test_run_medium_inference_delegates_retry_policy_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime loop should delegate retry-policy execution to helper seam."""
+    settings = config.reload_settings()
+    request = InferenceRequest(
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+    )
+    prepared = medium_inference.medium_worker_operation_helpers.PreparedMediumOperation(
+        loaded_model=object(),
+        backend=object(),
+        audio=np.ones(8, dtype=np.float32),
+        sample_rate=4,
+        runtime_config=settings.medium_runtime,
+    )
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[],
+        frames=[],
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_in_process_operation",
+        lambda **_kwargs: prepared,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_medium_backend_runtime",
+        lambda *, backend: None,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_retry_policy_impl",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    result = run_medium_inference(request, settings)
+
+    assert result == expected
+    assert captured["runtime_config"] is settings.medium_runtime
+    assert captured["allow_retries"] is True
+    assert captured["profile_label"] == "Medium"
+    assert captured["timeout_error_type"] is medium_inference.MediumInferenceTimeoutError
+    assert captured["transient_error_type"] is medium_inference.MediumTransientBackendError
+    assert callable(captured["operation"])
+    assert callable(captured["on_transient_failure"])
+    assert captured["run_with_retry_policy"] is medium_inference.run_with_retry_policy
+
+
+def test_run_medium_inference_delegates_execution_context_preparation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime loop should delegate pre-lock execution context preparation."""
+    settings = config.reload_settings()
+    request = InferenceRequest(
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+    )
+    retry_state = medium_inference.medium_worker_operation_helpers.MediumRetryOperationState[
+        medium_inference.MediumProcessPayload,
+        emotion_model.LoadedModel,
+        object,
+    ](
+        process_payload=None,
+        prepared_operation=None,
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_execution_context",
+        lambda **kwargs: captured.update(kwargs)
+        or medium_inference._MediumExecutionContext(
+            runtime_config=settings.medium_runtime,
+            expected_backend_model_id=settings.models.medium_model_id,
+            runtime_policy=resolve_feature_runtime_policy(
+                backend_id="hf_xlsr",
+                requested_device=settings.torch_runtime.device,
+                requested_dtype=settings.torch_runtime.dtype,
+            ),
+            use_process_isolation=False,
+            retry_state=retry_state,
+            setup_started_at=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference.medium_worker_operation_helpers.finalize_in_process_setup",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._run_medium_retry_policy_impl",
+        lambda **_kwargs: InferenceResult(
+            schema_version=OUTPUT_SCHEMA_VERSION,
+            segments=[],
+            frames=[],
+        ),
+    )
+
+    _ = run_medium_inference(request, settings)
+
+    assert captured["request"] == request
+    assert captured["settings"] == settings
+    assert captured["loaded_model"] is None
+    assert captured["backend"] is None
+    assert captured["enforce_timeout"] is True
+
+
+def test_run_medium_inference_delegates_lock_body_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime loop should delegate single-flight execution body to helper seam."""
+    settings = config.reload_settings()
+    request = InferenceRequest(
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+    )
+    execution_context = medium_inference._MediumExecutionContext(
+        runtime_config=settings.medium_runtime,
+        expected_backend_model_id=settings.models.medium_model_id,
+        runtime_policy=resolve_feature_runtime_policy(
+            backend_id="hf_xlsr",
+            requested_device=settings.torch_runtime.device,
+            requested_dtype=settings.torch_runtime.dtype,
+        ),
+        use_process_isolation=False,
+        retry_state=medium_inference.medium_worker_operation_helpers.MediumRetryOperationState[
+            medium_inference.MediumProcessPayload,
+            emotion_model.LoadedModel,
+            object,
+        ](
+            process_payload=None,
+            prepared_operation=None,
+        ),
+        setup_started_at=None,
+    )
+    captured: dict[str, object] = {}
+    expected = InferenceResult(
+        schema_version=OUTPUT_SCHEMA_VERSION,
+        segments=[],
+        frames=[],
+    )
+
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._prepare_execution_context",
+        lambda **_kwargs: execution_context,
+    )
+    monkeypatch.setattr(
+        "ser.runtime.medium_inference._execute_medium_inference_with_retry",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    result = run_medium_inference(request, settings)
+
+    assert result == expected
+    assert captured["execution_context"] is execution_context
+    assert captured["settings"] is settings
+    assert captured["injected_backend"] is None
+    assert captured["enforce_timeout"] is True
+    assert captured["allow_retries"] is True
+    assert captured["expected_backend_model_id"] == settings.models.medium_model_id
+
+
 def test_medium_single_flight_serializes_same_profile_model_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -536,9 +683,7 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
                 classes=["happy", "sad"],
             ),
             expected_feature_size=4,
-            artifact_metadata=_medium_metadata(
-                backend_model_id=settings.models.medium_model_id
-            ),
+            artifact_metadata=_medium_metadata(backend_model_id=settings.models.medium_model_id),
         ),
     )
     monkeypatch.setattr(
@@ -567,9 +712,7 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
         time.sleep(0.05)
         with counter_lock:
             counters["active"] -= 1
-        return InferenceResult(
-            schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[]
-        )
+        return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
 
     monkeypatch.setattr(
         "ser.runtime.medium_inference._run_medium_inference_once",
@@ -577,16 +720,12 @@ def test_medium_single_flight_serializes_same_profile_model_calls(
     )
 
     errors: list[Exception] = []
-    request = InferenceRequest(
-        file_path="sample.wav", language="en", save_transcript=False
-    )
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
 
     def invoke() -> None:
         try:
             run_medium_inference(request, settings)
-        except (
-            Exception
-        ) as err:  # pragma: no cover - defensive capture for assertion clarity
+        except Exception as err:  # pragma: no cover - defensive capture for assertion clarity
             errors.append(err)
 
     first = threading.Thread(target=invoke)

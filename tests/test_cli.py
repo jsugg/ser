@@ -10,6 +10,7 @@ import pytest
 import ser.__main__ as cli
 import ser.config as config_module
 import ser.models.emotion_model as emotion_model
+from ser._internal.config.schema import profile_artifact_file_names
 from ser.license_check import load_persisted_backend_consents
 from ser.runtime import InferenceRequest
 from ser.runtime.accurate_inference import AccurateRuntimeDependencyError
@@ -194,9 +195,7 @@ def test_cli_prediction_with_no_transcript_disables_transcript_in_pipeline_reque
 ) -> None:
     """Prediction path should disable transcript extraction when --no-transcript is set."""
     _patch_common_cli_dependencies(monkeypatch)
-    monkeypatch.setattr(
-        cli.sys, "argv", ["ser", "--file", "sample.wav", "--no-transcript"]
-    )
+    monkeypatch.setattr(cli.sys, "argv", ["ser", "--file", "sample.wav", "--no-transcript"])
 
     calls: dict[str, object] = {}
 
@@ -372,9 +371,7 @@ def test_cli_prediction_pipeline_unsupported_profile_exits_two(
             raise AssertionError("Training path should not run for prediction command.")
 
         def run_inference(self, _request: object) -> object:
-            raise UnsupportedProfileError(
-                "Runtime profile 'medium' is not implemented."
-            )
+            raise UnsupportedProfileError("Runtime profile 'medium' is not implemented.")
 
     monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
 
@@ -594,7 +591,7 @@ def test_cli_profile_override_sets_profile_specific_artifact_names(
     monkeypatch.delenv("SER_SECURE_MODEL_FILE_NAME", raising=False)
     monkeypatch.delenv("SER_TRAINING_REPORT_FILE_NAME", raising=False)
     settings = config_module.reload_settings()
-    expected_names = config_module.profile_artifact_file_names(
+    expected_names = profile_artifact_file_names(
         profile="medium",
         medium_model_id=settings.models.medium_model_id,
         accurate_model_id=settings.models.accurate_model_id,
@@ -640,13 +637,9 @@ def test_cli_profile_override_accurate_name_tracks_backend_model_id(
     resolved_b = cli.apply_cli_profile_override(settings_b, "accurate")
 
     assert resolved_a.models.model_file_name != resolved_b.models.model_file_name
+    assert resolved_a.models.secure_model_file_name != resolved_b.models.secure_model_file_name
     assert (
-        resolved_a.models.secure_model_file_name
-        != resolved_b.models.secure_model_file_name
-    )
-    assert (
-        resolved_a.models.training_report_file_name
-        != resolved_b.models.training_report_file_name
+        resolved_a.models.training_report_file_name != resolved_b.models.training_report_file_name
     )
 
 
@@ -662,9 +655,7 @@ def test_cli_profile_override_updates_transcription_defaults_by_profile(
     resolved_fast = cli.apply_cli_profile_override(settings, "fast")
     resolved_medium = cli.apply_cli_profile_override(settings, "medium")
     resolved_accurate = cli.apply_cli_profile_override(settings, "accurate")
-    resolved_accurate_research = cli.apply_cli_profile_override(
-        settings, "accurate-research"
-    )
+    resolved_accurate_research = cli.apply_cli_profile_override(settings, "accurate-research")
 
     assert resolved_fast.transcription.backend_id == "faster_whisper"
     assert resolved_fast.models.whisper_model.name == "distil-large-v3"
@@ -1059,9 +1050,7 @@ def test_cli_dispatches_configure_subcommand_with_global_log_level(
     )
     captured: dict[str, object] = {}
 
-    def _run_configure_command(
-        argv: list[str], *, settings: object | None = None
-    ) -> int:
+    def _run_configure_command(argv: list[str], *, settings: object | None = None) -> int:
         captured["argv"] = argv
         captured["settings"] = settings
         return 0

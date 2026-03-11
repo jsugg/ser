@@ -93,9 +93,7 @@ class _FakeDecoder:
         self.blocks = [SimpleNamespace(cross_attn=cross_attn)]
         self._cross_attn = cross_attn
 
-    def __call__(
-        self, tokens: torch.Tensor, _audio_features: torch.Tensor
-    ) -> torch.Tensor:
+    def __call__(self, tokens: torch.Tensor, _audio_features: torch.Tensor) -> torch.Tensor:
         self._cross_attn.emit()
         sequence_len = int(tokens.shape[1])
         return torch.randn((1, sequence_len, 8), dtype=torch.float32)
@@ -112,9 +110,7 @@ class _FakeStableWhisperModel:
         return mel.mean(dim=-1, keepdim=True)
 
 
-def test_move_model_to_mps_with_alignment_placeholder_restores_sparse_cpu_buffer() -> (
-    None
-):
+def test_move_model_to_mps_with_alignment_placeholder_restores_sparse_cpu_buffer() -> None:
     """Sparse alignment buffer should be restored on CPU after MPS move."""
     model = _FakeModel()
 
@@ -128,9 +124,7 @@ def test_move_model_to_mps_with_alignment_placeholder_restores_sparse_cpu_buffer
     assert model.alignment_heads.device.type == "cpu"
 
 
-def test_move_model_to_mps_with_alignment_placeholder_rolls_back_to_cpu_on_failure() -> (
-    None
-):
+def test_move_model_to_mps_with_alignment_placeholder_rolls_back_to_cpu_on_failure() -> None:
     """Failed MPS move should restore sparse buffer and force model rollback to CPU."""
     model = _FailingMoveModel()
 

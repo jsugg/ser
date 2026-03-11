@@ -242,12 +242,8 @@ def test_run_inference_skips_save_when_flag_is_disabled() -> None:
         predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
             AssertionError("Detailed path should not run when schema flag is disabled.")
         ),
-        extract_transcript=lambda _file_path, _language: [
-            TranscriptWord("oi", 0.0, 0.4)
-        ],
-        build_timeline=lambda _transcript, _emotions: [
-            TimelineEntry(0.0, "calm", "oi")
-        ],
+        extract_transcript=lambda _file_path, _language: [TranscriptWord("oi", 0.0, 0.4)],
+        build_timeline=lambda _transcript, _emotions: [TimelineEntry(0.0, "calm", "oi")],
         print_timeline=lambda _timeline: None,
         save_timeline_to_csv=lambda _timeline, _file_path: (_ for _ in ()).throw(
             AssertionError("save_timeline_to_csv should not be called")
@@ -356,9 +352,7 @@ def test_release_torch_runtime_memory_before_transcription_empties_caches(
     cast(Any, fake_torch).mps = fake_mps
     cast(Any, fake_torch).cuda = fake_cuda
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    monkeypatch.setattr(
-        runtime_pipeline_module.gc, "collect", lambda: calls.append("gc")
-    )
+    monkeypatch.setattr(runtime_pipeline_module.gc, "collect", lambda: calls.append("gc"))
 
     runtime_pipeline_module._release_torch_runtime_memory_before_transcription()
 
@@ -399,14 +393,10 @@ def test_run_inference_uses_backend_hook_for_fast_when_available() -> None:
     pipeline = _build_test_pipeline(
         train_model=lambda: None,
         predict_emotions=lambda _file_path: (_ for _ in ()).throw(
-            AssertionError(
-                "Legacy predict path should not run when backend hook exists."
-            )
+            AssertionError("Legacy predict path should not run when backend hook exists.")
         ),
         predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
-            AssertionError(
-                "Detailed legacy path should not run when backend hook exists."
-            )
+            AssertionError("Detailed legacy path should not run when backend hook exists.")
         ),
         extract_transcript=lambda _file_path, _language: transcript,
         build_timeline=lambda _transcript, _emotions: timeline,
@@ -609,8 +599,11 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
         _file_path: str,
         _language: str | None,
         profile: object | None = None,
+        *,
+        settings: object | None = None,
     ) -> list[TranscriptWord]:
         captured["profile"] = profile
+        captured["settings"] = settings
         return []
 
     monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
@@ -629,6 +622,7 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     assert profile.model_name == expected_model_name
     assert profile.use_demucs is expected_use_demucs
     assert profile.use_vad is True
+    assert captured["settings"] is settings
 
 
 def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
@@ -661,8 +655,11 @@ def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
         _file_path: str,
         _language: str | None,
         profile: object | None = None,
+        *,
+        settings: object | None = None,
     ) -> list[TranscriptWord]:
         captured["profile"] = profile
+        captured["settings"] = settings
         return []
 
     monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
@@ -681,6 +678,7 @@ def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
     assert profile.model_name == "distil-large-v3"
     assert profile.use_demucs is False
     assert profile.use_vad is True
+    assert captured["settings"] is settings
 
 
 def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
@@ -713,8 +711,11 @@ def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
         _file_path: str,
         _language: str | None,
         profile: object | None = None,
+        *,
+        settings: object | None = None,
     ) -> list[TranscriptWord]:
         captured["profile"] = profile
+        captured["settings"] = settings
         return []
 
     monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
@@ -731,6 +732,7 @@ def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
     assert isinstance(profile, TranscriptionProfile)
     assert profile.backend_id == "faster_whisper"
     assert profile.model_name == "distil-large-v3"
+    assert captured["settings"] is settings
 
 
 def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selected(
@@ -756,13 +758,20 @@ def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selec
         "ser.runtime.pipeline.build_backend_hooks",
         lambda _settings: {"hf_xlsr": fake_medium_hook},
     )
-    monkeypatch.setattr(
-        "ser.models.emotion_model.train_model",
-        lambda: called.__setitem__("fast", True),
-    )
+    captured_settings: dict[str, object] = {}
+
+    def _fake_train_model(*, settings: object | None = None) -> None:
+        captured_settings["fast"] = settings
+        called["fast"] = True
+
+    def _fake_train_medium_model(*, settings: object | None = None) -> None:
+        captured_settings["medium"] = settings
+        called["medium"] = True
+
+    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
     monkeypatch.setattr(
         "ser.models.emotion_model.train_medium_model",
-        lambda: called.__setitem__("medium", True),
+        _fake_train_medium_model,
     )
 
     settings = config.reload_settings()
@@ -772,6 +781,7 @@ def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selec
     assert pipeline.profile.name == "medium"
     assert called["medium"] is True
     assert called["fast"] is False
+    assert captured_settings["medium"] is settings
 
 
 def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
@@ -796,17 +806,28 @@ def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
             )
         },
     )
-    monkeypatch.setattr(
-        "ser.models.emotion_model.train_model",
-        lambda: called.__setitem__("fast", True),
-    )
+    captured_settings: dict[str, object] = {}
+
+    def _fake_train_model(*, settings: object | None = None) -> None:
+        captured_settings["fast"] = settings
+        called["fast"] = True
+
+    def _fake_train_medium_model(*, settings: object | None = None) -> None:
+        captured_settings["medium"] = settings
+        called["medium"] = True
+
+    def _fake_train_accurate_model(*, settings: object | None = None) -> None:
+        captured_settings["accurate"] = settings
+        called["accurate"] = True
+
+    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
     monkeypatch.setattr(
         "ser.models.emotion_model.train_medium_model",
-        lambda: called.__setitem__("medium", True),
+        _fake_train_medium_model,
     )
     monkeypatch.setattr(
         "ser.models.emotion_model.train_accurate_model",
-        lambda: called.__setitem__("accurate", True),
+        _fake_train_accurate_model,
     )
 
     settings = config.reload_settings()
@@ -816,6 +837,7 @@ def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
     assert called["fast"] is False
     assert called["medium"] is False
     assert called["accurate"] is True
+    assert captured_settings["accurate"] is settings
 
 
 def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_selected(
@@ -846,21 +868,39 @@ def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_s
             )
         },
     )
-    monkeypatch.setattr(
-        "ser.models.emotion_model.train_model",
-        lambda: called.__setitem__("fast", True),
-    )
+    captured_settings: dict[str, object] = {}
+
+    def _fake_train_model(*, settings: object | None = None) -> None:
+        captured_settings["fast"] = settings
+        called["fast"] = True
+
+    def _fake_train_medium_model(*, settings: object | None = None) -> None:
+        captured_settings["medium"] = settings
+        called["medium"] = True
+
+    def _fake_train_accurate_model(*, settings: object | None = None) -> None:
+        captured_settings["accurate"] = settings
+        called["accurate"] = True
+
+    def _fake_train_accurate_research_model(
+        *,
+        settings: object | None = None,
+    ) -> None:
+        captured_settings["accurate_research"] = settings
+        called["accurate_research"] = True
+
+    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
     monkeypatch.setattr(
         "ser.models.emotion_model.train_medium_model",
-        lambda: called.__setitem__("medium", True),
+        _fake_train_medium_model,
     )
     monkeypatch.setattr(
         "ser.models.emotion_model.train_accurate_model",
-        lambda: called.__setitem__("accurate", True),
+        _fake_train_accurate_model,
     )
     monkeypatch.setattr(
         "ser.models.emotion_model.train_accurate_research_model",
-        lambda: called.__setitem__("accurate_research", True),
+        _fake_train_accurate_research_model,
     )
 
     settings = config.reload_settings()
@@ -871,6 +911,7 @@ def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_s
     assert called["medium"] is False
     assert called["accurate"] is False
     assert called["accurate_research"] is True
+    assert captured_settings["accurate_research"] is settings
 
 
 def test_run_inference_uses_detailed_schema_when_enabled(
@@ -908,14 +949,10 @@ def test_run_inference_uses_detailed_schema_when_enabled(
         ),
         train_model=lambda: None,
         predict_emotions=lambda _file_path: (_ for _ in ()).throw(
-            AssertionError(
-                "Legacy path should not run when detailed schema is enabled."
-            )
+            AssertionError("Legacy path should not run when detailed schema is enabled.")
         ),
         predict_emotions_detailed=fake_predict_emotions_detailed,
-        extract_transcript=lambda _file_path, _language: [
-            TranscriptWord("oi", 0.0, 0.5)
-        ],
+        extract_transcript=lambda _file_path, _language: [TranscriptWord("oi", 0.0, 0.5)],
         build_timeline=lambda _transcript, emotions: [
             TimelineEntry(0.0, emotions[0].emotion, "oi")
         ],
@@ -937,9 +974,7 @@ def test_run_inference_uses_detailed_schema_when_enabled(
 
 def test_run_inference_uses_backend_hook_for_supported_medium_profile() -> None:
     """Medium profile should route through backend hook when capability is ready."""
-    request = InferenceRequest(
-        file_path="sample.wav", language="en", save_transcript=False
-    )
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
     calls: dict[str, object] = {}
     detailed = InferenceResult(
         schema_version=OUTPUT_SCHEMA_VERSION,
@@ -974,9 +1009,7 @@ def test_run_inference_uses_backend_hook_for_supported_medium_profile() -> None:
         predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
             AssertionError("Detailed legacy path should not run for backend hook flow.")
         ),
-        extract_transcript=lambda _file_path, _language: [
-            TranscriptWord("oi", 0.0, 0.5)
-        ],
+        extract_transcript=lambda _file_path, _language: [TranscriptWord("oi", 0.0, 0.5)],
         build_timeline=lambda _transcript, emotions: [
             TimelineEntry(0.0, emotions[0].emotion, "oi")
         ],
@@ -998,9 +1031,7 @@ def test_run_inference_uses_backend_hook_for_supported_medium_profile() -> None:
 
 def test_run_inference_uses_backend_hook_for_supported_accurate_profile() -> None:
     """Accurate profile should route through backend hook when capability is ready."""
-    request = InferenceRequest(
-        file_path="sample.wav", language="en", save_transcript=False
-    )
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
     calls: dict[str, object] = {}
     detailed = InferenceResult(
         schema_version=OUTPUT_SCHEMA_VERSION,
@@ -1035,9 +1066,7 @@ def test_run_inference_uses_backend_hook_for_supported_accurate_profile() -> Non
         predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
             AssertionError("Detailed legacy path should not run for backend hook flow.")
         ),
-        extract_transcript=lambda _file_path, _language: [
-            TranscriptWord("oi", 0.0, 0.5)
-        ],
+        extract_transcript=lambda _file_path, _language: [TranscriptWord("oi", 0.0, 0.5)],
         build_timeline=lambda _transcript, emotions: [
             TimelineEntry(0.0, emotions[0].emotion, "oi")
         ],
@@ -1083,7 +1112,5 @@ def test_run_inference_raises_for_unsupported_profile_capability() -> None:
 
     with pytest.raises(UnsupportedProfileError, match="medium pending"):
         pipeline.run_inference(
-            InferenceRequest(
-                file_path="sample.wav", language="en", save_transcript=False
-            )
+            InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
         )

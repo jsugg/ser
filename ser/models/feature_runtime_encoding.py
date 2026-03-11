@@ -106,9 +106,7 @@ def resolve_effective_model_id(
     default_model_id: str,
 ) -> str:
     """Returns explicit model id or falls back to resolved default id."""
-    resolved_model_id = (
-        model_id.strip() if isinstance(model_id, str) and model_id.strip() else None
-    )
+    resolved_model_id = model_id.strip() if isinstance(model_id, str) and model_id.strip() else None
     return default_model_id if resolved_model_id is None else resolved_model_id
 
 

@@ -13,9 +13,7 @@ import ser.utils.transcription_compat as compat
 
 def test_resolve_stable_whisper_fallback_model_name_maps_distil_to_turbo() -> None:
     """Distil model ids should map to a stable-whisper compatible fallback."""
-    assert (
-        compat.resolve_stable_whisper_fallback_model_name("distil-large-v3") == "turbo"
-    )
+    assert compat.resolve_stable_whisper_fallback_model_name("distil-large-v3") == "turbo"
 
 
 def test_resolve_stable_whisper_fallback_model_name_keeps_supported_model() -> None:
@@ -32,9 +30,7 @@ def test_has_known_faster_whisper_openmp_runtime_conflict_detects_dual_libiomp(
     torch_origin = tmp_path / "torchpkg" / "torch" / "__init__.py"
     faster_whisper_origin = tmp_path / "faster_whisper" / "__init__.py"
     ctranslate2_openmp = tmp_path / "ctranslate2" / ".dylibs" / "libiomp5.dylib"
-    functorch_openmp = (
-        tmp_path / "torchpkg" / "functorch" / ".dylibs" / "libiomp5.dylib"
-    )
+    functorch_openmp = tmp_path / "torchpkg" / "functorch" / ".dylibs" / "libiomp5.dylib"
     ctranslate2_openmp.parent.mkdir(parents=True, exist_ok=True)
     functorch_openmp.parent.mkdir(parents=True, exist_ok=True)
     ctranslate2_origin.parent.mkdir(parents=True, exist_ok=True)
@@ -126,10 +122,7 @@ def test_resolve_transcription_compatibility_lane_detects_pinned_darwin_py312(
     monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(compat.sys, "version_info", (3, 12, 9, "final", 0))
 
-    assert (
-        compat.resolve_transcription_compatibility_lane()
-        == "darwin_x86_64_py312_pinned"
-    )
+    assert compat.resolve_transcription_compatibility_lane() == "darwin_x86_64_py312_pinned"
 
 
 def test_format_torio_ffmpeg_remediation_for_pinned_lane_avoids_torch_upgrade_hint(
@@ -140,9 +133,7 @@ def test_format_torio_ffmpeg_remediation_for_pinned_lane_avoids_torch_upgrade_hi
     monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(compat.sys, "version_info", (3, 12, 9, "final", 0))
 
-    message = compat.format_torio_ffmpeg_remediation(
-        missing_library="@rpath/libavutil.58.dylib"
-    )
+    message = compat.format_torio_ffmpeg_remediation(missing_library="@rpath/libavutil.58.dylib")
 
     assert "do not upgrade torch" in message.lower()
     assert "brew install ffmpeg@6" in message
@@ -156,9 +147,7 @@ def test_format_torio_ffmpeg_remediation_for_darwin_py313_recommends_lane_switch
     monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(compat.sys, "version_info", (3, 13, 0, "final", 0))
 
-    message = compat.format_torio_ffmpeg_remediation(
-        missing_library="@rpath/libavutil.58.dylib"
-    )
+    message = compat.format_torio_ffmpeg_remediation(missing_library="@rpath/libavutil.58.dylib")
 
     assert "partial fast-profile lane" in message
     assert "setup_compatible_env.sh --python 3.12" in message
@@ -172,8 +161,6 @@ def test_format_torio_ffmpeg_remediation_for_generic_lane_allows_torch_upgrade_p
     monkeypatch.setattr(compat.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(compat.sys, "version_info", (3, 12, 9, "final", 0))
 
-    message = compat.format_torio_ffmpeg_remediation(
-        missing_library="@rpath/libavutil.58.dylib"
-    )
+    message = compat.format_torio_ffmpeg_remediation(missing_library="@rpath/libavutil.58.dylib")
 
     assert "if your environment policy allows torch upgrades" in message.lower()

@@ -18,9 +18,7 @@ def predict_labels(model: object, features: FeatureMatrix) -> list[str]:
 
     labels = np.asarray(predict(features), dtype=object)
     if labels.ndim != 1:
-        raise RuntimeError(
-            "Medium model predict() returned invalid rank; expected 1D labels."
-        )
+        raise RuntimeError("Medium model predict() returned invalid rank; expected 1D labels.")
     if int(labels.shape[0]) != int(features.shape[0]):
         raise RuntimeError(
             "Medium model prediction row count mismatch. "
@@ -42,9 +40,7 @@ def confidence_and_probabilities(
 
     predict_proba = getattr(model, "predict_proba", None)
     if not callable(predict_proba):
-        logger.warning(
-            "Medium model does not expose predict_proba; using confidence fallback."
-        )
+        logger.warning("Medium model does not expose predict_proba; using confidence fallback.")
         return fallback_confidence, fallback_probabilities
 
     classes_attr = getattr(model, "classes_", None)
@@ -54,17 +50,13 @@ def confidence_and_probabilities(
     elif isinstance(classes_attr, list | tuple):
         class_values = list(classes_attr)
     if class_values is None:
-        logger.warning(
-            "Medium model classes_ metadata is unavailable; using confidence fallback."
-        )
+        logger.warning("Medium model classes_ metadata is unavailable; using confidence fallback.")
         return fallback_confidence, fallback_probabilities
 
     try:
         raw_probabilities = np.asarray(predict_proba(features), dtype=np.float64)
     except Exception as err:
-        logger.warning(
-            "Medium model predict_proba failed; using fallback. Error: %s", err
-        )
+        logger.warning("Medium model predict_proba failed; using fallback. Error: %s", err)
         return fallback_confidence, fallback_probabilities
 
     if raw_probabilities.ndim != 2:

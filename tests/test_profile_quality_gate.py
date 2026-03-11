@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -31,9 +32,7 @@ from ser.runtime.quality_gate_reporting import (
 type LabeledAudioSample = tuple[str, str]
 
 
-def _sample_path(
-    *, actor_id: int, emotion_code: str, statement_code: str = "01"
-) -> str:
+def _sample_path(*, actor_id: int, emotion_code: str, statement_code: str = "01") -> str:
     """Builds deterministic RAVDESS-like file path for grouped split tests."""
     return (
         "ser/dataset/ravdess/"
@@ -41,9 +40,7 @@ def _sample_path(
     )
 
 
-def _segments(
-    label: str, *, start: float = 0.0, end: float = 1.0
-) -> list[EmotionSegment]:
+def _segments(label: str, *, start: float = 0.0, end: float = 1.0) -> list[EmotionSegment]:
     """Builds one deterministic segment with chosen label."""
     return [EmotionSegment(label, start, end)]
 
@@ -203,16 +200,9 @@ def test_profile_quality_gate_canonicalizes_overlap_for_temporal_metrics() -> No
         random_state=17,
     )
 
-    assert report.fast.temporal_stability.segment_count_per_minute == pytest.approx(
-        40.0
-    )
-    assert (
-        report.fast.temporal_stability.median_segment_duration_seconds
-        == pytest.approx(1.5)
-    )
-    assert report.medium.temporal_stability.segment_count_per_minute == pytest.approx(
-        40.0
-    )
+    assert report.fast.temporal_stability.segment_count_per_minute == pytest.approx(40.0)
+    assert report.fast.temporal_stability.median_segment_duration_seconds == pytest.approx(1.5)
+    assert report.medium.temporal_stability.segment_count_per_minute == pytest.approx(40.0)
 
 
 def test_clip_label_from_segments_uses_stable_tie_break() -> None:
@@ -224,10 +214,7 @@ def test_clip_label_from_segments_uses_stable_tie_break() -> None:
         ]
     )
 
-    assert (
-        gate_module._clip_label_from_segments(normalized, unknown_label="unknown")
-        == "happy"
-    )
+    assert gate_module._clip_label_from_segments(normalized, unknown_label="unknown") == "happy"
 
 
 def test_profile_quality_gate_counts_failed_clips() -> None:
@@ -316,11 +303,13 @@ def test_parse_args_uses_quality_gate_settings_defaults(
 
 def test_build_fast_predictor_loads_model_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fast gate predictor should preload model once and reuse it for all clips."""
+    settings = gate_module.get_settings()
     loaded_model = object()
     loaded_calls: list[object] = []
     predict_calls: list[tuple[str, object | None]] = []
 
-    def _fake_load_model() -> object:
+    def _fake_load_model(*, settings: object | None = None) -> object:
+        del settings
         loaded_calls.append(loaded_model)
         return loaded_model
 
@@ -342,6 +331,7 @@ def test_build_fast_predictor_loads_model_once(monkeypatch: pytest.MonkeyPatch) 
         model_file_name="fast.pkl",
         secure_model_file_name="fast.skops",
         training_report_file_name="fast_report.json",
+        settings=settings,
     )
 
     assert len(loaded_calls) == 1
@@ -364,7 +354,8 @@ def test_build_medium_predictor_reuses_loaded_resources(
     backend_kwargs: list[dict[str, object]] = []
     run_calls: list[tuple[str, str | None, object, object, bool, bool]] = []
 
-    def _fake_load_model() -> object:
+    def _fake_load_model(*, settings: object | None = None) -> object:
+        del settings
         load_calls.append(loaded_model)
         return loaded_model
 
@@ -404,11 +395,20 @@ def test_build_medium_predictor_reuses_loaded_resources(
         "ser.runtime.profile_quality_gate.run_medium_inference",
         _fake_run_medium_inference,
     )
-    settings = cast(
-        AppConfig,
-        SimpleNamespace(
-            default_language="en",
-            models=SimpleNamespace(huggingface_cache_root=Path("cache/hf")),
+    base_settings = gate_module.get_settings()
+    settings = replace(
+        base_settings,
+        default_language="en",
+        models=replace(
+            base_settings.models,
+            model_cache_dir=Path("cache"),
+            model_file_name="default.pkl",
+            secure_model_file_name="default.skops",
+            training_report_file_name="default_report.json",
+        ),
+        torch_runtime=replace(
+            base_settings.torch_runtime,
+            enable_mps_fallback=False,
         ),
     )
 

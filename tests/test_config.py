@@ -48,22 +48,14 @@ def test_reload_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.tmp_folder == Path("custom/tmp")
     assert settings.models.folder == Path("custom/models")
     assert settings.models.model_cache_dir == Path("custom/model-cache")
-    assert settings.models.huggingface_cache_root == Path(
-        "custom/model-cache/huggingface"
-    )
-    assert settings.models.modelscope_cache_root == Path(
-        "custom/model-cache/modelscope/hub"
-    )
-    assert settings.models.whisper_download_root == Path(
-        "custom/model-cache/OpenAI/whisper"
-    )
+    assert settings.models.huggingface_cache_root == Path("custom/model-cache/huggingface")
+    assert settings.models.modelscope_cache_root == Path("custom/model-cache/modelscope/hub")
+    assert settings.models.whisper_download_root == Path("custom/model-cache/OpenAI/whisper")
     assert settings.models.torch_cache_root == Path("custom/model-cache/torch")
     assert settings.timeline.folder == Path("custom/transcripts")
     assert settings.models.model_file == Path("custom/models/custom_model.pkl")
     assert settings.models.secure_model_file == Path("custom/models/custom_model.skops")
-    assert settings.models.training_report_file == Path(
-        "custom/models/custom_training_report.json"
-    )
+    assert settings.models.training_report_file == Path("custom/models/custom_training_report.json")
     assert settings.models.whisper_model.name == "base"
     assert settings.data_loader.max_workers == 6
     assert settings.data_loader.max_failed_file_ratio == pytest.approx(0.45)
@@ -86,7 +78,7 @@ def test_reload_settings_uses_cpu_fallback(monkeypatch: pytest.MonkeyPatch) -> N
 def test_bootstrap_build_settings_delegates_to_internal_settings_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bootstrap should keep single ownership of settings construction."""
+    """Bootstrap should keep a single delegation path for settings construction."""
     expected = config.reload_settings()
     call_count = 0
 
@@ -110,7 +102,7 @@ def test_bootstrap_build_settings_delegates_to_internal_settings_builder(
 def test_bootstrap_resolve_settings_inputs_delegates_to_internal_resolver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bootstrap should keep single ownership of settings input resolution."""
+    """Bootstrap should keep a single delegation path for settings input resolution."""
     expected = bootstrap._resolve_settings_inputs()
     call_count = 0
 

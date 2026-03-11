@@ -81,13 +81,9 @@ def validate_thresholds(thresholds: ThresholdsLike) -> None:
             raise ValueError("maximum_medium_segments_per_minute must be positive.")
     if thresholds.minimum_medium_median_segment_duration_seconds is not None:
         if not math.isfinite(thresholds.minimum_medium_median_segment_duration_seconds):
-            raise ValueError(
-                "minimum_medium_median_segment_duration_seconds must be finite."
-            )
+            raise ValueError("minimum_medium_median_segment_duration_seconds must be finite.")
         if thresholds.minimum_medium_median_segment_duration_seconds < 0.0:
-            raise ValueError(
-                "minimum_medium_median_segment_duration_seconds must be >= 0."
-            )
+            raise ValueError("minimum_medium_median_segment_duration_seconds must be >= 0.")
 
 
 def compare_profiles(
@@ -103,9 +99,7 @@ def compare_profiles(
     fast_macro_f1 = metric_as_float(fast.metrics, "macro_f1")
     medium_macro_f1 = metric_as_float(medium.metrics, "macro_f1")
     medium_segments_per_minute = medium.temporal_stability.segment_count_per_minute
-    medium_median_segment_duration = (
-        medium.temporal_stability.median_segment_duration_seconds
-    )
+    medium_median_segment_duration = medium.temporal_stability.median_segment_duration_seconds
 
     uar_delta = medium_uar - fast_uar
     macro_f1_delta = medium_macro_f1 - fast_macro_f1

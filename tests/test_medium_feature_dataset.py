@@ -153,12 +153,8 @@ def test_encode_medium_sequence_uses_profile_specific_default_model_id(
         captured.update(kwargs)
         return expected_encoded
 
-    monkeypatch.setattr(
-        mfd, "encode_sequence_with_cache", _fake_encode_sequence_with_cache
-    )
-    monkeypatch.setattr(
-        mfd, "resolve_medium_model_id", lambda _settings: "resolved/xlsr"
-    )
+    monkeypatch.setattr(mfd, "encode_sequence_with_cache", _fake_encode_sequence_with_cache)
+    monkeypatch.setattr(mfd, "resolve_medium_model_id", lambda _settings: "resolved/xlsr")
 
     encoded = mfd.encode_medium_sequence(
         audio_path="clip.wav",

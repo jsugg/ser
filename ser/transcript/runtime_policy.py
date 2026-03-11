@@ -8,9 +8,7 @@ from typing import Literal
 from ser.profiles import TranscriptionBackendId
 from ser.utils.torch_inference import maybe_resolve_torch_runtime
 
-_SUPPORTED_DTYPE_SELECTORS: frozenset[str] = frozenset(
-    {"auto", "float16", "float32", "bfloat16"}
-)
+_SUPPORTED_DTYPE_SELECTORS: frozenset[str] = frozenset({"auto", "float16", "float32", "bfloat16"})
 DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB: float = 16.0
 _BACKEND_SUPPORTED_PRECISIONS: dict[TranscriptionBackendId, frozenset[str]] = {
     "stable_whisper": frozenset({"float16", "float32"}),
@@ -120,9 +118,7 @@ def resolve_transcription_runtime_policy(
 
     supported_device_types = _BACKEND_SUPPORTED_DEVICE_TYPES[backend_id]
     if device_type not in supported_device_types:
-        reason_tokens.append(
-            f"backend_{backend_id}_does_not_support_device_{device_type}"
-        )
+        reason_tokens.append(f"backend_{backend_id}_does_not_support_device_{device_type}")
         device_spec = "cpu"
         device_type = "cpu"
 

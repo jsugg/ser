@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from ser._internal.runtime.process_env import temporary_process_env
 from ser.repr import Emotion2VecBackend
 from ser.utils.logger import (
     DependencyLogFilter,
@@ -138,11 +139,11 @@ def test_emotion2vec_backend_missing_dependency_error_is_actionable(
         _ = backend.feature_dim
 
 
-def test_emotion2vec_backend_configures_modelscope_cache_env(
+def test_emotion2vec_backend_builds_modelscope_cache_env_delta(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """ModelScope hub mode should map MODELSCOPE_CACHE to configured cache root."""
+    """ModelScope hub mode should build one scoped cache-env delta."""
     cache_root = tmp_path / "model-cache" / "modelscope" / "hub"
     backend = Emotion2VecBackend(
         model_id="iic/emotion2vec_plus_large",
@@ -150,18 +151,21 @@ def test_emotion2vec_backend_configures_modelscope_cache_env(
     )
     monkeypatch.setenv("MODELSCOPE_CACHE", "/tmp/legacy-cache")
 
-    backend._configure_model_cache_environment()
+    delta = backend._model_cache_environment_delta()
 
     assert backend._resolve_hub(model_id="iic/emotion2vec_plus_large", hub=None) == "ms"
-    assert os.environ["MODELSCOPE_CACHE"] == str(cache_root)
+    assert delta.values["MODELSCOPE_CACHE"] == str(cache_root)
     assert cache_root.is_dir()
+    with temporary_process_env(delta):
+        assert os.environ["MODELSCOPE_CACHE"] == str(cache_root)
+    assert os.environ["MODELSCOPE_CACHE"] == "/tmp/legacy-cache"
 
 
-def test_emotion2vec_backend_configures_huggingface_cache_env(
+def test_emotion2vec_backend_builds_huggingface_cache_env_delta(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """HuggingFace hub mode should map HF cache variables to configured roots."""
+    """HuggingFace hub mode should build one scoped cache-env delta."""
     hf_root = tmp_path / "model-cache" / "huggingface"
     backend = Emotion2VecBackend(
         model_id="unit-test/emotion2vec-hf",
@@ -171,14 +175,21 @@ def test_emotion2vec_backend_configures_huggingface_cache_env(
     monkeypatch.setenv("HF_HUB_CACHE", "/tmp/hf-hub")
     monkeypatch.setenv("HUGGINGFACE_HUB_CACHE", "/tmp/hf-hub-compat")
 
-    backend._configure_model_cache_environment()
+    delta = backend._model_cache_environment_delta()
 
     assert backend._resolve_hub(model_id="unit-test/emotion2vec-hf", hub=None) == "hf"
-    assert os.environ["HF_HOME"] == str(hf_root)
-    assert os.environ["HF_HUB_CACHE"] == str(hf_root / "hub")
-    assert os.environ["HUGGINGFACE_HUB_CACHE"] == str(hf_root / "hub")
+    assert delta.values["HF_HOME"] == str(hf_root)
+    assert delta.values["HF_HUB_CACHE"] == str(hf_root / "hub")
+    assert delta.values["HUGGINGFACE_HUB_CACHE"] == str(hf_root / "hub")
     assert hf_root.is_dir()
     assert (hf_root / "hub").is_dir()
+    with temporary_process_env(delta):
+        assert os.environ["HF_HOME"] == str(hf_root)
+        assert os.environ["HF_HUB_CACHE"] == str(hf_root / "hub")
+        assert os.environ["HUGGINGFACE_HUB_CACHE"] == str(hf_root / "hub")
+    assert os.environ["HF_HOME"] == "/tmp/hf-home"
+    assert os.environ["HF_HUB_CACHE"] == "/tmp/hf-hub"
+    assert os.environ["HUGGINGFACE_HUB_CACHE"] == "/tmp/hf-hub-compat"
 
 
 def test_emotion2vec_backend_resolves_modelscope_cached_snapshot(
@@ -370,9 +381,7 @@ def test_emotion2vec_backend_suppresses_dependency_noise_outside_debug(
                 logging.getLogger("funasr.auto.auto_model").info(
                     "download models from model hub: ms"
                 )
-                logging.getLogger("funasr.auto.auto_model").warning(
-                    "trust_remote_code: False"
-                )
+                logging.getLogger("funasr.auto.auto_model").warning("trust_remote_code: False")
                 logging.getLogger("other.module").info("unrelated info")
                 print("funasr version: 1.3.1.")
     finally:

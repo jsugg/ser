@@ -39,11 +39,15 @@ def test_predict_emotions_uses_explicit_frame_boundaries(
         _frame(2.0, 4.4, 3.0),
     ]
 
-    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
+    monkeypatch.setattr(
+        em,
+        "extract_feature_frames",
+        lambda _file, *, settings=None: frames,
+    )
     monkeypatch.setattr(
         em,
         "load_model",
-        lambda: em.LoadedModel(
+        lambda *, settings=None, expected_backend_id=None, expected_profile=None, expected_backend_model_id=None: em.LoadedModel(
             model=StaticModel(["angry", "happy", "happy"]),
             expected_feature_size=2,
         ),
@@ -63,11 +67,15 @@ def test_predict_emotions_single_frame_bounds_are_preserved(
     """Single-frame inference should preserve that frame's start and end."""
     frame = _frame(0.25, 0.75, 1.0)
 
-    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: [frame])
+    monkeypatch.setattr(
+        em,
+        "extract_feature_frames",
+        lambda _file, *, settings=None: [frame],
+    )
     monkeypatch.setattr(
         em,
         "load_model",
-        lambda: em.LoadedModel(
+        lambda *, settings=None, expected_backend_id=None, expected_profile=None, expected_backend_model_id=None: em.LoadedModel(
             model=StaticModel(["sad"]),
             expected_feature_size=2,
         ),
@@ -84,11 +92,15 @@ def test_predict_emotions_rejects_frame_prediction_length_mismatch(
     """Mismatch between frame count and prediction count should fail clearly."""
     frames = [_frame(0.0, 1.0, 1.0), _frame(1.0, 2.0, 2.0)]
 
-    monkeypatch.setattr(em, "extract_feature_frames", lambda _file: frames)
+    monkeypatch.setattr(
+        em,
+        "extract_feature_frames",
+        lambda _file, *, settings=None: frames,
+    )
     monkeypatch.setattr(
         em,
         "load_model",
-        lambda: em.LoadedModel(
+        lambda *, settings=None, expected_backend_id=None, expected_profile=None, expected_backend_model_id=None: em.LoadedModel(
             model=StaticModel(["neutral"]),
             expected_feature_size=2,
         ),

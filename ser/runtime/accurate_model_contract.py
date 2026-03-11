@@ -82,9 +82,7 @@ def warn_on_runtime_selector_mismatch(
     backend_override_dtype: str | None,
     profile: str,
     logger: logging.Logger,
-    resolve_runtime_policy: Callable[..., RuntimeSelectorPolicy] = (
-        resolve_feature_runtime_policy
-    ),
+    resolve_runtime_policy: Callable[..., RuntimeSelectorPolicy] = (resolve_feature_runtime_policy),
 ) -> None:
     """Warns when artifact torch selectors differ from current runtime policy."""
     metadata = loaded_model.artifact_metadata
@@ -93,9 +91,7 @@ def warn_on_runtime_selector_mismatch(
 
     artifact_torch_device = metadata.get("torch_device")
     artifact_torch_dtype = metadata.get("torch_dtype")
-    if not isinstance(artifact_torch_device, str) or not isinstance(
-        artifact_torch_dtype, str
-    ):
+    if not isinstance(artifact_torch_device, str) or not isinstance(artifact_torch_dtype, str):
         return
 
     normalized_artifact_device = artifact_torch_device.strip().lower()
@@ -139,9 +135,7 @@ def validate_accurate_loaded_model_runtime_contract(
     expected_backend_model_id: str | None,
     unavailable_error_factory: Callable[[str], Exception],
     logger: logging.Logger,
-    resolve_runtime_policy: Callable[..., RuntimeSelectorPolicy] = (
-        resolve_feature_runtime_policy
-    ),
+    resolve_runtime_policy: Callable[..., RuntimeSelectorPolicy] = (resolve_feature_runtime_policy),
 ) -> None:
     """Validates artifact compatibility and runtime selector alignment together."""
     ensure_accurate_compatible_model(
@@ -157,12 +151,8 @@ def validate_accurate_loaded_model_runtime_contract(
         backend_id=expected_backend_id,
         requested_device=settings.torch_runtime.device,
         requested_dtype=settings.torch_runtime.dtype,
-        backend_override_device=(
-            runtime_override.device if runtime_override is not None else None
-        ),
-        backend_override_dtype=(
-            runtime_override.dtype if runtime_override is not None else None
-        ),
+        backend_override_device=(runtime_override.device if runtime_override is not None else None),
+        backend_override_dtype=(runtime_override.dtype if runtime_override is not None else None),
         profile=expected_profile,
         logger=logger,
         resolve_runtime_policy=resolve_runtime_policy,

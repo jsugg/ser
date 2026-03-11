@@ -116,13 +116,11 @@ def test_stable_whisper_adapter_classify_transcription_failure_delegates_to_help
         staticmethod(lambda _settings: True),
     )
 
-    classification = (
-        stable_whisper.StableWhisperAdapter._classify_transcription_failure(
-            err=RuntimeError("boom"),
-            runtime_device_type="mps",
-            precision="float16",
-            settings=cast(AppConfig, SimpleNamespace()),
-        )
+    classification = stable_whisper.StableWhisperAdapter._classify_transcription_failure(
+        err=RuntimeError("boom"),
+        runtime_device_type="mps",
+        precision="float16",
+        settings=cast(AppConfig, SimpleNamespace()),
     )
 
     assert classification is expected
@@ -133,9 +131,7 @@ def test_stable_whisper_adapter_classify_transcription_failure_delegates_to_help
 
 def test_stable_whisper_runtime_error_summary_helper_is_single_line() -> None:
     """Extracted runtime-summary helper should normalize multiline messages."""
-    summary = runtime_helpers.summarize_runtime_error(
-        RuntimeError("line1\nline2 " + ("x" * 400))
-    )
+    summary = runtime_helpers.summarize_runtime_error(RuntimeError("line1\nline2 " + ("x" * 400)))
 
     assert "\n" not in summary
     assert len(summary) <= 180

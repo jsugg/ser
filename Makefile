@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint topology-contracts clean
+.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint architecture-docs clean
 
 .DEFAULT_GOAL := help
 
@@ -17,7 +17,7 @@ help:
 	@echo "  prepush-check - run canonical pre-push hook command (check-only)"
 	@echo "  prepush-hook - run the git pre-push hook workflow (autofix + abort if files change)"
 	@echo "  import-lint - run public API boundary import-lint lane"
-	@echo "  topology-contracts - run structural ownership contract gates (PR-901..PR-903)"
+	@echo "  architecture-docs - validate architecture docs and architecture doc contracts"
 	@echo "  train    - train model"
 	@echo "  predict  - run prediction (set FILE=sample.wav)"
 	@echo "  optin-all-restricted - persist consent for all known restricted backends"
@@ -61,8 +61,8 @@ prepush-hook:
 import-lint:
 	bash ./scripts/run_import_lint.sh
 
-topology-contracts:
-	bash ./scripts/run_structural_contract_gates.sh
+architecture-docs:
+	uv run --frozen --extra dev pytest -q tests/test_architecture_docs.py
 
 train:
 	uv run ser --train

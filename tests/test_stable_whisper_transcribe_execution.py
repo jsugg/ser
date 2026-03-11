@@ -19,9 +19,7 @@ from ser.transcript.runtime_failures import (
 )
 
 
-def _runtime_request(
-    *, device_type: str, precision: tuple[str, ...]
-) -> BackendRuntimeRequest:
+def _runtime_request(*, device_type: str, precision: tuple[str, ...]) -> BackendRuntimeRequest:
     return BackendRuntimeRequest(
         model_name="large-v3",
         use_demucs=False,
@@ -35,14 +33,10 @@ def _runtime_request(
 
 def test_run_transcribe_retries_next_precision_then_succeeds() -> None:
     """Retry-next-precision should continue and return formatted transcript."""
-    runtime_request = _runtime_request(
-        device_type="cpu", precision=("float16", "float32")
-    )
+    runtime_request = _runtime_request(device_type="cpu", precision=("float16", "float32"))
     release_calls = 0
 
-    def _build_kwargs(
-        request: BackendRuntimeRequest, precision: str
-    ) -> dict[str, object]:
+    def _build_kwargs(request: BackendRuntimeRequest, precision: str) -> dict[str, object]:
         return {"precision": precision, "device_type": request.device_type}
 
     def _invoke_runtime(kwargs: dict[str, object], _runtime_device: str) -> object:
@@ -106,9 +100,7 @@ def test_run_transcribe_terminal_retryable_failure_falls_back_to_cpu() -> None:
 
     model = _Model()
 
-    def _build_kwargs(
-        request: BackendRuntimeRequest, precision: str
-    ) -> dict[str, object]:
+    def _build_kwargs(request: BackendRuntimeRequest, precision: str) -> dict[str, object]:
         kwargs: dict[str, object] = {
             "precision": precision,
             "device_type": request.device_type,

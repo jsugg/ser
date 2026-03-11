@@ -125,9 +125,7 @@ def test_download_snapshot_fails_fast_when_disk_space_is_insufficient(
 
     def _should_not_download(**kwargs: object) -> None:
         del kwargs
-        raise AssertionError(
-            "snapshot_download should not run on disk preflight failure"
-        )
+        raise AssertionError("snapshot_download should not run on disk preflight failure")
 
     monkeypatch.setattr(
         msp_podcast_mirror,

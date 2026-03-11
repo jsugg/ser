@@ -76,17 +76,14 @@ def build_medium_feature_dataset(
         labels.extend([utterance.label] * row_count)
         language = utterance.language or "unknown"
         meta.extend(
-            [window_meta_factory(utterance.sample_id, utterance.corpus, language)]
-            * row_count
+            [window_meta_factory(utterance.sample_id, utterance.corpus, language)] * row_count
         )
         aggregate_stats = merge_noise_stats(aggregate_stats, stats)
 
     if not feature_blocks:
         raise RuntimeError("Medium training produced no feature vectors.")
     feature_matrix = np.vstack(feature_blocks).astype(np.float64, copy=False)
-    if int(feature_matrix.shape[0]) != len(labels) or int(
-        feature_matrix.shape[0]
-    ) != len(meta):
+    if int(feature_matrix.shape[0]) != len(labels) or int(feature_matrix.shape[0]) != len(meta):
         raise RuntimeError("Medium feature/label row mismatch during dataset build.")
     return feature_matrix, labels, meta, aggregate_stats
 
@@ -122,15 +119,12 @@ def build_accurate_feature_dataset(
         labels.extend([utterance.label] * row_count)
         language = utterance.language or "unknown"
         meta.extend(
-            [window_meta_factory(utterance.sample_id, utterance.corpus, language)]
-            * row_count
+            [window_meta_factory(utterance.sample_id, utterance.corpus, language)] * row_count
         )
 
     if not feature_blocks:
         raise RuntimeError("Accurate training produced no feature vectors.")
     feature_matrix = np.vstack(feature_blocks).astype(np.float64, copy=False)
-    if int(feature_matrix.shape[0]) != len(labels) or int(
-        feature_matrix.shape[0]
-    ) != len(meta):
+    if int(feature_matrix.shape[0]) != len(labels) or int(feature_matrix.shape[0]) != len(meta):
         raise RuntimeError("Accurate feature/label row mismatch during dataset build.")
     return feature_matrix, labels, meta

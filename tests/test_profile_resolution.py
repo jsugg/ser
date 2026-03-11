@@ -58,21 +58,12 @@ def test_profile_catalog_contains_backend_and_flag_metadata() -> None:
     assert catalog["accurate"].transcription_env.use_demucs == "WHISPER_DEMUCS"
     assert catalog["accurate"].transcription_env.use_vad == "WHISPER_VAD"
     assert catalog["accurate"].runtime_defaults.timeout_seconds == pytest.approx(120.0)
-    assert (
-        catalog["accurate"].runtime_env.max_timeout_retries
-        == "SER_ACCURATE_MAX_TIMEOUT_RETRIES"
-    )
+    assert catalog["accurate"].runtime_env.max_timeout_retries == "SER_ACCURATE_MAX_TIMEOUT_RETRIES"
     assert catalog["accurate-research"].backend_id == "emotion2vec"
     assert catalog["accurate-research"].feature_runtime_defaults is None
-    assert (
-        catalog["accurate-research"].transcription_defaults.backend_id
-        == "stable_whisper"
-    )
+    assert catalog["accurate-research"].transcription_defaults.backend_id == "stable_whisper"
     assert catalog["accurate-research"].transcription_defaults.model_name == "large"
-    assert (
-        catalog["accurate-research"].enable_flag
-        == "SER_ENABLE_ACCURATE_RESEARCH_PROFILE"
-    )
+    assert catalog["accurate-research"].enable_flag == "SER_ENABLE_ACCURATE_RESEARCH_PROFILE"
     assert "future" not in catalog["medium"].description.lower()
     assert "future" not in catalog["accurate"].description.lower()
 
@@ -90,9 +81,7 @@ def test_settings_model_ids_track_profile_catalog_defaults() -> None:
     catalog = get_profile_catalog()
 
     assert settings.models.medium_model_id == catalog["medium"].model.default_model_id
-    assert (
-        settings.models.accurate_model_id == catalog["accurate"].model.default_model_id
-    )
+    assert settings.models.accurate_model_id == catalog["accurate"].model.default_model_id
     assert (
         settings.models.accurate_research_model_id
         == catalog["accurate-research"].model.default_model_id

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import gc
+import inspect
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
 
-from ser.config import (
-    AppConfig,
-    resolve_profile_transcription_config,
-    settings_override,
-)
+from ser._internal.config.bootstrap import resolve_profile_transcription_config
+from ser._internal.runtime.environment_plan import build_runtime_environment_plan
+from ser._internal.runtime.process_env import temporary_process_env
+from ser.config import AppConfig, settings_override
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile, TranscriptionBackendId, resolve_profile
 from ser.runtime.backend_hooks import build_backend_hooks
@@ -55,6 +55,19 @@ type SaveTimelineCallable = Callable[[list[TimelineEntry], str], str]
 logger = get_logger(__name__)
 
 
+def _invoke_training_entrypoint(
+    train_fn: Callable[..., None],
+    *,
+    settings: AppConfig,
+) -> None:
+    """Calls one training entrypoint with explicit settings when supported."""
+
+    if "settings" in inspect.signature(train_fn).parameters:
+        train_fn(settings=settings)
+        return
+    train_fn()
+
+
 def _resolve_transcription_profile_with_runtime_fallback(
     *,
     backend_id: TranscriptionBackendId,
@@ -63,10 +76,7 @@ def _resolve_transcription_profile_with_runtime_fallback(
     use_vad: bool,
 ) -> tuple[TranscriptionBackendId, str, bool, bool]:
     """Applies deterministic runtime compatibility policy for transcription."""
-    if (
-        backend_id == "faster_whisper"
-        and has_known_faster_whisper_openmp_runtime_conflict()
-    ):
+    if backend_id == "faster_whisper" and has_known_faster_whisper_openmp_runtime_conflict():
         logger.info(
             "Transcription backend retained: faster_whisper "
             "(reason=openmp_runtime_conflict, mode=process_isolation)."
@@ -125,13 +135,21 @@ class RuntimePipeline:
     def run_training(self) -> None:
         """Runs the model training workflow."""
         ensure_profile_supported(self.capability)
-        with settings_override(self.settings):
+        runtime_environment = build_runtime_environment_plan(self.settings)
+        with (
+            settings_override(self.settings),
+            temporary_process_env(runtime_environment.torch_runtime),
+        ):
             self.train_model()
 
     def run_inference(self, request: InferenceRequest) -> InferenceExecution:
         """Runs inference and timeline generation for one audio file."""
         ensure_profile_supported(self.capability)
-        with settings_override(self.settings):
+        runtime_environment = build_runtime_environment_plan(self.settings)
+        with (
+            settings_override(self.settings),
+            temporary_process_env(runtime_environment.torch_runtime),
+        ):
             phase_timings: dict[str, float] = {}
             detailed_result: InferenceResult | None = None
             backend_id: str = self.capability.backend_id
@@ -153,9 +171,7 @@ class RuntimePipeline:
             transcript: list[TranscriptWord]
             if request.include_transcript:
                 _release_torch_runtime_memory_before_transcription()
-                transcript = self.extract_transcript(
-                    request.file_path, request.language
-                )
+                transcript = self.extract_transcript(request.file_path, request.language)
             else:
                 transcript = []
 
@@ -199,9 +215,7 @@ class RuntimePipeline:
                 raise
             timeline_csv_path: str | None = None
             if request.save_transcript:
-                timeline_csv_path = self.save_timeline_to_csv(
-                    timeline, request.file_path
-                )
+                timeline_csv_path = self.save_timeline_to_csv(timeline, request.file_path)
             phase_timings[PHASE_TIMELINE_OUTPUT] = log_phase_completed(
                 logger,
                 phase_name=PHASE_TIMELINE_OUTPUT,
@@ -224,12 +238,10 @@ class RuntimePipeline:
 
 def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
     """Creates a runtime pipeline configured from application settings."""
-    backend_hooks: dict[str, Callable[[InferenceRequest], InferenceResult]] = (
-        build_backend_hooks(settings)
+    backend_hooks: dict[str, Callable[[InferenceRequest], InferenceResult]] = build_backend_hooks(
+        settings
     )
-    implemented_backends: frozenset[str] = frozenset(
-        {"handcrafted", *backend_hooks.keys()}
-    )
+    implemented_backends: frozenset[str] = frozenset({"handcrafted", *backend_hooks.keys()})
     profile: RuntimeProfile = resolve_profile(settings)
     capability: RuntimeCapability = resolve_runtime_capability(
         settings,
@@ -250,14 +262,17 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         save_timeline_to_csv,
     )
 
-    if capability.profile == "medium":
-        selected_train_model: Callable[[], None] = train_medium_model
-    elif capability.profile == "accurate":
-        selected_train_model = train_accurate_model
-    elif capability.profile == "accurate-research":
-        selected_train_model = train_accurate_research_model
-    else:
-        selected_train_model = train_model
+    def selected_train_model() -> None:
+        """Runs the profile-selected training entrypoint with explicit settings."""
+        if capability.profile == "medium":
+            _invoke_training_entrypoint(train_medium_model, settings=settings)
+        elif capability.profile == "accurate":
+            _invoke_training_entrypoint(train_accurate_model, settings=settings)
+        elif capability.profile == "accurate-research":
+            _invoke_training_entrypoint(train_accurate_research_model, settings=settings)
+        else:
+            _invoke_training_entrypoint(train_model, settings=settings)
+
     (
         transcription_backend_id,
         transcription_model_name,
@@ -286,15 +301,26 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         file_path: str,
         language: str | None,
     ) -> list[TranscriptWord]:
-        return extract_transcript(file_path, language, profile=transcription_profile)
+        return extract_transcript(
+            file_path,
+            language,
+            profile=transcription_profile,
+            settings=settings,
+        )
+
+    def predict_emotions_for_settings(file_path: str) -> list[EmotionSegment]:
+        return predict_emotions(file_path, settings=settings)
+
+    def predict_emotions_detailed_for_settings(file_path: str) -> InferenceResult:
+        return predict_emotions_detailed(file_path, settings=settings)
 
     return RuntimePipeline(
         settings=settings,
         profile=profile,
         capability=capability,
         train_model=selected_train_model,
-        predict_emotions=predict_emotions,
-        predict_emotions_detailed=predict_emotions_detailed,
+        predict_emotions=predict_emotions_for_settings,
+        predict_emotions_detailed=predict_emotions_detailed_for_settings,
         backend_inference=backend_hooks.get(capability.backend_id),
         extract_transcript=extract_transcript_for_profile,
         build_timeline=build_timeline,

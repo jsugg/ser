@@ -16,9 +16,7 @@ type FeatureBackendId = Literal["handcrafted", "hf_xlsr", "hf_whisper", "emotion
 _KNOWN_BACKEND_IDS: frozenset[str] = frozenset(
     {"handcrafted", "hf_xlsr", "hf_whisper", "emotion2vec"}
 )
-_KNOWN_DTYPE_SELECTORS: frozenset[str] = frozenset(
-    {"auto", "float16", "float32", "bfloat16"}
-)
+_KNOWN_DTYPE_SELECTORS: frozenset[str] = frozenset({"auto", "float16", "float32", "bfloat16"})
 
 
 @dataclass(frozen=True)

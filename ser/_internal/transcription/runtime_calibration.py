@@ -154,9 +154,7 @@ def derive_runtime_recommendation_from_metrics(
     if metrics.iterations <= 0:
         return ("prefer_cpu", "low", "No calibration runs were executed.")
     if metrics.mps_loaded_runs == 0:
-        confidence: RecommendationConfidence = (
-            "high" if metrics.iterations >= 2 else "medium"
-        )
+        confidence: RecommendationConfidence = "high" if metrics.iterations >= 2 else "medium"
         return (
             "prefer_cpu",
             confidence,
