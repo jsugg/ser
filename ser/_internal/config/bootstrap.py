@@ -9,7 +9,6 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Literal, cast
 
-from ser._internal.config import runtime_environment as runtime_environment_helpers
 from ser._internal.config.schema import (
     AppConfig,
     ArtifactProfileName,
@@ -48,9 +47,7 @@ def _parse_manifest_paths(raw_value: str) -> tuple[Path, ...]:
     """Parses comma-separated dataset manifest paths."""
     if not raw_value:
         return ()
-    return tuple(
-        Path(item.strip()).expanduser() for item in raw_value.split(",") if item.strip()
-    )
+    return tuple(Path(item.strip()).expanduser() for item in raw_value.split(",") if item.strip())
 
 
 def _resolve_optional_path(raw_value: str) -> Path | None:
@@ -172,11 +169,7 @@ def _read_torch_dtype_env(name: str, default: str = "auto") -> str:
     if raw_value is None:
         return default
     normalized = raw_value.strip().lower()
-    return (
-        normalized
-        if normalized in {"auto", "float32", "float16", "bfloat16"}
-        else default
-    )
+    return normalized if normalized in {"auto", "float32", "float16", "bfloat16"} else default
 
 
 def _read_confidence_level_env(
@@ -206,9 +199,7 @@ def resolve_profile_transcription_config(
         else None
     )
     backend_id_raw = (
-        defaults.backend_id
-        if backend_override is None
-        else backend_override.strip().lower()
+        defaults.backend_id if backend_override is None else backend_override.strip().lower()
     )
     if backend_id_raw in {"stable_whisper", "faster_whisper"}:
         backend_id = cast(TranscriptionBackendId, backend_id_raw)
@@ -281,31 +272,17 @@ def get_settings() -> AppConfig:
 def settings_override(settings: AppConfig) -> Iterator[AppConfig]:
     """Temporarily overrides active settings in the current execution context."""
     token = _SETTINGS_OVERRIDE.set(settings)
-    runtime_environment_helpers.sync_torch_runtime_environment(
-        enable_mps_fallback=settings.torch_runtime.enable_mps_fallback,
-        environ=os.environ,
-        pytorch_enable_mps_fallback_env=_PYTORCH_ENABLE_MPS_FALLBACK_ENV,
-    )
     try:
         yield settings
     finally:
         _SETTINGS_OVERRIDE.reset(token)
-        restored_settings = get_settings()
-        runtime_environment_helpers.sync_torch_runtime_environment(
-            enable_mps_fallback=restored_settings.torch_runtime.enable_mps_fallback,
-            environ=os.environ,
-            pytorch_enable_mps_fallback_env=_PYTORCH_ENABLE_MPS_FALLBACK_ENV,
-        )
 
 
 def apply_settings(settings: AppConfig) -> AppConfig:
     """Applies an explicit settings snapshot as the active process settings."""
-    _SETTINGS_OVERRIDE.set(settings)
-    runtime_environment_helpers.sync_torch_runtime_environment(
-        enable_mps_fallback=settings.torch_runtime.enable_mps_fallback,
-        environ=os.environ,
-        pytorch_enable_mps_fallback_env=_PYTORCH_ENABLE_MPS_FALLBACK_ENV,
-    )
+    global _SETTINGS
+    _SETTINGS = settings
+    _SETTINGS_OVERRIDE.set(None)
     return settings
 
 
@@ -314,11 +291,6 @@ def reload_settings() -> AppConfig:
     global _SETTINGS
     _SETTINGS = _build_settings()
     _SETTINGS_OVERRIDE.set(None)
-    runtime_environment_helpers.sync_torch_runtime_environment(
-        enable_mps_fallback=_SETTINGS.torch_runtime.enable_mps_fallback,
-        environ=os.environ,
-        pytorch_enable_mps_fallback_env=_PYTORCH_ENABLE_MPS_FALLBACK_ENV,
-    )
     return _SETTINGS
 
 

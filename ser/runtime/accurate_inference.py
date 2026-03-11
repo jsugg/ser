@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-import random
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
@@ -15,42 +14,18 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ser._internal.runtime.single_flight import SingleFlightRegistry
-from ser._internal.runtime.worker_bindings import (
-    is_setup_complete_message as _is_setup_complete_message_binding,
-)
-from ser._internal.runtime.worker_bindings import (
-    parse_worker_completion_message as _parse_worker_completion_message_binding,
-)
-from ser._internal.runtime.worker_bindings import (
-    raise_worker_error as _raise_worker_error_binding,
-)
-from ser._internal.runtime.worker_bindings import (
-    recv_worker_message as _recv_worker_message_binding,
-)
-from ser._internal.runtime.worker_bindings import (
-    run_worker_entry as _run_worker_entry_binding,
-)
-from ser._internal.runtime.worker_bindings import (
-    terminate_worker_process as _terminate_worker_process_binding,
-)
 from ser._internal.runtime.worker_lifecycle import (
     is_setup_complete_message as _is_setup_complete_message_impl,
 )
 from ser._internal.runtime.worker_lifecycle import (
     parse_worker_completion_message as _parse_worker_completion_message_impl,
 )
-from ser._internal.runtime.worker_lifecycle import (
-    raise_worker_error as _raise_worker_error_impl,
-)
-from ser._internal.runtime.worker_lifecycle import (
-    recv_worker_message as _recv_worker_message_impl,
-)
+from ser._internal.runtime.worker_lifecycle import raise_worker_error as _raise_worker_error_impl
+from ser._internal.runtime.worker_lifecycle import recv_worker_message as _recv_worker_message_impl
 from ser._internal.runtime.worker_lifecycle import (
     run_process_setup_compute_handshake as _run_process_setup_compute_handshake_impl,
 )
-from ser._internal.runtime.worker_lifecycle import (
-    run_with_timeout as _run_with_timeout_impl,
-)
+from ser._internal.runtime.worker_lifecycle import run_with_timeout as _run_with_timeout_impl
 from ser._internal.runtime.worker_lifecycle import (
     terminate_worker_process as _terminate_worker_process_impl,
 )
@@ -60,7 +35,6 @@ from ser.models.profile_runtime import (
     resolve_accurate_model_id,
     resolve_accurate_research_model_id,
 )
-from ser.pool import mean_std_pool, temporal_pooling_windows
 from ser.repr import (
     Emotion2VecBackend,
     EncodedSequence,
@@ -74,29 +48,71 @@ from ser.runtime.accurate_backend_runtime import (
     build_backend_for_profile as _build_backend_for_profile_impl,
 )
 from ser.runtime.accurate_backend_runtime import (
-    prepare_accurate_backend_runtime as _prepare_accurate_backend_runtime_impl,
-)
-from ser.runtime.accurate_backend_runtime import (
     runtime_config_for_profile as _runtime_config_for_profile_impl,
 )
-from ser.runtime.accurate_backend_runtime import (
-    settings_with_torch_device as _settings_with_torch_device_impl,
+from ser.runtime.accurate_execution import (
+    pooling_windows_from_encoded_frames as _pooling_windows_from_encoded_frames_impl,
+)
+from ser.runtime.accurate_execution import (
+    run_accurate_inference_once as _run_accurate_inference_once_impl,
+)
+from ser.runtime.accurate_execution_flow import (
+    execute_accurate_inference_with_retry as _execute_accurate_inference_with_retry_impl,
+)
+from ser.runtime.accurate_execution_flow import (
+    run_accurate_retryable_operation as _run_accurate_retryable_operation_impl,
 )
 from ser.runtime.accurate_model_contract import (
     validate_accurate_loaded_model_runtime_contract as _validate_accurate_loaded_model_runtime_contract_impl,
+)
+from ser.runtime.accurate_operation_setup import (
+    prepare_in_process_operation as _prepare_in_process_operation_orchestration,
+)
+from ser.runtime.accurate_operation_setup import (
+    prepare_process_operation as _prepare_process_operation_orchestration,
+)
+from ser.runtime.accurate_operation_setup import (
+    run_process_operation as _run_process_operation_orchestration,
 )
 from ser.runtime.accurate_prediction import (
     confidence_and_probabilities as _confidence_and_probabilities_impl,
 )
 from ser.runtime.accurate_prediction import predict_labels as _predict_labels_impl
-from ser.runtime.accurate_process_timeout import (
-    run_with_process_timeout as _run_with_process_timeout_orchestration,
-)
 from ser.runtime.accurate_retry_operation import (
     run_accurate_inference_with_retry_policy as _run_accurate_retry_policy_impl,
 )
-from ser.runtime.accurate_retry_operation import (
-    run_accurate_retry_operation as _run_accurate_retry_operation_impl,
+from ser.runtime.accurate_runtime_support import (
+    build_cpu_settings_snapshot as _build_cpu_settings_snapshot_impl,
+)
+from ser.runtime.accurate_runtime_support import (
+    build_process_settings_snapshot as _build_process_settings_snapshot_impl,
+)
+from ser.runtime.accurate_runtime_support import (
+    encode_accurate_sequence as _encode_accurate_sequence_impl,
+)
+from ser.runtime.accurate_runtime_support import (
+    prepare_accurate_backend_runtime as _prepare_accurate_backend_runtime_support_impl,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    is_setup_complete_message as _is_setup_complete_message_orchestration,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    parse_worker_completion_message as _parse_worker_completion_message_orchestration,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    raise_worker_error as _raise_worker_error_orchestration,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    recv_worker_message as _recv_worker_message_orchestration,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    run_with_process_timeout as _run_with_process_timeout_orchestration_impl,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    run_worker_entry as _run_worker_entry_orchestration,
+)
+from ser.runtime.accurate_worker_lifecycle import (
+    terminate_worker_process as _terminate_worker_process_orchestration,
 )
 from ser.runtime.accurate_worker_operation import (
     AccurateRetryOperationState,
@@ -106,11 +122,9 @@ from ser.runtime.accurate_worker_operation import (
 from ser.runtime.accurate_worker_operation import (
     finalize_in_process_setup as _finalize_in_process_setup_impl,
 )
+from ser.runtime.accurate_worker_operation import prepare_retry_state as _prepare_retry_state_impl
 from ser.runtime.accurate_worker_operation import (
-    prepare_in_process_operation as _prepare_in_process_operation_impl,
-)
-from ser.runtime.accurate_worker_operation import (
-    prepare_retry_state as _prepare_retry_state_impl,
+    run_inference_operation as _run_inference_operation_impl,
 )
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
@@ -120,15 +134,10 @@ from ser.runtime.phase_timing import (
     log_phase_started,
 )
 from ser.runtime.policy import run_with_retry_policy
-from ser.runtime.postprocessing import (
-    build_segment_postprocessing_config,
-    postprocess_frame_predictions,
+from ser.runtime.retry_primitives import (
+    jittered_retry_delay_seconds as _jittered_retry_delay_seconds_impl,
 )
-from ser.runtime.schema import (
-    OUTPUT_SCHEMA_VERSION,
-    FramePrediction,
-    InferenceResult,
-)
+from ser.runtime.schema import InferenceResult
 from ser.utils.audio_utils import read_audio_file
 from ser.utils.logger import get_logger
 
@@ -237,10 +246,7 @@ def run_accurate_inference(
         unsupported_profile_error=AccurateModelUnavailableError,
     )
     resolved_expected_backend_model_id = expected_backend_model_id
-    if (
-        resolved_expected_backend_model_id is None
-        and expected_backend_id == "hf_whisper"
-    ):
+    if resolved_expected_backend_model_id is None and expected_backend_id == "hf_whisper":
         resolved_expected_backend_model_id = resolve_accurate_model_id(settings)
     use_process_isolation = (
         enforce_timeout
@@ -253,12 +259,12 @@ def run_accurate_inference(
     if use_process_isolation:
         process_payload = AccurateProcessPayload(
             request=request,
-            settings=_build_process_settings_snapshot(settings),
+            settings=_build_process_settings_snapshot_impl(settings),
             expected_backend_id=expected_backend_id,
             expected_profile=expected_profile,
             expected_backend_model_id=resolved_expected_backend_model_id,
         )
-    cpu_settings = _settings_with_torch_device_impl(settings, device="cpu")
+    cpu_settings = _build_cpu_settings_snapshot_impl(settings)
     cpu_backend_builder: Callable[[], FeatureBackend] = partial(
         _build_backend_for_profile,
         expected_backend_id=expected_backend_id,
@@ -322,66 +328,57 @@ def _execute_accurate_inference_with_retry(
     cpu_backend_builder: Callable[[], FeatureBackend],
 ) -> InferenceResult:
     """Finalizes setup and executes accurate inference under retry policy."""
-    _finalize_in_process_setup_impl(
-        use_process_isolation=use_process_isolation,
-        state=retry_state,
-        setup_started_at=setup_started_at,
-        logger=logger,
-        profile=expected_profile,
-        setup_phase_name=PHASE_EMOTION_SETUP,
-        prepare_accurate_backend_runtime=_prepare_accurate_backend_runtime,
-        log_phase_completed=log_phase_completed,
-        log_phase_failed=log_phase_failed,
-        runtime_error_factory=RuntimeError,
-    )
-    on_transient_failure = build_transient_failure_handler(
-        state=retry_state,
-        use_process_isolation=use_process_isolation,
-        injected_backend=backend,
-        expected_backend_id=expected_backend_id,
-        policy_device=settings.torch_runtime.device,
-        logger=logger,
-        should_retry_on_cpu_after_transient_failure=(
-            mps_oom_helpers.is_mps_out_of_memory_error
-        ),
-        summarize_transient_failure=mps_oom_helpers.summarize_mps_oom_memory,
-        process_payload_cpu_fallback=_payload_with_cpu_settings,
-        in_process_cpu_backend_builder=cpu_backend_builder,
-        prepare_accurate_backend_runtime=_prepare_accurate_backend_runtime,
-        runtime_error_factory=RuntimeError,
-    )
     return cast(
         InferenceResult,
-        _run_accurate_retry_policy_impl(
-            operation=partial(
-                _run_accurate_retryable_operation,
-                enforce_timeout=enforce_timeout,
-                use_process_isolation=use_process_isolation,
-                retry_state=retry_state,
-                prepared_operation=prepared_operation,
-                timeout_seconds=runtime_config.timeout_seconds,
-                expected_profile=expected_profile,
-            ),
-            runtime_config=runtime_config,
+        _execute_accurate_inference_with_retry_impl(
+            use_process_isolation=use_process_isolation,
+            retry_state=retry_state,
+            prepared_operation=prepared_operation,
+            setup_started_at=setup_started_at,
+            settings=settings,
+            timeout_seconds=runtime_config.timeout_seconds,
+            backend=backend,
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
             allow_retries=allow_retries,
-            profile_label="Accurate",
-            timeout_error_type=AccurateInferenceTimeoutError,
-            transient_error_type=AccurateTransientBackendError,
-            transient_exhausted_error=lambda _err: AccurateInferenceExecutionError(
-                "Accurate inference exhausted retry budget after backend failures."
-            ),
-            retry_delay_seconds=_retry_delay_seconds,
             logger=logger,
-            on_transient_failure=on_transient_failure,
+            setup_phase_name=PHASE_EMOTION_SETUP,
+            finalize_in_process_setup=_finalize_in_process_setup_impl,
+            prepare_accurate_backend_runtime=lambda active_backend: (
+                _prepare_accurate_backend_runtime_support_impl(
+                    active_backend,
+                    dependency_error_factory=AccurateRuntimeDependencyError,
+                    transient_error_factory=AccurateTransientBackendError,
+                )
+            ),
+            log_phase_started=log_phase_started,
+            log_phase_completed=log_phase_completed,
+            log_phase_failed=log_phase_failed,
+            build_transient_failure_handler=build_transient_failure_handler,
+            should_retry_on_cpu_after_transient_failure=(
+                mps_oom_helpers.is_mps_out_of_memory_error
+            ),
+            summarize_transient_failure=mps_oom_helpers.summarize_mps_oom_memory,
+            process_payload_cpu_fallback=_payload_with_cpu_settings,
+            cpu_backend_builder=cpu_backend_builder,
+            run_retry_policy=_run_accurate_retry_policy_impl,
+            retry_delay_seconds=_retry_delay_seconds,
             run_with_retry_policy=run_with_retry_policy,
             passthrough_error_types=(
                 AccurateRuntimeDependencyError,
                 ValueError,
                 AccurateInferenceExecutionError,
             ),
+            run_accurate_retryable_operation=_run_accurate_retryable_operation,
+            timeout_error_type=AccurateInferenceTimeoutError,
+            transient_error_type=AccurateTransientBackendError,
+            transient_exhausted_error=lambda _err: AccurateInferenceExecutionError(
+                "Accurate inference exhausted retry budget after backend failures."
+            ),
             runtime_error_factory=lambda _err: AccurateInferenceExecutionError(
                 "Accurate inference failed with a non-retryable runtime error."
             ),
+            enforce_timeout=enforce_timeout,
         ),
     )
 
@@ -398,46 +395,25 @@ def _run_accurate_retryable_operation(
     """Runs one accurate inference attempt using the current retry state."""
     return cast(
         InferenceResult,
-        _run_accurate_retry_operation_impl(
+        _run_accurate_retryable_operation_impl(
             enforce_timeout=enforce_timeout,
             use_process_isolation=use_process_isolation,
-            process_payload=retry_state.process_payload,
+            retry_state=retry_state,
+            prepared_operation=prepared_operation,
             timeout_seconds=timeout_seconds,
             expected_profile=expected_profile,
             logger=logger,
-            run_with_process_timeout=partial(
-                _run_with_process_timeout,
-                timeout_seconds=timeout_seconds,
-            ),
-            run_once_inprocess=partial(
-                _run_inprocess_accurate_operation,
-                prepared_operation=prepared_operation,
-                retry_state=retry_state,
-            ),
-            run_with_timeout=_run_with_timeout_impl,
-            timeout_error_factory=AccurateInferenceTimeoutError,
+            inference_phase_name=PHASE_EMOTION_INFERENCE,
             log_phase_started=log_phase_started,
             log_phase_completed=log_phase_completed,
             log_phase_failed=log_phase_failed,
-            phase_name=PHASE_EMOTION_INFERENCE,
+            run_with_process_timeout=_run_with_process_timeout,
+            run_accurate_inference_once=_run_accurate_inference_once,
+            run_with_timeout=_run_with_timeout_impl,
+            run_inference_operation=_run_inference_operation_impl,
+            timeout_error_factory=AccurateInferenceTimeoutError,
+            runtime_error_factory=RuntimeError,
         ),
-    )
-
-
-def _run_inprocess_accurate_operation(
-    *,
-    prepared_operation: _PreparedAccurateOperation | None,
-    retry_state: AccurateRetryOperationState[AccurateProcessPayload, FeatureBackend],
-) -> InferenceResult:
-    """Runs one in-process accurate attempt using the current active backend."""
-    if prepared_operation is None or retry_state.active_backend is None:
-        raise RuntimeError("Accurate inference operation prerequisites are missing.")
-    return _run_accurate_inference_once(
-        loaded_model=prepared_operation.loaded_model,
-        backend=retry_state.active_backend,
-        audio=prepared_operation.audio,
-        sample_rate=prepared_operation.sample_rate,
-        runtime_config=prepared_operation.runtime_config,
     )
 
 
@@ -447,10 +423,7 @@ def _payload_with_cpu_settings(
     """Returns one process payload updated to use CPU torch selectors."""
     return replace(
         payload,
-        settings=_settings_with_torch_device_impl(
-            payload.settings,
-            device="cpu",
-        ),
+        settings=_build_cpu_settings_snapshot_impl(payload.settings),
     )
 
 
@@ -463,47 +436,29 @@ def _run_accurate_inference_once(
     runtime_config: ProfileRuntimeConfig,
 ) -> InferenceResult:
     """Runs one accurate inference attempt without retry control."""
-    encoded = _encode_accurate_sequence(
-        backend=backend, audio=audio, sample_rate=sample_rate
+    encoded = _encode_accurate_sequence_impl(
+        backend=backend,
+        audio=audio,
+        sample_rate=sample_rate,
+        dependency_error_factory=AccurateRuntimeDependencyError,
+        transient_error_factory=AccurateTransientBackendError,
     )
-    windows = _pooling_windows_from_encoded_frames(
-        encoded,
+    return _run_accurate_inference_once_impl(
+        loaded_model=loaded_model,
+        encoded=encoded,
         runtime_config=runtime_config,
-    )
-    feature_matrix = mean_std_pool(encoded, windows)
-
-    expected_size = loaded_model.expected_feature_size
-    if expected_size is not None and int(feature_matrix.shape[1]) != expected_size:
-        raise ValueError(
-            "Feature vector size mismatch for accurate-profile model. "
-            f"Expected {expected_size}, got {int(feature_matrix.shape[1])}."
-        )
-
-    predictions = _predict_labels_impl(loaded_model.model, feature_matrix)
-    confidences, probabilities = _confidence_and_probabilities_impl(
-        loaded_model.model,
-        feature_matrix,
-        expected_rows=len(windows),
-        logger=logger,
-    )
-
-    frame_predictions = [
-        FramePrediction(
-            start_seconds=window.start_seconds,
-            end_seconds=window.end_seconds,
-            emotion=predictions[index],
-            confidence=confidences[index],
-            probabilities=probabilities[index],
-        )
-        for index, window in enumerate(windows)
-    ]
-    return InferenceResult(
-        schema_version=OUTPUT_SCHEMA_VERSION,
-        segments=postprocess_frame_predictions(
-            frame_predictions,
-            config=build_segment_postprocessing_config(runtime_config),
+        predict_labels=lambda model, features: _predict_labels_impl(
+            model=model,
+            features=features,
         ),
-        frames=frame_predictions,
+        confidence_and_probabilities=lambda model, features, expected_rows: (
+            _confidence_and_probabilities_impl(
+                model=model,
+                features=features,
+                expected_rows=expected_rows,
+                logger=logger,
+            )
+        ),
     )
 
 
@@ -513,7 +468,7 @@ def _run_with_process_timeout(
     timeout_seconds: float,
 ) -> InferenceResult:
     """Runs one process-isolated attempt with timeout applied only to compute."""
-    return _run_with_process_timeout_orchestration(
+    return _run_with_process_timeout_orchestration_impl(
         payload=payload,
         timeout_seconds=timeout_seconds,
         get_context=mp.get_context,
@@ -540,9 +495,9 @@ def _recv_worker_message(
     connection: Connection,
     *,
     stage: str,
-) -> WorkerMessage:
+) -> tuple[object, ...]:
     """Receives one worker message and validates tuple envelope shape."""
-    return _recv_worker_message_binding(
+    return _recv_worker_message_orchestration(
         connection=connection,
         stage=stage,
         impl=_recv_worker_message_impl,
@@ -551,9 +506,9 @@ def _recv_worker_message(
     )
 
 
-def _is_setup_complete_message(message: WorkerMessage) -> bool:
+def _is_setup_complete_message(message: tuple[object, ...]) -> bool:
     """Returns whether one worker message marks setup completion."""
-    return _is_setup_complete_message_binding(
+    return _is_setup_complete_message_orchestration(
         message=message,
         impl=_is_setup_complete_message_impl,
         worker_label="Accurate inference",
@@ -561,9 +516,9 @@ def _is_setup_complete_message(message: WorkerMessage) -> bool:
     )
 
 
-def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
+def _parse_worker_completion_message(worker_message: tuple[object, ...]) -> InferenceResult:
     """Parses one worker completion message and returns inference result."""
-    return _parse_worker_completion_message_binding(
+    return _parse_worker_completion_message_orchestration(
         worker_message=worker_message,
         impl=_parse_worker_completion_message_impl,
         worker_label="Accurate inference",
@@ -578,7 +533,7 @@ def _worker_entry(
     connection: Connection,
 ) -> None:
     """Executes one inference operation inside child process."""
-    _run_worker_entry_binding(
+    _run_worker_entry_orchestration(
         payload=payload,
         connection=connection,
         prepare_process_operation=_prepare_process_operation,
@@ -598,7 +553,7 @@ def _prepare_in_process_accurate_operation(
     expected_backend_model_id: str | None,
 ) -> _PreparedAccurateOperation:
     """Prepares one in-process accurate operation using runtime-specific contracts."""
-    return _prepare_in_process_operation_impl(
+    return _prepare_in_process_operation_orchestration(
         request=request,
         settings=settings,
         runtime_config=runtime_config,
@@ -640,76 +595,67 @@ def _prepare_process_operation(
     payload: AccurateProcessPayload,
 ) -> _PreparedAccurateOperation:
     """Performs untimed setup for one process-isolated accurate operation."""
-    settings = payload.settings
-    runtime_config = _runtime_config_for_profile_impl(
-        settings=settings,
-        expected_profile=payload.expected_profile,
-        unsupported_profile_error=AccurateModelUnavailableError,
-    )
-    try:
-        loaded_model = load_model(
-            settings=settings,
-            expected_backend_id=payload.expected_backend_id,
-            expected_profile=payload.expected_profile,
-            expected_backend_model_id=payload.expected_backend_model_id,
-        )
-    except FileNotFoundError as err:
-        raise AccurateModelUnavailableError(str(err)) from err
-    except ValueError as err:
-        raise AccurateModelLoadError(
-            "Failed to load accurate-profile model artifact from configured paths."
-        ) from err
-    _validate_accurate_loaded_model_runtime_contract_impl(
-        loaded_model,
-        settings=settings,
-        expected_backend_id=payload.expected_backend_id,
-        expected_profile=payload.expected_profile,
-        expected_backend_model_id=payload.expected_backend_model_id,
-        unavailable_error_factory=AccurateModelUnavailableError,
-        logger=logger,
-        resolve_runtime_policy=resolve_feature_runtime_policy,
-    )
-    audio, sample_rate = read_audio_file(
-        payload.request.file_path,
-        audio_read_config=payload.settings.audio_read,
-    )
-    audio_array = np.asarray(audio, dtype=np.float32)
-    backend = _build_backend_for_profile(
-        expected_backend_id=payload.expected_backend_id,
-        expected_backend_model_id=payload.expected_backend_model_id,
-        settings=settings,
-    )
-    _prepare_accurate_backend_runtime_impl(
-        backend=backend,
-        is_dependency_error=_is_dependency_error,
-        dependency_error_factory=AccurateRuntimeDependencyError,
-        transient_error_factory=AccurateTransientBackendError,
-    )
-    return PreparedAccurateOperation(
-        loaded_model=loaded_model,
-        backend=backend,
-        audio=audio_array,
-        sample_rate=sample_rate,
-        runtime_config=runtime_config,
+    return _prepare_process_operation_orchestration(
+        payload=payload,
+        resolve_runtime_config=lambda settings, expected_profile: (
+            _runtime_config_for_profile_impl(
+                settings=settings,
+                expected_profile=expected_profile,
+                unsupported_profile_error=AccurateModelUnavailableError,
+            )
+        ),
+        load_accurate_model=lambda active_payload: load_model(
+            settings=active_payload.settings,
+            expected_backend_id=active_payload.expected_backend_id,
+            expected_profile=active_payload.expected_profile,
+            expected_backend_model_id=active_payload.expected_backend_model_id,
+        ),
+        validate_loaded_model=lambda loaded_model, active_payload: (
+            _validate_accurate_loaded_model_runtime_contract_impl(
+                loaded_model,
+                settings=active_payload.settings,
+                expected_backend_id=active_payload.expected_backend_id,
+                expected_profile=active_payload.expected_profile,
+                expected_backend_model_id=active_payload.expected_backend_model_id,
+                unavailable_error_factory=AccurateModelUnavailableError,
+                logger=logger,
+                resolve_runtime_policy=resolve_feature_runtime_policy,
+            )
+        ),
+        read_audio_file=partial(
+            read_audio_file,
+            audio_read_config=payload.settings.audio_read,
+        ),
+        build_backend_for_payload=lambda active_payload: _build_backend_for_profile(
+            expected_backend_id=active_payload.expected_backend_id,
+            expected_backend_model_id=active_payload.expected_backend_model_id,
+            settings=active_payload.settings,
+        ),
+        prepare_accurate_backend_runtime=lambda backend: (
+            _prepare_accurate_backend_runtime_support_impl(
+                backend,
+                dependency_error_factory=AccurateRuntimeDependencyError,
+                transient_error_factory=AccurateTransientBackendError,
+            )
+        ),
+        model_unavailable_error_factory=AccurateModelUnavailableError,
+        model_load_error_factory=AccurateModelLoadError,
     )
 
 
 def _run_process_operation(prepared: _PreparedAccurateOperation) -> InferenceResult:
     """Runs one accurate compute phase inside isolated worker process."""
-    return _run_accurate_inference_once(
-        loaded_model=prepared.loaded_model,
-        backend=prepared.backend,
-        audio=prepared.audio,
-        sample_rate=prepared.sample_rate,
-        runtime_config=prepared.runtime_config,
-    )
-
-
-def _build_process_settings_snapshot(settings: AppConfig) -> AppConfig:
-    """Builds a process-safe settings snapshot for spawn-based workers."""
-    return _settings_with_torch_device_impl(
-        settings,
-        device=settings.torch_runtime.device,
+    return _run_process_operation_orchestration(
+        prepared,
+        run_accurate_inference_once=lambda loaded_model, backend, audio, sample_rate, runtime_config: (
+            _run_accurate_inference_once(
+                loaded_model=loaded_model,
+                backend=backend,
+                audio=audio,
+                sample_rate=sample_rate,
+                runtime_config=runtime_config,
+            )
+        ),
     )
 
 
@@ -735,7 +681,7 @@ def _build_backend_for_profile(
 
 def _terminate_worker_process(process: BaseProcess) -> None:
     """Terminates a timed-out worker process with kill fallback."""
-    _terminate_worker_process_binding(
+    _terminate_worker_process_orchestration(
         process=process,
         impl=_terminate_worker_process_impl,
         terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
@@ -745,7 +691,7 @@ def _terminate_worker_process(process: BaseProcess) -> None:
 
 def _raise_worker_error(error_type: str, message: str) -> None:
     """Rehydrates child-process errors into runtime-domain exceptions."""
-    _raise_worker_error_binding(
+    _raise_worker_error_orchestration(
         error_type=error_type,
         message=message,
         impl=_raise_worker_error_impl,
@@ -757,40 +703,9 @@ def _raise_worker_error(error_type: str, message: str) -> None:
 
 def _retry_delay_seconds(*, base_delay: float, attempt: int) -> float:
     """Returns bounded retry delay with small jitter."""
-    if base_delay <= 0.0:
-        return 0.0
-    jitter = random.uniform(0.0, base_delay * 0.1)
-    return (base_delay * float(attempt)) + jitter
-
-
-def _is_dependency_error(err: RuntimeError) -> bool:
-    """Returns whether runtime error indicates missing optional modules."""
-    message = str(err).lower()
-    return "requires optional dependencies" in message or "not installed" in message
-
-
-def _encode_accurate_sequence(
-    *,
-    backend: FeatureBackend,
-    audio: NDArray[np.float32],
-    sample_rate: int,
-) -> EncodedSequence:
-    """Encodes accurate audio sequence and maps dependency/transient failures."""
-    try:
-        return backend.encode_sequence(audio, sample_rate)
-    except RuntimeError as err:
-        if _is_dependency_error(err):
-            raise AccurateRuntimeDependencyError(str(err)) from err
-        raise AccurateTransientBackendError(str(err)) from err
-
-
-def _prepare_accurate_backend_runtime(backend: FeatureBackend) -> None:
-    """Warms backend runtime components so setup work is outside timeout budgets."""
-    _prepare_accurate_backend_runtime_impl(
-        backend=backend,
-        is_dependency_error=_is_dependency_error,
-        dependency_error_factory=AccurateRuntimeDependencyError,
-        transient_error_factory=AccurateTransientBackendError,
+    return _jittered_retry_delay_seconds_impl(
+        base_delay=base_delay,
+        attempt=attempt,
     )
 
 
@@ -800,8 +715,7 @@ def _pooling_windows_from_encoded_frames(
     runtime_config: ProfileRuntimeConfig,
 ) -> list[PoolingWindow]:
     """Creates accurate temporal pooling windows from configured window policy."""
-    return temporal_pooling_windows(
+    return _pooling_windows_from_encoded_frames_impl(
         encoded,
-        window_size_seconds=runtime_config.pool_window_size_seconds,
-        window_stride_seconds=runtime_config.pool_window_stride_seconds,
+        runtime_config=runtime_config,
     )

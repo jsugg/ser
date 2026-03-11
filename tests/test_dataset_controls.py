@@ -128,9 +128,9 @@ def test_build_dataset_controls_for_settings_uses_current_settings() -> None:
                 manifest_paths=(Path("manifests/ravdess.jsonl"),),
             )
         ),
-        resolve_registry_manifest_paths_for_settings=lambda **_kwargs: (
-            _ for _ in ()
-        ).throw(AssertionError("registry lookup should not run in manifest mode")),
+        resolve_registry_manifest_paths_for_settings=lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("registry lookup should not run in manifest mode")
+        ),
     )
 
     assert controls["mode"] == "manifest"

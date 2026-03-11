@@ -22,6 +22,11 @@ _PROFILE_CHOICES: tuple[ProfileName, ...] = (
 )
 
 
+def _resolve_boundary_settings(settings: AppConfig | None = None) -> AppConfig:
+    """Returns the active settings snapshot for diagnostics CLI wrappers."""
+    return settings if settings is not None else get_settings()
+
+
 def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) -> int:
     """Runs `ser doctor ...` command."""
     parser = argparse.ArgumentParser(prog="ser doctor")
@@ -29,10 +34,7 @@ def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) ->
         "--profile",
         choices=_PROFILE_CHOICES,
         default=None,
-        help=(
-            "Profile context for diagnostics "
-            "(fast, medium, accurate, accurate-research)."
-        ),
+        help=("Profile context for diagnostics " "(fast, medium, accurate, accurate-research)."),
     )
     parser.add_argument(
         "--format",
@@ -57,7 +59,7 @@ def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) ->
     )
     args = parser.parse_args(argv)
 
-    active_settings = settings if settings is not None else get_settings()
+    active_settings = _resolve_boundary_settings(settings)
     active_settings = apply_profile_override_for_diagnostics(
         active_settings,
         profile=cast(ProfileName | None, args.profile),
@@ -68,9 +70,7 @@ def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) ->
         include_noise_findings=bool(args.include_noise_findings),
     )
     formatted_output = (
-        format_report_json(report)
-        if args.format == "json"
-        else format_report_text(report)
+        format_report_json(report) if args.format == "json" else format_report_text(report)
     )
     print(formatted_output)
     if report.has_blocking_findings or report.has_error:

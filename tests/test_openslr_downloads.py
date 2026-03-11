@@ -158,9 +158,7 @@ def test_read_openslr_archive_urls_from_hf_script_reads_and_builds_urls() -> Non
         with_retries=_with_retries,
         timeout_seconds=60.0,
         extract_openslr_files_from_hf_script=lambda *, script_text, dataset_id: (
-            ["wav.tgz", "notes.txt"]
-            if "SLR88" in script_text and dataset_id == "88"
-            else []
+            ["wav.tgz", "notes.txt"] if "SLR88" in script_text and dataset_id == "88" else []
         ),
         build_canonical_archive_urls=lambda *, dataset_id, file_names, archive_suffixes: [
             f"https://openslr.org/resources/{dataset_id}/{name}"
@@ -197,9 +195,7 @@ def test_read_openslr_archive_urls_falls_back_to_listing_on_hf_error() -> None:
         del listing_url, html_text, archive_suffixes
         return ["https://www.openslr.org/resources/115/a.tar.gz"]
 
-    def _log_hf_metadata_resolution_failure(
-        *, dataset_id: str, error: Exception
-    ) -> None:
+    def _log_hf_metadata_resolution_failure(*, dataset_id: str, error: Exception) -> None:
         warning_calls.append((dataset_id, str(error)))
 
     urls = read_openslr_archive_urls(

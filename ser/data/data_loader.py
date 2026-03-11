@@ -32,10 +32,14 @@ type DataSplit = tuple[FeatureMatrix, FeatureMatrix, LabelList, LabelList]
 type LabeledAudioSample = tuple[str, str]
 
 
-def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | None:
-    """Loads manifest utterances when configured, otherwise defaults to RAVDESS discovery."""
-    active_settings = settings if settings is not None else get_settings()
-    ontology = resolve_label_ontology(active_settings)
+def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
+    """Returns explicit settings or falls back to ambient public-boundary config."""
+    return settings if settings is not None else get_settings()
+
+
+def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None:
+    """Loads utterances using one explicit settings snapshot."""
+    ontology = resolve_label_ontology(settings)
 
     def _validate_utterances(utterances: list[Utterance]) -> list[Utterance] | None:
         if not utterances:
@@ -49,14 +53,11 @@ def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | N
             seen.add(utterance.sample_id)
         if duplicates:
             raise RuntimeError(
-                "Duplicate sample_id values across manifests: "
-                + ", ".join(sorted(duplicates))
+                "Duplicate sample_id values across manifests: " + ", ".join(sorted(duplicates))
             )
         labels = [utterance.label for utterance in utterances]
         if len(set(labels)) < 2:
-            logger.warning(
-                "At least two emotion classes are required to train the model."
-            )
+            logger.warning("At least two emotion classes are required to train the model.")
             return None
         return utterances
 
@@ -68,9 +69,7 @@ def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | N
         utterances: list[Utterance] = []
         for manifest_path in manifest_paths:
             resolved_manifest_path = manifest_path.expanduser()
-            base_dir = (
-                base_dirs.get(resolved_manifest_path) if base_dirs is not None else None
-            )
+            base_dir = base_dirs.get(resolved_manifest_path) if base_dirs is not None else None
             utterances.extend(
                 load_manifest_jsonl(
                     resolved_manifest_path,
@@ -80,10 +79,10 @@ def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | N
             )
         return _validate_utterances(utterances)
 
-    if active_settings.dataset.manifest_paths:
-        return _load_manifest_paths(list(active_settings.dataset.manifest_paths))
+    if settings.dataset.manifest_paths:
+        return _load_manifest_paths(list(settings.dataset.manifest_paths))
 
-    registry = load_dataset_registry(settings=active_settings)
+    registry = load_dataset_registry(settings=settings)
     if registry:
         manifest_paths: list[Path] = []
         base_dirs: dict[Path, Path] = {}
@@ -96,7 +95,7 @@ def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | N
                 continue
             try:
                 built_paths = prepare_from_registry_entry(
-                    settings=active_settings,
+                    settings=settings,
                     entry=entry,
                     ontology=ontology,
                 )
@@ -122,13 +121,18 @@ def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | N
         return _load_manifest_paths(deduped_paths, base_dirs=base_dirs)
 
     return build_ravdess_utterances(
-        dataset_root=active_settings.dataset.folder,
-        dataset_glob_pattern=active_settings.dataset.glob_pattern,
-        emotion_code_map=dict(active_settings.emotions),
-        default_language=active_settings.default_language,
+        dataset_root=settings.dataset.folder,
+        dataset_glob_pattern=settings.dataset.glob_pattern,
+        emotion_code_map=dict(settings.emotions),
+        default_language=settings.default_language,
         ontology=ontology,
-        max_failed_file_ratio=active_settings.data_loader.max_failed_file_ratio,
+        max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
     )
+
+
+def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | None:
+    """Loads manifest utterances when configured, otherwise defaults to RAVDESS discovery."""
+    return _load_utterances_for_settings(_resolve_boundary_settings(settings))
 
 
 class ProcessFileResult(NamedTuple):
@@ -201,9 +205,25 @@ def process_file(
 
         return ProcessFileResult(sample=(features, emotion), error=None)
     except Exception as err:
-        return ProcessFileResult(
-            sample=None, error=f"Failed to process file {file}: {err}"
-        )
+        return ProcessFileResult(sample=None, error=f"Failed to process file {file}: {err}")
+
+
+def _load_labeled_audio_paths_for_settings(
+    settings: AppConfig,
+) -> list[LabeledAudioSample] | None:
+    """Loads labeled audio paths using one explicit settings snapshot."""
+    utterances = load_utterances(settings=settings)
+    if utterances is None:
+        return None
+
+    samples: list[LabeledAudioSample] = [
+        (str(utterance.audio_path), utterance.label) for utterance in utterances
+    ]
+    labels: list[str] = [label for _, label in samples]
+    if len(set(labels)) < 2:
+        logger.warning("At least two emotion classes are required to train the model.")
+        return None
+    return samples
 
 
 def load_labeled_audio_paths(
@@ -218,27 +238,15 @@ def load_labeled_audio_paths(
     Raises:
         RuntimeError: If filename-format failures exceed configured threshold.
     """
-    active_settings = settings if settings is not None else get_settings()
-    utterances = load_utterances(settings=active_settings)
-    if utterances is None:
-        return None
-
-    samples: list[LabeledAudioSample] = [
-        (str(utterance.audio_path), utterance.label) for utterance in utterances
-    ]
-    labels: list[str] = [label for _, label in samples]
-    if len(set(labels)) < 2:
-        logger.warning("At least two emotion classes are required to train the model.")
-        return None
-    return samples
+    return _load_labeled_audio_paths_for_settings(_resolve_boundary_settings(settings))
 
 
-def load_data(
+def _load_data_for_settings(
     test_size: float | None = None,
     *,
-    settings: AppConfig | None = None,
+    settings: AppConfig,
 ) -> DataSplit | None:
-    """Loads the configured dataset, extracts features, and splits train/test sets.
+    """Loads dataset splits using one explicit settings snapshot.
 
     Args:
         test_size: Optional fraction of examples reserved for the test split.
@@ -247,16 +255,13 @@ def load_data(
         The `train_test_split` output `(x_train, x_test, y_train, y_test)` when
         data is available; otherwise `None`.
     """
-    active_settings = settings if settings is not None else get_settings()
-    observed_emotions: set[str] = set(active_settings.emotions.values())
-    resolved_test_size: float = (
-        active_settings.training.test_size if test_size is None else test_size
-    )
+    observed_emotions: set[str] = set(settings.emotions.values())
+    resolved_test_size: float = settings.training.test_size if test_size is None else test_size
     if not 0.0 < resolved_test_size < 1.0:
         raise ValueError("test_size must be between 0 and 1.")
 
     raw_data: list[ProcessFileResult]
-    data_path_pattern: str = active_settings.dataset.glob_pattern
+    data_path_pattern: str = settings.dataset.glob_pattern
     files: list[str] = sorted(glob.glob(data_path_pattern))
     if not files:
         logger.warning("No dataset files found for pattern: %s", data_path_pattern)
@@ -265,12 +270,12 @@ def load_data(
     process_fn: partial[ProcessFileResult] = partial(
         process_file,
         observed_emotions=observed_emotions,
-        emotion_map=dict(active_settings.emotions),
-        settings=active_settings,
+        emotion_map=dict(settings.emotions),
+        settings=settings,
     )
     worker_count: int = _resolve_worker_count(
-        max_cores=active_settings.models.num_cores,
-        max_workers=active_settings.data_loader.max_workers,
+        max_cores=settings.models.num_cores,
+        max_workers=settings.data_loader.max_workers,
         file_count=len(files),
     )
 
@@ -279,9 +284,7 @@ def load_data(
     else:
         chunk_size: int = max(1, len(files) // (worker_count * 4))
         with mp.Pool(worker_count) as pool:
-            raw_data = list(
-                pool.imap_unordered(process_fn, files, chunksize=chunk_size)
-            )
+            raw_data = list(pool.imap_unordered(process_fn, files, chunksize=chunk_size))
 
     errors: list[str] = [item.error for item in raw_data if item.error is not None]
     if errors:
@@ -294,12 +297,12 @@ def load_data(
             logger.warning("%s", error)
 
     failure_ratio: float = len(errors) / float(len(files))
-    if failure_ratio > active_settings.data_loader.max_failed_file_ratio:
+    if failure_ratio > settings.data_loader.max_failed_file_ratio:
         raise RuntimeError(
             "Aborting data load: "
             f"{failure_ratio * 100.0:.1f}% file failures exceeded configured "
             "limit "
-            f"{active_settings.data_loader.max_failed_file_ratio * 100.0:.1f}%. "
+            f"{settings.data_loader.max_failed_file_ratio * 100.0:.1f}%. "
             "You can relax this limit by increasing the SER_MAX_FAILED_FILE_RATIO "
             "environment variable."
         )
@@ -320,16 +323,14 @@ def load_data(
         logger.warning("At least two emotion classes are required to train the model.")
         return None
 
-    stratify_labels: list[str] | None = (
-        labels_list if active_settings.training.stratify_split else None
-    )
+    stratify_labels: list[str] | None = labels_list if settings.training.stratify_split else None
     split: list[Any | list[Any]]
     try:
         split = train_test_split(
             np.asarray(features, dtype=np.float64),
             labels_list,
             test_size=resolved_test_size,
-            random_state=active_settings.training.random_state,
+            random_state=settings.training.random_state,
             stratify=stratify_labels,
         )
     except ValueError as err:
@@ -341,7 +342,7 @@ def load_data(
             np.asarray(features, dtype=np.float64),
             labels_list,
             test_size=resolved_test_size,
-            random_state=active_settings.training.random_state,
+            random_state=settings.training.random_state,
             stratify=None,
         )
     x_train: NDArray = np.asarray(split[0], dtype=np.float64)
@@ -349,3 +350,23 @@ def load_data(
     y_train: list[str] = [str(label) for label in split[2]]
     y_test: list[str] = [str(label) for label in split[3]]
     return x_train, x_test, y_train, y_test
+
+
+def load_data(
+    test_size: float | None = None,
+    *,
+    settings: AppConfig | None = None,
+) -> DataSplit | None:
+    """Loads the configured dataset, extracts features, and splits train/test sets.
+
+    Args:
+        test_size: Optional fraction of examples reserved for the test split.
+
+    Returns:
+        The `train_test_split` output `(x_train, x_test, y_train, y_test)` when
+        data is available; otherwise `None`.
+    """
+    return _load_data_for_settings(
+        test_size,
+        settings=_resolve_boundary_settings(settings),
+    )

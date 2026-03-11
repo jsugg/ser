@@ -23,9 +23,7 @@ def test_factory_resolves_faster_adapter_without_importing_stable_backend() -> N
         assert "ser.transcript.backends.stable_whisper" not in sys.modules
         assert "ser.transcript.backends.stable_whisper_mps_compat" not in sys.modules
 
-        adapter = reloaded_factory.resolve_transcription_backend_adapter(
-            "faster_whisper"
-        )
+        adapter = reloaded_factory.resolve_transcription_backend_adapter("faster_whisper")
 
         assert adapter.backend_id == "faster_whisper"
         assert "ser.transcript.backends.stable_whisper" not in sys.modules

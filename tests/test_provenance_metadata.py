@@ -9,9 +9,10 @@ from typing import cast
 import pytest
 from sklearn.neural_network import MLPClassifier
 
+import ser.models.artifact_envelope as artifact_envelope
+import ser.models.training_support as training_support
 from ser import config
 from ser.license_check import build_provenance_metadata, persist_backend_consent
-from ser.models import emotion_model as em
 
 
 def _classifier() -> MLPClassifier:
@@ -92,7 +93,7 @@ def test_build_model_artifact_persists_provenance_payload() -> None:
         "runtime_restricted_backends_enabled": False,
         "license_source_url": "https://huggingface.co/facebook/wav2vec2-xls-r-300m",
     }
-    artifact = em._build_model_artifact(
+    artifact = artifact_envelope.build_model_artifact(
         model=_classifier(),
         feature_vector_size=4,
         training_samples=12,
@@ -106,7 +107,7 @@ def test_build_model_artifact_persists_provenance_payload() -> None:
         provenance=provenance,
     )
 
-    loaded = em._deserialize_model_artifact(artifact)
+    loaded = artifact_envelope.deserialize_model_artifact(artifact)
     assert loaded.artifact_metadata is not None
     assert loaded.artifact_metadata["provenance"] == provenance
 
@@ -116,17 +117,9 @@ def test_build_training_report_includes_provenance_block(
 ) -> None:
     """Training report should include provenance block when provided by caller."""
     settings = cast(
-        em.AppConfig,
+        config.AppConfig,
         SimpleNamespace(dataset=SimpleNamespace(glob_pattern="unused")),
     )
-    monkeypatch.setattr(
-        em,
-        "get_settings",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("helper must use explicit settings")
-        ),
-    )
-    monkeypatch.setattr(em.glob, "glob", lambda _pattern: ["file_0.wav"])
 
     provenance = {
         "code_revision": "cafebabe",
@@ -138,7 +131,7 @@ def test_build_training_report_includes_provenance_block(
         "runtime_restricted_backends_enabled": False,
         "license_source_url": "https://github.com/librosa/librosa/blob/main/LICENSE.md",
     }
-    report = em._build_training_report(
+    report = training_support.build_training_report(
         accuracy=1.0,
         macro_f1=1.0,
         ser_metrics={
@@ -152,12 +145,12 @@ def test_build_training_report_includes_provenance_block(
         test_samples=2,
         feature_vector_size=4,
         labels=["happy", "sad", "happy", "sad"],
-        artifacts=em.PersistedArtifacts(
+        artifacts=training_support.PersistedArtifacts(
             pickle_path=Path("ser_model.pkl"),
             secure_path=None,
         ),
         artifact_metadata={
-            "artifact_version": em.MODEL_ARTIFACT_VERSION,
+            "artifact_version": artifact_envelope.MODEL_ARTIFACT_VERSION,
             "artifact_schema_version": "v2",
             "created_at_utc": "2026-01-01T00:00:00+00:00",
             "feature_vector_size": 4,
@@ -173,6 +166,7 @@ def test_build_training_report_includes_provenance_block(
         },
         provenance=provenance,
         settings=settings,
+        globber=lambda _pattern: ["file_0.wav"],
     )
 
     assert report["provenance"] == provenance

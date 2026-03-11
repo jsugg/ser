@@ -38,11 +38,7 @@ def classify_stable_whisper_transcription_failure(
             reason_code="non_retryable_runtime_error",
             is_retryable=False,
         )
-    if (
-        runtime_device_type == "mps"
-        and precision == "float16"
-        and _is_pure_mps_oom(message)
-    ):
+    if runtime_device_type == "mps" and precision == "float16" and _is_pure_mps_oom(message):
         return TranscriptionFailureClassification(
             disposition=FailureDisposition.FAILOVER_CPU_NOW,
             reason_code="mps_oom_hard_float16",

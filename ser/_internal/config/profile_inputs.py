@@ -122,12 +122,8 @@ def resolve_runtime_profile_settings_input(
         maximum=1.0,
     )
     if post_hysteresis_enter_confidence < post_hysteresis_exit_confidence:
-        post_hysteresis_enter_confidence = (
-            runtime_defaults.post_hysteresis_enter_confidence
-        )
-        post_hysteresis_exit_confidence = (
-            runtime_defaults.post_hysteresis_exit_confidence
-        )
+        post_hysteresis_enter_confidence = runtime_defaults.post_hysteresis_enter_confidence
+        post_hysteresis_exit_confidence = runtime_defaults.post_hysteresis_exit_confidence
 
     return RuntimeProfileSettingsInput(
         timeout_seconds=read_float_env_optional(

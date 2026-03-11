@@ -117,8 +117,7 @@ def test_format_report_text_marks_info_as_informational() -> None:
 
     text_output = format_report_text(report)
     assert (
-        "[INFO] transcription_operational_torio_ffmpeg_abi_mismatch: informational"
-        in text_output
+        "[INFO] transcription_operational_torio_ffmpeg_abi_mismatch: informational" in text_output
     )
 
 
@@ -139,10 +138,7 @@ def test_format_report_brief_condenses_long_messages() -> None:
     )
     brief = format_report_brief(report, max_message_chars=90)
     assert "SER diagnostics preflight summary" in brief
-    assert (
-        "[WARNING] transcription_operational_faster_whisper_mps_unsupported (advisory):"
-        in brief
-    )
+    assert "[WARNING] transcription_operational_faster_whisper_mps_unsupported (advisory):" in brief
     assert "..." in brief
 
 
@@ -186,9 +182,7 @@ def test_fast_openmp_conflict_is_info_for_cli_diagnostics(
         "resolve_runtime_capability",
         lambda *args, **kwargs: SimpleNamespace(available=True),
     )
-    monkeypatch.setattr(
-        diagnostics_service.shutil, "which", lambda _name: "/usr/bin/ffmpeg"
-    )
+    monkeypatch.setattr(diagnostics_service.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     monkeypatch.setattr(
         diagnostics_service,
         "resolve_profile_transcription_config",
@@ -207,8 +201,7 @@ def test_fast_openmp_conflict_is_info_for_cli_diagnostics(
 
     assert report.has_blocking_findings is False
     assert any(
-        finding.code
-        == "transcription_operational_faster_whisper_openmp_runtime_conflict"
+        finding.code == "transcription_operational_faster_whisper_openmp_runtime_conflict"
         and finding.severity == "info"
         for finding in report.findings
     )

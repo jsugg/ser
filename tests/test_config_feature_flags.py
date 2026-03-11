@@ -10,6 +10,8 @@ import pytest
 
 import ser.config as config
 from ser._internal.config import bootstrap
+from ser._internal.config.schema import profile_artifact_file_names
+from ser.profiles import get_profile_catalog
 
 
 @pytest.fixture(autouse=True)
@@ -43,15 +45,9 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.medium_runtime.pool_window_size_seconds == pytest.approx(1.0)
     assert settings.medium_runtime.pool_window_stride_seconds == pytest.approx(1.0)
     assert settings.medium_runtime.post_smoothing_window_frames == 3
-    assert settings.medium_runtime.post_hysteresis_enter_confidence == pytest.approx(
-        0.60
-    )
-    assert settings.medium_runtime.post_hysteresis_exit_confidence == pytest.approx(
-        0.45
-    )
-    assert settings.medium_runtime.post_min_segment_duration_seconds == pytest.approx(
-        0.40
-    )
+    assert settings.medium_runtime.post_hysteresis_enter_confidence == pytest.approx(0.60)
+    assert settings.medium_runtime.post_hysteresis_exit_confidence == pytest.approx(0.45)
+    assert settings.medium_runtime.post_min_segment_duration_seconds == pytest.approx(0.40)
     assert settings.medium_runtime.process_isolation is True
     assert settings.accurate_runtime.timeout_seconds == pytest.approx(120.0)
     assert settings.accurate_runtime.max_timeout_retries == 0
@@ -61,18 +57,14 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.accurate_research_runtime.timeout_seconds == pytest.approx(120.0)
     assert settings.accurate_research_runtime.max_timeout_retries == 0
     assert settings.accurate_research_runtime.max_transient_retries == 1
-    assert settings.accurate_research_runtime.retry_backoff_seconds == pytest.approx(
-        0.25
-    )
+    assert settings.accurate_research_runtime.retry_backoff_seconds == pytest.approx(0.25)
     assert settings.accurate_research_runtime.process_isolation is True
     assert settings.medium_training.min_window_std == pytest.approx(0.0)
     assert settings.medium_training.max_windows_per_clip == 0
     assert settings.quality_gate.min_uar_delta == pytest.approx(0.0025)
     assert settings.quality_gate.min_macro_f1_delta == pytest.approx(0.0025)
     assert settings.quality_gate.max_medium_segments_per_minute == pytest.approx(25.0)
-    assert settings.quality_gate.min_medium_median_segment_duration_seconds == (
-        pytest.approx(2.5)
-    )
+    assert settings.quality_gate.min_medium_median_segment_duration_seconds == (pytest.approx(2.5))
     assert settings.schema.output_schema_version == "v1"
     assert settings.schema.artifact_schema_version == "v2"
     assert settings.torch_runtime.device == "auto"
@@ -83,7 +75,6 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert xlsr_override.device is None
     assert xlsr_override.dtype == "float32"
     assert settings.feature_runtime_policy.for_backend("hf_whisper") is None
-    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "0"
     assert settings.models.medium_model_id == "facebook/wav2vec2-xls-r-300m"
     assert settings.models.accurate_model_id == "openai/whisper-large-v3"
     assert settings.models.accurate_research_model_id == "iic/emotion2vec_plus_large"
@@ -109,9 +100,7 @@ def test_runtime_flags_and_schema_defaults() -> None:
     assert settings.models.modelscope_cache_root == (
         settings.models.model_cache_dir / "modelscope" / "hub"
     )
-    assert settings.models.torch_cache_root == (
-        settings.models.model_cache_dir / "torch"
-    )
+    assert settings.models.torch_cache_root == (settings.models.model_cache_dir / "torch")
     assert settings.models.model_file_name == "ser_model.pkl"
     assert settings.models.secure_model_file_name == "ser_model.skops"
     assert settings.models.training_report_file_name == "training_report.json"
@@ -122,7 +111,7 @@ def test_resolve_settings_inputs_rejects_conflicting_feature_runtime_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Conflicting backend runtime defaults across profiles should fail fast."""
-    profile_catalog = dict(config.get_profile_catalog())
+    profile_catalog = dict(get_profile_catalog())
     medium_entry = profile_catalog["medium"]
     assert medium_entry.feature_runtime_defaults is not None
     profile_catalog["accurate"] = replace(
@@ -134,9 +123,7 @@ def test_resolve_settings_inputs_rejects_conflicting_feature_runtime_defaults(
         ),
     )
     with pytest.MonkeyPatch.context() as conflict_patch:
-        conflict_patch.setattr(
-            bootstrap, "get_profile_catalog", lambda: profile_catalog
-        )
+        conflict_patch.setattr(bootstrap, "get_profile_catalog", lambda: profile_catalog)
         with pytest.raises(RuntimeError, match="conflicting feature runtime defaults"):
             bootstrap._resolve_settings_inputs()
 
@@ -239,15 +226,9 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.medium_runtime.pool_window_size_seconds == pytest.approx(2.5)
     assert settings.medium_runtime.pool_window_stride_seconds == pytest.approx(0.75)
     assert settings.medium_runtime.post_smoothing_window_frames == 5
-    assert settings.medium_runtime.post_hysteresis_enter_confidence == pytest.approx(
-        0.72
-    )
-    assert settings.medium_runtime.post_hysteresis_exit_confidence == pytest.approx(
-        0.41
-    )
-    assert settings.medium_runtime.post_min_segment_duration_seconds == pytest.approx(
-        0.55
-    )
+    assert settings.medium_runtime.post_hysteresis_enter_confidence == pytest.approx(0.72)
+    assert settings.medium_runtime.post_hysteresis_exit_confidence == pytest.approx(0.41)
+    assert settings.medium_runtime.post_min_segment_duration_seconds == pytest.approx(0.55)
     assert settings.medium_runtime.process_isolation is False
     assert settings.accurate_runtime.timeout_seconds == pytest.approx(80.0)
     assert settings.accurate_runtime.max_timeout_retries == 1
@@ -257,18 +238,14 @@ def test_runtime_flags_and_schema_env_overrides(
     assert settings.accurate_research_runtime.timeout_seconds == pytest.approx(70.0)
     assert settings.accurate_research_runtime.max_timeout_retries == 2
     assert settings.accurate_research_runtime.max_transient_retries == 3
-    assert settings.accurate_research_runtime.retry_backoff_seconds == pytest.approx(
-        0.9
-    )
+    assert settings.accurate_research_runtime.retry_backoff_seconds == pytest.approx(0.9)
     assert settings.accurate_research_runtime.process_isolation is False
     assert settings.medium_training.min_window_std == pytest.approx(0.12)
     assert settings.medium_training.max_windows_per_clip == 5
     assert settings.quality_gate.min_uar_delta == pytest.approx(0.015)
     assert settings.quality_gate.min_macro_f1_delta == pytest.approx(0.02)
     assert settings.quality_gate.max_medium_segments_per_minute == pytest.approx(22.5)
-    assert settings.quality_gate.min_medium_median_segment_duration_seconds == (
-        pytest.approx(2.2)
-    )
+    assert settings.quality_gate.min_medium_median_segment_duration_seconds == (pytest.approx(2.2))
     assert settings.schema.output_schema_version == "v2"
     assert settings.schema.artifact_schema_version == "v3"
     assert settings.torch_runtime.device == "cuda:0"
@@ -279,18 +256,13 @@ def test_runtime_flags_and_schema_env_overrides(
     assert xlsr_override.device is None
     assert xlsr_override.dtype == "float32"
     assert settings.feature_runtime_policy.for_backend("hf_whisper") is None
-    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
     assert settings.dataset.manifest_paths == (
         Path("unit-test/manifest_a.jsonl"),
         Path("unit-test/manifest_b.jsonl"),
     )
     assert settings.models.model_cache_dir == Path("unit-test/model-cache")
-    assert settings.models.huggingface_cache_root == Path(
-        "unit-test/model-cache/huggingface"
-    )
-    assert settings.models.modelscope_cache_root == Path(
-        "unit-test/model-cache/modelscope/hub"
-    )
+    assert settings.models.huggingface_cache_root == Path("unit-test/model-cache/huggingface")
+    assert settings.models.modelscope_cache_root == Path("unit-test/model-cache/modelscope/hub")
     assert settings.models.torch_cache_root == Path("unit-test/model-cache/torch")
     assert settings.models.medium_model_id == "unit-test/xlsr"
     assert settings.models.accurate_model_id == "unit-test/whisper-tiny"
@@ -373,7 +345,7 @@ def test_profile_default_artifact_names_include_backend_model_id(
     monkeypatch.setenv("SER_ACCURATE_MODEL_ID", "unit-test/whisper-large")
 
     settings = config.reload_settings()
-    expected = config.profile_artifact_file_names(
+    expected = profile_artifact_file_names(
         profile="accurate",
         medium_model_id=settings.models.medium_model_id,
         accurate_model_id=settings.models.accurate_model_id,
@@ -439,8 +411,10 @@ def test_torch_runtime_inherits_pytorch_mps_fallback_env(
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
 
 
-def test_apply_settings_syncs_pytorch_mps_fallback_env() -> None:
-    """Applying a settings snapshot should synchronize torch fallback environment."""
+def test_apply_settings_keeps_torch_fallback_environment_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Applying a settings snapshot should not mutate process torch env selectors."""
     base_settings = config.reload_settings()
     enabled_settings = replace(
         base_settings,
@@ -449,15 +423,18 @@ def test_apply_settings_syncs_pytorch_mps_fallback_env() -> None:
             enable_mps_fallback=True,
         ),
     )
+    monkeypatch.setenv("PYTORCH_ENABLE_MPS_FALLBACK", "sentinel")
 
-    config.apply_settings(enabled_settings)
+    bootstrap.apply_settings(enabled_settings)
 
     assert config.get_settings().torch_runtime.enable_mps_fallback is True
-    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
 
 
-def test_settings_override_restores_previous_settings_and_env() -> None:
-    """Scoped settings overrides should restore prior state and torch env on exit."""
+def test_settings_override_restores_previous_settings_without_env_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scoped settings overrides should restore prior state without env mutation."""
     base_settings = config.reload_settings()
     enabled_settings = replace(
         base_settings,
@@ -466,15 +443,14 @@ def test_settings_override_restores_previous_settings_and_env() -> None:
             enable_mps_fallback=True,
         ),
     )
+    monkeypatch.setenv("PYTORCH_ENABLE_MPS_FALLBACK", "sentinel")
 
     with config.settings_override(enabled_settings):
         assert config.get_settings() is enabled_settings
-        assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+        assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
 
     assert config.get_settings() is base_settings
-    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == (
-        "1" if base_settings.torch_runtime.enable_mps_fallback else "0"
-    )
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
 
 
 def test_importing_config_does_not_mutate_torch_runtime_environment(
@@ -488,7 +464,7 @@ def test_importing_config_does_not_mutate_torch_runtime_environment(
 
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
     reloaded_module.reload_settings()
-    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "0"
+    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
 
 
 def test_invalid_transcription_mps_threshold_env_falls_back_to_default(

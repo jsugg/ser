@@ -35,9 +35,7 @@ class HandcraftedBackend(FeatureBackend):
             raise ValueError("frame_stride_seconds must be greater than zero.")
         self._frame_size_seconds = frame_size_seconds
         self._frame_stride_seconds = frame_stride_seconds
-        self._feature_flags = (
-            feature_flags if feature_flags is not None else FeatureFlags()
-        )
+        self._feature_flags = feature_flags if feature_flags is not None else FeatureFlags()
 
     @property
     def backend_id(self) -> str:
@@ -99,9 +97,7 @@ class HandcraftedBackend(FeatureBackend):
             ends.append(float(end_index) / float(sample_rate))
 
         if not frame_embeddings:
-            raise ValueError(
-                "Could not extract handcrafted features from provided audio."
-            )
+            raise ValueError("Could not extract handcrafted features from provided audio.")
 
         return EncodedSequence(
             embeddings=np.vstack(frame_embeddings).astype(np.float32, copy=False),
@@ -122,9 +118,7 @@ class HandcraftedBackend(FeatureBackend):
         pooled_rows: list[FeatureVector] = []
         for window in windows:
             mask = overlap_frame_mask(encoded, window)
-            pooled_rows.append(
-                np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64)
-            )
+            pooled_rows.append(np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64))
         return np.vstack(pooled_rows)
 
     def extract_vector(

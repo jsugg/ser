@@ -50,8 +50,7 @@ def split_labeled_audio_samples(
     train_idx = np.empty(0, dtype=np.int64)
     test_idx = np.empty(0, dtype=np.int64)
     can_group_by_speaker = (
-        len(resolved_speaker_ids) == len(samples)
-        and len(set(resolved_speaker_ids)) >= 2
+        len(resolved_speaker_ids) == len(samples) and len(set(resolved_speaker_ids)) >= 2
     )
     if can_group_by_speaker:
         grouped_features = np.zeros((len(samples), 1), dtype=np.float64)
@@ -75,9 +74,7 @@ def split_labeled_audio_samples(
 
     if not can_group_by_speaker:
         split_strategy = "stratified_shuffle_split_fallback"
-        stratify_labels: list[str] | None = (
-            labels if settings.training.stratify_split else None
-        )
+        stratify_labels: list[str] | None = labels if settings.training.stratify_split else None
         try:
             train_idx_raw, test_idx_raw = train_test_split(
                 indices,
@@ -101,18 +98,14 @@ def split_labeled_audio_samples(
             train_idx = np.asarray(train_idx_raw, dtype=np.int64)
             test_idx = np.asarray(test_idx_raw, dtype=np.int64)
 
-    train_samples: list[LabeledAudioSample] = [
-        samples[int(index)] for index in train_idx
-    ]
+    train_samples: list[LabeledAudioSample] = [samples[int(index)] for index in train_idx]
     test_samples: list[LabeledAudioSample] = [samples[int(index)] for index in test_idx]
     if train_idx.size == 0 or test_idx.size == 0:
         raise RuntimeError(
             "Medium training split failed to produce deterministic index partitions."
         )
     if not train_samples or not test_samples:
-        raise RuntimeError(
-            "Medium training split produced an empty partition; adjust test_size."
-        )
+        raise RuntimeError("Medium training split produced an empty partition; adjust test_size.")
 
     train_speakers = {
         raw_speaker_ids[int(index)]
@@ -126,9 +119,7 @@ def split_labeled_audio_samples(
     }
     speaker_overlap_count = len(train_speakers.intersection(test_speakers))
     if split_strategy == "group_shuffle_split" and speaker_overlap_count > 0:
-        raise RuntimeError(
-            "Grouped medium split produced overlapping speakers in train/test."
-        )
+        raise RuntimeError("Grouped medium split produced overlapping speakers in train/test.")
 
     return (
         train_samples,
@@ -227,9 +218,7 @@ def split_utterances(
 
     has_manifest_split = all(utterance.split is not None for utterance in samples)
     if has_manifest_split:
-        train_split = [
-            utterance for utterance in samples if utterance.split in {"train", "dev"}
-        ]
+        train_split = [utterance for utterance in samples if utterance.split in {"train", "dev"}]
         test_split = [utterance for utterance in samples if utterance.split == "test"]
         if train_split and test_split:
             train_speakers = {
@@ -251,15 +240,12 @@ def split_utterances(
                     speaker_id_coverage=speaker_coverage,
                     train_unique_speakers=len(train_speakers),
                     test_unique_speakers=len(test_speakers),
-                    speaker_overlap_count=len(
-                        train_speakers.intersection(test_speakers)
-                    ),
+                    speaker_overlap_count=len(train_speakers.intersection(test_speakers)),
                 ),
             )
 
     can_group_by_speaker = (
-        len(resolved_speaker_ids) == len(samples)
-        and len(set(resolved_speaker_ids)) >= 2
+        len(resolved_speaker_ids) == len(samples) and len(set(resolved_speaker_ids)) >= 2
     )
     if can_group_by_speaker:
         grouped_features = np.zeros((len(samples), 1), dtype=np.float64)
@@ -287,9 +273,7 @@ def split_utterances(
             }
             overlap = len(train_speakers.intersection(test_speakers))
             if overlap > 0:
-                raise RuntimeError(
-                    "Grouped split produced overlapping speakers in train/test."
-                )
+                raise RuntimeError("Grouped split produced overlapping speakers in train/test.")
             return (
                 train_split,
                 test_split,
@@ -315,9 +299,7 @@ def split_utterances(
         salt=salt,
     )
     if not train_split or not test_split:
-        raise RuntimeError(
-            "Deterministic split produced an empty partition; adjust test_size."
-        )
+        raise RuntimeError("Deterministic split produced an empty partition; adjust test_size.")
     train_speakers = {
         speaker
         for utterance, speaker in zip(samples, speaker_ids, strict=False)

@@ -57,12 +57,8 @@ def test_encode_accurate_sequence_uses_profile_specific_default_model_id(
         captured.update(kwargs)
         return expected_encoded
 
-    monkeypatch.setattr(
-        afd, "encode_sequence_with_cache", _fake_encode_sequence_with_cache
-    )
-    monkeypatch.setattr(
-        afd, "resolve_accurate_model_id", lambda _settings: "resolved/whisper"
-    )
+    monkeypatch.setattr(afd, "encode_sequence_with_cache", _fake_encode_sequence_with_cache)
+    monkeypatch.setattr(afd, "resolve_accurate_model_id", lambda _settings: "resolved/whisper")
     monkeypatch.setattr(
         afd,
         "resolve_accurate_research_model_id",
@@ -127,9 +123,7 @@ def test_build_accurate_feature_dataset_wires_encode_with_runtime_contracts(
         "_build_prepared_accurate_feature_dataset",
         _fake_build_prepared,
     )
-    monkeypatch.setattr(
-        afd, "resolve_accurate_model_id", lambda _settings: "resolved/whisper"
-    )
+    monkeypatch.setattr(afd, "resolve_accurate_model_id", lambda _settings: "resolved/whisper")
     monkeypatch.setattr(
         afd,
         "resolve_accurate_research_model_id",

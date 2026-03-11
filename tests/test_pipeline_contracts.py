@@ -8,6 +8,7 @@ import pytest
 import ser.__main__ as cli
 import ser.config as config_module
 import ser.models.emotion_model as emotion_model
+import ser.models.training_support as training_support
 from ser import domain
 from ser.models.artifact_loading import model_load_candidates
 
@@ -87,14 +88,12 @@ def test_model_load_candidate_order_and_uniqueness(
         folder=settings.models.folder,
         secure_model_file=settings.models.secure_model_file,
         model_file=settings.models.model_file,
-        candidate_factory=emotion_model.ModelCandidate,
+        candidate_factory=training_support.ModelCandidate,
     )
 
     assert [candidate.artifact_format for candidate in candidates] == [
         "skops",
         "pickle",
     ]
-    keys = {
-        (str(candidate.path), candidate.artifact_format) for candidate in candidates
-    }
+    keys = {(str(candidate.path), candidate.artifact_format) for candidate in candidates}
     assert len(keys) == len(candidates)

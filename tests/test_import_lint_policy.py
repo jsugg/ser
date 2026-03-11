@@ -6,6 +6,10 @@ import tomllib
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
+pytestmark = pytest.mark.topology_contract
+
 
 def _load_ruff_lint_config() -> dict[str, Any]:
     """Loads Ruff lint configuration from pyproject."""
@@ -37,9 +41,24 @@ def test_import_lint_policy_limits_tid251_exceptions_to_boundary_files() -> None
     lint_config = _load_ruff_lint_config()
     per_file_ignores = cast(dict[str, list[str]], lint_config["per-file-ignores"])
 
-    allowed_tid251_files = {"ser/api.py", "tests/test_api.py"}
+    allowed_tid251_files = {
+        "ser/api.py",
+        "ser/_internal/cli/data.py",
+        "ser/_internal/cli/diagnostics.py",
+        "ser/_internal/cli/runtime.py",
+        "tests/test_api.py",
+    }
     for file_path, ignored_rules in per_file_ignores.items():
         if "TID251" in ignored_rules:
             assert file_path in allowed_tid251_files
     for allowed_file in allowed_tid251_files:
         assert "TID251" in per_file_ignores[allowed_file]
+
+
+def test_import_lint_lane_runs_boundary_contract_tests() -> None:
+    """The import-lint lane should enforce both lint rules and boundary contracts."""
+    script = Path("scripts/run_import_lint.sh").read_text(encoding="utf-8")
+
+    assert "ruff check --select TID251" in script
+    assert "tests/test_api_import_boundary.py" in script
+    assert "tests/test_import_lint_policy.py" in script

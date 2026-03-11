@@ -42,9 +42,5 @@ def test_build_msp_podcast_utterances_parses_csv_and_metadata(tmp_path: Path) ->
     assert utterances is not None
     assert len(utterances) == 2
     assert {item.corpus for item in utterances} == {MSP_PODCAST_CORPUS_ID}
-    assert {item.dataset_policy_id for item in utterances} == {
-        MSP_PODCAST_DATASET_POLICY_ID
-    }
-    assert {item.dataset_license_id for item in utterances} == {
-        MSP_PODCAST_DATASET_LICENSE_ID
-    }
+    assert {item.dataset_policy_id for item in utterances} == {MSP_PODCAST_DATASET_POLICY_ID}
+    assert {item.dataset_license_id for item in utterances} == {MSP_PODCAST_DATASET_LICENSE_ID}

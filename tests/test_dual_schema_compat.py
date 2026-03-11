@@ -58,6 +58,10 @@ def test_predict_emotions_uses_detailed_adapter(
         ],
         frames=[],
     )
-    monkeypatch.setattr(em, "predict_emotions_detailed", lambda _file: payload)
+    monkeypatch.setattr(
+        em,
+        "predict_emotions_detailed",
+        lambda _file, *, loaded_model=None, settings=None: payload,
+    )
 
     assert em.predict_emotions("sample.wav") == [EmotionSegment("neutral", 0.25, 2.0)]

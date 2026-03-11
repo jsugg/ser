@@ -12,10 +12,16 @@ from sklearn.dummy import DummyClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+import ser.models.accurate_feature_dataset as accurate_feature_dataset
+import ser.models.accurate_training_execution as accurate_training_execution
+import ser.models.profile_runtime as profile_runtime
+import ser.models.training_entrypoints as training_entrypoints
+import ser.models.training_support as training_support
 from ser.config import AppConfig
 from ser.data import EmbeddingCache
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.models import emotion_model as em
+from ser.models.dataset_splitting import MediumSplitMetadata
 from ser.models.profile_runtime import resolve_accurate_research_model_id
 from ser.repr.runtime_policy import resolve_feature_runtime_policy
 
@@ -87,7 +93,11 @@ def test_train_accurate_model_requires_labeled_dataset(
 ) -> None:
     """Accurate training should fail fast when dataset loading returns no samples."""
     monkeypatch.setattr(em, "get_settings", lambda: _settings_stub(tmp_path))
-    monkeypatch.setattr(em, "load_utterances", lambda: None)
+    monkeypatch.setattr(
+        training_entrypoints._data_loader,
+        "load_utterances",
+        lambda *, settings=None: None,
+    )
 
     with pytest.raises(RuntimeError, match="Dataset not loaded"):
         em.train_accurate_model()
@@ -101,7 +111,7 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     settings = _settings_stub(tmp_path)
     train_samples = [("train_0.wav", "happy"), ("train_1.wav", "sad")]
     test_samples = [("test_0.wav", "happy"), ("test_1.wav", "sad")]
-    split_metadata = em.MediumSplitMetadata(
+    split_metadata = MediumSplitMetadata(
         split_strategy="group_shuffle_split",
         speaker_grouped=True,
         speaker_id_coverage=1.0,
@@ -134,14 +144,14 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
 
     monkeypatch.setattr(em, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        em,
+        training_entrypoints._data_loader,
         "load_utterances",
-        lambda: all_utterances,
+        lambda *, settings=None: all_utterances,
     )
     monkeypatch.setattr(
-        em,
-        "_split_utterances",
-        lambda _samples, *, settings=None: (
+        training_support,
+        "split_utterances",
+        lambda _samples, *, settings, logger: (
             train_utterances,
             test_utterances,
             split_metadata,
@@ -151,17 +161,17 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     def _build_dataset(
         *,
         utterances: list[Utterance],
-        backend: em.WhisperBackend,
+        backend: object,
         cache: EmbeddingCache,
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
         **_kwargs: object,
-    ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
+    ) -> tuple[np.ndarray, list[str], list[training_support.WindowMeta]]:
         del backend, cache, model_id
         assert backend_id == em.ACCURATE_BACKEND_ID
         if utterances == train_utterances:
             train_meta = [
-                em.WindowMeta(
+                training_support.WindowMeta(
                     sample_id=item.sample_id, corpus=item.corpus, language="en"
                 )
                 for item in train_utterances
@@ -169,7 +179,7 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
             return x_train, y_train, train_meta
         if utterances == test_utterances:
             test_meta = [
-                em.WindowMeta(
+                training_support.WindowMeta(
                     sample_id=item.sample_id, corpus=item.corpus, language="en"
                 )
                 for item in test_utterances
@@ -177,27 +187,33 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
             return x_test, y_test, test_meta
         raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
-    monkeypatch.setattr(em, "_build_accurate_feature_dataset_impl", _build_dataset)
     monkeypatch.setattr(
-        em,
-        "_create_classifier",
+        accurate_feature_dataset,
+        "build_accurate_feature_dataset",
+        _build_dataset,
+    )
+    monkeypatch.setattr(
+        training_support,
+        "create_classifier",
         lambda _settings=None: _dummy_classifier(),
     )
     monkeypatch.setattr(
-        em.glob,
+        accurate_training_execution.glob,
         "glob",
         lambda _pattern: [f"corpus_{index}.wav" for index in range(6)],
     )
 
     def _persist_artifacts(
-        model: em.EmotionClassifier,
+        model: training_support.EmotionClassifier,
         artifact: dict[str, object],
         *,
         settings: AppConfig,
-    ) -> em.PersistedArtifacts:
-        del model, settings
+        persist_pickle: object = None,
+        persist_secure: object = None,
+    ) -> training_support.PersistedArtifacts:
+        del model, settings, persist_pickle, persist_secure
         captured["artifact"] = artifact
-        return em.PersistedArtifacts(
+        return training_support.PersistedArtifacts(
             pickle_path=tmp_path / "ser_model_accurate.pkl",
             secure_path=None,
         )
@@ -206,8 +222,12 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
         captured["report"] = report
         captured["report_path"] = path
 
-    monkeypatch.setattr(em, "_persist_model_artifacts", _persist_artifacts)
-    monkeypatch.setattr(em, "_persist_training_report", _persist_report)
+    monkeypatch.setattr(training_support, "persist_model_artifacts", _persist_artifacts)
+    monkeypatch.setattr(
+        accurate_training_execution,
+        "persist_training_report",
+        _persist_report,
+    )
 
     em.train_accurate_model()
 
@@ -268,7 +288,7 @@ def test_train_accurate_model_uses_configured_model_id(
     settings.models.accurate_model_id = "unit-test/whisper-tiny"
     train_samples = [("train_0.wav", "happy"), ("train_1.wav", "sad")]
     test_samples = [("test_0.wav", "happy"), ("test_1.wav", "sad")]
-    split_metadata = em.MediumSplitMetadata(
+    split_metadata = MediumSplitMetadata(
         split_strategy="group_shuffle_split",
         speaker_grouped=True,
         speaker_id_coverage=1.0,
@@ -299,17 +319,17 @@ def test_train_accurate_model_uses_configured_model_id(
             captured["backend_device"] = device
             captured["backend_dtype"] = dtype
 
-    monkeypatch.setattr(em, "WhisperBackend", _BackendStub)
+    monkeypatch.setattr(profile_runtime, "WhisperBackend", _BackendStub)
     monkeypatch.setattr(em, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        em,
+        training_entrypoints._data_loader,
         "load_utterances",
-        lambda: all_utterances,
+        lambda *, settings=None: all_utterances,
     )
     monkeypatch.setattr(
-        em,
-        "_split_utterances",
-        lambda _samples, *, settings=None: (
+        training_support,
+        "split_utterances",
+        lambda _samples, *, settings, logger: (
             train_utterances,
             test_utterances,
             split_metadata,
@@ -324,7 +344,7 @@ def test_train_accurate_model_uses_configured_model_id(
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
         **_kwargs: object,
-    ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
+    ) -> tuple[np.ndarray, list[str], list[training_support.WindowMeta]]:
         del backend, cache
         assert model_id is not None
         assert backend_id == em.ACCURATE_BACKEND_ID
@@ -333,7 +353,7 @@ def test_train_accurate_model_uses_configured_model_id(
         dataset_model_ids.append(model_id)
         if utterances == train_utterances:
             train_meta = [
-                em.WindowMeta(
+                training_support.WindowMeta(
                     sample_id=item.sample_id, corpus=item.corpus, language="en"
                 )
                 for item in train_utterances
@@ -341,7 +361,7 @@ def test_train_accurate_model_uses_configured_model_id(
             return x_train, y_train, train_meta
         if utterances == test_utterances:
             test_meta = [
-                em.WindowMeta(
+                training_support.WindowMeta(
                     sample_id=item.sample_id, corpus=item.corpus, language="en"
                 )
                 for item in test_utterances
@@ -349,26 +369,36 @@ def test_train_accurate_model_uses_configured_model_id(
             return x_test, y_test, test_meta
         raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
-    monkeypatch.setattr(em, "_build_accurate_feature_dataset_impl", _build_dataset)
     monkeypatch.setattr(
-        em,
-        "_create_classifier",
+        accurate_feature_dataset,
+        "build_accurate_feature_dataset",
+        _build_dataset,
+    )
+    monkeypatch.setattr(
+        training_support,
+        "create_classifier",
         lambda _settings=None: _dummy_classifier(),
     )
     monkeypatch.setattr(
-        em.glob,
+        accurate_training_execution.glob,
         "glob",
         lambda _pattern: [f"corpus_{index}.wav" for index in range(4)],
     )
     monkeypatch.setattr(
-        em,
-        "_persist_model_artifacts",
-        lambda _model, _artifact, *, settings: em.PersistedArtifacts(
-            pickle_path=tmp_path / "ser_model_accurate.pkl",
-            secure_path=None,
+        training_support,
+        "persist_model_artifacts",
+        lambda _model, _artifact, *, settings, persist_pickle, persist_secure: (
+            training_support.PersistedArtifacts(
+                pickle_path=tmp_path / "ser_model_accurate.pkl",
+                secure_path=None,
+            )
         ),
     )
-    monkeypatch.setattr(em, "_persist_training_report", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        accurate_training_execution,
+        "persist_training_report",
+        lambda *_args, **_kwargs: None,
+    )
 
     em.train_accurate_model()
 
@@ -404,7 +434,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     settings.models.accurate_research_model_id = "unit-test/emotion2vec-plus"
     train_samples = [("train_0.wav", "happy"), ("train_1.wav", "sad")]
     test_samples = [("test_0.wav", "happy"), ("test_1.wav", "sad")]
-    split_metadata = em.MediumSplitMetadata(
+    split_metadata = MediumSplitMetadata(
         split_strategy="group_shuffle_split",
         speaker_grouped=True,
         speaker_id_coverage=1.0,
@@ -435,17 +465,17 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             captured["backend_modelscope_cache_root"] = modelscope_cache_root
             captured["backend_huggingface_cache_root"] = huggingface_cache_root
 
-    monkeypatch.setattr(em, "Emotion2VecBackend", _BackendStub)
+    monkeypatch.setattr(profile_runtime, "Emotion2VecBackend", _BackendStub)
     monkeypatch.setattr(em, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        em,
+        training_entrypoints._data_loader,
         "load_utterances",
-        lambda: all_utterances,
+        lambda *, settings=None: all_utterances,
     )
     monkeypatch.setattr(
-        em,
-        "_split_utterances",
-        lambda _samples, *, settings=None: (
+        training_support,
+        "split_utterances",
+        lambda _samples, *, settings, logger: (
             train_utterances,
             test_utterances,
             split_metadata,
@@ -460,7 +490,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
         model_id: str | None = None,
         backend_id: str = em.ACCURATE_BACKEND_ID,
         **_kwargs: object,
-    ) -> tuple[np.ndarray, list[str], list[em.WindowMeta]]:
+    ) -> tuple[np.ndarray, list[str], list[training_support.WindowMeta]]:
         del backend, cache
         assert model_id is not None
         assert backend_id == em.ACCURATE_RESEARCH_BACKEND_ID
@@ -469,7 +499,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
         dataset_model_ids.append(model_id)
         if utterances == train_utterances:
             train_meta = [
-                em.WindowMeta(
+                training_support.WindowMeta(
                     sample_id=item.sample_id, corpus=item.corpus, language="en"
                 )
                 for item in train_utterances
@@ -477,7 +507,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             return x_train, y_train, train_meta
         if utterances == test_utterances:
             test_meta = [
-                em.WindowMeta(
+                training_support.WindowMeta(
                     sample_id=item.sample_id, corpus=item.corpus, language="en"
                 )
                 for item in test_utterances
@@ -485,23 +515,29 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             return x_test, y_test, test_meta
         raise AssertionError(f"Unexpected sample partition: {utterances!r}")
 
-    monkeypatch.setattr(em, "_build_accurate_feature_dataset_impl", _build_dataset)
     monkeypatch.setattr(
-        em,
-        "_create_classifier",
+        accurate_feature_dataset,
+        "build_accurate_feature_dataset",
+        _build_dataset,
+    )
+    monkeypatch.setattr(
+        training_support,
+        "create_classifier",
         lambda _settings=None: _dummy_classifier(),
     )
     monkeypatch.setattr(
-        em.glob,
+        accurate_training_execution.glob,
         "glob",
         lambda _pattern: [f"corpus_{index}.wav" for index in range(4)],
     )
     monkeypatch.setattr(
-        em,
-        "_persist_model_artifacts",
-        lambda _model, _artifact, *, settings: em.PersistedArtifacts(
-            pickle_path=tmp_path / "ser_model_accurate_research.pkl",
-            secure_path=None,
+        training_support,
+        "persist_model_artifacts",
+        lambda _model, _artifact, *, settings, persist_pickle, persist_secure: (
+            training_support.PersistedArtifacts(
+                pickle_path=tmp_path / "ser_model_accurate_research.pkl",
+                secure_path=None,
+            )
         ),
     )
 
@@ -509,38 +545,30 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
         captured["report"] = report
         captured["report_path"] = path
 
-    monkeypatch.setattr(em, "_persist_training_report", _persist_report)
+    monkeypatch.setattr(
+        accurate_training_execution,
+        "persist_training_report",
+        _persist_report,
+    )
 
     em.train_accurate_research_model()
 
     assert captured["backend_model_id"] == "unit-test/emotion2vec-plus"
-    assert (
-        captured["backend_modelscope_cache_root"]
-        == settings.models.modelscope_cache_root
-    )
-    assert (
-        captured["backend_huggingface_cache_root"]
-        == settings.models.huggingface_cache_root
-    )
+    assert captured["backend_modelscope_cache_root"] == settings.models.modelscope_cache_root
+    assert captured["backend_huggingface_cache_root"] == settings.models.huggingface_cache_root
     dataset_model_ids = captured["dataset_model_ids"]
     assert isinstance(dataset_model_ids, list)
     assert dataset_model_ids == [
         "unit-test/emotion2vec-plus",
         "unit-test/emotion2vec-plus",
     ]
-    backend_override = settings.feature_runtime_policy.for_backend(
-        em.ACCURATE_RESEARCH_BACKEND_ID
-    )
+    backend_override = settings.feature_runtime_policy.for_backend(em.ACCURATE_RESEARCH_BACKEND_ID)
     expected_runtime_policy = resolve_feature_runtime_policy(
         backend_id=em.ACCURATE_RESEARCH_BACKEND_ID,
         requested_device=settings.torch_runtime.device,
         requested_dtype=settings.torch_runtime.dtype,
-        backend_override_device=(
-            backend_override.device if backend_override is not None else None
-        ),
-        backend_override_dtype=(
-            backend_override.dtype if backend_override is not None else None
-        ),
+        backend_override_device=(backend_override.device if backend_override is not None else None),
+        backend_override_dtype=(backend_override.dtype if backend_override is not None else None),
     )
     assert captured["backend_device"] == expected_runtime_policy.device
 
@@ -553,10 +581,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
     assert isinstance(artifact_metadata, dict)
     assert artifact_metadata["backend_id"] == "emotion2vec"
     assert artifact_metadata["profile"] == "accurate-research"
-    assert (
-        artifact_metadata["backend_model_id"]
-        == settings.models.accurate_research_model_id
-    )
+    assert artifact_metadata["backend_model_id"] == settings.models.accurate_research_model_id
     assert artifact_metadata["pooling_strategy"] == "mean_std"
     assert artifact_metadata["torch_device"] == expected_runtime_policy.device
     assert artifact_metadata["torch_dtype"] == expected_runtime_policy.dtype

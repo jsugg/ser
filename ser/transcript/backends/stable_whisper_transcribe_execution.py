@@ -68,8 +68,7 @@ def run_stable_whisper_transcribe_with_retry(
             if failure_classification.is_retryable:
                 release_runtime_memory_for_retry()
             should_force_cpu_now = (
-                failure_classification.disposition
-                == FailureDisposition.FAILOVER_CPU_NOW
+                failure_classification.disposition == FailureDisposition.FAILOVER_CPU_NOW
                 and runtime_device_type in {"mps", "cuda"}
             )
             is_final_candidate = index >= len(precision_candidates) - 1
@@ -90,8 +89,7 @@ def run_stable_whisper_transcribe_with_retry(
                     )
                 else:
                     logger.warning(
-                        "Transcription retrying on cpu runtime after %s "
-                        "failure (%s).",
+                        "Transcription retrying on cpu runtime after %s " "failure (%s).",
                         runtime_device_type,
                         error_summary,
                     )

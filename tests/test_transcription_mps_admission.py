@@ -179,13 +179,8 @@ def test_mps_admission_control_enabled_reads_runtime_flag() -> None:
         transcription=SimpleNamespace(mps_admission_control_enabled=True)
     )
 
-    assert (
-        mps_admission.mps_admission_control_enabled(cast(Any, disabled_settings))
-        is False
-    )
-    assert (
-        mps_admission.mps_admission_control_enabled(cast(Any, enabled_settings)) is True
-    )
+    assert mps_admission.mps_admission_control_enabled(cast(Any, disabled_settings)) is False
+    assert mps_admission.mps_admission_control_enabled(cast(Any, enabled_settings)) is True
 
 
 def test_resolve_mps_admission_decision_applies_override_and_logs(

@@ -63,9 +63,7 @@ def test_load_labeled_audio_paths_returns_expected_pairs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Labeled path loader should keep only supported emotions with valid names."""
-    monkeypatch.setattr(
-        dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0)
-    )
+    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0))
     monkeypatch.setattr(
         dl.glob,
         "glob",
@@ -89,9 +87,7 @@ def test_load_labeled_audio_paths_aborts_on_high_parse_failure_ratio(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Label-loader should stop early when parse failures exceed threshold."""
-    monkeypatch.setattr(
-        dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.3)
-    )
+    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.3))
     monkeypatch.setattr(
         dl.glob,
         "glob",
@@ -110,12 +106,8 @@ def test_load_data_aborts_when_failure_ratio_exceeds_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A high extraction failure ratio should stop training early."""
-    monkeypatch.setattr(
-        dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.4)
-    )
-    monkeypatch.setattr(
-        dl.glob, "glob", lambda _pattern: ["a.wav", "b.wav", "c.wav", "d.wav"]
-    )
+    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.4))
+    monkeypatch.setattr(dl.glob, "glob", lambda _pattern: ["a.wav", "b.wav", "c.wav", "d.wav"])
 
     def fake_process_file(
         file: str,
@@ -143,12 +135,8 @@ def test_load_data_returns_split_for_valid_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Valid extracted samples should be split into train/test partitions."""
-    monkeypatch.setattr(
-        dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0)
-    )
-    monkeypatch.setattr(
-        dl.glob, "glob", lambda _pattern: ["a.wav", "b.wav", "c.wav", "d.wav"]
-    )
+    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0))
+    monkeypatch.setattr(dl.glob, "glob", lambda _pattern: ["a.wav", "b.wav", "c.wav", "d.wav"])
 
     sample_map: dict[str, tuple[np.ndarray, str]] = {
         "a.wav": (np.asarray([1.0, 2.0], dtype=np.float64), "happy"),
@@ -330,9 +318,7 @@ def test_load_utterances_registry_rebuilds_missing_manifest(
         manifest_path=tmp_path / "missing" / "ravdess.jsonl",
         options={},
     )
-    monkeypatch.setattr(
-        dl, "load_dataset_registry", lambda settings: {"ravdess": entry}
-    )
+    monkeypatch.setattr(dl, "load_dataset_registry", lambda settings: {"ravdess": entry})
     monkeypatch.setattr(
         dl,
         "prepare_from_registry_entry",

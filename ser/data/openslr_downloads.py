@@ -247,13 +247,9 @@ def download_openslr_archives(
         if not archive_name:
             continue
         destination_path = downloads_dir / archive_name
-        downloaded.append(
-            download_file(url=archive_url, destination_path=destination_path)
-        )
+        downloaded.append(download_file(url=archive_url, destination_path=destination_path))
     if not downloaded:
-        raise RuntimeError(
-            f"OpenSLR {dataset_id} did not resolve any archive files to download."
-        )
+        raise RuntimeError(f"OpenSLR {dataset_id} did not resolve any archive files to download.")
     return downloaded
 
 

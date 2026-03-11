@@ -282,9 +282,7 @@ def test_prepare_emodb_2_from_zenodo_generates_labels_from_metadata(
     def _compute_relative_to_dataset_root(*, dataset_root: Path, path: Path) -> str:
         return path.resolve().relative_to(dataset_root.resolve()).as_posix()
 
-    def _write_labels_csv(
-        *, labels_csv_path: Path, labels_by_file: dict[str, str]
-    ) -> None:
+    def _write_labels_csv(*, labels_csv_path: Path, labels_by_file: dict[str, str]) -> None:
         captured_labels.update(labels_by_file)
         labels_csv_path.parent.mkdir(parents=True, exist_ok=True)
         labels_csv_path.write_text("written", encoding="utf-8")
@@ -362,9 +360,7 @@ def test_prepare_spanish_meacorpus_2023_from_zenodo_writes_manifest(
 
     def _copy_file(source_path: Path, destination_path: Path) -> object:
         copied_paths.append((source_path, destination_path))
-        destination_path.write_text(
-            source_path.read_text(encoding="utf-8"), encoding="utf-8"
-        )
+        destination_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
         return destination_path
 
     def _generate_labels_from_metadata_csv(
@@ -378,10 +374,7 @@ def test_prepare_spanish_meacorpus_2023_from_zenodo_writes_manifest(
         label_resolver: Callable[[str], str | None],
     ) -> _Stats:
         assert dataset_root == tmp_path
-        assert (
-            metadata_csv_path
-            == tmp_path / "metadata" / "spanish-meacorpus-2023-dataset.csv"
-        )
+        assert metadata_csv_path == tmp_path / "metadata" / "spanish-meacorpus-2023-dataset.csv"
         assert labels_csv_path == tmp_path / "labels.csv"
         assert audio_search_roots == (tmp_path / "raw" / "spanish-meacorpus-2023",)
         assert file_name_keys == ("filename", "file_name", "FileName")
@@ -457,9 +450,7 @@ def test_generate_labels_from_metadata_csv_keeps_rows_with_present_audio(
     def _compute_relative_to_dataset_root(*, dataset_root: Path, path: Path) -> str:
         return path.resolve().relative_to(dataset_root.resolve()).as_posix()
 
-    def _write_labels_csv(
-        *, labels_csv_path: Path, labels_by_file: dict[str, str]
-    ) -> None:
+    def _write_labels_csv(*, labels_csv_path: Path, labels_by_file: dict[str, str]) -> None:
         captured_labels.update(labels_by_file)
         labels_csv_path.parent.mkdir(parents=True, exist_ok=True)
         with labels_csv_path.open("w", encoding="utf-8", newline="") as handle:

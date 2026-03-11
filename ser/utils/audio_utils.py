@@ -71,9 +71,7 @@ def read_audio_file(
     if duration_seconds is not None and duration_seconds <= 0.0:
         raise ValueError("duration_seconds must be > 0")
 
-    active_config = (
-        audio_read_config if audio_read_config is not None else AudioReadConfig()
-    )
+    active_config = audio_read_config if audio_read_config is not None else AudioReadConfig()
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")
@@ -85,22 +83,14 @@ def read_audio_file(
         logger.debug(msg=f"Attempt {attempt + 1} to read audio file using librosa.")
         try:
             with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", category=UserWarning, module="librosa"
-                )
+                warnings.filterwarnings("ignore", category=UserWarning, module="librosa")
                 audiofile, current_sample_rate = librosa.load(
                     str(path),
                     sr=None,
                     offset=float(start_seconds or 0.0),
-                    duration=(
-                        float(duration_seconds)
-                        if duration_seconds is not None
-                        else None
-                    ),
+                    duration=(float(duration_seconds) if duration_seconds is not None else None),
                 )
-            normalized_audio = _prepare_audio_buffer(
-                np.asarray(audiofile, dtype=np.float32)
-            )
+            normalized_audio = _prepare_audio_buffer(np.asarray(audiofile, dtype=np.float32))
 
             logger.debug(msg=f"Successfully read audio file using librosa: {file_path}")
             return normalized_audio, int(current_sample_rate)
@@ -124,15 +114,11 @@ def read_audio_file(
             logger.warning(msg="Falling back to soundfile...")
             try:
                 with sf.SoundFile(str(path)) as sound_file:
-                    raw_audio = np.asarray(
-                        sound_file.read(dtype="float32"), dtype=np.float32
-                    )
+                    raw_audio = np.asarray(sound_file.read(dtype="float32"), dtype=np.float32)
                     current_sample_rate = int(sound_file.samplerate)
                 normalized_audio = _prepare_audio_buffer(raw_audio)
 
-                logger.debug(
-                    msg=(f"Successfully read audio file using soundfile: {file_path}")
-                )
+                logger.debug(msg=(f"Successfully read audio file using soundfile: {file_path}"))
                 return normalized_audio, current_sample_rate
 
             except Exception as err:
@@ -148,8 +134,7 @@ def read_audio_file(
 
     logger.error(
         msg=(
-            f"Failed to read audio file {file_path} "
-            f"after {active_config.max_retries} retries."
+            f"Failed to read audio file {file_path} " f"after {active_config.max_retries} retries."
         )
     )
     raise OSError(f"Error reading {file_path}")

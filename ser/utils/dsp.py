@@ -51,18 +51,12 @@ def extract_feature_from_signal(
     if audio.size == 0:
         raise ValueError("Audio contains no samples.")
 
-    active_feature_flags = (
-        feature_flags if feature_flags is not None else FeatureFlags()
-    )
-    prepared_audio: NDArray[np.float32] = _pad_audio_for_fft(
-        np.asarray(audio, dtype=np.float32)
-    )
+    active_feature_flags = feature_flags if feature_flags is not None else FeatureFlags()
+    prepared_audio: NDArray[np.float32] = _pad_audio_for_fft(np.asarray(audio, dtype=np.float32))
     if not bool(np.all(np.isfinite(prepared_audio))):
         raise ValueError("Audio buffer is not finite everywhere.")
     n_fft: int = min(prepared_audio.size, 2048)
-    stft_magnitude: NDArray[np.float32] = np.abs(
-        librosa.stft(prepared_audio, n_fft=n_fft)
-    )
+    stft_magnitude: NDArray[np.float32] = np.abs(librosa.stft(prepared_audio, n_fft=n_fft))
     stft_power_db: NDArray[np.float32] = librosa.power_to_db(
         np.square(stft_magnitude),
         ref=np.max,
@@ -72,27 +66,21 @@ def extract_feature_from_signal(
     try:
         if active_feature_flags.mfcc:
             mfccs: NDArray[np.float64] = np.mean(
-                librosa.feature.mfcc(
-                    y=prepared_audio, sr=sample_rate, n_mfcc=40, n_fft=n_fft
-                ),
+                librosa.feature.mfcc(y=prepared_audio, sr=sample_rate, n_mfcc=40, n_fft=n_fft),
                 axis=1,
             )
             feature_parts.append(np.asarray(mfccs, dtype=np.float64))
 
         if active_feature_flags.chroma:
             chroma: NDArray[np.float64] = np.mean(
-                librosa.feature.chroma_stft(
-                    S=stft_magnitude, sr=sample_rate, n_fft=n_fft
-                ),
+                librosa.feature.chroma_stft(S=stft_magnitude, sr=sample_rate, n_fft=n_fft),
                 axis=1,
             )
             feature_parts.append(np.asarray(chroma, dtype=np.float64))
 
         if active_feature_flags.mel:
             mel: NDArray[np.float64] = np.mean(
-                librosa.feature.melspectrogram(
-                    y=prepared_audio, sr=sample_rate, n_fft=n_fft
-                ),
+                librosa.feature.melspectrogram(y=prepared_audio, sr=sample_rate, n_fft=n_fft),
                 axis=1,
             )
             feature_parts.append(np.asarray(mel, dtype=np.float64))

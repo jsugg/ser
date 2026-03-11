@@ -179,8 +179,7 @@ def prepare_dataset(
 
     if compliance_mode not in {"advisory", "strict"}:
         raise ValueError(
-            "Unsupported compliance_mode "
-            f"{compliance_mode!r}; expected 'advisory' or 'strict'."
+            "Unsupported compliance_mode " f"{compliance_mode!r}; expected 'advisory' or 'strict'."
         )
 
     consent_status = compute_dataset_descriptor_missing_consents(
@@ -203,12 +202,8 @@ def prepare_dataset(
             missing_policies = ()
             missing_licenses = ()
         elif compliance_mode == "strict":
-            policies_text = (
-                ", ".join(missing_policies) if missing_policies else "(none)"
-            )
-            licenses_text = (
-                ", ".join(missing_licenses) if missing_licenses else "(none)"
-            )
+            policies_text = ", ".join(missing_policies) if missing_policies else "(none)"
+            licenses_text = ", ".join(missing_licenses) if missing_licenses else "(none)"
             raise DatasetConsentError(
                 "Missing dataset acknowledgements for strict library execution.\n"
                 f"Missing policy consent(s): {policies_text}\n"

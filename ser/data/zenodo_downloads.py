@@ -75,9 +75,7 @@ class ComputeRelativeToDatasetRoot(Protocol):
 class WriteLabelsCsv(Protocol):
     """Callable contract for deterministic labels.csv persistence."""
 
-    def __call__(
-        self, *, labels_csv_path: Path, labels_by_file: dict[str, str]
-    ) -> None: ...
+    def __call__(self, *, labels_csv_path: Path, labels_by_file: dict[str, str]) -> None: ...
 
 
 class GenerateLabelsFromMetadataCsv(Protocol):
@@ -215,9 +213,7 @@ def generate_labels_from_metadata_csv(
     dropped_rows = 0
     duplicate_conflicts = 0
     labels_by_file: dict[str, str] = {}
-    normalized_audio_roots = tuple(
-        root.expanduser().resolve() for root in audio_search_roots
-    )
+    normalized_audio_roots = tuple(root.expanduser().resolve() for root in audio_search_roots)
 
     with metadata_csv_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -468,9 +464,7 @@ def prepare_emodb_2_from_zenodo(
     extract_root = root / "raw" / "emodb-2.0"
     ensure_extracted_archive(archive_path=archive_path, extract_root=extract_root)
 
-    metadata_candidates = sorted(
-        extract_root.rglob("db.emotion.categories.ambiguous.csv")
-    )
+    metadata_candidates = sorted(extract_root.rglob("db.emotion.categories.ambiguous.csv"))
     if not metadata_candidates:
         raise RuntimeError(
             "EmoDB 2.0 metadata file `db.emotion.categories.ambiguous.csv` not found after extraction."

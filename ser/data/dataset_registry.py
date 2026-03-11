@@ -88,18 +88,14 @@ def parse_dataset_registry_options(
                 "dataset id like `namespace/name`."
             )
     if source_revision is not None and any(char.isspace() for char in source_revision):
-        raise ValueError(
-            "Invalid source_revision in dataset registry: whitespace is not allowed."
-        )
+        raise ValueError("Invalid source_revision in dataset registry: whitespace is not allowed.")
     if source_commit_sha is not None:
         normalized_source_commit_sha = source_commit_sha.lower()
         if (
             any(char.isspace() for char in normalized_source_commit_sha)
             or len(normalized_source_commit_sha) < 7
             or len(normalized_source_commit_sha) > 64
-            or any(
-                char not in "0123456789abcdef" for char in normalized_source_commit_sha
-            )
+            or any(char not in "0123456789abcdef" for char in normalized_source_commit_sha)
         ):
             raise ValueError(
                 "Invalid source_commit_sha in dataset registry: expected 7-64 hex characters."
@@ -114,9 +110,7 @@ def parse_dataset_registry_options(
         "source_commit_sha",
         "default_language",
     }
-    extras = tuple(
-        sorted((key, value) for key, value in raw.items() if key not in known_keys)
-    )
+    extras = tuple(sorted((key, value) for key, value in raw.items() if key not in known_keys))
     return DatasetRegistryOptions(
         labels_csv_path=labels_csv_path,
         audio_base_dir=audio_base_dir,
@@ -172,9 +166,7 @@ def save_dataset_registry(
         for dataset_id, entry in registry.items()
     }
     tmp_path = path.with_suffix(path.suffix + ".tmp")
-    tmp_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(tmp_path, path)
 
 
@@ -217,8 +209,6 @@ def remove_dataset_registry_entry(
 def registered_manifest_paths(*, settings: AppConfig) -> tuple[Path, ...]:
     registry = load_dataset_registry(settings=settings)
     manifests = [
-        entry.manifest_path
-        for entry in registry.values()
-        if entry.manifest_path.is_file()
+        entry.manifest_path for entry in registry.values() if entry.manifest_path.is_file()
     ]
     return tuple(sorted(set(manifests)))

@@ -235,9 +235,7 @@ def test_run_data_download_command_passes_source_overrides(
             source_revision="rev-1",
         )
 
-    monkeypatch.setattr(
-        data_cli, "run_dataset_prepare_workflow", _capture_workflow_kwargs
-    )
+    monkeypatch.setattr(data_cli, "run_dataset_prepare_workflow", _capture_workflow_kwargs)
 
     code = data_cli.run_data_command(
         [

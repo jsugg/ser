@@ -33,7 +33,6 @@ make type      # mypy + pyright (pythonversion 3.12)
 make test      # pytest -q
 make prepush-check      # canonical pre-push hook command
 make prepush-hook       # hook workflow: autofix + verify + abort if files changed
-make topology-contracts # PR-901..PR-903 structural ownership contract lane
 make import-lint        # API boundary import lint lane (TID251 banned-api policy)
 ```
 
@@ -70,7 +69,7 @@ Quality and validation lanes:
 - `code-quality`: runs pre-push stage hooks (ruff/black/isort/mypy/pyright), with formatter hooks in check-only mode.
 - `resolve`: validates lock/extras resolution for Python 3.12 and 3.13.
 - `tests`: runs pytest matrix on Python 3.12 and 3.13.
-- `contract-gates`: deterministic contract lane on Python 3.12 (structural ownership gates + API boundary import-lint gate + transcription benchmark contract test).
+- `contract-gates`: deterministic contract lane on Python 3.12 (API boundary import-lint gate + transcription benchmark contract test).
 - `build`: package build + metadata/wheel smoke checks.
 
 ## Hardware Validation

@@ -122,9 +122,7 @@ def _read_consent_payload(path: Path) -> dict[str, object]:
             f"Restricted backend consent store at {path} is unreadable: {err}"
         ) from err
     if not isinstance(payload, dict):
-        raise RuntimeError(
-            f"Restricted backend consent store at {path} must be a JSON object."
-        )
+        raise RuntimeError(f"Restricted backend consent store at {path} must be a JSON object.")
     schema_version = payload.get("schema_version")
     if schema_version != _CONSENT_SCHEMA_VERSION:
         raise RuntimeError(
@@ -136,9 +134,7 @@ def _read_consent_payload(path: Path) -> dict[str, object]:
         payload["consents"] = {}
         return payload
     if not isinstance(raw_consents, dict):
-        raise RuntimeError(
-            f"Restricted backend consent store at {path} has invalid 'consents'."
-        )
+        raise RuntimeError(f"Restricted backend consent store at {path} has invalid 'consents'.")
     return payload
 
 
@@ -189,9 +185,7 @@ def load_persisted_backend_consents(
     payload = _read_consent_payload(path)
     raw_consents = payload.get("consents")
     if not isinstance(raw_consents, dict):
-        raise RuntimeError(
-            f"Restricted backend consent store at {path} has invalid 'consents'."
-        )
+        raise RuntimeError(f"Restricted backend consent store at {path} has invalid 'consents'.")
 
     resolved: dict[str, BackendConsentRecord] = {}
     for backend_id, raw_record in raw_consents.items():
@@ -221,9 +215,7 @@ def load_persisted_backend_consents(
             or not isinstance(source_url, str)
             or not source_url.strip()
         ):
-            raise RuntimeError(
-                f"Consent record for backend {backend_id!r} in {path} is invalid."
-            )
+            raise RuntimeError(f"Consent record for backend {backend_id!r} in {path} is invalid.")
         # Ignore stale consents when backend license policy changed.
         if policy_fingerprint != _policy_fingerprint(policy):
             continue
@@ -247,9 +239,7 @@ def persist_backend_consent(
     """Persists user opt-in consent for one restricted backend id."""
     policy = _BACKEND_POLICIES.get(backend_id)
     if policy is None:
-        raise RuntimeError(
-            f"Cannot persist consent for undefined backend {backend_id!r}."
-        )
+        raise RuntimeError(f"Cannot persist consent for undefined backend {backend_id!r}.")
     if not policy.restricted:
         raise RuntimeError(
             f"Backend {backend_id!r} is not restricted and does not require consent."
@@ -267,9 +257,7 @@ def persist_backend_consent(
     payload = _read_consent_payload(path)
     raw_consents = payload.get("consents")
     if not isinstance(raw_consents, dict):
-        raise RuntimeError(
-            f"Restricted backend consent store at {path} has invalid 'consents'."
-        )
+        raise RuntimeError(f"Restricted backend consent store at {path} has invalid 'consents'.")
     raw_consents[backend_id] = {
         "accepted_at_utc": consent_record.accepted_at_utc,
         "consent_source": consent_record.consent_source,
@@ -352,9 +340,7 @@ def evaluate_backend_access(
         )
 
     resolved_allowlist = (
-        frozenset()
-        if allowed_restricted_backends is None
-        else allowed_restricted_backends
+        frozenset() if allowed_restricted_backends is None else allowed_restricted_backends
     )
     if backend_id in resolved_allowlist:
         return LicenseDecision(
@@ -460,9 +446,7 @@ def build_provenance_metadata(
         "backend_license_id": decision.policy.license_id,
         "profile": profile,
         "dataset_glob_pattern": settings.dataset.glob_pattern,
-        "runtime_restricted_backends_enabled": (
-            access_context.restricted_backends_enabled
-        ),
+        "runtime_restricted_backends_enabled": (access_context.restricted_backends_enabled),
         "backend_is_restricted": decision.policy.restricted,
         "backend_access_allowed": decision.allowed,
         "backend_access_source": decision.access_source,

@@ -34,9 +34,7 @@ class DiagnosticReport:
     @property
     def has_warning_or_higher(self) -> bool:
         """Returns whether any warning or error finding exists."""
-        return any(
-            finding.severity in {"warning", "error"} for finding in self.findings
-        )
+        return any(finding.severity in {"warning", "error"} for finding in self.findings)
 
     @property
     def has_error(self) -> bool:

@@ -172,7 +172,5 @@ def test_accurate_research_hook_requires_restricted_opt_in(
     )
 
     settings = config.reload_settings()
-    with pytest.raises(
-        BackendLicensePolicyError, match="SER_ENABLE_RESTRICTED_BACKENDS=true"
-    ):
+    with pytest.raises(BackendLicensePolicyError, match="SER_ENABLE_RESTRICTED_BACKENDS=true"):
         backend_hooks.build_backend_hooks(settings)

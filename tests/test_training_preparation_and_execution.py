@@ -1,4 +1,4 @@
-"""Contract tests for shared training orchestration helpers."""
+"""Contract tests for shared training preparation and execution helpers."""
 
 from __future__ import annotations
 
@@ -8,16 +8,20 @@ from pathlib import Path
 
 import numpy as np
 
-from ser.models.training_orchestration import (
+from ser.models.training_execution import (
+    execute_default_profile_training,
+    finalize_profile_training_report,
+    run_accurate_profile_training,
+    run_medium_profile_training,
+)
+from ser.models.training_preparation import (
+    prepare_accurate_training_payload,
+    prepare_medium_training_payload,
+)
+from ser.models.training_types import (
     AccurateTrainingPreparation,
     MediumTrainingPreparation,
     TrainingEvaluation,
-    execute_default_profile_training,
-    finalize_profile_training_report,
-    prepare_accurate_training_payload,
-    prepare_medium_training_payload,
-    run_accurate_profile_training,
-    run_medium_profile_training,
 )
 
 
@@ -55,7 +59,7 @@ def test_finalize_profile_training_report_builds_and_persists_payload(
 
     result = finalize_profile_training_report(
         profile_label="Accurate",
-        logger=logging.getLogger("tests.training_orchestration"),
+        logger=logging.getLogger("tests.training_preparation_and_execution"),
         evaluation=evaluation,
         ser_metrics=evaluation.ser_metrics,
         artifact_metadata={"backend_id": "hf_whisper"},
@@ -134,9 +138,7 @@ def test_execute_default_profile_training_runs_fit_predict_and_persistence() -> 
                 ser_metrics,
             )[1]
         ),
-        build_model_artifact=lambda model: {
-            "metadata": {"model_type": model.__class__.__name__}
-        },
+        build_model_artifact=lambda model: {"metadata": {"model_type": model.__class__.__name__}},
         extract_artifact_metadata=_extract_artifact_metadata,
         persist_model_artifacts=lambda model, artifact: (
             captured_persist.update({"model": model, "artifact": artifact}),
@@ -160,7 +162,7 @@ def test_execute_default_profile_training_runs_fit_predict_and_persistence() -> 
 
 def test_prepare_accurate_training_payload_requires_loaded_dataset() -> None:
     """Preparation helper should fail fast when no training dataset is available."""
-    logger = logging.getLogger("tests.training_orchestration.prepare_dataset_required")
+    logger = logging.getLogger("tests.training_preparation_and_execution.prepare_dataset_required")
 
     try:
         _ = prepare_accurate_training_payload(
@@ -178,7 +180,7 @@ def test_prepare_accurate_training_payload_requires_loaded_dataset() -> None:
 
 def test_prepare_accurate_training_payload_builds_prepared_output() -> None:
     """Preparation helper should enforce consent and return prepared payload."""
-    logger = logging.getLogger("tests.training_orchestration.prepare_dataset_success")
+    logger = logging.getLogger("tests.training_preparation_and_execution.prepare_dataset_success")
     utterances = ["u1", "u2"]
     captured: dict[str, object] = {}
     prepared = AccurateTrainingPreparation[str, str, dict[str, str]](
@@ -215,7 +217,7 @@ def test_prepare_accurate_training_payload_builds_prepared_output() -> None:
 
 def test_prepare_medium_training_payload_requires_loaded_dataset() -> None:
     """Medium preparation helper should fail fast when no dataset is available."""
-    logger = logging.getLogger("tests.training_orchestration.prepare_medium_required")
+    logger = logging.getLogger("tests.training_preparation_and_execution.prepare_medium_required")
 
     try:
         _ = prepare_medium_training_payload(
@@ -233,7 +235,7 @@ def test_prepare_medium_training_payload_requires_loaded_dataset() -> None:
 
 def test_prepare_medium_training_payload_builds_prepared_output() -> None:
     """Medium preparation helper should enforce consent and return prepared payload."""
-    logger = logging.getLogger("tests.training_orchestration.prepare_medium_success")
+    logger = logging.getLogger("tests.training_preparation_and_execution.prepare_medium_success")
     utterances = ["u1", "u2"]
     captured: dict[str, object] = {}
     prepared = MediumTrainingPreparation[str, str, dict[str, str], dict[str, int]](
@@ -302,9 +304,7 @@ def test_run_medium_profile_training_executes_and_persists_report(
         def predict(self, x_test: np.ndarray) -> Sequence[str]:
             return ["happy" for _ in range(int(x_test.shape[0]))]
 
-    prepared = MediumTrainingPreparation[
-        str, _SplitMeta, dict[str, str], dict[str, int]
-    ](
+    prepared = MediumTrainingPreparation[str, _SplitMeta, dict[str, str], dict[str, int]](
         train_utterances=["u1", "u2"],
         test_utterances=["u3"],
         split_metadata=_SplitMeta(),
@@ -353,7 +353,7 @@ def test_run_medium_profile_training_executes_and_persists_report(
         prepared=prepared,
         utterances=["u1", "u2", "u3"],
         settings=_Settings(),
-        logger=logging.getLogger("tests.training_orchestration.medium"),
+        logger=logging.getLogger("tests.training_preparation_and_execution.medium"),
         profile_label="Medium",
         backend_id="hf_xlsr",
         profile_id="medium",
@@ -404,9 +404,7 @@ def test_run_medium_profile_training_executes_and_persists_report(
     data_controls = report_build["data_controls"]
     assert isinstance(data_controls, dict)
     assert data_controls["dataset"] == {"count": 3}
-    assert data_controls["medium_grouped_evaluation"] == {
-        "split_strategy": "speaker_grouped"
-    }
+    assert data_controls["medium_grouped_evaluation"] == {"split_strategy": "speaker_grouped"}
     assert captured["report"] == {"ok": True}
     assert captured["report_path"] == tmp_path / "training_report.json"
 
@@ -475,7 +473,7 @@ def test_run_accurate_profile_training_executes_and_persists_report(
         prepared=prepared,
         utterances=["u1", "u2", "u3"],
         settings={"runtime": "settings"},
-        logger=logging.getLogger("tests.training_orchestration.accurate"),
+        logger=logging.getLogger("tests.training_preparation_and_execution.accurate"),
         profile_label="Accurate",
         backend_id="hf_whisper",
         profile_id="accurate",
@@ -533,8 +531,6 @@ def test_run_accurate_profile_training_executes_and_persists_report(
     data_controls = report_build["data_controls"]
     assert isinstance(data_controls, dict)
     assert data_controls["dataset"] == {"count": 3}
-    assert data_controls["accurate_grouped_evaluation"] == {
-        "split_strategy": "group_shuffle_split"
-    }
+    assert data_controls["accurate_grouped_evaluation"] == {"split_strategy": "group_shuffle_split"}
     assert captured["report"] == {"ok": True}
     assert captured["report_path"] == report_destination

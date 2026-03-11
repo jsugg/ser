@@ -20,16 +20,12 @@ from ser.runtime.schema import InferenceResult
 
 type MediumInferenceRunner = Callable[[InferenceRequest, AppConfig], InferenceResult]
 type AccurateInferenceRunner = Callable[[InferenceRequest, AppConfig], InferenceResult]
-type AccurateResearchInferenceRunner = Callable[
-    [InferenceRequest, AppConfig], InferenceResult
-]
+type AccurateResearchInferenceRunner = Callable[[InferenceRequest, AppConfig], InferenceResult]
 type FastInferenceRunner = Callable[[InferenceRequest, AppConfig], InferenceResult]
 
 _PROFILE_CATALOG = get_profile_catalog()
 _MEDIUM_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG["medium"].required_modules
-_ACCURATE_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG[
-    "accurate"
-].required_modules
+_ACCURATE_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG["accurate"].required_modules
 _ACCURATE_RESEARCH_REQUIRED_MODULES: tuple[str, ...] = _PROFILE_CATALOG[
     "accurate-research"
 ].required_modules
@@ -83,9 +79,7 @@ def _load_accurate_inference_runner() -> AccurateInferenceRunner | None:
     return cast(AccurateInferenceRunner, runner)
 
 
-def _load_accurate_research_inference_runner() -> (
-    AccurateResearchInferenceRunner | None
-):
+def _load_accurate_research_inference_runner() -> AccurateResearchInferenceRunner | None:
     """Loads the concrete accurate-research inference runner when available."""
     try:
         module = importlib.import_module("ser.runtime.accurate_research_inference")

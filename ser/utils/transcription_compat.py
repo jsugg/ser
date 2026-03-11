@@ -10,9 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE = "faster_whisper_openmp_runtime_conflict"
-STABLE_WHISPER_SPARSE_MPS_INCOMPATIBLE_ISSUE_CODE = (
-    "stable_whisper_sparse_mps_incompatible"
-)
+STABLE_WHISPER_SPARSE_MPS_INCOMPATIBLE_ISSUE_CODE = "stable_whisper_sparse_mps_incompatible"
 
 _STABLE_WHISPER_SUPPORTED_MODELS = frozenset(
     {

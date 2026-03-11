@@ -129,9 +129,7 @@ def run_configure_command(argv: list[str], *, settings: AppConfig) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.show or (
-        not args.accept_dataset_policy and not args.accept_dataset_license
-    ):
+    if args.show or (not args.accept_dataset_policy and not args.accept_dataset_license):
         consents = load_persisted_dataset_consents(settings=settings)
         policies = ", ".join(sorted(consents.policy_consents)) or "(none)"
         licenses = ", ".join(sorted(consents.license_consents)) or "(none)"
@@ -158,12 +156,8 @@ def run_data_command(argv: list[str], *, settings: AppConfig) -> int:
     parser = argparse.ArgumentParser(prog="ser data")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
     supported_dataset_ids = ", ".join(sorted(SUPPORTED_DATASETS))
-    download_parser = subparsers.add_parser(
-        "download", help="Download/prepare datasets"
-    )
-    registry_parser = subparsers.add_parser(
-        "registry", help="Inspect persisted dataset registry"
-    )
+    download_parser = subparsers.add_parser("download", help="Download/prepare datasets")
+    registry_parser = subparsers.add_parser("registry", help="Inspect persisted dataset registry")
     catalog_parser = subparsers.add_parser(
         "catalog", help="Show dataset capabilities and pipeline-use candidates"
     )
@@ -383,9 +377,7 @@ def run_data_command(argv: list[str], *, settings: AppConfig) -> int:
 
     try:
         if args.skip_download and (args.source or args.source_revision):
-            raise ValueError(
-                "Download source overrides cannot be used with --skip-download."
-            )
+            raise ValueError("Download source overrides cannot be used with --skip-download.")
         _ensure_descriptor_consents(
             settings=settings,
             dataset_id=args.dataset,

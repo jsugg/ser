@@ -217,9 +217,7 @@ def evaluate_profile(
                 )
 
     if not y_true:
-        raise RuntimeError(
-            f"Profile '{profile_name}' produced no successful clip predictions."
-        )
+        raise RuntimeError(f"Profile '{profile_name}' produced no successful clip predictions.")
 
     metrics = compute_ser_metrics(y_true=y_true, y_pred=y_pred)
     return ProfileEvaluationResult(
@@ -231,9 +229,7 @@ def evaluate_profile(
         latency_median_seconds=float(statistics.median(latencies)),
         latency_p95_seconds=percentile(latencies, 0.95),
         segment_count_per_minute=(
-            float(statistics.fmean(segment_counts_per_minute))
-            if segment_counts_per_minute
-            else 0.0
+            float(statistics.fmean(segment_counts_per_minute)) if segment_counts_per_minute else 0.0
         ),
         median_segment_duration_seconds=(
             float(statistics.median(segment_durations)) if segment_durations else 0.0

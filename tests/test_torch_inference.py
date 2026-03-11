@@ -80,9 +80,7 @@ class _FakeTorchModule:
             bf16_supported=cuda_bf16_supported,
         )
         self.xpu = _FakeXpu(available=xpu_available)
-        self.backends = _FakeBackends(
-            mps=_FakeMps(available=mps_available, built=mps_built)
-        )
+        self.backends = _FakeBackends(mps=_FakeMps(available=mps_available, built=mps_built))
         self.context_calls: list[str] = []
 
     def device(self, spec: str) -> str:

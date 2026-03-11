@@ -1,4 +1,4 @@
-"""Accurate-profile training preparation helpers for emotion-model entrypoints."""
+"""Accurate-profile training preparation helpers for entrypoint owners."""
 
 from __future__ import annotations
 
@@ -11,36 +11,20 @@ import numpy as np
 
 from ser.config import AppConfig
 from ser.data import EmbeddingCache, Utterance
+from ser.models.accurate_training_execution import (
+    PreparedAccurateTrainingRunner,
+)
 from ser.models.dataset_splitting import MediumSplitMetadata
-from ser.models.training_orchestration import (
-    AccurateTrainingPreparation,
-    PersistedArtifactsLike,
-    TrainingEvaluation,
+from ser.models.training_preparation import (
     prepare_accurate_training_features,
     prepare_accurate_training_payload,
-    run_accurate_profile_training,
+)
+from ser.models.training_types import (
+    AccurateTrainingPreparation,
 )
 from ser.repr import Emotion2VecBackend, WhisperBackend
 
 _MetaT = TypeVar("_MetaT")
-_ModelT = TypeVar("_ModelT")
-
-
-class PreparedAccurateTrainingRunner(Protocol):
-    """Callable contract for running one prepared accurate-profile training pass."""
-
-    def __call__(
-        self,
-        *,
-        prepared: AccurateTrainingPreparation[Utterance, MediumSplitMetadata, Any],
-        utterances: list[Utterance],
-        settings: AppConfig,
-        profile_label: str,
-        backend_id: str,
-        profile_id: str,
-        frame_size_seconds: float,
-        frame_stride_seconds: float,
-    ) -> None: ...
 
 
 class ResolveRuntimeSelectorsForBackend(Protocol):
@@ -49,9 +33,7 @@ class ResolveRuntimeSelectorsForBackend(Protocol):
     def __call__(self, *, settings: AppConfig, backend_id: str) -> tuple[str, str]: ...
 
 
-type BuildAccurateFeatureDatasetForBackend = Callable[
-    ..., tuple[np.ndarray, list[str], list[Any]]
-]
+type BuildAccurateFeatureDatasetForBackend = Callable[..., tuple[np.ndarray, list[str], list[Any]]]
 type TrainAccurateProfileModelCallable = Callable[..., None]
 
 
@@ -92,9 +74,7 @@ def train_accurate_whisper_profile_model(
         ),
         split_utterances=split_utterances,
         resolve_model_id=lambda: resolve_model_id_for_settings(settings),
-        resolve_runtime_selectors=lambda: resolve_runtime_selectors_for_settings(
-            settings
-        ),
+        resolve_runtime_selectors=lambda: resolve_runtime_selectors_for_settings(settings),
         build_backend=lambda model_id, runtime_device, runtime_dtype: build_backend(
             model_id,
             runtime_device,
@@ -163,9 +143,7 @@ def train_accurate_research_profile_model(
         ),
         split_utterances=split_utterances,
         resolve_model_id=lambda: resolve_model_id_for_settings(settings),
-        resolve_runtime_selectors=lambda: resolve_runtime_selectors_for_settings(
-            settings
-        ),
+        resolve_runtime_selectors=lambda: resolve_runtime_selectors_for_settings(settings),
         build_backend=lambda model_id, runtime_device, runtime_dtype: build_backend(
             model_id,
             runtime_device,
@@ -265,130 +243,6 @@ def prepare_accurate_research_training(
             )
         ),
     )
-
-
-def run_accurate_profile_training_from_prepared(
-    *,
-    prepared: AccurateTrainingPreparation[Utterance, MediumSplitMetadata, _MetaT],
-    utterances: list[Utterance],
-    settings: AppConfig,
-    logger: logging.Logger,
-    profile_label: str,
-    backend_id: str,
-    profile_id: str,
-    pooling_strategy: str,
-    frame_size_seconds: float,
-    frame_stride_seconds: float,
-    create_classifier: Callable[[], _ModelT],
-    min_support: int,
-    evaluate_predictions: Callable[..., TrainingEvaluation],
-    attach_grouped_metrics: Callable[..., dict[str, object]],
-    build_model_artifact: Callable[..., dict[str, object]],
-    extract_artifact_metadata: Callable[[dict[str, object]], dict[str, object]],
-    persist_model_artifacts: Callable[
-        [_ModelT, dict[str, object]],
-        PersistedArtifactsLike,
-    ],
-    build_provenance_metadata: Callable[..., dict[str, object]],
-    build_dataset_controls: Callable[[list[Utterance]], dict[str, object]],
-    build_grouped_evaluation_controls: Callable[
-        [MediumSplitMetadata],
-        dict[str, object],
-    ],
-    build_training_report: Callable[..., dict[str, object]],
-    persist_training_report: Callable[[dict[str, object], Path], None],
-    report_destination: Path,
-) -> dict[str, object]:
-    """Runs accurate-profile training from a prepared payload."""
-    return run_accurate_profile_training(
-        prepared=prepared,
-        utterances=utterances,
-        settings=settings,
-        logger=logger,
-        profile_label=profile_label,
-        backend_id=backend_id,
-        profile_id=profile_id,
-        pooling_strategy=pooling_strategy,
-        frame_size_seconds=frame_size_seconds,
-        frame_stride_seconds=frame_stride_seconds,
-        create_classifier=create_classifier,
-        min_support=min_support,
-        evaluate_predictions=evaluate_predictions,
-        attach_grouped_metrics=attach_grouped_metrics,
-        build_model_artifact=build_model_artifact,
-        extract_artifact_metadata=extract_artifact_metadata,
-        persist_model_artifacts=persist_model_artifacts,
-        build_provenance_metadata=build_provenance_metadata,
-        build_dataset_controls=build_dataset_controls,
-        build_grouped_evaluation_controls=build_grouped_evaluation_controls,
-        build_training_report=build_training_report,
-        persist_training_report=persist_training_report,
-        report_destination=report_destination,
-    )
-
-
-def build_prepared_accurate_training_runner(
-    *,
-    logger: logging.Logger,
-    create_classifier: Callable[[], _ModelT],
-    min_support_resolver: Callable[[], int],
-    evaluate_predictions: Callable[..., TrainingEvaluation],
-    attach_grouped_metrics: Callable[..., dict[str, object]],
-    build_model_artifact: Callable[..., dict[str, object]],
-    extract_artifact_metadata: Callable[[dict[str, object]], dict[str, object]],
-    persist_model_artifacts: Callable[
-        [_ModelT, dict[str, object]],
-        PersistedArtifactsLike,
-    ],
-    build_provenance_metadata: Callable[..., dict[str, object]],
-    build_dataset_controls: Callable[[list[Utterance]], dict[str, object]],
-    build_grouped_evaluation_controls: Callable[
-        [MediumSplitMetadata],
-        dict[str, object],
-    ],
-    build_training_report: Callable[..., dict[str, object]],
-    persist_training_report: Callable[[dict[str, object], Path], None],
-) -> PreparedAccurateTrainingRunner:
-    """Builds a prepared-training runner bound to shared accurate hooks."""
-
-    def _run(
-        *,
-        prepared: AccurateTrainingPreparation[Utterance, MediumSplitMetadata, Any],
-        utterances: list[Utterance],
-        settings: AppConfig,
-        profile_label: str,
-        backend_id: str,
-        profile_id: str,
-        frame_size_seconds: float,
-        frame_stride_seconds: float,
-    ) -> None:
-        _ = run_accurate_profile_training_from_prepared(
-            prepared=prepared,
-            utterances=utterances,
-            settings=settings,
-            logger=logger,
-            profile_label=profile_label,
-            backend_id=backend_id,
-            profile_id=profile_id,
-            pooling_strategy="mean_std",
-            frame_size_seconds=frame_size_seconds,
-            frame_stride_seconds=frame_stride_seconds,
-            create_classifier=create_classifier,
-            min_support=min_support_resolver(),
-            evaluate_predictions=evaluate_predictions,
-            attach_grouped_metrics=attach_grouped_metrics,
-            build_model_artifact=build_model_artifact,
-            extract_artifact_metadata=extract_artifact_metadata,
-            persist_model_artifacts=persist_model_artifacts,
-            build_provenance_metadata=build_provenance_metadata,
-            build_dataset_controls=build_dataset_controls,
-            build_grouped_evaluation_controls=build_grouped_evaluation_controls,
-            build_training_report=build_training_report,
-            persist_training_report=persist_training_report,
-            report_destination=settings.models.training_report_file,
-        )
-
-    return _run
 
 
 def train_accurate_whisper_profile_entrypoint(
@@ -535,11 +389,8 @@ def train_accurate_research_profile_entrypoint(
 
 
 __all__ = [
-    "build_prepared_accurate_training_runner",
     "prepare_accurate_research_training",
     "prepare_accurate_whisper_training",
-    "PreparedAccurateTrainingRunner",
-    "run_accurate_profile_training_from_prepared",
     "train_accurate_research_profile_entrypoint",
     "train_accurate_whisper_profile_model",
     "train_accurate_whisper_profile_entrypoint",

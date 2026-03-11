@@ -202,9 +202,7 @@ class WhisperBackend:
         chunk_ends: list[NDArray[np.float64]] = []
 
         for start_index in range(0, int(normalized_audio.size), chunk_size_samples):
-            end_index = min(
-                start_index + chunk_size_samples, int(normalized_audio.size)
-            )
+            end_index = min(start_index + chunk_size_samples, int(normalized_audio.size))
             audio_chunk = normalized_audio[start_index:end_index]
             if audio_chunk.size == 0:
                 continue
@@ -231,9 +229,7 @@ class WhisperBackend:
 
         return EncodedSequence(
             embeddings=np.vstack(chunk_embeddings).astype(np.float32, copy=False),
-            frame_start_seconds=np.concatenate(chunk_starts).astype(
-                np.float64, copy=False
-            ),
+            frame_start_seconds=np.concatenate(chunk_starts).astype(np.float64, copy=False),
             frame_end_seconds=np.concatenate(chunk_ends).astype(np.float64, copy=False),
             backend_id=self.backend_id,
         )
@@ -250,9 +246,7 @@ class WhisperBackend:
         pooled_rows: list[FeatureVector] = []
         for window in windows:
             mask = overlap_frame_mask(encoded, window)
-            pooled_rows.append(
-                np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64)
-            )
+            pooled_rows.append(np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64))
         return np.vstack(pooled_rows).astype(np.float64, copy=False)
 
     def _encode_chunk(
@@ -319,17 +313,11 @@ class WhisperBackend:
 
         self._ensure_dependencies_available()
         transformers_module = importlib.import_module("transformers")
-        auto_feature_extractor = getattr(
-            transformers_module, "AutoFeatureExtractor", None
-        )
+        auto_feature_extractor = getattr(transformers_module, "AutoFeatureExtractor", None)
         auto_model = getattr(transformers_module, "AutoModel", None)
-        auto_seq2seq_model = getattr(
-            transformers_module, "AutoModelForSpeechSeq2Seq", None
-        )
+        auto_seq2seq_model = getattr(transformers_module, "AutoModelForSpeechSeq2Seq", None)
         if auto_feature_extractor is None:
-            raise RuntimeError(
-                "transformers package does not expose AutoFeatureExtractor."
-            )
+            raise RuntimeError("transformers package does not expose AutoFeatureExtractor.")
         if auto_model is None and auto_seq2seq_model is None:
             raise RuntimeError(
                 "transformers package does not expose AutoModel or "
@@ -355,8 +343,7 @@ class WhisperBackend:
                 )
             except RuntimeError as err:
                 logger.info(
-                    "Whisper backbone load failed for %s; falling back to "
-                    "seq2seq loader (%s).",
+                    "Whisper backbone load failed for %s; falling back to " "seq2seq loader (%s).",
                     self._model_id,
                     err,
                 )
@@ -436,9 +423,7 @@ class WhisperBackend:
         if isinstance(loaded, tuple) and len(loaded) == 2:
             model_obj, loading_info_obj = loaded
             if isinstance(loading_info_obj, Mapping):
-                return cast(_EncoderModel, model_obj), cast(
-                    _LoadingInfo, loading_info_obj
-                )
+                return cast(_EncoderModel, model_obj), cast(_LoadingInfo, loading_info_obj)
         return cast(_EncoderModel, loaded), None
 
     def _validate_loading_info(
@@ -449,9 +434,7 @@ class WhisperBackend:
     ) -> None:
         """Fails fast when transformers reports incomplete checkpoint load."""
         missing_keys = self._normalize_key_list(loading_info.get("missing_keys"))
-        mismatched_keys = self._normalize_mismatched_keys(
-            loading_info.get("mismatched_keys")
-        )
+        mismatched_keys = self._normalize_mismatched_keys(loading_info.get("mismatched_keys"))
         if not missing_keys and not mismatched_keys:
             return
 
@@ -518,9 +501,7 @@ class WhisperBackend:
         if callable(model):
             return cast(_EncoderModule, model)
 
-        raise RuntimeError(
-            "Whisper model does not expose an encoder module for sequence encoding."
-        )
+        raise RuntimeError("Whisper model does not expose an encoder module for sequence encoding.")
 
     def _ensure_dependencies_available(self) -> None:
         """Validates optional backend dependencies and raises actionable errors."""
@@ -572,8 +553,7 @@ class WhisperBackend:
             embeddings = embeddings[0]
         if embeddings.ndim != 2:
             raise RuntimeError(
-                "Whisper backend produced invalid hidden-state rank; expected 2D "
-                "or 3D output."
+                "Whisper backend produced invalid hidden-state rank; expected 2D " "or 3D output."
             )
         if embeddings.shape[0] <= 0:
             raise RuntimeError("Whisper backend produced zero frame embeddings.")
@@ -593,9 +573,7 @@ class WhisperBackend:
             raise RuntimeError("Whisper backend received non-positive chunk duration.")
 
         frame_duration = chunk_duration_seconds / float(frame_count)
-        starts = chunk_start_seconds + (
-            np.arange(frame_count, dtype=np.float64) * frame_duration
-        )
+        starts = chunk_start_seconds + (np.arange(frame_count, dtype=np.float64) * frame_duration)
         ends = starts + frame_duration
         ends[-1] = chunk_start_seconds + chunk_duration_seconds
         return starts, ends

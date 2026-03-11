@@ -32,12 +32,8 @@ def test_extract_feature_from_signal_combines_enabled_components(
             audio_read=SimpleNamespace(max_retries=1, retry_delay_seconds=0.0),
         ),
     )
-    monkeypatch.setattr(
-        dsp.librosa, "stft", lambda _audio, n_fft: np.ones((n_fft // 2 + 1, 4))
-    )
-    monkeypatch.setattr(
-        dsp.librosa, "power_to_db", lambda array, ref=None: np.asarray(array)
-    )
+    monkeypatch.setattr(dsp.librosa, "stft", lambda _audio, n_fft: np.ones((n_fft // 2 + 1, 4)))
+    monkeypatch.setattr(dsp.librosa, "power_to_db", lambda array, ref=None: np.asarray(array))
     monkeypatch.setattr(
         dsp.librosa.feature,
         "mfcc",
@@ -77,9 +73,7 @@ def test_extract_feature_from_signal_combines_enabled_components(
 def test_extract_feature_from_signal_rejects_empty_audio() -> None:
     """Empty buffers must fail with a clear validation error."""
     with pytest.raises(ValueError, match="no samples"):
-        fe.extract_feature_from_signal(
-            np.asarray([], dtype=np.float32), sample_rate=16000
-        )
+        fe.extract_feature_from_signal(np.asarray([], dtype=np.float32), sample_rate=16000)
 
 
 def test_extended_extract_feature_uses_in_memory_frames(

@@ -229,9 +229,7 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
             "cross_corpus_emotion_merge",
             "ssl_pretraining",
         ),
-        notes=(
-            "Current pipeline uses filename-driven labels; YAML segmentation is pending.",
-        ),
+        notes=("Current pipeline uses filename-driven labels; YAML segmentation is pending.",),
     ),
     "att-hack": DatasetCapabilityProfile(
         dataset_id="att-hack",
@@ -248,9 +246,7 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
             "paralinguistic_style_modeling",
             "audio_text_representation_learning",
         ),
-        notes=(
-            "Labels are not canonical SER emotions; suitable for auxiliary tasks and SSL.",
-        ),
+        notes=("Labels are not canonical SER emotions; suitable for auxiliary tasks and SSL.",),
     ),
     "coraa-ser": DatasetCapabilityProfile(
         dataset_id="coraa-ser",
@@ -284,9 +280,7 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
             "audio_text_emotion_fusion",
             "ssl_pretraining",
         ),
-        notes=(
-            "Zenodo ships metadata/transcripts; audio needs local rehydration from YouTube.",
-        ),
+        notes=("Zenodo ships metadata/transcripts; audio needs local rehydration from YouTube.",),
     ),
     "biic-podcast": DatasetCapabilityProfile(
         dataset_id="biic-podcast",
@@ -309,9 +303,7 @@ def resolve_dataset_capability_profile(dataset_id: str) -> DatasetCapabilityProf
 
     profile = _PROFILES.get(dataset_id)
     if profile is None:
-        raise ValueError(
-            f"No capability profile registered for dataset {dataset_id!r}."
-        )
+        raise ValueError(f"No capability profile registered for dataset {dataset_id!r}.")
     return profile
 
 

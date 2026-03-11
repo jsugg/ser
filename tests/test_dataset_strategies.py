@@ -11,7 +11,10 @@ import pytest
 from ser.data import dataset_prepare
 from ser.data.strategies import (
     DatasetStrategyRegistry,
+    Emodb2DatasetStrategy,
     PreparedManifestResult,
+    RavdessDatasetStrategy,
+    SpanishMeacorpus2023DatasetStrategy,
     build_default_dataset_strategies,
 )
 
@@ -46,6 +49,19 @@ def test_default_strategies_expose_required_contract_members() -> None:
         assert isinstance(strategy.supports_source_overrides, bool)
         assert callable(strategy.download)
         assert callable(strategy.prepare_manifest)
+
+
+def test_default_strategy_factory_preserves_public_strategy_types() -> None:
+    """Factory output should preserve the public strategy class surface."""
+
+    strategies = build_default_dataset_strategies()
+
+    assert isinstance(strategies["ravdess"], RavdessDatasetStrategy)
+    assert isinstance(strategies["emodb-2.0"], Emodb2DatasetStrategy)
+    assert isinstance(
+        strategies["spanish-meacorpus-2023"],
+        SpanishMeacorpus2023DatasetStrategy,
+    )
 
 
 def test_source_override_support_is_only_enabled_for_msp() -> None:

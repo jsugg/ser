@@ -97,8 +97,7 @@ def deserialize_model_artifact_envelope(
     model = payload.get("model")
     if not model_instance_check(model):
         raise ValueError(
-            "Unexpected model object type in artifact envelope: "
-            f"{type(model).__name__}."
+            "Unexpected model object type in artifact envelope: " f"{type(model).__name__}."
         )
 
     metadata_obj = payload.get("metadata")
@@ -129,16 +128,12 @@ def load_secure_model_artifact(
     try:
         skops_module = import_module_fn("skops.io")
     except ModuleNotFoundError as err:
-        raise RuntimeError(
-            "Secure model artifact found but `skops` is not installed."
-        ) from err
+        raise RuntimeError("Secure model artifact found but `skops` is not installed.") from err
 
     get_untrusted_types_raw = getattr(skops_module, "get_untrusted_types", None)
     load_raw = getattr(skops_module, "load", None)
     if not callable(get_untrusted_types_raw) or not callable(load_raw):
-        raise RuntimeError(
-            "Secure model artifact found but `skops` API is unavailable."
-        )
+        raise RuntimeError("Secure model artifact found but `skops` API is unavailable.")
     get_untrusted_types = cast(_SkopsGetUntrustedTypes, get_untrusted_types_raw)
     load_secure = cast(_SkopsLoad, load_raw)
     untrusted_types_raw = get_untrusted_types(file=str(candidate_path))
@@ -230,9 +225,7 @@ def resolve_model_for_loading_from_settings(
     secure_model_file: Path,
     model_file: Path,
     candidate_factory: Callable[[Path, ArtifactFormat], ModelCandidateT],
-    load_secure_model_for_settings: Callable[
-        [ModelCandidateT, SettingsT], LoadedModelT
-    ],
+    load_secure_model_for_settings: Callable[[ModelCandidateT, SettingsT], LoadedModelT],
     load_pickle_model: Callable[[ModelCandidateT], LoadedModelT],
     logger: logging.Logger,
     expected_backend_id: str | None = None,
@@ -282,10 +275,7 @@ def artifact_matches_expected_profile(
         and artifact_metadata.get("backend_id") != expected_backend_id
     ):
         return False
-    if (
-        expected_profile is not None
-        and artifact_metadata.get("profile") != expected_profile
-    ):
+    if expected_profile is not None and artifact_metadata.get("profile") != expected_profile:
         return False
     if expected_backend_model_id is not None:
         backend_model_id = artifact_metadata.get("backend_model_id")
@@ -315,8 +305,7 @@ def resolve_model_for_loading(
     if not existing_candidates:
         candidate_list = ", ".join(str(candidate.path) for candidate in candidates)
         raise FileNotFoundError(
-            "Model not found. Checked: "
-            f"{candidate_list}. Train it first with `ser --train`."
+            "Model not found. Checked: " f"{candidate_list}. Train it first with `ser --train`."
         )
 
     last_error: Exception | None = None
@@ -355,9 +344,7 @@ def resolve_model_for_loading(
         if expected_profile is not None:
             expected_constraints.append(f"profile={expected_profile!r}")
         if expected_backend_model_id is not None:
-            expected_constraints.append(
-                f"backend_model_id={expected_backend_model_id!r}"
-            )
+            expected_constraints.append(f"backend_model_id={expected_backend_model_id!r}")
         constraint_text = ", ".join(expected_constraints)
         checked = ", ".join(rejected_candidates)
         raise FileNotFoundError(

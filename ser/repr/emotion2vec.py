@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
-import os
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
@@ -14,6 +13,8 @@ from typing import Final, Literal, Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.environment_plan import ProcessEnvDelta
+from ser._internal.runtime.process_env import temporary_process_env
 from ser.repr.backend import (
     EncodedSequence,
     FeatureMatrix,
@@ -140,9 +141,7 @@ class Emotion2VecBackend:
             )
         normalized_device = normalize_torch_device_selector(device)
         if normalized_device in {None, "auto", "mps"}:
-            raise ValueError(
-                "device must be one of 'cpu', 'cuda'/'cuda:N', or 'xpu'/'xpu:N'."
-            )
+            raise ValueError("device must be one of 'cpu', 'cuda'/'cuda:N', or 'xpu'/'xpu:N'.")
         self._model_id = model_id
         self._hub = self._resolve_hub(model_id=model_id, hub=hub)
         self._device = normalized_device
@@ -202,9 +201,7 @@ class Emotion2VecBackend:
         chunk_ends: list[NDArray[np.float64]] = []
 
         for start_index in range(0, int(normalized_audio.size), chunk_size_samples):
-            end_index = min(
-                start_index + chunk_size_samples, int(normalized_audio.size)
-            )
+            end_index = min(start_index + chunk_size_samples, int(normalized_audio.size))
             audio_chunk = normalized_audio[start_index:end_index]
             if audio_chunk.size == 0:
                 continue
@@ -231,9 +228,7 @@ class Emotion2VecBackend:
 
         return EncodedSequence(
             embeddings=np.vstack(chunk_embeddings).astype(np.float32, copy=False),
-            frame_start_seconds=np.concatenate(chunk_starts).astype(
-                np.float64, copy=False
-            ),
+            frame_start_seconds=np.concatenate(chunk_starts).astype(np.float64, copy=False),
             frame_end_seconds=np.concatenate(chunk_ends).astype(np.float64, copy=False),
             backend_id=self.backend_id,
         )
@@ -250,9 +245,7 @@ class Emotion2VecBackend:
         pooled_rows: list[FeatureVector] = []
         for window in windows:
             mask = overlap_frame_mask(encoded, window)
-            pooled_rows.append(
-                np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64)
-            )
+            pooled_rows.append(np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64))
         return np.vstack(pooled_rows).astype(np.float64, copy=False)
 
     def _encode_chunk(
@@ -294,9 +287,7 @@ class Emotion2VecBackend:
             raise RuntimeError("Emotion2Vec backend result payload is not a mapping.")
         feats = first.get("feats")
         if feats is None:
-            raise RuntimeError(
-                "Emotion2Vec backend result is missing frame embeddings ('feats')."
-            )
+            raise RuntimeError("Emotion2Vec backend result is missing frame embeddings ('feats').")
         embeddings = np.asarray(feats, dtype=np.float32)
         if embeddings.ndim == 1:
             embeddings = embeddings[np.newaxis, :]
@@ -313,85 +304,85 @@ class Emotion2VecBackend:
         if self._funasr_model is not None:
             return self._funasr_model
         self._ensure_dependencies_available()
-        self._configure_model_cache_environment()
         model_source, is_local_source = self._resolve_funasr_model_source()
-        with self._suppress_third_party_info_logs():
-            auto_model_module = importlib.import_module("funasr.auto.auto_model")
-            auto_model_class = getattr(auto_model_module, "AutoModel", None)
-            if auto_model_class is None:
-                raise RuntimeError("funasr.auto.auto_model.AutoModel is unavailable.")
+        with temporary_process_env(self._model_cache_environment_delta()):
+            with self._suppress_third_party_info_logs():
+                auto_model_module = importlib.import_module("funasr.auto.auto_model")
+                auto_model_class = getattr(auto_model_module, "AutoModel", None)
+                if auto_model_class is None:
+                    raise RuntimeError("funasr.auto.auto_model.AutoModel is unavailable.")
 
-            def _init_auto_model(*, source: str, include_hub: bool) -> object:
-                kwargs: dict[str, object] = {
-                    "model": source,
-                    "disable_update": True,
-                    "disable_pbar": True,
-                    "device": self._device,
-                }
-                if include_hub:
-                    kwargs["hub"] = self._hub
-                try:
-                    return auto_model_class(**kwargs)
-                except TypeError:
-                    kwargs.pop("disable_pbar", None)
-                    return auto_model_class(**kwargs)
+                def _init_auto_model(*, source: str, include_hub: bool) -> object:
+                    kwargs: dict[str, object] = {
+                        "model": source,
+                        "disable_update": True,
+                        "disable_pbar": True,
+                        "device": self._device,
+                    }
+                    if include_hub:
+                        kwargs["hub"] = self._hub
+                    try:
+                        return auto_model_class(**kwargs)
+                    except TypeError:
+                        kwargs.pop("disable_pbar", None)
+                        return auto_model_class(**kwargs)
 
-            def _init_auto_model_with_cpu_fallback(
-                *,
-                source: str,
-                include_hub: bool,
-            ) -> object:
-                try:
-                    return _init_auto_model(source=source, include_hub=include_hub)
-                except Exception as err:
-                    if self._device == "cpu":
-                        raise
-                    requested_device = self._device
-                    logger.warning(
-                        "Emotion2Vec initialization failed on device=%s; "
-                        "retrying on cpu (%s).",
-                        requested_device,
-                        err,
-                    )
-                    self._device = "cpu"
+                def _init_auto_model_with_cpu_fallback(
+                    *,
+                    source: str,
+                    include_hub: bool,
+                ) -> object:
                     try:
                         return _init_auto_model(source=source, include_hub=include_hub)
-                    except Exception:
-                        self._device = requested_device
-                        raise
-
-            try:
-                model = _init_auto_model_with_cpu_fallback(
-                    source=model_source,
-                    include_hub=not is_local_source,
-                )
-            except Exception as err:
-                if is_local_source:
-                    logger.warning(
-                        "Emotion2Vec local cache initialization failed at %s; "
-                        "falling back to hub lookup for model_id=%s.",
-                        model_source,
-                        self._model_id,
-                    )
-                    try:
-                        model = _init_auto_model_with_cpu_fallback(
-                            source=self._model_id,
-                            include_hub=True,
+                    except Exception as err:
+                        if self._device == "cpu":
+                            raise
+                        requested_device = self._device
+                        logger.warning(
+                            "Emotion2Vec initialization failed on device=%s; "
+                            "retrying on cpu (%s).",
+                            requested_device,
+                            err,
                         )
-                    except Exception as fallback_err:
+                        self._device = "cpu"
+                        try:
+                            return _init_auto_model(source=source, include_hub=include_hub)
+                        except Exception:
+                            self._device = requested_device
+                            raise
+
+                try:
+                    model = _init_auto_model_with_cpu_fallback(
+                        source=model_source,
+                        include_hub=not is_local_source,
+                    )
+                except Exception as err:
+                    if is_local_source:
+                        logger.warning(
+                            "Emotion2Vec local cache initialization failed at %s; "
+                            "falling back to hub lookup for model_id=%s.",
+                            model_source,
+                            self._model_id,
+                        )
+                        try:
+                            model = _init_auto_model_with_cpu_fallback(
+                                source=self._model_id,
+                                include_hub=True,
+                            )
+                        except Exception as fallback_err:
+                            raise RuntimeError(
+                                "Failed to initialize Emotion2Vec backend via FunASR "
+                                f"(model_id={self._model_id!r}, hub={self._hub!r}). "
+                                "Ensure the model id exists on the configured hub and "
+                                "authentication is configured when required."
+                            ) from fallback_err
+                    else:
                         raise RuntimeError(
                             "Failed to initialize Emotion2Vec backend via FunASR "
                             f"(model_id={self._model_id!r}, hub={self._hub!r}). "
-                            "Ensure the model id exists on the configured hub and "
-                            "authentication is configured when required."
-                        ) from fallback_err
-                else:
-                    raise RuntimeError(
-                        "Failed to initialize Emotion2Vec backend via FunASR "
-                        f"(model_id={self._model_id!r}, hub={self._hub!r}). "
-                        "Ensure the model id exists on the configured hub and authentication "
-                        "is configured when required."
-                    ) from err
+                            "Ensure the model id exists on the configured hub and authentication "
+                            "is configured when required."
+                        ) from err
         self._funasr_model = cast(_FunASRAutoModel, model)
         return self._funasr_model
 
@@ -438,22 +429,25 @@ class Emotion2VecBackend:
         ):
             yield
 
-    def _configure_model_cache_environment(self) -> None:
-        """Maps configured SER model cache roots to backend-provider cache env vars."""
+    def _model_cache_environment_delta(self) -> ProcessEnvDelta:
+        """Builds one scoped cache-env delta for the selected backend hub."""
         if self._hub == "ms":
             if self._modelscope_cache_root is None:
-                return
+                return ProcessEnvDelta({})
             cache_root = self._ensure_cache_dir(self._modelscope_cache_root)
-            os.environ["MODELSCOPE_CACHE"] = str(cache_root)
-            return
+            return ProcessEnvDelta({"MODELSCOPE_CACHE": str(cache_root)})
 
         if self._huggingface_cache_root is None:
-            return
+            return ProcessEnvDelta({})
         hf_home = self._ensure_cache_dir(self._huggingface_cache_root)
         hub_cache = self._ensure_cache_dir(hf_home / "hub")
-        os.environ["HF_HOME"] = str(hf_home)
-        os.environ["HF_HUB_CACHE"] = str(hub_cache)
-        os.environ["HUGGINGFACE_HUB_CACHE"] = str(hub_cache)
+        return ProcessEnvDelta(
+            {
+                "HF_HOME": str(hf_home),
+                "HF_HUB_CACHE": str(hub_cache),
+                "HUGGINGFACE_HUB_CACHE": str(hub_cache),
+            }
+        )
 
     @staticmethod
     def _ensure_cache_dir(path: Path) -> Path:
@@ -562,18 +556,12 @@ class Emotion2VecBackend:
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Builds monotonic frame start/end timestamps for one encoded chunk."""
         if frame_count <= 0:
-            raise RuntimeError(
-                "Emotion2Vec backend cannot map timestamps for zero frames."
-            )
+            raise RuntimeError("Emotion2Vec backend cannot map timestamps for zero frames.")
         if not np.isfinite(chunk_duration_seconds) or chunk_duration_seconds <= 0.0:
-            raise RuntimeError(
-                "Emotion2Vec backend received non-positive chunk duration."
-            )
+            raise RuntimeError("Emotion2Vec backend received non-positive chunk duration.")
 
         frame_duration = chunk_duration_seconds / float(frame_count)
-        starts = chunk_start_seconds + (
-            np.arange(frame_count, dtype=np.float64) * frame_duration
-        )
+        starts = chunk_start_seconds + (np.arange(frame_count, dtype=np.float64) * frame_duration)
         ends = starts + frame_duration
         ends[-1] = chunk_start_seconds + chunk_duration_seconds
         return starts, ends

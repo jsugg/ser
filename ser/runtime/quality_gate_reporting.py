@@ -54,11 +54,7 @@ def resolve_report_output_path(
     default_file_name: str = "profile_quality_gate_report.json",
 ) -> Path:
     """Resolves report output location from explicit argument or default folder."""
-    return (
-        Path(output_path)
-        if output_path is not None
-        else default_directory / default_file_name
-    )
+    return Path(output_path) if output_path is not None else default_directory / default_file_name
 
 
 def write_serialized_report(*, serialized: str, output_path: Path) -> None:

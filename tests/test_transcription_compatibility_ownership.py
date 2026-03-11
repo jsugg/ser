@@ -52,9 +52,7 @@ _COMPATIBILITY_BOUNDARY_SYMBOLS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def test_transcription_compatibility_boundary_symbols_are_unique_and_non_empty() -> (
-    None
-):
+def test_transcription_compatibility_boundary_symbols_are_unique_and_non_empty() -> None:
     """Compatibility boundary symbol inventory should stay non-overlapping."""
     assert _COMPATIBILITY_BOUNDARY_SYMBOLS
 

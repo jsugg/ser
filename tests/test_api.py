@@ -1,4 +1,4 @@
-"""Tests for the public `ser.api` facade."""
+"""Tests for the stable `ser.api` facade and adjacent owner modules."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 
+import ser._internal.api.data as api_data_module
 import ser._internal.api.diagnostics as api_diagnostics_module
 import ser._internal.api.runtime as api_runtime_module
 import ser._internal.runtime.commands as runtime_commands_module
@@ -58,7 +59,7 @@ def test_run_data_command_delegates_to_data_cli(
 
     monkeypatch.setattr("ser.data.cli.run_data_command", _run_data_command)
 
-    exit_code = api.run_data_command(
+    exit_code = api_data_module.run_data_command(
         ["download", "--dataset", "ravdess"],
         settings=settings,
     )
@@ -76,18 +77,14 @@ def test_run_doctor_command_delegates_to_diagnostics_command(
     captured: dict[str, object] = {}
     settings = _settings(tmp_path)
 
-    def _run_doctor_command(
-        argv: list[str], *, settings: AppConfig | None = None
-    ) -> int:
+    def _run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) -> int:
         captured["argv"] = argv
         captured["settings"] = settings
         return 3
 
-    monkeypatch.setattr(
-        "ser.diagnostics.command.run_doctor_command", _run_doctor_command
-    )
+    monkeypatch.setattr("ser.diagnostics.command.run_doctor_command", _run_doctor_command)
 
-    exit_code = api.run_doctor_command(["--strict"], settings=settings)
+    exit_code = api_diagnostics_module.run_doctor_command(["--strict"], settings=settings)
 
     assert exit_code == 3
     assert captured["argv"] == ["--strict"]
@@ -117,7 +114,7 @@ def test_run_transcription_runtime_calibration_workflow_delegates_to_profiling(
         )[1],
     )
 
-    result = api.run_transcription_runtime_calibration_workflow(
+    result = runtime_commands_module.run_transcription_runtime_calibration_workflow(
         calibration_file=tmp_path / "sample.wav",
         language="en",
         calibration_iterations=3,
@@ -143,7 +140,7 @@ def test_run_transcription_runtime_calibration_command_maps_validation_errors(
         lambda **_kwargs: (_ for _ in ()).throw(ValueError("missing --file")),
     )
 
-    result, disposition = api.run_transcription_runtime_calibration_command(
+    result, disposition = api_runtime_module.run_transcription_runtime_calibration_command(
         file_path=None,
         language="en",
         calibration_iterations=1,
@@ -167,7 +164,7 @@ def test_run_transcription_runtime_calibration_command_maps_unexpected_errors(
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    result, disposition = api.run_transcription_runtime_calibration_command(
+    result, disposition = api_runtime_module.run_transcription_runtime_calibration_command(
         file_path="sample.wav",
         language="en",
         calibration_iterations=1,
@@ -191,7 +188,7 @@ def test_run_training_command_maps_training_exceptions_to_disposition(
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("training failed")),
     )
 
-    disposition = api.run_training_command(
+    disposition = api_runtime_module.run_training_command(
         settings=config_module.reload_settings(),
         use_profile_pipeline=True,
     )
@@ -223,11 +220,9 @@ def test_run_training_command_delegates_arguments_on_success(
     def _run_training_workflow(**kwargs: object) -> None:
         captured["kwargs"] = kwargs
 
-    monkeypatch.setattr(
-        api_runtime_module, "run_training_workflow", _run_training_workflow
-    )
+    monkeypatch.setattr(api_runtime_module, "run_training_workflow", _run_training_workflow)
 
-    disposition = api.run_training_command(
+    disposition = api_runtime_module.run_training_command(
         settings=settings,
         use_profile_pipeline=False,
         pipeline_builder=_pipeline_builder,
@@ -242,7 +237,7 @@ def test_run_training_command_delegates_arguments_on_success(
 
 def test_run_inference_command_validates_missing_file_path() -> None:
     """Inference command wrapper should return exit-1 disposition for missing file."""
-    execution, disposition = api.run_inference_command(
+    execution, disposition = api_runtime_module.run_inference_command(
         settings=config_module.reload_settings(),
         file_path=None,
         language="en",
@@ -286,7 +281,7 @@ def test_run_inference_command_delegates_arguments_on_success(
         _run_inference_workflow,
     )
 
-    execution, disposition = api.run_inference_command(
+    execution, disposition = api_runtime_module.run_inference_command(
         settings=settings,
         file_path="sample.wav",
         language="en",
@@ -310,7 +305,7 @@ def test_run_restricted_backend_cli_gate_short_circuits_without_command_path() -
     """Restricted-backend gate should no-op when no executable CLI path is requested."""
     settings = config_module.reload_settings()
 
-    logs, exit_code = api.run_restricted_backend_cli_gate(
+    logs, exit_code = api_runtime_module.run_restricted_backend_cli_gate(
         settings=settings,
         use_profile_pipeline=False,
         train_requested=False,
@@ -345,7 +340,7 @@ def test_run_restricted_backend_cli_gate_short_circuits_opt_in_only_invocation(
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("should not run")),
     )
 
-    logs, exit_code = api.run_restricted_backend_cli_gate(
+    logs, exit_code = api_runtime_module.run_restricted_backend_cli_gate(
         settings=settings,
         use_profile_pipeline=True,
         train_requested=False,
@@ -384,7 +379,7 @@ def test_run_restricted_backend_cli_gate_maps_policy_errors_to_exit_2(
         lambda **_kwargs: (_ for _ in ()).throw(BackendLicensePolicyError("blocked")),
     )
 
-    logs, exit_code = api.run_restricted_backend_cli_gate(
+    logs, exit_code = api_runtime_module.run_restricted_backend_cli_gate(
         settings=settings,
         use_profile_pipeline=True,
         train_requested=True,
@@ -486,7 +481,7 @@ def test_prepare_msp_podcast_mirror_delegates_to_data_layer(
         _prepare_msp_podcast_from_hf_mirror,
     )
 
-    result = api.prepare_msp_podcast_mirror(
+    result = api_data_module.prepare_msp_podcast_mirror(
         dataset_root=dataset_root,
         repo_id="org/dataset",
         revision="abc123",
@@ -638,10 +633,10 @@ def test_list_dataset_registry_health_issues_exposes_issue_records(
     assert issue.message == "Mismatch."
 
 
-def test_run_training_workflow_uses_pipeline_builder_when_enabled(
+def test_train_uses_pipeline_builder_when_enabled(
     tmp_path: Path,
 ) -> None:
-    """Training workflow should use injected pipeline builder when enabled."""
+    """Stable training API should use injected pipeline builder when enabled."""
     settings = _settings(tmp_path)
     calls: dict[str, bool] = {"training": False}
 
@@ -653,7 +648,7 @@ def test_run_training_workflow_uses_pipeline_builder_when_enabled(
             del request
             raise AssertionError("unreachable")
 
-    api.run_training_workflow(
+    api.train(
         settings=settings,
         use_profile_pipeline=True,
         pipeline_builder=lambda _settings: _FakePipeline(),
@@ -662,10 +657,10 @@ def test_run_training_workflow_uses_pipeline_builder_when_enabled(
     assert calls["training"] is True
 
 
-def test_run_training_workflow_uses_pipeline_builder_when_disabled(
+def test_train_uses_pipeline_builder_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Training workflow should keep routing through the pipeline when disabled."""
+    """Stable training API should keep routing through the pipeline when disabled."""
     settings = config_module.reload_settings()
     captured: dict[str, object] = {"training": False}
 
@@ -688,7 +683,7 @@ def test_run_training_workflow_uses_pipeline_builder_when_disabled(
         ),
     )
 
-    api.run_training_workflow(
+    api.train(
         settings=settings,
         use_profile_pipeline=False,
         pipeline_builder=_pipeline_builder,
@@ -698,8 +693,8 @@ def test_run_training_workflow_uses_pipeline_builder_when_disabled(
     assert captured["training"] is True
 
 
-def test_run_training_workflow_passes_scoped_settings_to_pipeline_builder() -> None:
-    """Training workflow should pass explicit profile-scoped settings to the builder."""
+def test_train_passes_scoped_settings_to_pipeline_builder() -> None:
+    """Stable training API should pass explicit profile-scoped settings to the builder."""
     base_settings = config_module.reload_settings()
     scoped_settings = replace(base_settings, default_language="pt-BR")
     captured: dict[str, object] = {"training": False}
@@ -716,7 +711,7 @@ def test_run_training_workflow_passes_scoped_settings_to_pipeline_builder() -> N
         captured["settings"] = received_settings
         return _FakePipeline()
 
-    api.run_training_workflow(
+    api.train(
         settings=scoped_settings,
         use_profile_pipeline=False,
         pipeline_builder=_pipeline_builder,
@@ -726,10 +721,10 @@ def test_run_training_workflow_passes_scoped_settings_to_pipeline_builder() -> N
     assert captured["training"] is True
 
 
-def test_run_inference_workflow_builds_inference_request(
+def test_infer_builds_inference_request(
     tmp_path: Path,
 ) -> None:
-    """Inference workflow should build and pass one runtime inference request."""
+    """Stable inference API should build and pass one runtime inference request."""
     settings = _settings(tmp_path)
     captured: dict[str, object] = {}
     sentinel = object()
@@ -742,9 +737,9 @@ def test_run_inference_workflow_builds_inference_request(
             captured["request"] = request
             return cast(InferenceExecution, sentinel)
 
-    result = api.run_inference_workflow(
+    result = api.infer(
+        tmp_path / "sample.wav",
         settings=settings,
-        file_path=tmp_path / "sample.wav",
         language="en",
         save_transcript=True,
         include_transcript=False,
@@ -761,7 +756,7 @@ def test_run_inference_workflow_builds_inference_request(
 
 def test_classify_inference_exception_for_unsupported_profile() -> None:
     """Unsupported profile errors should map to user-facing exit code 2."""
-    disposition = api.classify_inference_exception(
+    disposition = runtime_commands_module.classify_inference_exception(
         UnsupportedProfileError("unsupported profile")
     )
     assert disposition.exit_code == 2
@@ -770,7 +765,7 @@ def test_classify_inference_exception_for_unsupported_profile() -> None:
 
 def test_classify_inference_exception_for_transcription_error() -> None:
     """Transcription errors should map to dedicated exit code and traceback."""
-    disposition = api.classify_inference_exception(
+    disposition = runtime_commands_module.classify_inference_exception(
         TranscriptionError("transcription failed")
     )
     assert disposition.exit_code == 3
@@ -802,7 +797,7 @@ def test_required_restricted_backends_for_profile_returns_research_backend() -> 
         ),
     )
 
-    required = api.required_restricted_backends_for_current_profile(
+    required = restricted_backends_module.required_restricted_backends_for_current_profile(
         scoped,
         use_profile_pipeline=True,
     )
@@ -814,7 +809,10 @@ def test_apply_cli_timeout_override_sets_all_profile_timeouts_to_zero() -> None:
     """API timeout override should force all runtime profile timeouts to zero."""
     settings = config_module.reload_settings()
 
-    resolved = api.apply_cli_timeout_override(settings, disable_timeouts=True)
+    resolved = api_runtime_module.apply_cli_timeout_override(
+        settings,
+        disable_timeouts=True,
+    )
 
     assert resolved.fast_runtime.timeout_seconds == 0.0
     assert resolved.medium_runtime.timeout_seconds == 0.0
@@ -825,7 +823,7 @@ def test_apply_cli_timeout_override_sets_all_profile_timeouts_to_zero() -> None:
 def test_preflight_predicates_cover_execution_and_transcription_paths() -> None:
     """Preflight helper predicates should encode expected execution semantics."""
     assert (
-        api.preflight_command_requested(
+        api_diagnostics_module.preflight_command_requested(
             train=False,
             file_path=None,
             calibrate_transcription_runtime=False,
@@ -833,7 +831,7 @@ def test_preflight_predicates_cover_execution_and_transcription_paths() -> None:
         is False
     )
     assert (
-        api.preflight_command_requested(
+        api_diagnostics_module.preflight_command_requested(
             train=True,
             file_path=None,
             calibrate_transcription_runtime=False,
@@ -841,7 +839,7 @@ def test_preflight_predicates_cover_execution_and_transcription_paths() -> None:
         is True
     )
     assert (
-        api.preflight_includes_transcription_checks(
+        api_diagnostics_module.preflight_includes_transcription_checks(
             file_path="sample.wav",
             no_transcript=False,
             calibrate_transcription_runtime=False,
@@ -849,7 +847,7 @@ def test_preflight_predicates_cover_execution_and_transcription_paths() -> None:
         is True
     )
     assert (
-        api.preflight_includes_transcription_checks(
+        api_diagnostics_module.preflight_includes_transcription_checks(
             file_path="sample.wav",
             no_transcript=True,
             calibrate_transcription_runtime=False,
@@ -857,7 +855,7 @@ def test_preflight_predicates_cover_execution_and_transcription_paths() -> None:
         is False
     )
     assert (
-        api.preflight_includes_transcription_checks(
+        api_diagnostics_module.preflight_includes_transcription_checks(
             file_path=None,
             no_transcript=False,
             calibrate_transcription_runtime=True,
@@ -873,31 +871,34 @@ def test_runtime_profile_helpers_cover_pipeline_and_resolution_paths() -> None:
         settings,
         runtime_flags=replace(settings.runtime_flags, profile_pipeline=True),
     )
-    assert api.profile_pipeline_enabled(pipeline_settings) is True
+    assert api_runtime_module.profile_pipeline_enabled(pipeline_settings) is True
     assert (
-        api.profile_resolution_requested(
+        api_runtime_module.profile_resolution_requested(
             use_profile_pipeline=False,
             file_path=None,
         )
         is False
     )
     assert (
-        api.profile_resolution_requested(
+        api_runtime_module.profile_resolution_requested(
             use_profile_pipeline=False,
             file_path="sample.wav",
         )
         is True
     )
-    assert api.resolve_cli_workflow_profile(settings) == "fast"
-    resolved_settings = api.apply_cli_profile_override(settings, "medium")
-    assert api.resolve_cli_workflow_profile(resolved_settings) == "medium"
+    assert api_runtime_module.resolve_cli_workflow_profile(settings) == "fast"
+    resolved_settings = api_runtime_module.apply_cli_profile_override(
+        settings,
+        "medium",
+    )
+    assert api_runtime_module.resolve_cli_workflow_profile(resolved_settings) == "medium"
 
 
 def test_resolve_doctor_command_formats_optional_profile_hint() -> None:
     """Doctor command helper should include profile hint only when provided."""
-    assert api.resolve_doctor_command(profile=None) == "ser doctor"
+    assert api_diagnostics_module.resolve_doctor_command(profile=None) == "ser doctor"
     assert (
-        api.resolve_doctor_command(profile="accurate")
+        api_diagnostics_module.resolve_doctor_command(profile="accurate")
         == "ser doctor --profile accurate"
     )
 
@@ -918,9 +919,7 @@ def test_suppress_preflight_transcription_operational_relogs_marks_emitted(
     )
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        "ser._internal.api.diagnostics.resolve_profile_name", lambda _s: "fast"
-    )
+    monkeypatch.setattr("ser._internal.api.diagnostics.resolve_profile_name", lambda _s: "fast")
     monkeypatch.setattr(
         "ser._internal.api.diagnostics.resolve_profile_transcription_config",
         lambda _profile: ("faster_whisper", "distil-large-v3", False, True),
@@ -930,7 +929,7 @@ def test_suppress_preflight_transcription_operational_relogs_marks_emitted(
         lambda **kwargs: captured.update(kwargs),
     )
 
-    api.suppress_preflight_transcription_operational_relogs(
+    api_diagnostics_module.suppress_preflight_transcription_operational_relogs(
         settings=settings,
         report=report,
     )
@@ -973,7 +972,7 @@ def test_run_startup_preflight_cli_gate_suppresses_operational_relogs_on_warn_mo
         lambda **kwargs: captured.update(kwargs),
     )
 
-    logs, exit_code = api.run_startup_preflight_cli_gate(
+    logs, exit_code = api_diagnostics_module.run_startup_preflight_cli_gate(
         settings=settings,
         mode="warn",
         profile=None,
@@ -989,87 +988,54 @@ def test_run_startup_preflight_cli_gate_suppresses_operational_relogs_on_warn_mo
     assert captured["report"] is report
 
 
-def test_api_facade_reexports_selected_symbols_by_identity() -> None:
-    """Facade module should re-export stable callables from focused API modules."""
-    expected_mappings: dict[str, object] = {
-        "WorkflowErrorDisposition": runtime_commands_module.WorkflowErrorDisposition,
-        "RestrictedBackendOptInState": (
-            restricted_backends_module.RestrictedBackendOptInState
-        ),
-        "RestrictedBackendPrompt": restricted_backends_module.RestrictedBackendPrompt,
-        "run_training_workflow": api_runtime_module.run_training_workflow,
-        "run_training_command": api_runtime_module.run_training_command,
-        "run_inference_command": api_runtime_module.run_inference_command,
-        "run_inference_workflow": api_runtime_module.run_inference_workflow,
-        "run_restricted_backend_cli_gate": (
-            api_runtime_module.run_restricted_backend_cli_gate
-        ),
-        "apply_cli_profile_override": api_runtime_module.apply_cli_profile_override,
-        "apply_cli_timeout_override": api_runtime_module.apply_cli_timeout_override,
-        "build_runtime_pipeline": api_runtime_module.build_runtime_pipeline,
-        "prepare_restricted_backend_opt_in_state": (
-            restricted_backends_module.prepare_restricted_backend_opt_in_state
-        ),
-        "enforce_restricted_backends_for_cli": (
-            restricted_backends_module.enforce_restricted_backends_for_cli
-        ),
-        "collect_missing_restricted_backend_consents": (
-            restricted_backends_module.collect_missing_restricted_backend_consents
-        ),
-        "ensure_restricted_backends_ready_for_command": (
-            restricted_backends_module.ensure_restricted_backends_ready_for_command
-        ),
-        "persist_all_restricted_backend_consents": (
-            restricted_backends_module.persist_all_restricted_backend_consents
-        ),
-        "persist_required_restricted_backends": (
-            restricted_backends_module.persist_required_restricted_backends
-        ),
-        "required_restricted_backends_for_current_profile": (
-            restricted_backends_module.required_restricted_backends_for_current_profile
-        ),
-        "classify_inference_exception": runtime_commands_module.classify_inference_exception,
-        "classify_training_exception": runtime_commands_module.classify_training_exception,
-        "run_transcription_runtime_calibration_cli": (
-            api_runtime_module.run_transcription_runtime_calibration_cli
-        ),
-        "run_transcription_runtime_calibration_command": (
-            api_runtime_module.run_transcription_runtime_calibration_command
-        ),
-        "run_transcription_runtime_calibration_workflow": (
-            runtime_commands_module.run_transcription_runtime_calibration_workflow
-        ),
-        "run_doctor_command": api_diagnostics_module.run_doctor_command,
-        "preflight_command_requested": api_diagnostics_module.preflight_command_requested,
-        "run_startup_preflight_cli_gate": (
-            api_diagnostics_module.run_startup_preflight_cli_gate
-        ),
-        "resolve_doctor_command": api_diagnostics_module.resolve_doctor_command,
-        "suppress_preflight_transcription_operational_relogs": (
-            api_diagnostics_module.suppress_preflight_transcription_operational_relogs
-        ),
-        "profile_pipeline_enabled": api_runtime_module.profile_pipeline_enabled,
-        "profile_resolution_requested": api_runtime_module.profile_resolution_requested,
-        "resolve_cli_workflow_profile": api_runtime_module.resolve_cli_workflow_profile,
-    }
-
-    for symbol_name, symbol in expected_mappings.items():
-        assert getattr(api, symbol_name) is symbol
-
-    wrapped_symbols = {
-        "configure_dataset_consents",
-        "infer",
-        "list_dataset_registry_health_issues",
-        "list_registered_datasets",
-        "load_profile",
-        "prepare_dataset",
+def test_api_facade_excludes_removed_cli_compatibility_exports() -> None:
+    """Stable facade should not expose the retired CLI compatibility surface."""
+    removed_symbols = {
+        "WorkflowErrorDisposition",
+        "RestrictedBackendOptInState",
+        "RestrictedBackendPrompt",
+        "apply_cli_profile_override",
+        "apply_cli_timeout_override",
+        "build_runtime_pipeline",
+        "classify_inference_exception",
+        "classify_training_exception",
+        "collect_missing_restricted_backend_consents",
+        "enforce_restricted_backends_for_cli",
+        "ensure_restricted_backends_ready_for_command",
+        "format_startup_preflight_one_liner",
+        "parse_preflight_mode",
+        "persist_all_restricted_backend_consents",
+        "persist_required_restricted_backends",
+        "preflight_command_requested",
+        "preflight_includes_transcription_checks",
+        "prepare_msp_podcast_mirror",
+        "prepare_restricted_backend_opt_in_state",
+        "profile_pipeline_enabled",
+        "profile_resolution_requested",
+        "resolve_cli_workflow_profile",
+        "resolve_doctor_command",
+        "required_restricted_backends_for_current_profile",
         "run_configure_command",
         "run_data_command",
-        "show_dataset_consents",
-        "train",
+        "run_doctor_command",
+        "run_inference_command",
+        "run_inference_workflow",
+        "run_restricted_backend_cli_gate",
+        "run_startup_preflight_cli_gate",
+        "run_training_command",
+        "run_training_workflow",
+        "run_transcription_runtime_calibration_cli",
+        "run_transcription_runtime_calibration_command",
+        "run_transcription_runtime_calibration_workflow",
+        "should_fail_preflight",
+        "suppress_preflight_transcription_operational_relogs",
     }
-    for symbol_name in wrapped_symbols:
-        assert callable(getattr(api, symbol_name))
+
+    assert removed_symbols.isdisjoint(api.__all__)
+    for symbol_name in removed_symbols:
+        assert not hasattr(api, symbol_name)
+        with pytest.raises(AttributeError):
+            getattr(api, symbol_name)
 
 
 def test_internal_runtime_api_surface_is_orchestration_focused() -> None:
@@ -1095,42 +1061,25 @@ def test_internal_runtime_api_surface_is_orchestration_focused() -> None:
     ]
 
 
-def test_api_public_surface_includes_runtime_and_operational_entrypoints() -> None:
-    """Expanded API contract should include runtime, diagnostics, and dataset entrypoints."""
+def test_api_public_surface_includes_user_oriented_entrypoints() -> None:
+    """Stable API contract should expose user-oriented library entrypoints only."""
     exported = set(api.__all__)
     required = {
+        "ComplianceMode",
+        "DatasetPrepareResult",
+        "DatasetRegistryHealthIssueRecord",
+        "DatasetRegistryRecord",
+        "configure_dataset_consents",
         "infer",
         "train",
+        "list_datasets",
         "list_profiles",
         "load_profile",
-        "run_inference_workflow",
-        "run_inference_command",
-        "run_training_workflow",
-        "run_training_command",
-        "run_doctor_command",
-        "run_data_command",
-        "apply_cli_profile_override",
-        "apply_cli_timeout_override",
-        "build_runtime_pipeline",
-        "prepare_restricted_backend_opt_in_state",
-        "enforce_restricted_backends_for_cli",
-        "run_restricted_backend_cli_gate",
-        "run_transcription_runtime_calibration_workflow",
-        "run_transcription_runtime_calibration_command",
-        "run_transcription_runtime_calibration_cli",
-        "preflight_command_requested",
-        "run_startup_preflight_cli_gate",
-        "preflight_includes_transcription_checks",
-        "resolve_doctor_command",
-        "profile_pipeline_enabled",
-        "profile_resolution_requested",
-        "resolve_cli_workflow_profile",
-        "suppress_preflight_transcription_operational_relogs",
         "prepare_dataset",
+        "run_startup_preflight",
         "list_registered_datasets",
-        "required_restricted_backends_for_current_profile",
-        "persist_required_restricted_backends",
-        "ensure_restricted_backends_ready_for_command",
+        "list_dataset_registry_health_issues",
+        "show_dataset_consents",
     }
     assert required.issubset(exported)
 
@@ -1142,53 +1091,15 @@ def test_api_public_surface_snapshot_matches_expected_contract() -> None:
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
-        "RestrictedBackendOptInState",
-        "RestrictedBackendPrompt",
-        "WorkflowErrorDisposition",
-        "apply_cli_profile_override",
-        "apply_cli_timeout_override",
-        "build_runtime_pipeline",
-        "classify_inference_exception",
-        "classify_training_exception",
-        "collect_missing_restricted_backend_consents",
         "configure_dataset_consents",
-        "enforce_restricted_backends_for_cli",
-        "ensure_restricted_backends_ready_for_command",
-        "format_startup_preflight_one_liner",
         "infer",
         "list_dataset_registry_health_issues",
         "list_datasets",
         "list_profiles",
         "list_registered_datasets",
         "load_profile",
-        "parse_preflight_mode",
-        "preflight_command_requested",
-        "preflight_includes_transcription_checks",
-        "persist_all_restricted_backend_consents",
-        "persist_required_restricted_backends",
-        "prepare_restricted_backend_opt_in_state",
-        "profile_pipeline_enabled",
-        "profile_resolution_requested",
         "prepare_dataset",
-        "prepare_msp_podcast_mirror",
-        "resolve_cli_workflow_profile",
-        "resolve_doctor_command",
-        "required_restricted_backends_for_current_profile",
-        "run_configure_command",
-        "run_data_command",
-        "run_doctor_command",
-        "run_inference_command",
-        "run_inference_workflow",
-        "run_restricted_backend_cli_gate",
-        "run_startup_preflight_cli_gate",
-        "run_training_command",
-        "run_transcription_runtime_calibration_command",
-        "run_transcription_runtime_calibration_cli",
         "run_startup_preflight",
-        "run_training_workflow",
-        "run_transcription_runtime_calibration_workflow",
-        "suppress_preflight_transcription_operational_relogs",
-        "should_fail_preflight",
         "show_dataset_consents",
         "train",
     ]

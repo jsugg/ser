@@ -123,9 +123,7 @@ class XLSRBackend:
         self._dtype = dtype
         self._feature_extractor = feature_extractor
         self._model = model
-        self._uses_injected_components = (
-            feature_extractor is not None and model is not None
-        )
+        self._uses_injected_components = feature_extractor is not None and model is not None
         self._torch_runtime: TorchRuntime | None = None
 
     @property
@@ -139,9 +137,7 @@ class XLSRBackend:
         _, model = self._ensure_runtime_components()
         hidden_size = getattr(model.config, "hidden_size", None)
         if not isinstance(hidden_size, int) or hidden_size <= 0:
-            raise RuntimeError(
-                "XLSR model configuration is missing a valid positive hidden_size."
-            )
+            raise RuntimeError("XLSR model configuration is missing a valid positive hidden_size.")
         return hidden_size
 
     def prepare_runtime(self) -> None:
@@ -184,9 +180,7 @@ class XLSRBackend:
         chunk_ends: list[NDArray[np.float64]] = []
 
         for start_index in range(0, int(normalized_audio.size), chunk_size_samples):
-            end_index = min(
-                start_index + chunk_size_samples, int(normalized_audio.size)
-            )
+            end_index = min(start_index + chunk_size_samples, int(normalized_audio.size))
             audio_chunk = normalized_audio[start_index:end_index]
             if audio_chunk.size == 0:
                 continue
@@ -213,9 +207,7 @@ class XLSRBackend:
 
         return EncodedSequence(
             embeddings=np.vstack(chunk_embeddings).astype(np.float32, copy=False),
-            frame_start_seconds=np.concatenate(chunk_starts).astype(
-                np.float64, copy=False
-            ),
+            frame_start_seconds=np.concatenate(chunk_starts).astype(np.float64, copy=False),
             frame_end_seconds=np.concatenate(chunk_ends).astype(np.float64, copy=False),
             backend_id=self.backend_id,
         )
@@ -232,9 +224,7 @@ class XLSRBackend:
         pooled_rows: list[FeatureVector] = []
         for window in windows:
             mask = overlap_frame_mask(encoded, window)
-            pooled_rows.append(
-                np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64)
-            )
+            pooled_rows.append(np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64))
         return np.vstack(pooled_rows).astype(np.float64, copy=False)
 
     def _encode_chunk(
@@ -306,9 +296,7 @@ class XLSRBackend:
 
         self._ensure_dependencies_available()
         transformers_module = importlib.import_module("transformers")
-        auto_feature_extractor = getattr(
-            transformers_module, "AutoFeatureExtractor", None
-        )
+        auto_feature_extractor = getattr(transformers_module, "AutoFeatureExtractor", None)
         auto_model = getattr(transformers_module, "AutoModel", None)
         if auto_feature_extractor is None or auto_model is None:
             raise RuntimeError(
@@ -413,9 +401,7 @@ class XLSRBackend:
         embeddings = np.asarray(current, dtype=np.float32)
         if embeddings.ndim == 3:
             if embeddings.shape[0] != 1:
-                raise RuntimeError(
-                    "XLSR backend expects batch size 1 per chunk during encoding."
-                )
+                raise RuntimeError("XLSR backend expects batch size 1 per chunk during encoding.")
             embeddings = embeddings[0]
         if embeddings.ndim != 2:
             raise RuntimeError(
@@ -439,9 +425,7 @@ class XLSRBackend:
             raise RuntimeError("XLSR backend received non-positive chunk duration.")
 
         frame_duration = chunk_duration_seconds / float(frame_count)
-        starts = chunk_start_seconds + (
-            np.arange(frame_count, dtype=np.float64) * frame_duration
-        )
+        starts = chunk_start_seconds + (np.arange(frame_count, dtype=np.float64) * frame_duration)
         ends = starts + frame_duration
         ends[-1] = chunk_start_seconds + chunk_duration_seconds
         return starts, ends

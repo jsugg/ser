@@ -106,14 +106,10 @@ def profile_artifact_file_names(
     return artifact_naming_helpers.profile_artifact_file_names(
         profile=profile,
         medium_model_id=(
-            default_profile_model_id("medium")
-            if medium_model_id is None
-            else medium_model_id
+            default_profile_model_id("medium") if medium_model_id is None else medium_model_id
         ),
         accurate_model_id=(
-            default_profile_model_id("accurate")
-            if accurate_model_id is None
-            else accurate_model_id
+            default_profile_model_id("accurate") if accurate_model_id is None else accurate_model_id
         ),
         accurate_research_model_id=(
             default_profile_model_id("accurate-research")
@@ -205,12 +201,8 @@ class ModelsConfig:
     folder: Path = field(default_factory=_default_models_folder)
     model_cache_dir: Path = field(default_factory=_default_model_cache_root)
     whisper_model: WhisperModelConfig = field(default_factory=WhisperModelConfig)
-    medium_model_id: str = field(
-        default_factory=lambda: default_profile_model_id("medium")
-    )
-    accurate_model_id: str = field(
-        default_factory=lambda: default_profile_model_id("accurate")
-    )
+    medium_model_id: str = field(default_factory=lambda: default_profile_model_id("medium"))
+    accurate_model_id: str = field(default_factory=lambda: default_profile_model_id("accurate"))
     accurate_research_model_id: str = field(
         default_factory=lambda: default_profile_model_id("accurate-research")
     )
@@ -430,9 +422,7 @@ class AppConfig:
     runtime_flags: RuntimeFlags = field(default_factory=RuntimeFlags)
     fast_runtime: FastRuntimeConfig = field(default_factory=FastRuntimeConfig)
     medium_runtime: MediumRuntimeConfig = field(default_factory=MediumRuntimeConfig)
-    accurate_runtime: AccurateRuntimeConfig = field(
-        default_factory=AccurateRuntimeConfig
-    )
+    accurate_runtime: AccurateRuntimeConfig = field(default_factory=AccurateRuntimeConfig)
     accurate_research_runtime: AccurateResearchRuntimeConfig = field(
         default_factory=AccurateResearchRuntimeConfig
     )

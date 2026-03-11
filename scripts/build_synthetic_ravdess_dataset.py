@@ -89,9 +89,7 @@ def _sine_pcm16_frames(
     max_int16 = 32767
     frames = bytearray(total_samples * 2)
     for sample_index in range(total_samples):
-        value = amplitude * math.sin(
-            two_pi * frequency_hz * (sample_index / float(sample_rate))
-        )
+        value = amplitude * math.sin(two_pi * frequency_hz * (sample_index / float(sample_rate)))
         clamped = max(-1.0, min(1.0, value))
         pcm_value = int(round(clamped * max_int16))
         frames[sample_index * 2 : sample_index * 2 + 2] = pcm_value.to_bytes(
@@ -126,18 +124,14 @@ def build_synthetic_dataset(args: argparse.Namespace) -> int:
     for actor_id in args.actors:
         actor_dir = output_root / f"Actor_{actor_id:02d}"
         for emotion_code in args.emotion_codes:
-            frequency_hz = (
-                180.0 + (float(emotion_code) * 22.0) + (float(actor_id) * 7.0)
-            )
+            frequency_hz = 180.0 + (float(emotion_code) * 22.0) + (float(actor_id) * 7.0)
             pcm_frames = _sine_pcm16_frames(
                 sample_rate=args.sample_rate,
                 duration_seconds=args.duration_seconds,
                 frequency_hz=frequency_hz,
                 amplitude=args.amplitude,
             )
-            output_path = (
-                actor_dir / f"03-01-{emotion_code:02d}-01-01-01-{actor_id:02d}.wav"
-            )
+            output_path = actor_dir / f"03-01-{emotion_code:02d}-01-01-01-{actor_id:02d}.wav"
             _write_wav_mono_pcm16(
                 output_path=output_path,
                 sample_rate=args.sample_rate,
@@ -153,8 +147,7 @@ def main() -> None:
     _validate_args(args)
     generated_files = build_synthetic_dataset(args)
     print(
-        "Generated synthetic RAVDESS dataset "
-        f"at {args.output_root} ({generated_files} files)."
+        "Generated synthetic RAVDESS dataset " f"at {args.output_root} ({generated_files} files)."
     )
 
 

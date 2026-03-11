@@ -13,9 +13,7 @@ def test_build_timeline_aligns_words_to_emotion_intervals() -> None:
     emotions = [EmotionSegment("happy", 0.0, 0.5), EmotionSegment("sad", 0.5, 1.0)]
 
     timeline = build_timeline(text, emotions)
-    indexed = {
-        round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline
-    }
+    indexed = {round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline}
 
     assert indexed[0.0] == ("happy", "")
     assert indexed[0.3] == ("happy", "Hello")
@@ -29,9 +27,7 @@ def test_build_timeline_joins_words_with_same_timestamp() -> None:
     emotions = [EmotionSegment("calm", 0.0, 1.0)]
 
     timeline = build_timeline(text, emotions)
-    indexed = {
-        round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline
-    }
+    indexed = {round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline}
 
     assert indexed[0.1] == ("calm", "hello there")
 
@@ -57,9 +53,7 @@ def test_build_timeline_keeps_last_emotion_on_terminal_boundary() -> None:
     emotions = [EmotionSegment("calm", 0.0, 1.0)]
 
     timeline = build_timeline(text, emotions)
-    indexed = {
-        round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline
-    }
+    indexed = {round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline}
 
     assert indexed[1.0] == ("calm", "done")
 
@@ -73,9 +67,7 @@ def test_build_timeline_canonicalizes_overlaps_before_render() -> None:
     ]
 
     timeline = build_timeline(text, emotions)
-    indexed = {
-        round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline
-    }
+    indexed = {round(row.timestamp_seconds, 3): (row.emotion, row.speech) for row in timeline}
 
     assert indexed[0.0] == ("happy", "")
     assert indexed[0.8] == ("sad", "")

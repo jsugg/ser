@@ -171,9 +171,7 @@ def train_fast_model(*, hooks: FastTrainingHooks) -> None:
     persisted_artifacts = hooks.persist_model_artifacts(model=model, artifact=artifact)
     hooks.logger.info(msg=f"Model saved to {persisted_artifacts.pickle_path}")
     if persisted_artifacts.secure_path is not None:
-        hooks.logger.info(
-            msg=f"Secure model saved to {persisted_artifacts.secure_path}"
-        )
+        hooks.logger.info(msg=f"Secure model saved to {persisted_artifacts.secure_path}")
 
     report = hooks.build_training_report(
         accuracy=evaluation.accuracy,
@@ -188,6 +186,4 @@ def train_fast_model(*, hooks: FastTrainingHooks) -> None:
         provenance=provenance,
     )
     hooks.persist_training_report(report, settings.models.training_report_file)
-    hooks.logger.info(
-        msg=f"Training report saved to {settings.models.training_report_file}"
-    )
+    hooks.logger.info(msg=f"Training report saved to {settings.models.training_report_file}")

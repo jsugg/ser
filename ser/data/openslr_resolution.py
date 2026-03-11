@@ -7,9 +7,7 @@ import re
 from dataclasses import dataclass
 from urllib import parse
 
-OPENSLR_HF_SCRIPT_URL = (
-    "https://huggingface.co/datasets/openslr/openslr/raw/main/openslr.py"
-)
+OPENSLR_HF_SCRIPT_URL = "https://huggingface.co/datasets/openslr/openslr/raw/main/openslr.py"
 OPENSLR_CANONICAL_RESOURCE_BASE_URL = "https://openslr.org/resources"
 
 

@@ -180,10 +180,7 @@ def test_download_kaggle_archive_uses_direct_api_when_credentials_present(
     )
 
     assert archive_path == destination_path
-    assert (
-        captured["url"]
-        == "https://www.kaggle.com/api/v1/datasets/download/owner/dataset"
-    )
+    assert captured["url"] == "https://www.kaggle.com/api/v1/datasets/download/owner/dataset"
     headers = captured["headers"]
     assert isinstance(headers, dict)
     authorization = headers.get("Authorization")

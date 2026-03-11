@@ -64,9 +64,7 @@ class StubBackend:
         pooled_rows: list[NDArray[np.float64]] = []
         for window in windows:
             mask = overlap_frame_mask(encoded, window)
-            pooled_rows.append(
-                np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64)
-            )
+            pooled_rows.append(np.asarray(encoded.embeddings[mask].mean(axis=0), dtype=np.float64))
         return np.vstack(pooled_rows)
 
     def extract_vector(

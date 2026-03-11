@@ -11,19 +11,20 @@ from typing import cast
 
 from dotenv import load_dotenv
 
-from ser.api import (
+from ser._internal.cli.data import run_configure_command, run_data_command
+from ser._internal.cli.diagnostics import (
+    parse_preflight_mode,
+    run_doctor_command,
+    run_startup_preflight_cli_gate,
+)
+from ser._internal.cli.runtime import (
     apply_cli_profile_override,
     apply_cli_timeout_override,
     build_runtime_pipeline,
-    parse_preflight_mode,
     profile_pipeline_enabled,
     resolve_cli_workflow_profile,
-    run_configure_command,
-    run_data_command,
-    run_doctor_command,
     run_inference_command,
     run_restricted_backend_cli_gate,
-    run_startup_preflight_cli_gate,
     run_training_command,
     run_transcription_runtime_calibration_command,
 )
@@ -234,9 +235,7 @@ def main() -> None:
                 train_requested=bool(args.train),
                 file_path=args.file if isinstance(args.file, str) else None,
                 no_transcript=bool(args.no_transcript),
-                calibrate_transcription_runtime=bool(
-                    args.calibrate_transcription_runtime
-                ),
+                calibrate_transcription_runtime=bool(args.calibrate_transcription_runtime),
             )
             for level, message in preflight_logs:
                 if level == "error":
@@ -247,13 +246,11 @@ def main() -> None:
                 sys.exit(preflight_exit_code)
 
         if args.calibrate_transcription_runtime:
-            calibration_result, calibration_error = (
-                run_transcription_runtime_calibration_command(
-                    file_path=args.file if isinstance(args.file, str) else None,
-                    language=args.language,
-                    calibration_iterations=args.calibration_iterations,
-                    calibration_profiles=args.calibration_profiles,
-                )
+            calibration_result, calibration_error = run_transcription_runtime_calibration_command(
+                file_path=args.file if isinstance(args.file, str) else None,
+                language=args.language,
+                calibration_iterations=args.calibration_iterations,
+                calibration_profiles=args.calibration_profiles,
             )
             if calibration_error is not None:
                 logger.error(

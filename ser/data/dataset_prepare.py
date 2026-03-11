@@ -194,12 +194,8 @@ def _normalize_source_overrides(
     source_repo_id: str | None,
     source_revision: str | None,
 ) -> tuple[str | None, str | None]:
-    normalized_source_repo_id = (
-        source_repo_id.strip() if source_repo_id is not None else None
-    )
-    normalized_source_revision = (
-        source_revision.strip() if source_revision is not None else None
-    )
+    normalized_source_repo_id = source_repo_id.strip() if source_repo_id is not None else None
+    normalized_source_revision = source_revision.strip() if source_revision is not None else None
     if normalized_source_repo_id == "":
         normalized_source_repo_id = None
     if normalized_source_revision == "":
@@ -209,8 +205,7 @@ def _normalize_source_overrides(
             char.isspace() for char in normalized_source_repo_id
         ):
             raise ValueError(
-                "Invalid --source value. Expected Hugging Face dataset id like "
-                "`namespace/name`."
+                "Invalid --source value. Expected Hugging Face dataset id like " "`namespace/name`."
             )
     if normalized_source_revision is not None and any(
         char.isspace() for char in normalized_source_revision
@@ -299,9 +294,7 @@ def _build_dataset_strategy_registry(
             supported_dataset_ids=resolved_supported_dataset_ids,
         )
     except ValueError as err:
-        raise ValueError(
-            "Dataset strategy registry initialization failed. " f"{err}"
-        ) from err
+        raise ValueError("Dataset strategy registry initialization failed. " f"{err}") from err
 
 
 _DATASET_STRATEGY_REGISTRY = _build_dataset_strategy_registry()
@@ -312,8 +305,7 @@ def _resolve_dataset_strategy(dataset_id: str) -> DatasetStrategy:
         return _DATASET_STRATEGY_REGISTRY.resolve(dataset_id)
     except ValueError as err:
         raise ValueError(
-            "Dataset strategy resolution failed for "
-            f"dataset_id={dataset_id!r}. {err}"
+            "Dataset strategy resolution failed for " f"dataset_id={dataset_id!r}. {err}"
         ) from err
 
 
@@ -576,8 +568,7 @@ def _validate_registry_source_provenance(
     if dataset_id != "msp-podcast":
         return
     has_registry_source_pin = any(
-        item is not None
-        for item in (source_repo_id, source_revision, source_commit_sha)
+        item is not None for item in (source_repo_id, source_revision, source_commit_sha)
     )
     manifest_source = _read_msp_mirror_source_provenance(dataset_root=dataset_root)
     if manifest_source is None:
@@ -591,8 +582,7 @@ def _validate_registry_source_provenance(
 
     manifest_repo_id, manifest_revision, manifest_commit_sha = manifest_source
     has_manifest_source_pin = any(
-        item is not None
-        for item in (manifest_repo_id, manifest_revision, manifest_commit_sha)
+        item is not None for item in (manifest_repo_id, manifest_revision, manifest_commit_sha)
     )
     if not has_registry_source_pin:
         if has_manifest_source_pin:
@@ -782,9 +772,7 @@ def _read_manifest_artifact_path(
 def _paths_equivalent(left: Path, right: Path) -> bool:
     """Returns whether two paths resolve to the same location."""
 
-    return left.expanduser().resolve(strict=False) == right.expanduser().resolve(
-        strict=False
-    )
+    return left.expanduser().resolve(strict=False) == right.expanduser().resolve(strict=False)
 
 
 def _count_labels_csv_rows(*, labels_csv_path: Path) -> int:
@@ -795,6 +783,4 @@ def _count_labels_csv_rows(*, labels_csv_path: Path) -> int:
             reader = csv.DictReader(labels_fp)
             return sum(1 for _ in reader)
     except csv.Error as err:
-        raise ValueError(
-            f"Invalid MSP labels CSV at {labels_csv_path}: {err}."
-        ) from err
+        raise ValueError(f"Invalid MSP labels CSV at {labels_csv_path}: {err}.") from err

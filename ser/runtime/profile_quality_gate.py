@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import argparse
 import glob
-import os
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -16,10 +14,11 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-import ser.config as config
+from ser._internal.runtime.environment_plan import build_runtime_environment_plan
+from ser._internal.runtime.process_env import temporary_process_env
 from ser.config import AppConfig, get_settings
 from ser.data.data_loader import extract_ravdess_speaker_id_from_path
-from ser.models.emotion_model import LoadedModel, load_model, predict_emotions
+from ser.models.emotion_model import load_model, predict_emotions
 from ser.repr import XLSRBackend
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.medium_inference import run_medium_inference
@@ -29,9 +28,7 @@ from ser.runtime.quality_gate_cli import (
 from ser.runtime.quality_gate_cli import (
     configure_cli_noise_controls as _gate_configure_cli_noise_controls,
 )
-from ser.runtime.quality_gate_cli import (
-    normalize_progress_every as _gate_normalize_progress_every,
-)
+from ser.runtime.quality_gate_cli import normalize_progress_every as _gate_normalize_progress_every
 from ser.runtime.quality_gate_cli import parse_args as _gate_parse_args
 from ser.runtime.quality_gate_evaluation import (
     NormalizedSegment,
@@ -43,28 +40,18 @@ from ser.runtime.quality_gate_evaluation import (
 from ser.runtime.quality_gate_evaluation import (
     clip_stability_metrics as _gate_clip_stability_metrics,
 )
-from ser.runtime.quality_gate_evaluation import (
-    evaluate_profile as _gate_evaluate_profile,
-)
-from ser.runtime.quality_gate_evaluation import (
-    normalize_segments as _gate_normalize_segments,
-)
+from ser.runtime.quality_gate_evaluation import evaluate_profile as _gate_evaluate_profile
+from ser.runtime.quality_gate_evaluation import normalize_segments as _gate_normalize_segments
 from ser.runtime.quality_gate_evaluation import percentile as _gate_percentile
-from ser.runtime.quality_gate_evaluation import (
-    segment_duration as _gate_segment_duration,
-)
+from ser.runtime.quality_gate_evaluation import segment_duration as _gate_segment_duration
 from ser.runtime.quality_gate_policy import (
     ProfileComparisonResult,
     compare_profiles,
     metric_as_float,
     validate_thresholds,
 )
-from ser.runtime.quality_gate_reporting import (
-    build_report_payload as _gate_build_report_payload,
-)
-from ser.runtime.quality_gate_reporting import (
-    enforce_quality_gate as _gate_enforce_quality_gate,
-)
+from ser.runtime.quality_gate_reporting import build_report_payload as _gate_build_report_payload
+from ser.runtime.quality_gate_reporting import enforce_quality_gate as _gate_enforce_quality_gate
 from ser.runtime.quality_gate_reporting import (
     resolve_report_output_path as _gate_resolve_report_output_path,
 )
@@ -223,9 +210,7 @@ def collect_labeled_samples(
             break
 
     if not samples:
-        raise ValueError(
-            "No labeled audio samples were collected from dataset_glob_pattern."
-        )
+        raise ValueError("No labeled audio samples were collected from dataset_glob_pattern.")
     return samples
 
 
@@ -302,9 +287,7 @@ def _build_grouped_evaluation_summary(
         test_speakers = {speaker_ids[int(index)] for index in test_indices.tolist()}
         overlap_count = len(train_speakers.intersection(test_speakers))
         if overlap_count > 0:
-            raise RuntimeError(
-                "Grouped quality-gate folds contain train/test speaker overlap."
-            )
+            raise RuntimeError("Grouped quality-gate folds contain train/test speaker overlap.")
         overlap_counts.append(overlap_count)
 
     samples_per_speaker = tuple(counts_by_speaker.values())
@@ -332,9 +315,7 @@ def _segment_duration(segment: _NormalizedSegment) -> float:
     return _gate_segment_duration(segment)
 
 
-def _clip_label_from_segments(
-    segments: Sequence[_NormalizedSegment], *, unknown_label: str
-) -> str:
+def _clip_label_from_segments(segments: Sequence[_NormalizedSegment], *, unknown_label: str) -> str:
     """Returns a duration-weighted clip label derived from segment predictions."""
     return _gate_clip_label_from_segments(segments, unknown_label=unknown_label)
 
@@ -378,9 +359,7 @@ def _evaluate_profile(
         metrics=evaluation.metrics,
         temporal_stability=TemporalStabilitySummary(
             segment_count_per_minute=evaluation.segment_count_per_minute,
-            median_segment_duration_seconds=(
-                evaluation.median_segment_duration_seconds
-            ),
+            median_segment_duration_seconds=(evaluation.median_segment_duration_seconds),
         ),
         latency=LatencySummary(
             mean_seconds=evaluation.latency_mean_seconds,
@@ -416,9 +395,7 @@ def _compare_profiles(
         medium_minus_fast_uar=comparison.medium_minus_fast_uar,
         medium_minus_fast_macro_f1=comparison.medium_minus_fast_macro_f1,
         medium_segments_per_minute=comparison.medium_segments_per_minute,
-        medium_median_segment_duration_seconds=(
-            comparison.medium_median_segment_duration_seconds
-        ),
+        medium_median_segment_duration_seconds=(comparison.medium_median_segment_duration_seconds),
         passes_quality_gate=comparison.passes_quality_gate,
         failure_reasons=comparison.failure_reasons,
     )
@@ -504,22 +481,23 @@ def evaluate_profile_quality_gate(
     )
 
 
-@contextmanager
-def _temporary_env(overrides: Mapping[str, str]) -> Iterator[None]:
-    """Temporarily applies environment overrides and refreshes runtime settings."""
-    previous_values: dict[str, str | None] = {key: os.getenv(key) for key in overrides}
-    for key, value in overrides.items():
-        os.environ[key] = value
-    config.reload_settings()
-    try:
-        yield
-    finally:
-        for key, previous_value in previous_values.items():
-            if previous_value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = previous_value
-        config.reload_settings()
+def _settings_with_artifact_files(
+    *,
+    settings: AppConfig,
+    model_file_name: str,
+    secure_model_file_name: str,
+    training_report_file_name: str,
+) -> AppConfig:
+    """Builds one explicit settings snapshot for quality-gate artifact selection."""
+    return replace(
+        settings,
+        models=replace(
+            settings.models,
+            model_file_name=model_file_name,
+            secure_model_file_name=secure_model_file_name,
+            training_report_file_name=training_report_file_name,
+        ),
+    )
 
 
 def _build_fast_predictor(
@@ -527,16 +505,16 @@ def _build_fast_predictor(
     model_file_name: str,
     secure_model_file_name: str,
     training_report_file_name: str,
+    settings: AppConfig,
 ) -> SegmentPredictor:
     """Builds fast predictor with deterministic model artifact selection."""
-    overrides = {
-        "SER_MODEL_FILE_NAME": model_file_name,
-        "SER_SECURE_MODEL_FILE_NAME": secure_model_file_name,
-        "SER_TRAINING_REPORT_FILE_NAME": training_report_file_name,
-    }
-    loaded_model: LoadedModel
-    with _temporary_env(overrides):
-        loaded_model = load_model()
+    artifact_settings = _settings_with_artifact_files(
+        settings=settings,
+        model_file_name=model_file_name,
+        secure_model_file_name=secure_model_file_name,
+        training_report_file_name=training_report_file_name,
+    )
+    loaded_model = load_model(settings=artifact_settings)
 
     def _predict(audio_path: str) -> Sequence[SegmentLike]:
         return predict_emotions(audio_path, loaded_model=loaded_model)
@@ -553,30 +531,31 @@ def _build_medium_predictor(
     settings: AppConfig,
 ) -> SegmentPredictor:
     """Builds medium predictor with deterministic model artifact selection."""
-    overrides = {
-        "SER_MODEL_FILE_NAME": model_file_name,
-        "SER_SECURE_MODEL_FILE_NAME": secure_model_file_name,
-        "SER_TRAINING_REPORT_FILE_NAME": training_report_file_name,
-    }
-    loaded_model: LoadedModel
+    artifact_settings = _settings_with_artifact_files(
+        settings=settings,
+        model_file_name=model_file_name,
+        secure_model_file_name=secure_model_file_name,
+        training_report_file_name=training_report_file_name,
+    )
     default_language = settings.default_language
     backend = XLSRBackend(cache_dir=settings.models.huggingface_cache_root)
-    with _temporary_env(overrides):
-        loaded_model = load_model()
+    loaded_model = load_model(settings=artifact_settings)
+    runtime_environment = build_runtime_environment_plan(artifact_settings)
 
     def _predict(audio_path: str) -> Sequence[SegmentLike]:
-        result = run_medium_inference(
-            InferenceRequest(
-                file_path=audio_path,
-                language=language or default_language,
-                save_transcript=False,
-            ),
-            settings,
-            loaded_model=loaded_model,
-            backend=backend,
-            enforce_timeout=False,
-            allow_retries=False,
-        )
+        with temporary_process_env(runtime_environment.torch_runtime):
+            result = run_medium_inference(
+                InferenceRequest(
+                    file_path=audio_path,
+                    language=language or default_language,
+                    save_transcript=False,
+                ),
+                artifact_settings,
+                loaded_model=loaded_model,
+                backend=backend,
+                enforce_timeout=False,
+                allow_retries=False,
+            )
         return result.segments
 
     return _predict
@@ -614,9 +593,7 @@ def _parse_args(settings: AppConfig) -> argparse.Namespace:
         medium_training_report_file_name=settings.models.training_report_file_name,
         min_uar_delta=settings.quality_gate.min_uar_delta,
         min_macro_f1_delta=settings.quality_gate.min_macro_f1_delta,
-        max_medium_segments_per_minute=(
-            settings.quality_gate.max_medium_segments_per_minute
-        ),
+        max_medium_segments_per_minute=(settings.quality_gate.max_medium_segments_per_minute),
         min_medium_median_segment_duration_seconds=(
             settings.quality_gate.min_medium_median_segment_duration_seconds
         ),
@@ -624,18 +601,21 @@ def _parse_args(settings: AppConfig) -> argparse.Namespace:
     return _gate_parse_args(defaults=defaults)
 
 
+def _resolve_boundary_settings(settings: AppConfig | None = None) -> AppConfig:
+    """Returns the active settings snapshot for quality-gate CLI wrappers."""
+    return settings if settings is not None else get_settings()
+
+
 def main() -> None:
     """Runs quality-gate harness and writes JSON report to stdout or disk."""
     _configure_cli_noise_controls()
-    settings = get_settings()
+    settings = _resolve_boundary_settings()
     args = _parse_args(settings)
     thresholds = QualityGateThresholds(
         minimum_uar_delta=args.min_uar_delta,
         minimum_macro_f1_delta=args.min_macro_f1_delta,
         maximum_medium_segments_per_minute=args.max_medium_segments_per_minute,
-        minimum_medium_median_segment_duration_seconds=(
-            args.min_medium_median_segment_duration
-        ),
+        minimum_medium_median_segment_duration_seconds=(args.min_medium_median_segment_duration),
     )
     samples = collect_labeled_samples(
         dataset_glob_pattern=args.dataset_glob,
@@ -646,6 +626,7 @@ def main() -> None:
         model_file_name=args.fast_model_file_name,
         secure_model_file_name=args.fast_secure_model_file_name,
         training_report_file_name=args.fast_training_report_file_name,
+        settings=settings,
     )
     medium_predictor = _build_medium_predictor(
         model_file_name=args.medium_model_file_name,

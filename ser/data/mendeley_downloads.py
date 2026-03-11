@@ -8,9 +8,7 @@ from typing import Protocol
 
 
 class _RequestJson(Protocol):
-    def __call__(
-        self, url: str, *, headers: dict[str, str] | None = None
-    ) -> object: ...
+    def __call__(self, url: str, *, headers: dict[str, str] | None = None) -> object: ...
 
 
 class _DownloadFile(Protocol):
@@ -86,9 +84,7 @@ def build_mendeley_folder_paths(
             raise RuntimeError(f"Unknown Mendeley folder id: {folder_id}")
         raw_name = item.get("name")
         folder_name = str(raw_name).strip() if raw_name is not None else folder_id
-        safe_name = (
-            re.sub(r"[^0-9a-zA-Z._-]+", "_", folder_name).strip("._-") or folder_id
-        )
+        safe_name = re.sub(r"[^0-9a-zA-Z._-]+", "_", folder_name).strip("._-") or folder_id
         parent_id_raw = item.get("parent_id")
         if isinstance(parent_id_raw, str) and parent_id_raw and parent_id_raw in by_id:
             parent_path = _resolve(parent_id_raw, seen)
@@ -161,9 +157,7 @@ def download_mendeley_dataset_tree(
             if not isinstance(download_url, str) or not download_url:
                 continue
             size_raw = entry.get("size")
-            expected_size = (
-                size_raw if isinstance(size_raw, int) and size_raw >= 0 else None
-            )
+            expected_size = size_raw if isinstance(size_raw, int) and size_raw >= 0 else None
             destination_path = destination_root / relative_folder / filename
             download_file(
                 url=download_url,

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import urlparse
 
+from ser._internal.runtime.environment_plan import build_runtime_environment_plan
+from ser._internal.runtime.process_env import temporary_process_env
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
 from ser.runtime.phase_contract import (
@@ -88,9 +90,7 @@ _DEMUCS_DEPRECATED_MESSAGE_REGEX = (
     r"^``demucs`` is deprecated and will be removed in future versions\. "
     r'Use ``denoiser="demucs"`` instead\.$'
 )
-_TRANSCRIBE_WARNING_MODULE_REGEX = (
-    r"^stable_whisper\.whisper_word_level\.original_whisper$"
-)
+_TRANSCRIBE_WARNING_MODULE_REGEX = r"^stable_whisper\.whisper_word_level\.original_whisper$"
 _TORIO_FFMPEG_PROBE_POLICY_ID = "torio.ffmpeg_probe_debug_traceback"
 _STABLE_WHISPER_IMPORT_POLICY = DependencyLogPolicy(
     logger_prefixes=frozenset({"torio"}),
@@ -201,9 +201,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
             ),
             keep_demoted=False,
         ):
-            torio_issue = (
-                stable_whisper_torio_probe.detect_default_torio_ffmpeg_operational_issue()
-            )
+            torio_issue = stable_whisper_torio_probe.detect_default_torio_ffmpeg_operational_issue()
         if torio_issue is not None:
             operational_issues.append(torio_issue)
             noise_issues.append(
@@ -303,71 +301,44 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
             ),
             keep_demoted=False,
         ):
-            try:
-                stable_whisper = importlib.import_module("stable_whisper")
-            except ModuleNotFoundError as err:
-                raise RuntimeError(
-                    "Missing stable-whisper dependencies. Ensure project dependencies "
-                    "are installed."
-                ) from err
-
             download_root: Path = settings.models.whisper_download_root
             torch_cache_root: Path = settings.models.torch_cache_root
             os.makedirs(download_root, exist_ok=True)
             os.makedirs(torch_cache_root, exist_ok=True)
-            os.environ["TORCH_HOME"] = str(torch_cache_root)
-            load_model = getattr(stable_whisper, "load_model", None)
-            if not callable(load_model):
-                raise RuntimeError(
-                    "stable-whisper package does not expose a callable load_model()."
-                )
-            if runtime_request.device_type == "mps":
-                load_admission = self._resolve_mps_admission_decision(
-                    settings=settings,
-                    runtime_request=runtime_request,
-                    phase="model_load",
-                )
-                if load_admission is not None and not load_admission.allow_mps:
-                    self._log_mps_admission_control_fallback(
+            runtime_environment = build_runtime_environment_plan(settings)
+            with temporary_process_env(
+                runtime_environment.torch_runtime.merged(runtime_environment.stable_whisper)
+            ):
+                try:
+                    stable_whisper = importlib.import_module("stable_whisper")
+                except ModuleNotFoundError as err:
+                    raise RuntimeError(
+                        "Missing stable-whisper dependencies. Ensure project dependencies "
+                        "are installed."
+                    ) from err
+
+                load_model = getattr(stable_whisper, "load_model", None)
+                if not callable(load_model):
+                    raise RuntimeError(
+                        "stable-whisper package does not expose a callable load_model()."
+                    )
+                if runtime_request.device_type == "mps":
+                    load_admission = self._resolve_mps_admission_decision(
+                        settings=settings,
+                        runtime_request=runtime_request,
                         phase="model_load",
-                        decision=load_admission,
                     )
-                    model = load_model(
-                        name=runtime_request.model_name,
-                        device="cpu",
-                        dq=False,
-                        download_root=str(download_root),
-                        in_memory=True,
-                    )
-                    set_stable_whisper_mps_compatibility_enabled(
-                        model,
-                        enabled=False,
-                    )
-                    set_stable_whisper_runtime_device(model, device_type="cpu")
-                else:
-                    model = load_model(
-                        name=runtime_request.model_name,
-                        device="cpu",
-                        dq=False,
-                        download_root=str(download_root),
-                        in_memory=True,
-                    )
-                    set_stable_whisper_runtime_device(model, device_type="cpu")
-                    try:
-                        model = enable_stable_whisper_mps_compatibility(model)
-                    except Exception as err:
-                        fallback_reason = self._mps_compatibility_fallback_reason(err)
-                        if fallback_reason is None:
-                            raise
-                        if fallback_reason == "retryable_runtime_error":
-                            self._release_torch_runtime_memory_for_retry()
-                        self._move_model_to_cpu_runtime(model)
-                        error_summary = self._summarize_runtime_error(err)
-                        logging.getLogger(__name__).warning(
-                            "MPS compatibility mode unavailable; using cpu runtime "
-                            "(reason=%s, error=%s).",
-                            fallback_reason,
-                            error_summary,
+                    if load_admission is not None and not load_admission.allow_mps:
+                        self._log_mps_admission_control_fallback(
+                            phase="model_load",
+                            decision=load_admission,
+                        )
+                        model = load_model(
+                            name=runtime_request.model_name,
+                            device="cpu",
+                            dq=False,
+                            download_root=str(download_root),
+                            in_memory=True,
                         )
                         set_stable_whisper_mps_compatibility_enabled(
                             model,
@@ -375,65 +346,93 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
                         )
                         set_stable_whisper_runtime_device(model, device_type="cpu")
                     else:
-                        set_stable_whisper_runtime_device(model, device_type="mps")
-                        if has_known_stable_whisper_sparse_mps_incompatibility():
-                            logging.getLogger(__name__).info(
-                                "MPS compatibility mode enabled "
-                                "(sparse_mps_operator_gap_detected)."
+                        model = load_model(
+                            name=runtime_request.model_name,
+                            device="cpu",
+                            dq=False,
+                            download_root=str(download_root),
+                            in_memory=True,
+                        )
+                        set_stable_whisper_runtime_device(model, device_type="cpu")
+                        try:
+                            model = enable_stable_whisper_mps_compatibility(model)
+                        except Exception as err:
+                            fallback_reason = self._mps_compatibility_fallback_reason(err)
+                            if fallback_reason is None:
+                                raise
+                            if fallback_reason == "retryable_runtime_error":
+                                self._release_torch_runtime_memory_for_retry()
+                            self._move_model_to_cpu_runtime(model)
+                            error_summary = self._summarize_runtime_error(err)
+                            logging.getLogger(__name__).warning(
+                                "MPS compatibility mode unavailable; using cpu runtime "
+                                "(reason=%s, error=%s).",
+                                fallback_reason,
+                                error_summary,
                             )
+                            set_stable_whisper_mps_compatibility_enabled(
+                                model,
+                                enabled=False,
+                            )
+                            set_stable_whisper_runtime_device(model, device_type="cpu")
                         else:
-                            logging.getLogger(__name__).info(
-                                "MPS compatibility mode enabled."
-                            )
-            else:
-                try:
-                    model = load_model(
-                        name=runtime_request.model_name,
-                        device=runtime_request.device_spec,
-                        dq=False,
-                        download_root=str(download_root),
-                        in_memory=True,
-                    )
-                    set_stable_whisper_runtime_device(
-                        model,
-                        device_type=runtime_request.device_type,
-                    )
-                except Exception as err:
-                    should_retry_on_cpu = runtime_request.device_type in {
-                        "mps",
-                        "cuda",
-                    } and self._is_retryable_precision_failure(err)
-                    if not should_retry_on_cpu:
-                        raise
-                    self._release_torch_runtime_memory_for_retry()
-                    error_summary = self._summarize_runtime_error(err)
-                    logging.getLogger(__name__).warning(
-                        "Model load failed on %s due to retryable runtime "
-                        "error; retrying on cpu (%s).",
-                        runtime_request.device_spec,
-                        error_summary,
-                    )
-                    model = load_model(
-                        name=runtime_request.model_name,
-                        device="cpu",
-                        dq=False,
-                        download_root=str(download_root),
-                        in_memory=True,
-                    )
-                    set_stable_whisper_mps_compatibility_enabled(
-                        model,
-                        enabled=False,
-                    )
-                    set_stable_whisper_runtime_device(model, device_type="cpu")
-        resolved_device_type = get_stable_whisper_runtime_device(
-            model,
-            default_device_type=runtime_request.device_type,
-        )
-        logging.getLogger(__name__).info(
-            "Runtime device ready (%s).",
-            resolved_device_type,
-        )
-        return model
+                            set_stable_whisper_runtime_device(model, device_type="mps")
+                            if has_known_stable_whisper_sparse_mps_incompatibility():
+                                logging.getLogger(__name__).info(
+                                    "MPS compatibility mode enabled "
+                                    "(sparse_mps_operator_gap_detected)."
+                                )
+                            else:
+                                logging.getLogger(__name__).info("MPS compatibility mode enabled.")
+                else:
+                    try:
+                        model = load_model(
+                            name=runtime_request.model_name,
+                            device=runtime_request.device_spec,
+                            dq=False,
+                            download_root=str(download_root),
+                            in_memory=True,
+                        )
+                        set_stable_whisper_runtime_device(
+                            model,
+                            device_type=runtime_request.device_type,
+                        )
+                    except Exception as err:
+                        should_retry_on_cpu = runtime_request.device_type in {
+                            "mps",
+                            "cuda",
+                        } and self._is_retryable_precision_failure(err)
+                        if not should_retry_on_cpu:
+                            raise
+                        self._release_torch_runtime_memory_for_retry()
+                        error_summary = self._summarize_runtime_error(err)
+                        logging.getLogger(__name__).warning(
+                            "Model load failed on %s due to retryable runtime "
+                            "error; retrying on cpu (%s).",
+                            runtime_request.device_spec,
+                            error_summary,
+                        )
+                        model = load_model(
+                            name=runtime_request.model_name,
+                            device="cpu",
+                            dq=False,
+                            download_root=str(download_root),
+                            in_memory=True,
+                        )
+                        set_stable_whisper_mps_compatibility_enabled(
+                            model,
+                            enabled=False,
+                        )
+                        set_stable_whisper_runtime_device(model, device_type="cpu")
+            resolved_device_type = get_stable_whisper_runtime_device(
+                model,
+                default_device_type=runtime_request.device_type,
+            )
+            logging.getLogger(__name__).info(
+                "Runtime device ready (%s).",
+                resolved_device_type,
+            )
+            return model
 
     def transcribe(
         self,
@@ -584,9 +583,7 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         """Returns one CPU-fallback reason for MPS compatibility activation failures."""
         return mps_compatibility_fallback_reason(
             err,
-            retryable_precision_checker=(
-                StableWhisperAdapter._is_retryable_precision_failure
-            ),
+            retryable_precision_checker=(StableWhisperAdapter._is_retryable_precision_failure),
             compatibility_activation_checker=(
                 StableWhisperAdapter._is_compatibility_activation_error
             ),

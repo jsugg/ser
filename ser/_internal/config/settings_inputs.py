@@ -187,9 +187,7 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
     profile_pipeline = deps.read_bool_env("SER_ENABLE_PROFILE_PIPELINE", False)
     medium_profile = deps.resolve_profile_enabled(medium_profile_entry)
     accurate_profile = deps.resolve_profile_enabled(accurate_profile_entry)
-    accurate_research_profile = deps.resolve_profile_enabled(
-        accurate_research_profile_entry
-    )
+    accurate_research_profile = deps.resolve_profile_enabled(accurate_research_profile_entry)
     restricted_backends = deps.read_bool_env("SER_ENABLE_RESTRICTED_BACKENDS", False)
     new_output_schema = deps.read_bool_env("SER_ENABLE_NEW_OUTPUT_SCHEMA", False)
 
@@ -287,11 +285,9 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
         "SER_TRANSCRIPTION_MPS_CALIBRATION_OVERRIDES",
         True,
     )
-    transcription_mps_admission_calibration_min_confidence = (
-        deps.read_confidence_level_env(
-            "SER_TRANSCRIPTION_MPS_CALIBRATION_MIN_CONFIDENCE",
-            "high",
-        )
+    transcription_mps_admission_calibration_min_confidence = deps.read_confidence_level_env(
+        "SER_TRANSCRIPTION_MPS_CALIBRATION_MIN_CONFIDENCE",
+        "high",
     )
     transcription_mps_admission_calibration_report_max_age_hours = deps.read_float_env(
         "SER_TRANSCRIPTION_MPS_CALIBRATION_REPORT_MAX_AGE_HOURS",
@@ -304,9 +300,7 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
 
     medium_model_id = deps.resolve_profile_model_id(medium_profile_entry)
     accurate_model_id = deps.resolve_profile_model_id(accurate_profile_entry)
-    accurate_research_model_id = deps.resolve_profile_model_id(
-        accurate_research_profile_entry
-    )
+    accurate_research_model_id = deps.resolve_profile_model_id(accurate_research_profile_entry)
 
     default_artifact_profile = deps.artifact_profile_from_runtime_flags(
         medium_profile=medium_profile,
@@ -379,9 +373,7 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
         medium_max_windows_per_clip=medium_max_windows_per_clip,
         quality_gate_min_uar_delta=quality_gate_min_uar_delta,
         quality_gate_min_macro_f1_delta=quality_gate_min_macro_f1_delta,
-        quality_gate_max_medium_segments_per_minute=(
-            quality_gate_max_medium_segments_per_minute
-        ),
+        quality_gate_max_medium_segments_per_minute=(quality_gate_max_medium_segments_per_minute),
         quality_gate_min_medium_median_segment_duration_seconds=(
             quality_gate_min_medium_median_segment_duration_seconds
         ),
@@ -390,21 +382,11 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
         torch_device=torch_device,
         torch_dtype=torch_dtype,
         torch_enable_mps_fallback=torch_enable_mps_fallback,
-        transcription_mps_low_memory_threshold_gb=(
-            transcription_mps_low_memory_threshold_gb
-        ),
-        transcription_mps_admission_control_enabled=(
-            transcription_mps_admission_control_enabled
-        ),
-        transcription_mps_hard_oom_shortcut_enabled=(
-            transcription_mps_hard_oom_shortcut_enabled
-        ),
-        transcription_mps_admission_min_headroom_mb=(
-            transcription_mps_admission_min_headroom_mb
-        ),
-        transcription_mps_admission_safety_margin_mb=(
-            transcription_mps_admission_safety_margin_mb
-        ),
+        transcription_mps_low_memory_threshold_gb=(transcription_mps_low_memory_threshold_gb),
+        transcription_mps_admission_control_enabled=(transcription_mps_admission_control_enabled),
+        transcription_mps_hard_oom_shortcut_enabled=(transcription_mps_hard_oom_shortcut_enabled),
+        transcription_mps_admission_min_headroom_mb=(transcription_mps_admission_min_headroom_mb),
+        transcription_mps_admission_safety_margin_mb=(transcription_mps_admission_safety_margin_mb),
         transcription_mps_admission_calibration_overrides_enabled=(
             transcription_mps_admission_calibration_overrides_enabled
         ),

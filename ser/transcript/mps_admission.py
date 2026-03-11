@@ -62,9 +62,7 @@ def decide_mps_admission_for_transcription(
     )
     min_required_bytes = _mb_to_bytes(min_headroom_mb)
     safety_margin_bytes = _mb_to_bytes(safety_margin_mb)
-    required_headroom_bytes = (
-        max(min_required_bytes, model_required_bytes) + safety_margin_bytes
-    )
+    required_headroom_bytes = max(min_required_bytes, model_required_bytes) + safety_margin_bytes
     if not snapshot.is_available:
         return MpsAdmissionDecision(
             allow_mps=True,
@@ -77,9 +75,7 @@ def decide_mps_admission_for_transcription(
         )
     if snapshot.headroom_bytes is None:
         if phase == "model_load" and _is_large_whisper_model(model_name):
-            estimated_model_footprint_bytes = _estimate_model_footprint_bytes(
-                model_name
-            )
+            estimated_model_footprint_bytes = _estimate_model_footprint_bytes(model_name)
             return MpsAdmissionDecision(
                 allow_mps=False,
                 reason_code="mps_headroom_unknown_large_model",
@@ -122,9 +118,7 @@ def decide_mps_admission_for_transcription(
     return MpsAdmissionDecision(
         allow_mps=allow_mps,
         reason_code=(
-            "mps_headroom_sufficient"
-            if allow_mps
-            else "mps_headroom_below_required_budget"
+            "mps_headroom_sufficient" if allow_mps else "mps_headroom_below_required_budget"
         ),
         required_bytes=required_headroom_bytes,
         available_bytes=snapshot.headroom_bytes,
@@ -169,9 +163,7 @@ def resolve_mps_admission_decision(
         else DEFAULT_MPS_ADMISSION_SAFETY_MARGIN_MB
     )
     resolve_heuristic = (
-        decide_mps_admission_for_transcription
-        if heuristic_resolver is None
-        else heuristic_resolver
+        decide_mps_admission_for_transcription if heuristic_resolver is None else heuristic_resolver
     )
     heuristic_decision = resolve_heuristic(
         model_name=runtime_request.model_name,
@@ -306,9 +298,7 @@ def capture_mps_pressure_snapshot() -> MpsPressureSnapshot:
         attribute_name="recommended_max_memory",
     )
     used_candidates = tuple(
-        value
-        for value in (current_allocated_bytes, driver_allocated_bytes)
-        if value is not None
+        value for value in (current_allocated_bytes, driver_allocated_bytes) if value is not None
     )
     effective_used_bytes = max(used_candidates) if used_candidates else None
     headroom_bytes = None

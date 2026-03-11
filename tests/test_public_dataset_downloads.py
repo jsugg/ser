@@ -93,20 +93,11 @@ def test_infer_escorpus_pe_label_maps_vad_triplets() -> None:
 
     assert downloads._infer_escorpus_pe_label(Path("Audio7_36-05-05-04.wav")) == "happy"
     assert downloads._infer_escorpus_pe_label(Path("Audio7_36-01-05-04.wav")) == "angry"
-    assert (
-        downloads._infer_escorpus_pe_label(Path("Audio7_36-01-05-02.wav")) == "fearful"
-    )
+    assert downloads._infer_escorpus_pe_label(Path("Audio7_36-01-05-02.wav")) == "fearful"
     assert downloads._infer_escorpus_pe_label(Path("Audio7_36-01-01-03.wav")) == "sad"
-    assert (
-        downloads._infer_escorpus_pe_label(Path("Audio7_36-03-05-03.wav"))
-        == "surprised"
-    )
-    assert (
-        downloads._infer_escorpus_pe_label(Path("Audio7_36-01-03-03.wav")) == "disgust"
-    )
-    assert (
-        downloads._infer_escorpus_pe_label(Path("Audio7_36-03-03-03.wav")) == "neutral"
-    )
+    assert downloads._infer_escorpus_pe_label(Path("Audio7_36-03-05-03.wav")) == "surprised"
+    assert downloads._infer_escorpus_pe_label(Path("Audio7_36-01-03-03.wav")) == "disgust"
+    assert downloads._infer_escorpus_pe_label(Path("Audio7_36-03-03-03.wav")) == "neutral"
 
 
 def test_generate_labels_from_audio_tree_supports_flac_extensions(
@@ -259,11 +250,7 @@ def test_download_openslr_archives_prefers_pinned_registry_with_mirror_fallback(
     ) -> Path:
         del expected_md5, expected_size, headers
         downloaded_urls.append(url)
-        if (
-            url.endswith("/88/wav.tgz")
-            and "openslr.org/resources" in url
-            and "trmal" not in url
-        ):
+        if url.endswith("/88/wav.tgz") and "openslr.org/resources" in url and "trmal" not in url:
             raise RuntimeError("primary mirror unavailable")
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         destination_path.write_bytes(b"ok")
@@ -400,18 +387,9 @@ def test_prepare_mesd_from_mendeley_delegates_to_mendeley_helper(
     assert captured["version"] == downloads.MESD_DEFAULT_VERSION
     assert captured["extract_dir_name"] == "mesd"
     assert captured["labels_file_name"] == downloads.DEFAULT_LABELS_FILE_NAME
-    assert (
-        captured["source_manifest_file_name"]
-        == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
-    )
-    assert (
-        captured["download_mendeley_dataset_tree"]
-        is downloads._download_mendeley_dataset_tree
-    )
-    assert (
-        captured["generate_labels_from_audio_tree"]
-        is downloads._generate_labels_from_audio_tree
-    )
+    assert captured["source_manifest_file_name"] == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
+    assert captured["download_mendeley_dataset_tree"] is downloads._download_mendeley_dataset_tree
+    assert captured["generate_labels_from_audio_tree"] is downloads._generate_labels_from_audio_tree
     assert captured["infer_mesd_label"] is downloads._infer_mesd_label
     assert captured["write_source_manifest"] is downloads._write_source_manifest
 
@@ -450,23 +428,14 @@ def test_prepare_pavoque_from_github_release_delegates_to_provider_helper(
     assert captured["owner"] == downloads.PAVOQUE_GITHUB_OWNER
     assert captured["repo"] == downloads.PAVOQUE_GITHUB_REPO
     assert captured["labels_file_name"] == downloads.DEFAULT_LABELS_FILE_NAME
-    assert (
-        captured["source_manifest_file_name"]
-        == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
-    )
+    assert captured["source_manifest_file_name"] == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
     assert (
         captured["read_github_latest_release_assets"]
         is downloads._read_github_latest_release_assets
     )
     assert captured["download_file"] is downloads._download_file
-    assert (
-        captured["generate_labels_from_audio_tree"]
-        is downloads._generate_labels_from_audio_tree
-    )
-    assert (
-        captured["infer_label_from_path_tokens"]
-        is downloads._infer_label_from_path_tokens
-    )
+    assert captured["generate_labels_from_audio_tree"] is downloads._generate_labels_from_audio_tree
+    assert captured["infer_label_from_path_tokens"] is downloads._infer_label_from_path_tokens
     assert captured["write_source_manifest"] is downloads._write_source_manifest
 
 
@@ -504,21 +473,10 @@ def test_prepare_coraa_ser_from_google_drive_delegates_to_provider_helper(
     assert captured["folder_url"] == downloads.CORAA_SER_GOOGLE_DRIVE_FOLDER_URL
     assert captured["label_semantics"] == "neutral_vs_non_neutral_by_gender"
     assert captured["labels_file_name"] == downloads.DEFAULT_LABELS_FILE_NAME
-    assert (
-        captured["source_manifest_file_name"]
-        == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
-    )
-    assert (
-        captured["download_google_drive_folder"]
-        is downloads._download_google_drive_folder
-    )
-    assert (
-        captured["extract_archives_from_tree"] is downloads._extract_archives_from_tree
-    )
-    assert (
-        captured["generate_labels_from_audio_tree"]
-        is downloads._generate_labels_from_audio_tree
-    )
+    assert captured["source_manifest_file_name"] == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
+    assert captured["download_google_drive_folder"] is downloads._download_google_drive_folder
+    assert captured["extract_archives_from_tree"] is downloads._extract_archives_from_tree
+    assert captured["generate_labels_from_audio_tree"] is downloads._generate_labels_from_audio_tree
     assert captured["infer_coraa_ser_label"] is downloads._infer_coraa_ser_label
     assert captured["write_source_manifest"] is downloads._write_source_manifest
 
@@ -543,9 +501,7 @@ def test_read_github_latest_release_assets_parses_expected_payload(
         ],
     }
 
-    def _fake_request_json(
-        url: str, *, headers: dict[str, str] | None = None
-    ) -> object:
+    def _fake_request_json(url: str, *, headers: dict[str, str] | None = None) -> object:
         del url, headers
         return payload
 
@@ -574,12 +530,10 @@ def test_infer_coraa_ser_label_from_filename_patterns() -> None:
     """CORAA resolver should normalize non-neutral male/female variants."""
 
     assert (
-        downloads._infer_coraa_ser_label(Path("abc_nonneutralfemale_1.wav"))
-        == "non_neutral_female"
+        downloads._infer_coraa_ser_label(Path("abc_nonneutralfemale_1.wav")) == "non_neutral_female"
     )
     assert (
-        downloads._infer_coraa_ser_label(Path("abc_non-neutral-male_1.wav"))
-        == "non_neutral_male"
+        downloads._infer_coraa_ser_label(Path("abc_non-neutral-male_1.wav")) == "non_neutral_male"
     )
     assert downloads._infer_coraa_ser_label(Path("abc_neutral_1.wav")) == "neutral"
 
@@ -668,8 +622,7 @@ def test_generate_labels_from_metadata_csv_delegates_to_zenodo_helper(
     assert captured["label_keys"] == ("label",)
     assert callable(captured["label_resolver"])
     assert (
-        captured["compute_relative_to_dataset_root"]
-        is downloads._compute_relative_to_dataset_root
+        captured["compute_relative_to_dataset_root"] is downloads._compute_relative_to_dataset_root
     )
     assert captured["write_labels_csv"] is downloads._write_labels_csv
 
@@ -696,9 +649,7 @@ def test_download_jl_corpus_via_hf_rows_writes_labels(
 ) -> None:
     """HF rows fallback should materialize audio and deterministic labels CSV."""
 
-    def _fake_request_json(
-        url: str, *, headers: dict[str, str] | None = None
-    ) -> object:
+    def _fake_request_json(url: str, *, headers: dict[str, str] | None = None) -> object:
         del headers
         if "offset=0" in url:
             return {
@@ -794,10 +745,7 @@ def test_prepare_jl_corpus_from_hf_rows_delegates_to_jl_corpus_helper(
     assert captured["dataset_root"] == tmp_path
     assert captured["fallback_reason"] == "missing credentials"
     assert captured["labels_file_name"] == downloads.DEFAULT_LABELS_FILE_NAME
-    assert (
-        captured["source_manifest_file_name"]
-        == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
-    )
+    assert captured["source_manifest_file_name"] == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
     assert captured["dataset_id"] == downloads.JL_CORPUS_HF_DATASET_ID
     assert captured["source_url"] == downloads.JL_CORPUS_HF_SOURCE_URL
     assert captured["rows_api_url"] == downloads.JL_CORPUS_HF_ROWS_API_URL
@@ -806,13 +754,9 @@ def test_prepare_jl_corpus_from_hf_rows_delegates_to_jl_corpus_helper(
     assert captured["page_size"] == downloads.JL_CORPUS_HF_PAGE_SIZE
     assert captured["request_json"] is downloads._request_json
     assert captured["download_file"] is downloads._download_file
+    assert captured["infer_label_from_path_tokens"] is downloads._infer_label_from_path_tokens
     assert (
-        captured["infer_label_from_path_tokens"]
-        is downloads._infer_label_from_path_tokens
-    )
-    assert (
-        captured["compute_relative_to_dataset_root"]
-        is downloads._compute_relative_to_dataset_root
+        captured["compute_relative_to_dataset_root"] is downloads._compute_relative_to_dataset_root
     )
     assert captured["write_labels_csv"] is downloads._write_labels_csv
     assert captured["write_source_manifest"] is downloads._write_source_manifest
@@ -891,25 +835,13 @@ def test_prepare_jl_corpus_from_kaggle_delegates_to_jl_corpus_helper(
     assert captured["dataset_root"] == tmp_path
     assert captured["dataset_ref"] == downloads.JL_CORPUS_KAGGLE_DATASET_REF
     assert captured["labels_file_name"] == downloads.DEFAULT_LABELS_FILE_NAME
-    assert (
-        captured["source_manifest_file_name"]
-        == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
-    )
+    assert captured["source_manifest_file_name"] == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
     assert captured["download_kaggle_archive"] is downloads._download_kaggle_archive
     assert captured["ensure_extracted_archive"] is downloads._ensure_extracted_archive
-    assert (
-        captured["generate_labels_from_audio_tree"]
-        is downloads._generate_labels_from_audio_tree
-    )
-    assert (
-        captured["infer_label_from_path_tokens"]
-        is downloads._infer_label_from_path_tokens
-    )
+    assert captured["generate_labels_from_audio_tree"] is downloads._generate_labels_from_audio_tree
+    assert captured["infer_label_from_path_tokens"] is downloads._infer_label_from_path_tokens
     assert captured["write_source_manifest"] is downloads._write_source_manifest
-    assert (
-        captured["prepare_hf_rows_fallback"]
-        is downloads._prepare_jl_corpus_from_hf_rows
-    )
+    assert captured["prepare_hf_rows_fallback"] is downloads._prepare_jl_corpus_from_hf_rows
     logger_warning = captured["logger_warning"]
     assert callable(logger_warning)
 

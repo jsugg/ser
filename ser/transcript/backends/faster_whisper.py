@@ -202,9 +202,7 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
         if whisper_model is None:
             raise RuntimeError("faster-whisper package does not expose WhisperModel.")
         target_device = (
-            "cpu"
-            if runtime_request.device_type == "mps"
-            else runtime_request.device_spec
+            "cpu" if runtime_request.device_type == "mps" else runtime_request.device_spec
         )
         primary_precision = (
             runtime_request.precision_candidates[0]
@@ -266,18 +264,13 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                 )
         except Exception as err:
             raise RuntimeError("Failed to transcribe audio.") from err
-        if (
-            not isinstance(raw_transcribe_result, tuple)
-            or len(raw_transcribe_result) != 2
-        ):
+        if not isinstance(raw_transcribe_result, tuple) or len(raw_transcribe_result) != 2:
             raise RuntimeError(
                 "Unexpected result envelope returned by faster-whisper transcribe()."
             )
         segments = raw_transcribe_result[0]
         if not isinstance(segments, Iterable):
-            raise RuntimeError(
-                "Unexpected segment stream type returned by faster-whisper."
-            )
+            raise RuntimeError("Unexpected segment stream type returned by faster-whisper.")
         transcript_words: list[TranscriptWord] = []
         for segment in cast(Iterable[object], segments):
             words = getattr(segment, "words", None)

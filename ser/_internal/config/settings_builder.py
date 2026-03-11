@@ -103,9 +103,7 @@ def build_settings_from_inputs(
             model_file_name=inputs.model_file_name,
             secure_model_file_name=inputs.secure_model_file_name,
             training_report_file_name=inputs.training_report_file_name,
-            whisper_model=config_schema.WhisperModelConfig(
-                name=inputs.whisper_model_name
-            ),
+            whisper_model=config_schema.WhisperModelConfig(name=inputs.whisper_model_name),
             medium_model_id=inputs.medium_model_id,
             accurate_model_id=inputs.accurate_model_id,
             accurate_research_model_id=inputs.accurate_research_model_id,
@@ -115,19 +113,11 @@ def build_settings_from_inputs(
             backend_id=inputs.whisper_backend_id,
             use_demucs=inputs.use_demucs,
             use_vad=inputs.use_vad,
-            mps_low_memory_threshold_gb=(
-                inputs.transcription_mps_low_memory_threshold_gb
-            ),
-            mps_admission_control_enabled=(
-                inputs.transcription_mps_admission_control_enabled
-            ),
-            mps_hard_oom_shortcut_enabled=(
-                inputs.transcription_mps_hard_oom_shortcut_enabled
-            ),
+            mps_low_memory_threshold_gb=(inputs.transcription_mps_low_memory_threshold_gb),
+            mps_admission_control_enabled=(inputs.transcription_mps_admission_control_enabled),
+            mps_hard_oom_shortcut_enabled=(inputs.transcription_mps_hard_oom_shortcut_enabled),
             mps_admission_min_headroom_mb=inputs.transcription_mps_admission_min_headroom_mb,
-            mps_admission_safety_margin_mb=(
-                inputs.transcription_mps_admission_safety_margin_mb
-            ),
+            mps_admission_safety_margin_mb=(inputs.transcription_mps_admission_safety_margin_mb),
             mps_admission_calibration_overrides_enabled=(
                 inputs.transcription_mps_admission_calibration_overrides_enabled
             ),
@@ -172,9 +162,7 @@ def build_settings_from_inputs(
         quality_gate=config_schema.QualityGateConfig(
             min_uar_delta=inputs.quality_gate_min_uar_delta,
             min_macro_f1_delta=inputs.quality_gate_min_macro_f1_delta,
-            max_medium_segments_per_minute=(
-                inputs.quality_gate_max_medium_segments_per_minute
-            ),
+            max_medium_segments_per_minute=(inputs.quality_gate_max_medium_segments_per_minute),
             min_medium_median_segment_duration_seconds=(
                 inputs.quality_gate_min_medium_median_segment_duration_seconds
             ),
@@ -184,8 +172,6 @@ def build_settings_from_inputs(
             artifact_schema_version=inputs.artifact_schema_version,
         ),
         torch_runtime=torch_runtime,
-        feature_runtime_policy=_build_feature_runtime_policy(
-            inputs.feature_runtime_overrides
-        ),
+        feature_runtime_policy=_build_feature_runtime_policy(inputs.feature_runtime_overrides),
         default_language=inputs.default_language,
     )

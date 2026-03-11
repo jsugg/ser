@@ -55,9 +55,7 @@ def test_embedding_cache_get_or_compute_uses_deterministic_key_and_hit(
     assert second.cache_hit is True
     assert first.cache_key == second.cache_key
     assert first.cache_path == second.cache_path
-    np.testing.assert_allclose(
-        second.encoded.embeddings, _encoded_sequence().embeddings
-    )
+    np.testing.assert_allclose(second.encoded.embeddings, _encoded_sequence().embeddings)
 
 
 def test_embedding_cache_invalidates_corrupted_entry_and_recomputes(
@@ -95,9 +93,7 @@ def test_embedding_cache_invalidates_corrupted_entry_and_recomputes(
     assert calls["count"] == 2
     assert second.cache_hit is False
     assert second.invalidated_stale_entry is True
-    np.testing.assert_allclose(
-        second.encoded.embeddings, _encoded_sequence(scale=2.0).embeddings
-    )
+    np.testing.assert_allclose(second.encoded.embeddings, _encoded_sequence(scale=2.0).embeddings)
 
 
 def test_embedding_cache_key_changes_when_framing_changes(tmp_path: Path) -> None:

@@ -83,12 +83,8 @@ class WarningPolicy:
         if not issubclass(self.category, Warning):
             raise TypeError("WarningPolicy category must be a Warning subclass.")
         object.__setattr__(self, "policy_id", normalized_policy_id)
-        object.__setattr__(
-            self, "backend_ids", _normalize_scope_values(self.backend_ids)
-        )
-        object.__setattr__(
-            self, "phase_names", _normalize_scope_values(self.phase_names)
-        )
+        object.__setattr__(self, "backend_ids", _normalize_scope_values(self.backend_ids))
+        object.__setattr__(self, "phase_names", _normalize_scope_values(self.phase_names))
         object.__setattr__(self, "op_tags", _normalize_scope_values(self.op_tags))
 
 
@@ -125,12 +121,8 @@ class DependencyLogPolicy:
         object.__setattr__(self, "logger_prefixes", normalized_prefixes)
         object.__setattr__(self, "root_path_markers", normalized_markers)
         object.__setattr__(self, "message_regex", normalized_message_regex)
-        object.__setattr__(
-            self, "backend_ids", _normalize_scope_values(self.backend_ids)
-        )
-        object.__setattr__(
-            self, "phase_names", _normalize_scope_values(self.phase_names)
-        )
+        object.__setattr__(self, "backend_ids", _normalize_scope_values(self.backend_ids))
+        object.__setattr__(self, "phase_names", _normalize_scope_values(self.phase_names))
         object.__setattr__(self, "op_tags", _normalize_scope_values(self.op_tags))
         object.__setattr__(self, "warning_policies", tuple(self.warning_policies))
 
@@ -156,9 +148,7 @@ def _policy_matches_context(
     return True
 
 
-def _record_matches_policy(
-    record: logging.LogRecord, policy: DependencyLogPolicy
-) -> bool:
+def _record_matches_policy(record: logging.LogRecord, policy: DependencyLogPolicy) -> bool:
     """Checks whether a log record matches one dependency policy."""
     if policy.message_regex is not None and not re.search(
         policy.message_regex,

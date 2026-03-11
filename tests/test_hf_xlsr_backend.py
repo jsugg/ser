@@ -86,9 +86,7 @@ class _NaNThenErrorModel(_FakeModel):
             hidden = np.asarray(output.last_hidden_state, dtype=np.float32)
             hidden.fill(np.nan)
             return _FakeModelOutput(last_hidden_state=hidden)
-        raise RuntimeError(
-            "Input type (c10::Half) and bias type (float) should be the same"
-        )
+        raise RuntimeError("Input type (c10::Half) and bias type (float) should be the same")
 
 
 def test_xlsr_backend_feature_dim_is_resolved_from_model_config() -> None:

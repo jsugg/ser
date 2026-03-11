@@ -7,7 +7,7 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Any, TypeVar
 
-_WorkerMessageT = TypeVar("_WorkerMessageT", bound=tuple[Any, ...])
+type WorkerMessage = tuple[Any, ...]
 _ResultT = TypeVar("_ResultT")
 _PayloadT = TypeVar("_PayloadT")
 _PreparedT = TypeVar("_PreparedT")
@@ -17,10 +17,10 @@ def recv_worker_message(
     *,
     connection: Connection,
     stage: str,
-    impl: Callable[..., _WorkerMessageT],
+    impl: Callable[..., WorkerMessage],
     worker_label: str,
     error_factory: Callable[[str], Exception] | type[Exception],
-) -> _WorkerMessageT:
+) -> WorkerMessage:
     """Delegates worker-message reads with stable label/error wiring."""
     return impl(
         connection=connection,
@@ -32,7 +32,7 @@ def recv_worker_message(
 
 def is_setup_complete_message(
     *,
-    message: _WorkerMessageT,
+    message: WorkerMessage,
     impl: Callable[..., bool],
     worker_label: str,
     error_factory: Callable[[str], Exception] | type[Exception],
@@ -47,7 +47,7 @@ def is_setup_complete_message(
 
 def parse_worker_completion_message(
     *,
-    worker_message: _WorkerMessageT,
+    worker_message: WorkerMessage,
     impl: Callable[..., _ResultT],
     worker_label: str,
     error_factory: Callable[[str], Exception] | type[Exception],

@@ -34,6 +34,4 @@ def test_extract_memory_mib_supports_known_units() -> None:
     assert mps_oom.extract_memory_mib("value: 1024 KB", pattern) == pytest.approx(1.0)
     assert mps_oom.extract_memory_mib("value: 12 MB", pattern) == pytest.approx(12.0)
     assert mps_oom.extract_memory_mib("value: 2 GB", pattern) == pytest.approx(2048.0)
-    assert mps_oom.extract_memory_mib("value: 1 TB", pattern) == pytest.approx(
-        1024.0 * 1024.0
-    )
+    assert mps_oom.extract_memory_mib("value: 1 TB", pattern) == pytest.approx(1024.0 * 1024.0)

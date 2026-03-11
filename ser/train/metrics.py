@@ -63,9 +63,7 @@ def compute_ser_metrics(
     for idx, label in enumerate(label_order):
         row_total = int(confusion[idx].sum())
         true_positive = int(confusion[idx, idx])
-        per_class_recall[label] = (
-            float(true_positive) / float(row_total) if row_total > 0 else 0.0
-        )
+        per_class_recall[label] = float(true_positive) / float(row_total) if row_total > 0 else 0.0
     return {
         "labels": label_order,
         "uar": uar,

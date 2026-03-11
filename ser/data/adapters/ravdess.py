@@ -71,8 +71,7 @@ def build_ravdess_utterances(
         emotion_code = _extract_emotion_code(file_name)
         if emotion_code is None:
             parse_errors.append(
-                "Skipping file with unexpected name format "
-                f"(missing emotion code): {file_name}"
+                "Skipping file with unexpected name format " f"(missing emotion code): {file_name}"
             )
             continue
         mapped_label = remap_label(
@@ -85,9 +84,7 @@ def build_ravdess_utterances(
 
         audio_path = Path(file_path).expanduser()
         speaker_raw = _extract_speaker_id(file_name)
-        speaker_id = (
-            f"{RAVDESS_CORPUS_ID}:{speaker_raw}" if speaker_raw is not None else None
-        )
+        speaker_id = f"{RAVDESS_CORPUS_ID}:{speaker_raw}" if speaker_raw is not None else None
         try:
             rel = audio_path.relative_to(root)
             sample_id = f"{RAVDESS_CORPUS_ID}:{rel.as_posix()}"
