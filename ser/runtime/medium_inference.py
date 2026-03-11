@@ -323,7 +323,7 @@ def _recv_worker_message(
     connection: Connection,
     *,
     stage: str,
-) -> WorkerMessage:
+) -> tuple[object, ...]:
     """Receives one worker message and validates tuple envelope shape."""
     return _recv_worker_message_orchestration(
         connection=connection,
@@ -334,7 +334,7 @@ def _recv_worker_message(
     )
 
 
-def _is_setup_complete_message(message: WorkerMessage) -> bool:
+def _is_setup_complete_message(message: tuple[object, ...]) -> bool:
     """Returns whether one worker message marks setup completion."""
     return _is_setup_complete_message_orchestration(
         message=message,
@@ -344,7 +344,7 @@ def _is_setup_complete_message(message: WorkerMessage) -> bool:
     )
 
 
-def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
+def _parse_worker_completion_message(worker_message: tuple[object, ...]) -> InferenceResult:
     """Parses one worker completion message and returns inference result."""
     return _parse_worker_completion_message_orchestration(
         worker_message=worker_message,

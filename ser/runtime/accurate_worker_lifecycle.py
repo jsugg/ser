@@ -84,10 +84,10 @@ def recv_worker_message(
     connection: Connection,
     *,
     stage: str,
-    impl: Callable[..., _MessageT],
+    impl: Callable[..., tuple[object, ...]],
     worker_label: str,
     error_factory: Callable[[str], Exception] | type[Exception],
-) -> _MessageT:
+) -> tuple[object, ...]:
     """Receives one worker message with accurate-specific error mapping."""
     return _recv_worker_message_binding(
         connection=connection,

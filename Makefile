@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint architecture-docs clean
+.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint clean
 
 .DEFAULT_GOAL := help
 
@@ -17,7 +17,6 @@ help:
 	@echo "  prepush-check - run canonical pre-push hook command (check-only)"
 	@echo "  prepush-hook - run the git pre-push hook workflow (autofix + abort if files change)"
 	@echo "  import-lint - run public API boundary import-lint lane"
-	@echo "  architecture-docs - validate architecture docs and architecture doc contracts"
 	@echo "  train    - train model"
 	@echo "  predict  - run prediction (set FILE=sample.wav)"
 	@echo "  optin-all-restricted - persist consent for all known restricted backends"

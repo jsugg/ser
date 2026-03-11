@@ -8,8 +8,7 @@ formal artifacts in [`docs/architecture-diagram.md`](architecture-diagram.md),
 
 ## Scope and current state
 
-These counts are a current working-tree snapshot and are regression-checked by
-`make architecture-docs`.
+These counts are a current working-tree snapshot.
 
 - Source modules under `ser/`: `223`
 - Test modules under `tests/`: `136`
