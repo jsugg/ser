@@ -22,7 +22,7 @@ import ser.models.training_reporting as _training_reporting
 import ser.models.training_support as _training_support
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -65,7 +65,7 @@ def train_model(*, settings: AppConfig) -> None:
 
     _fast_training_entrypoints.train_model(
         settings=settings,
-        settings_resolver=get_settings,
+        settings_resolver=lambda: settings,
         build_hooks=_build_hooks,
         build_runtime_environment_plan_fn=build_runtime_environment_plan,
         temporary_process_env_fn=temporary_process_env,

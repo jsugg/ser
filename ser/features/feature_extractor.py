@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ser.config import AppConfig, AudioReadConfig, FeatureFlags, get_settings
+from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
 from ser.repr import HandcraftedBackend
 from ser.repr.backend import EncodedSequence
 from ser.utils.audio_utils import read_audio_file
@@ -19,8 +19,8 @@ logger = get_logger(__name__)
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
-    """Returns explicit settings or falls back to ambient public-boundary config."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a boundary-local settings snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 @dataclass(frozen=True)

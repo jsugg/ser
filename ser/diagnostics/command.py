@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from typing import cast
 
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, reload_settings
 from ser.diagnostics.service import (
     apply_profile_override_for_diagnostics,
     format_report_json,
@@ -23,8 +23,8 @@ _PROFILE_CHOICES: tuple[ProfileName, ...] = (
 
 
 def _resolve_boundary_settings(settings: AppConfig | None = None) -> AppConfig:
-    """Returns the active settings snapshot for diagnostics CLI wrappers."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a diagnostics CLI snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) -> int:

@@ -11,7 +11,6 @@ only as a maintenance heuristic and architecture-reference aid.
 ### Public runtime and model seams
 
 - `ser/api.py`
-- `ser/config.py`
 - `ser/__main__.py`
 - `ser/models/emotion_model.py`
 - `ser/models/artifact_metadata.py`
@@ -45,6 +44,7 @@ only as a maintenance heuristic and architecture-reference aid.
 - `ser/runtime/accurate_worker_lifecycle.py`
 - `ser/runtime/accurate_worker_operation.py`
 - `ser/runtime/accurate_inference.py`
+- `ser/transcript/transcript_extractor.py`
 
 ### Data and representation seams
 
@@ -68,16 +68,30 @@ only as a maintenance heuristic and architecture-reference aid.
 - `ser/_internal/cli/runtime.py`
 - `ser/_internal/models/fast_training_entrypoints.py`
 - `ser/_internal/models/model_loading.py`
+- `ser/_internal/runtime/accurate_public_boundary.py`
+- `ser/_internal/runtime/medium_public_boundary.py`
 - `ser/_internal/transcription/default_benchmark.py`
 - `ser/_internal/transcription/default_recommendation.py`
 - `ser/_internal/transcription/public_boundary_profiling.py`
 - `ser/_internal/transcription/public_boundary_process.py`
 - `ser/_internal/transcription/public_boundary_runtime.py`
+- `ser/_internal/transcription/public_boundary_support.py`
 - `ser/_internal/transcription/profile_candidates.py`
 - `ser/_internal/transcription/ravdess_references.py`
 - `ser/_internal/transcription/text_metrics.py`
 - `ser/_internal/transcription/runtime_calibration_workflow.py`
 - `ser/transcript/profiling.py`
+
+## Recently cleared or obsolete hotspot claims
+
+- `ser/config.py` is now a narrow public facade and is no longer a current
+  hotspot.
+- `ser/models/emotion_model.py` is now a thin public boundary and is no longer
+  a primary extraction target.
+- `ser/models/training_orchestration.py` is not present in this workspace, so
+  it should not be discussed as a live hotspot here.
+- `ser/_internal/apt/runtime.py` is not present in this workspace, so it is not
+  a valid current migration target.
 
 ## How to use this file
 

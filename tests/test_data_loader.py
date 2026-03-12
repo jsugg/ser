@@ -63,7 +63,7 @@ def test_load_labeled_audio_paths_returns_expected_pairs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Labeled path loader should keep only supported emotions with valid names."""
-    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0))
+    monkeypatch.setattr(dl, "reload_settings", lambda: _build_settings(max_failed_file_ratio=1.0))
     monkeypatch.setattr(
         dl.glob,
         "glob",
@@ -87,7 +87,7 @@ def test_load_labeled_audio_paths_aborts_on_high_parse_failure_ratio(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Label-loader should stop early when parse failures exceed threshold."""
-    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.3))
+    monkeypatch.setattr(dl, "reload_settings", lambda: _build_settings(max_failed_file_ratio=0.3))
     monkeypatch.setattr(
         dl.glob,
         "glob",
@@ -106,7 +106,7 @@ def test_load_data_aborts_when_failure_ratio_exceeds_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A high extraction failure ratio should stop training early."""
-    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=0.4))
+    monkeypatch.setattr(dl, "reload_settings", lambda: _build_settings(max_failed_file_ratio=0.4))
     monkeypatch.setattr(dl.glob, "glob", lambda _pattern: ["a.wav", "b.wav", "c.wav", "d.wav"])
 
     def fake_process_file(
@@ -135,7 +135,7 @@ def test_load_data_returns_split_for_valid_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Valid extracted samples should be split into train/test partitions."""
-    monkeypatch.setattr(dl, "get_settings", lambda: _build_settings(max_failed_file_ratio=1.0))
+    monkeypatch.setattr(dl, "reload_settings", lambda: _build_settings(max_failed_file_ratio=1.0))
     monkeypatch.setattr(dl.glob, "glob", lambda _pattern: ["a.wav", "b.wav", "c.wav", "d.wav"])
 
     sample_map: dict[str, tuple[np.ndarray, str]] = {
@@ -193,7 +193,7 @@ def test_load_utterances_prefers_manifest_when_configured(
     settings = _build_settings(max_failed_file_ratio=1.0)
     settings.dataset.manifest_paths = (manifest_path,)
     settings.dataset.folder = tmp_path
-    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+    monkeypatch.setattr(dl, "reload_settings", lambda: settings)
 
     utterances = dl.load_utterances()
 
@@ -219,7 +219,7 @@ def test_load_utterances_rejects_duplicate_sample_ids_across_manifests(
     settings = _build_settings(max_failed_file_ratio=1.0)
     settings.dataset.manifest_paths = (first, second)
     settings.dataset.folder = tmp_path
-    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+    monkeypatch.setattr(dl, "reload_settings", lambda: settings)
 
     with pytest.raises(RuntimeError, match="Duplicate sample_id"):
         dl.load_utterances()
@@ -255,7 +255,7 @@ def test_load_utterances_registry_uses_dataset_root_as_manifest_base_dir(
     settings = _build_settings(max_failed_file_ratio=1.0)
     settings.dataset.manifest_paths = ()
     settings.dataset.folder = dataset_root
-    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+    monkeypatch.setattr(dl, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         dl,
         "load_dataset_registry",
@@ -311,7 +311,7 @@ def test_load_utterances_registry_rebuilds_missing_manifest(
     settings = _build_settings(max_failed_file_ratio=1.0)
     settings.dataset.manifest_paths = ()
     settings.dataset.folder = dataset_root
-    monkeypatch.setattr(dl, "get_settings", lambda: settings)
+    monkeypatch.setattr(dl, "reload_settings", lambda: settings)
     entry = SimpleNamespace(
         dataset_id="ravdess",
         dataset_root=dataset_root,

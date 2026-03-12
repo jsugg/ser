@@ -81,7 +81,7 @@ def _set_model_settings(
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: SimpleNamespace(
             dataset=SimpleNamespace(glob_pattern="unused"),
             training=SimpleNamespace(test_size=0.5),
@@ -378,7 +378,7 @@ def test_persist_model_artifacts_preserves_pickle_and_secure_fallback(
     )
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("helper must use explicit settings")),
     )
 
@@ -668,7 +668,7 @@ def test_build_dataset_controls_reports_registry_mode(
     )
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("helper must use explicit settings")),
     )
     monkeypatch.setattr(

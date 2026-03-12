@@ -1,4 +1,4 @@
-"""Configuration bootstrap, environment resolution, and scoped settings state."""
+"""Configuration bootstrap, environment resolution, and scoped settings access."""
 
 from __future__ import annotations
 
@@ -255,7 +255,6 @@ def _build_settings() -> AppConfig:
     return build_settings_from_inputs(_resolve_settings_inputs())
 
 
-_SETTINGS: AppConfig = _build_settings()
 _SETTINGS_OVERRIDE: ContextVar[AppConfig | None] = ContextVar(
     "ser_settings_override",
     default=None,
@@ -263,9 +262,9 @@ _SETTINGS_OVERRIDE: ContextVar[AppConfig | None] = ContextVar(
 
 
 def get_settings() -> AppConfig:
-    """Returns current immutable settings."""
+    """Returns scoped settings when present, otherwise a fresh env snapshot."""
     override_settings = _SETTINGS_OVERRIDE.get()
-    return _SETTINGS if override_settings is None else override_settings
+    return reload_settings() if override_settings is None else override_settings
 
 
 @contextmanager
@@ -278,26 +277,14 @@ def settings_override(settings: AppConfig) -> Iterator[AppConfig]:
         _SETTINGS_OVERRIDE.reset(token)
 
 
-def apply_settings(settings: AppConfig) -> AppConfig:
-    """Applies an explicit settings snapshot as the active process settings."""
-    global _SETTINGS
-    _SETTINGS = settings
-    _SETTINGS_OVERRIDE.set(None)
-    return settings
-
-
 def reload_settings() -> AppConfig:
-    """Reloads settings from environment and returns the new snapshot."""
-    global _SETTINGS
-    _SETTINGS = _build_settings()
-    _SETTINGS_OVERRIDE.set(None)
-    return _SETTINGS
+    """Builds and returns a fresh settings snapshot from environment."""
+    return _build_settings()
 
 
 __all__ = [
     "_build_settings",
     "_resolve_settings_inputs",
-    "apply_settings",
     "get_settings",
     "reload_settings",
     "resolve_profile_transcription_config",

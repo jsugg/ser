@@ -92,7 +92,7 @@ def test_train_accurate_model_requires_labeled_dataset(
     tmp_path: Path,
 ) -> None:
     """Accurate training should fail fast when dataset loading returns no samples."""
-    monkeypatch.setattr(em, "get_settings", lambda: _settings_stub(tmp_path))
+    monkeypatch.setattr(em, "reload_settings", lambda: _settings_stub(tmp_path))
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
@@ -142,7 +142,7 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     train_utterances = all_utterances[: len(train_samples)]
     test_utterances = all_utterances[len(train_samples) :]
 
-    monkeypatch.setattr(em, "get_settings", lambda: settings)
+    monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
@@ -320,7 +320,7 @@ def test_train_accurate_model_uses_configured_model_id(
             captured["backend_dtype"] = dtype
 
     monkeypatch.setattr(profile_runtime, "WhisperBackend", _BackendStub)
-    monkeypatch.setattr(em, "get_settings", lambda: settings)
+    monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
@@ -466,7 +466,7 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             captured["backend_huggingface_cache_root"] = huggingface_cache_root
 
     monkeypatch.setattr(profile_runtime, "Emotion2VecBackend", _BackendStub)
-    monkeypatch.setattr(em, "get_settings", lambda: settings)
+    monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",

@@ -411,26 +411,6 @@ def test_torch_runtime_inherits_pytorch_mps_fallback_env(
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
 
 
-def test_apply_settings_keeps_torch_fallback_environment_unchanged(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Applying a settings snapshot should not mutate process torch env selectors."""
-    base_settings = config.reload_settings()
-    enabled_settings = replace(
-        base_settings,
-        torch_runtime=replace(
-            base_settings.torch_runtime,
-            enable_mps_fallback=True,
-        ),
-    )
-    monkeypatch.setenv("PYTORCH_ENABLE_MPS_FALLBACK", "sentinel")
-
-    bootstrap.apply_settings(enabled_settings)
-
-    assert config.get_settings().torch_runtime.enable_mps_fallback is True
-    assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
-
-
 def test_settings_override_restores_previous_settings_without_env_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -449,7 +429,9 @@ def test_settings_override_restores_previous_settings_without_env_mutation(
         assert config.get_settings() is enabled_settings
         assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
 
-    assert config.get_settings() is base_settings
+    restored_settings = config.get_settings()
+    assert restored_settings is not enabled_settings
+    assert restored_settings == base_settings
     assert os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "sentinel"
 
 

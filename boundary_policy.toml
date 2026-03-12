@@ -1,0 +1,101 @@
+# Authoritative public-to-_internal soft-boundary policy.
+# Respect it during development.
+# Update it only if agreed with the team.
+# These definitions are used for contract tests.
+version = 1
+
+[[public_internal_import]]
+path = "ser/__main__.py"
+reason = "CLI composition root for internal command modules."
+
+[[public_internal_import]]
+path = "ser/api.py"
+reason = "Public facade over internal API owners."
+
+[[public_internal_import]]
+path = "ser/config.py"
+reason = "Public facade over internal config/bootstrap owners."
+
+[[public_internal_import]]
+path = "ser/data/application.py"
+reason = "Public data application surface over internal data services."
+
+[[public_internal_import]]
+path = "ser/diagnostics/service.py"
+reason = "Public diagnostics surface over internal diagnostics services."
+
+[[public_internal_import]]
+path = "ser/models/emotion_model.py"
+reason = "Public model facade over internal runtime/model support seams."
+
+[[public_internal_import]]
+path = "ser/models/profile_runtime.py"
+reason = "Public profile-runtime facade over internal model/runtime owners."
+
+[[public_internal_import]]
+path = "ser/models/training_entrypoints.py"
+reason = "Public training facade over internal model workflow owners."
+
+[[public_internal_import]]
+path = "ser/repr/emotion2vec.py"
+reason = "Public representation adapter requiring internal runtime/config support."
+
+[[public_internal_import]]
+path = "ser/runtime/accurate_inference.py"
+reason = "Accurate profile wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/accurate_process_timeout.py"
+reason = "Accurate timeout wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/accurate_retry_operation.py"
+reason = "Accurate retry wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/accurate_worker_lifecycle.py"
+reason = "Accurate worker lifecycle wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/accurate_worker_operation.py"
+reason = "Accurate worker operation wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/fast_inference.py"
+reason = "Fast profile wrapper over internal runtime owner modules."
+
+[[public_internal_import]]
+path = "ser/runtime/medium_inference.py"
+reason = "Medium profile wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/medium_process_timeout.py"
+reason = "Medium timeout wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/medium_worker_lifecycle.py"
+reason = "Medium worker lifecycle wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/medium_worker_operation.py"
+reason = "Medium worker operation wrapper over internal runtime owners."
+
+[[public_internal_import]]
+path = "ser/runtime/pipeline.py"
+reason = "Public runtime orchestration surface over internal workflow owners."
+
+[[public_internal_import]]
+path = "ser/runtime/profile_quality_gate.py"
+reason = "Public quality-gate surface over internal runtime/report owners."
+
+[[public_internal_import]]
+path = "ser/transcript/backends/stable_whisper.py"
+reason = "Public backend adapter over internal transcription owners."
+
+[[public_internal_import]]
+path = "ser/transcript/profiling.py"
+reason = "Public transcription profiling surface over internal transcription owners."
+
+[[public_internal_import]]
+path = "ser/transcript/transcript_extractor.py"
+reason = "Public transcription boundary wrapper over internal transcription owners."

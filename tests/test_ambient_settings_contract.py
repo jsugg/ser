@@ -1,26 +1,13 @@
-"""Architecture contract tests for ambient settings usage."""
+"""Architecture contract tests for source-level settings access."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_ROOT = REPO_ROOT / "ser"
-
 type GetSettingsCallSite = tuple[str, str]
 
-EXPECTED_GET_SETTINGS_CALL_SITES: set[GetSettingsCallSite] = {
-    ("ser/api.py", "_resolve_boundary_settings"),
-    ("ser/data/data_loader.py", "_resolve_boundary_settings"),
-    ("ser/diagnostics/command.py", "_resolve_boundary_settings"),
-    ("ser/features/feature_extractor.py", "_resolve_boundary_settings"),
-    ("ser/models/emotion_model.py", "_resolve_boundary_settings"),
-    ("ser/runtime/profile_quality_gate.py", "_resolve_boundary_settings"),
-    ("ser/transcript/profiling.py", "_resolve_boundary_settings"),
-    ("ser/transcript/transcript_extractor.py", "_resolve_boundary_settings"),
-    ("ser/utils/__init__.py", "_resolve_boundary_settings"),
-}
+EXPECTED_GET_SETTINGS_CALL_SITES: set[GetSettingsCallSite] = set()
 
 
 class _GetSettingsCallVisitor(ast.NodeVisitor):
@@ -57,17 +44,18 @@ class _GetSettingsCallVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _collect_get_settings_call_sites() -> set[GetSettingsCallSite]:
+def _collect_get_settings_call_sites(repo_root: Path) -> set[GetSettingsCallSite]:
     """Returns every direct `get_settings()` call site under `ser/`."""
+    package_root = repo_root / "ser"
     call_sites: set[GetSettingsCallSite] = set()
-    for path in sorted(PACKAGE_ROOT.rglob("*.py")):
-        relative_path = path.relative_to(REPO_ROOT).as_posix()
+    for path in sorted(package_root.rglob("*.py")):
+        relative_path = path.relative_to(repo_root).as_posix()
         visitor = _GetSettingsCallVisitor(relative_path)
         visitor.visit(ast.parse(path.read_text(encoding="utf-8")))
         call_sites.update(visitor.call_sites)
     return call_sites
 
 
-def test_get_settings_usage_is_restricted_to_public_boundaries() -> None:
-    """Ambient settings lookup should remain limited to approved boundary wrappers."""
-    assert _collect_get_settings_call_sites() == EXPECTED_GET_SETTINGS_CALL_SITES
+def test_get_settings_usage_is_restricted_to_public_boundaries(repo_root: Path) -> None:
+    """Source modules should avoid direct ambient settings lookups entirely."""
+    assert _collect_get_settings_call_sites(repo_root) == EXPECTED_GET_SETTINGS_CALL_SITES
