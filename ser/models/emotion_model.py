@@ -13,7 +13,7 @@ from ser._internal.models.model_loading import ResolveModelFn
 from ser._internal.models.model_loading import load_model as _load_model_entrypoint
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, reload_settings
 from ser.domain import EmotionSegment
 from ser.features import extract_feature_frames
 from ser.models import training_entrypoints as _training_entrypoints
@@ -50,8 +50,8 @@ ACCURATE_RESEARCH_MODEL_ID = _profile_runtime.ACCURATE_RESEARCH_MODEL_ID
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
-    """Returns explicit settings or falls back to ambient public-boundary config."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a boundary-local settings snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 def train_medium_model(settings: AppConfig | None = None) -> None:
@@ -125,7 +125,7 @@ def load_model(
     active_settings = _resolve_boundary_settings(settings)
     return _load_model_entrypoint(
         active_settings,
-        settings_resolver=get_settings,
+        settings_resolver=lambda: active_settings,
         resolve_model_factory=_resolve_model_for_loading,
         logger=logger,
         build_runtime_environment_plan_fn=build_runtime_environment_plan,

@@ -46,6 +46,8 @@ Shared primitives, schemas, utils, external libraries
 - `runtime/backend_hooks.py`
 - `runtime/registry.py`
 - `runtime/*_inference.py`
+- `_internal/runtime/accurate_public_boundary.py`
+- `_internal/runtime/medium_public_boundary.py`
 - `_internal/runtime/*`
 
 ### Inbound dependencies
@@ -66,8 +68,8 @@ Shared primitives, schemas, utils, external libraries
 ### Coupling assessment
 
 - Strong internal cohesion around orchestration and operational behavior
-- Medium coupling to config via `AppConfig` and some `get_settings()` use
-- Acceptable profile-local duplication, now mostly reduced to boundary wrappers
+- Medium coupling to config via `AppConfig` and boundary-level `reload_settings()` fallbacks
+- Acceptable profile-local duplication, now mostly reduced to public-boundary wrappers and internal support owners
 
 ## Transcription subsystem
 
@@ -93,11 +95,13 @@ Shared primitives, schemas, utils, external libraries
 - public-boundary process-isolation wiring via `_internal/transcription/public_boundary_process.py`
 - public-boundary profiling wiring and CLI dispatch via `_internal/transcription/public_boundary_profiling.py`
 - public-boundary runtime/setup/in-process wiring via `_internal/transcription/public_boundary_runtime.py`
+- public-boundary wrapper orchestration via `_internal/transcription/public_boundary_support.py`
 
 ### Coupling assessment
 
 - High internal complexity, but good decomposition
-- `transcript_extractor.py` remains a concentration point
+- `transcript_extractor.py` remains a concentration point, but most reusable
+  wrapper orchestration now lives under `_internal/transcription/*`
 - Profiling is well-factored into internal owners
 
 ## Data subsystem
@@ -128,7 +132,7 @@ Shared primitives, schemas, utils, external libraries
 ### Coupling assessment
 
 - Good separation between declarative catalog, strategy behavior, and application workflows
-- Better architectural shape than the model subsystem
+- Strong architectural shape with low cross-subsystem surprise
 
 ## Model subsystem
 
@@ -161,8 +165,9 @@ Shared primitives, schemas, utils, external libraries
 
 ### Coupling assessment
 
+- `emotion_model.py` is now a thin public boundary rather than a primary hotspot
 - Public training wrappers and shared preparation, execution, reporting, and
-  boundary helpers are now split across `emotion_model.py`,
+  boundary helpers are split across `emotion_model.py`,
   `training_entrypoints.py`, `accurate_training_preparation.py`,
   `accurate_training_execution.py`, `training_preparation.py`,
   `training_execution.py`, `training_support.py`, and `training_types.py`
@@ -171,6 +176,11 @@ Shared primitives, schemas, utils, external libraries
   boundary resolver per module
 - Primary remaining risk is boundary drift or subsystem reconcentration, not
   one single owner module
+
+Obsolete references:
+
+- `ser/models/training_orchestration.py` is not present in this workspace
+- `ser/_internal/apt/runtime.py` is not present in this workspace
 
 ## Diagnostics subsystem
 
@@ -210,7 +220,7 @@ make the system more testable.
 ## Concrete coupling observations
 
 - Public modules importing `_internal` directly: `24`
-- Public modules using `get_settings()` directly or indirectly in implementation: concentrated in boundary-local helpers across API, models, transcript, data loader, diagnostics, quality gate, and utility paths
+- Public modules resolving default settings snapshots internally: concentrated in boundary-local helpers across API, models, transcript, data loader, diagnostics, quality gate, and utility paths
 
 This means the system is not hard-layered. It is intentionally layered, but some
 subsystems still know about their owner modules directly instead of depending on
@@ -218,34 +228,15 @@ smaller abstract service boundaries.
 
 ## Explicit soft-boundary allowlist
 
-The following public modules are allowed to import `_internal` directly by
-design. This list is authoritative: `tests/test_api_import_boundary.py` reads
-this section directly, and `make import-lint` enforces the same contract.
+Public modules allowed to import `_internal` directly by design are defined in
+[`boundary_policy.toml`](../boundary_policy.toml). That file is authoritative:
+[`tests/test_api_import_boundary.py`](../tests/test_api_import_boundary.py)
+loads it directly, and `make import-lint` enforces the same contract.
 
-- `ser/__main__.py`
-- `ser/api.py`
-- `ser/config.py`
-- `ser/data/application.py`
-- `ser/diagnostics/service.py`
-- `ser/models/emotion_model.py`
-- `ser/models/training_entrypoints.py`
-- `ser/models/profile_runtime.py`
-- `ser/repr/emotion2vec.py`
-- `ser/runtime/accurate_inference.py`
-- `ser/runtime/accurate_process_timeout.py`
-- `ser/runtime/accurate_retry_operation.py`
-- `ser/runtime/accurate_worker_lifecycle.py`
-- `ser/runtime/accurate_worker_operation.py`
-- `ser/runtime/fast_inference.py`
-- `ser/runtime/medium_inference.py`
-- `ser/runtime/medium_process_timeout.py`
-- `ser/runtime/medium_worker_lifecycle.py`
-- `ser/runtime/medium_worker_operation.py`
-- `ser/runtime/pipeline.py`
-- `ser/runtime/profile_quality_gate.py`
-- `ser/transcript/backends/stable_whisper.py`
-- `ser/transcript/profiling.py`
-- `ser/transcript/transcript_extractor.py`
+Each `[[public_internal_import]]` entry in `boundary_policy.toml` carries both
+the allowed module path and the rationale for why that boundary exception
+exists. Keep the file sorted by path and update it in the same change packet as
+any intentional widening or narrowing of the soft boundary.
 
 ## Dependency risk summary
 
@@ -259,12 +250,12 @@ Low risk:
 Medium risk:
 
 - public-to-`_internal` imports as a soft boundary
-- ambient settings access through `get_settings()`, even though direct lookups
-  are now centralized in boundary helpers
+- boundary-level settings fallback via `reload_settings()`, even though direct
+  `get_settings()` lookups are gone from source modules
 - transcription orchestrator concentration
 
 Highest architectural risk:
 
-- ambient settings breadth plus public boundary drift, especially in
-  `models/emotion_model.py` and `transcript/transcript_extractor.py`, even
-  after consolidating repeated wrapper-level lookups behind boundary helpers
+- public boundary drift in `runtime/accurate_inference.py`,
+  `runtime/medium_inference.py`, and `transcript/transcript_extractor.py`,
+  plus convenience-layer settings fallback that still stops short of full DI

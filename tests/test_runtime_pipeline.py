@@ -131,7 +131,9 @@ def test_run_training_scopes_pipeline_settings_for_dependencies() -> None:
     pipeline.run_training()
 
     assert captured["active_settings"] is scoped_settings
-    assert config.get_settings() is ambient_settings
+    restored_settings = config.get_settings()
+    assert restored_settings is not scoped_settings
+    assert restored_settings == ambient_settings
 
 
 def test_run_inference_with_save_transcript_enabled() -> None:
@@ -231,7 +233,9 @@ def test_run_inference_scopes_pipeline_settings_for_dependencies() -> None:
 
     assert captured["predict_settings"] is scoped_settings
     assert captured["extract_settings"] is scoped_settings
-    assert config.get_settings() is ambient_settings
+    restored_settings = config.get_settings()
+    assert restored_settings is not scoped_settings
+    assert restored_settings == ambient_settings
 
 
 def test_run_inference_skips_save_when_flag_is_disabled() -> None:

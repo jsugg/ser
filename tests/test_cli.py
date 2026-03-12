@@ -765,8 +765,10 @@ def test_cli_profile_override_is_scoped_to_command_execution(
     )
     assert build_settings.runtime_flags.accurate_profile is True
     assert run_settings.runtime_flags.accurate_profile is True
-    assert config_module.get_settings() is base_settings
-    assert config_module.get_settings().runtime_flags.accurate_profile is False
+    restored_settings = config_module.get_settings()
+    assert restored_settings is not run_settings
+    assert restored_settings == base_settings
+    assert restored_settings.runtime_flags.accurate_profile is False
 
 
 def test_cli_train_path_calls_api_delegates_once(
@@ -1281,7 +1283,7 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
     monkeypatch.setattr(cli, "configure_logging", lambda _level=None: 0)
     monkeypatch.setattr(cli, "reload_settings", lambda: settings)
-    monkeypatch.setattr(data_loader_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(data_loader_module, "reload_settings", lambda: settings)
 
     monkeypatch.setattr(
         cli.sys,

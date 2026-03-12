@@ -10,7 +10,7 @@ import pytest
 import ser.config as config
 from ser.models import medium_feature_dataset
 from ser.repr import EncodedSequence
-from ser.runtime import medium_inference
+from ser.runtime import medium_execution
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +54,7 @@ def test_medium_train_and_infer_share_configured_temporal_window_policy(
         window_size_seconds=runtime_config.pool_window_size_seconds,
         window_stride_seconds=runtime_config.pool_window_stride_seconds,
     )
-    infer_windows = medium_inference._pooling_windows_from_encoded_frames(
+    infer_windows = medium_execution.pooling_windows_from_encoded_frames(
         encoded,
         runtime_config=runtime_config,
     )
@@ -74,7 +74,7 @@ def test_medium_temporal_window_policy_uses_runtime_env_overrides(
     runtime_config = config.get_settings().medium_runtime
 
     encoded = _encoded_sequence()
-    windows = medium_inference._pooling_windows_from_encoded_frames(
+    windows = medium_execution.pooling_windows_from_encoded_frames(
         encoded,
         runtime_config=runtime_config,
     )

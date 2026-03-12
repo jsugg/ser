@@ -8,12 +8,12 @@ formal artifacts in [`docs/architecture-diagram.md`](architecture-diagram.md),
 
 ## Scope and current state
 
-These counts are a current working-tree snapshot.
+These counts are a current working-tree snapshot taken on March 12, 2026.
 
-- Source modules under `ser/`: `223`
+- Source modules under `ser/`: `226`
 - Test modules under `tests/`: `136`
 - Public modules outside `_internal/`: `166`
-- Internal owner/helper modules under `_internal/`: `57`
+- Internal owner/helper modules under `_internal/`: `60`
 - Public modules importing `_internal` directly: `24`
 
 This is a modular monolith with explicit subsystem seams. It is not a textbook
@@ -21,6 +21,10 @@ hexagonal architecture, but it is clearly designed: configuration is typed and
 immutable, runtime behavior is profile-driven, and operationally sensitive code
 paths use extracted owner modules for retries, process isolation, environment
 application, and diagnostics.
+
+Older roadmap references to `ser/models/training_orchestration.py` and
+`ser/_internal/apt/runtime.py` do not match the current tree; neither module is
+present in this workspace.
 
 ## Architectural style
 
@@ -61,10 +65,10 @@ state, which is significantly safer than direct process-global mutation.
 
 Tradeoff:
 
-- the architecture still relies on ambient config through `get_settings()` in
-  a small set of public boundary helpers and CLI entrypoints. The codebase uses
-  explicit settings injection in many places, but not consistently enough to
-  call it full dependency injection.
+- the architecture still offers boundary-level fallback config resolution via
+  `reload_settings()`. Direct `get_settings()` lookups are now removed from
+  source modules, but full dependency injection is still incomplete because
+  optional settings remain part of several public APIs.
 
 ## 2. Public API and CLI architecture
 
@@ -124,6 +128,7 @@ its own execution path:
 The important architectural improvement is that medium and accurate are no
 longer monolithic runtime modules. They now delegate heavily into owner modules:
 
+- public-boundary orchestration: [`ser/_internal/runtime/accurate_public_boundary.py`](../ser/_internal/runtime/accurate_public_boundary.py), [`ser/_internal/runtime/medium_public_boundary.py`](../ser/_internal/runtime/medium_public_boundary.py)
 - execution: [`ser/runtime/medium_execution.py`](../ser/runtime/medium_execution.py), [`ser/runtime/accurate_execution.py`](../ser/runtime/accurate_execution.py)
 - setup/context: [`ser/runtime/medium_execution_context.py`](../ser/runtime/medium_execution_context.py), [`ser/runtime/accurate_operation_setup.py`](../ser/runtime/accurate_operation_setup.py)
 - retry/execution flow: [`ser/runtime/medium_execution_flow.py`](../ser/runtime/medium_execution_flow.py), [`ser/runtime/accurate_execution_flow.py`](../ser/runtime/accurate_execution_flow.py)
@@ -142,7 +147,7 @@ remain, but the complex reusable mechanics are extracted and tested separately.
 ## 4. Model and training architecture
 
 The model subsystem is centered on [`ser/models/emotion_model.py`](../ser/models/emotion_model.py),
-which is now a thin public boundary for:
+which is now a thin public boundary rather than a primary hotspot. It owns:
 
 - fast, medium, accurate, and accurate-research training entrypoints
 - model loading and compatibility filtering
@@ -162,7 +167,7 @@ There has been meaningful decomposition:
 - shared model loading entrypoint: [`ser/_internal/models/model_loading.py`](../ser/_internal/models/model_loading.py)
 
 This subsystem is now materially closer to the runtime/data architecture shape:
-[`ser/models/emotion_model.py`](../ser/models/emotion_model.py) now stays
+[`ser/models/emotion_model.py`](../ser/models/emotion_model.py) stays
 boundary-only, while profile-specific entrypoint wiring and shared
 cross-profile logic live in dedicated `training_*` owner modules, and
 accurate-profile preparation is now separated from accurate-profile
@@ -182,6 +187,10 @@ Transcription is one of the most mature architectural subsystems.
 Public orchestration lives in:
 
 - [`ser/transcript/transcript_extractor.py`](../ser/transcript/transcript_extractor.py)
+
+Public-boundary wrapper orchestration now also lives in:
+
+- [`ser/_internal/transcription/public_boundary_support.py`](../ser/_internal/transcription/public_boundary_support.py)
 
 Execution strategy is split between:
 
@@ -270,7 +279,8 @@ Limits:
 
 - the `_internal` boundary is not universally enforced
 - some public modules still import `_internal` directly by design
-- runtime and transcription owners still depend on ambient config in places
+- several public boundaries still offer optional settings fallbacks for
+  convenience
 
 This is a pragmatic boundary model. It is maintainable, but it depends on team
 discipline more than on absolute architectural isolation.
@@ -297,13 +307,12 @@ discipline more than on absolute architectural isolation.
 
 ## Main architectural liabilities
 
-- [`ser/models/emotion_model.py`](../ser/models/emotion_model.py) is thinner now, but it is still the public model boundary and could reconcentrate if new training or inference helpers drift back into it
-- [`ser/transcript/transcript_extractor.py`](../ser/transcript/transcript_extractor.py) remains a large orchestrator, but process-isolation and in-process/runtime-profile boundary glue now route through [`ser/_internal/transcription/public_boundary_process.py`](../ser/_internal/transcription/public_boundary_process.py) and [`ser/_internal/transcription/public_boundary_runtime.py`](../ser/_internal/transcription/public_boundary_runtime.py)
+- [`ser/runtime/accurate_inference.py`](../ser/runtime/accurate_inference.py) and [`ser/runtime/medium_inference.py`](../ser/runtime/medium_inference.py) remain large public wrappers because they preserve public/runtime signatures, exception surfaces, and worker-entry orchestration seams, even though most compute, retry, and pooling ownership now lives in [`ser/_internal/runtime/accurate_public_boundary.py`](../ser/_internal/runtime/accurate_public_boundary.py), [`ser/_internal/runtime/medium_public_boundary.py`](../ser/_internal/runtime/medium_public_boundary.py), [`ser/runtime/accurate_execution.py`](../ser/runtime/accurate_execution.py), and [`ser/runtime/medium_execution.py`](../ser/runtime/medium_execution.py)
+- [`ser/transcript/transcript_extractor.py`](../ser/transcript/transcript_extractor.py) remains a large public boundary, but process-isolation, runtime/setup, and wrapper orchestration now route through [`ser/_internal/transcription/public_boundary_process.py`](../ser/_internal/transcription/public_boundary_process.py), [`ser/_internal/transcription/public_boundary_runtime.py`](../ser/_internal/transcription/public_boundary_runtime.py), and [`ser/_internal/transcription/public_boundary_support.py`](../ser/_internal/transcription/public_boundary_support.py)
 - [`ser/__main__.py`](../ser/__main__.py) is still a long CLI composition function
-- ambient `get_settings()` remains widespread, so DI is incomplete, although
-  the major public API, data, feature, model, and transcription convenience
-  wrappers now consolidate repeated lookups behind one boundary-local helper
-  per public module
+- optional boundary-level `reload_settings()` fallbacks remain, so DI is still
+  incomplete even though direct `get_settings()` calls have been removed from
+  source modules
 - `_internal` is a convention-backed boundary, not a sealed dependency boundary
 - architecture docs require active maintenance to stay current
 
@@ -314,5 +323,5 @@ disciplined modular monolith with clear subsystem seams, strong tests, and
 substantial refactoring maturity. It is not fully “clean architecture”, but it
 is intentionally designed, operationally defensive, and moving in the right
 direction. The runtime and data subsystems are in particularly good shape; the
-model subsystem remains the biggest place where further decomposition would pay
-off.
+main remaining concentration risk is public-boundary glue in runtime and
+transcription, not the model subsystem.

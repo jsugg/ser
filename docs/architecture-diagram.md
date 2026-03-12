@@ -156,8 +156,8 @@ _internal/config/schema.py -> AppConfig
                 v
 _internal/config/bootstrap.py
                 |
-                +--> get_settings()
-                +--> reload_settings()
+                +--> get_settings() [scoped or fresh]
+                +--> reload_settings() [fresh]
                 +--> settings_override()
 ```
 

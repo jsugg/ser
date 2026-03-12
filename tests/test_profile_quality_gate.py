@@ -11,7 +11,7 @@ from typing import cast
 import pytest
 
 import ser.runtime.profile_quality_gate as gate_module
-from ser.config import AppConfig
+from ser.config import AppConfig, reload_settings
 from ser.domain import EmotionSegment
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.profile_quality_gate import (
@@ -303,7 +303,7 @@ def test_parse_args_uses_quality_gate_settings_defaults(
 
 def test_build_fast_predictor_loads_model_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fast gate predictor should preload model once and reuse it for all clips."""
-    settings = gate_module.get_settings()
+    settings = reload_settings()
     loaded_model = object()
     loaded_calls: list[object] = []
     predict_calls: list[tuple[str, object | None]] = []
@@ -395,7 +395,7 @@ def test_build_medium_predictor_reuses_loaded_resources(
         "ser.runtime.profile_quality_gate.run_medium_inference",
         _fake_run_medium_inference,
     )
-    base_settings = gate_module.get_settings()
+    base_settings = reload_settings()
     settings = replace(
         base_settings,
         default_language="en",
