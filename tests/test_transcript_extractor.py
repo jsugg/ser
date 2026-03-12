@@ -605,7 +605,7 @@ def test_check_adapter_compatibility_logs_non_blocking_issues_once(
             return compatibility_report
 
     monkeypatch.setattr(
-        te,
+        te._boundary_support,
         "resolve_transcription_backend_adapter",
         lambda _backend_id: _FakeAdapter(),
     )
@@ -1134,7 +1134,7 @@ def test_mark_compatibility_issues_as_emitted_suppresses_duplicate_operational_l
             )
 
     monkeypatch.setattr(
-        te,
+        te._boundary_support,
         "resolve_transcription_backend_adapter",
         lambda _backend_id: cast(object, _Adapter()),
     )
