@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Literal
 
 from ser._internal.config import artifact_naming as artifact_naming_helpers
-from ser.profiles import TranscriptionBackendId, get_profile_catalog
+from ser.profiles import (
+    ProfileRuntimeDefaults,
+    ProfileTranscriptionDefaults,
+    TranscriptionBackendId,
+    get_profile_catalog,
+)
 
 APP_NAME = "ser"
 DEFAULT_FAST_MODEL_FILE_NAME = "ser_model.pkl"
@@ -93,6 +98,95 @@ def default_profile_model_id(profile: ArtifactProfileName) -> str:
     if isinstance(default_model_id, str) and default_model_id.strip():
         return default_model_id.strip()
     raise RuntimeError(f"Profile {profile!r} does not define a default model id.")
+
+
+def _default_profile_runtime_defaults(
+    profile: ArtifactProfileName,
+) -> ProfileRuntimeDefaults:
+    """Returns catalog-owned runtime defaults for one profile."""
+    return get_profile_catalog()[profile].runtime_defaults
+
+
+def _default_profile_transcription_defaults(
+    profile: ArtifactProfileName,
+) -> ProfileTranscriptionDefaults:
+    """Returns catalog-owned transcription defaults for one profile."""
+    return get_profile_catalog()[profile].transcription_defaults
+
+
+def _default_fast_whisper_model_name() -> str:
+    """Returns the fast-profile default transcription model name."""
+    return _default_profile_transcription_defaults("fast").model_name
+
+
+def _default_fast_transcription_backend_id() -> TranscriptionBackendId:
+    """Returns the fast-profile default transcription backend identifier."""
+    return _default_profile_transcription_defaults("fast").backend_id
+
+
+def _default_fast_transcription_use_demucs() -> bool:
+    """Returns the fast-profile default demucs policy."""
+    return _default_profile_transcription_defaults("fast").use_demucs
+
+
+def _default_fast_transcription_use_vad() -> bool:
+    """Returns the fast-profile default VAD policy."""
+    return _default_profile_transcription_defaults("fast").use_vad
+
+
+def _default_runtime_timeout_seconds(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned timeout budget for one profile."""
+    return _default_profile_runtime_defaults(profile).timeout_seconds
+
+
+def _default_runtime_max_timeout_retries(profile: ArtifactProfileName) -> int:
+    """Returns the catalog-owned timeout retry budget for one profile."""
+    return _default_profile_runtime_defaults(profile).max_timeout_retries
+
+
+def _default_runtime_max_transient_retries(profile: ArtifactProfileName) -> int:
+    """Returns the catalog-owned transient retry budget for one profile."""
+    return _default_profile_runtime_defaults(profile).max_transient_retries
+
+
+def _default_runtime_retry_backoff_seconds(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned retry backoff for one profile."""
+    return _default_profile_runtime_defaults(profile).retry_backoff_seconds
+
+
+def _default_runtime_pool_window_size_seconds(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned pooling window size for one profile."""
+    return _default_profile_runtime_defaults(profile).pool_window_size_seconds
+
+
+def _default_runtime_pool_window_stride_seconds(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned pooling window stride for one profile."""
+    return _default_profile_runtime_defaults(profile).pool_window_stride_seconds
+
+
+def _default_runtime_post_smoothing_window_frames(profile: ArtifactProfileName) -> int:
+    """Returns the catalog-owned smoothing window size for one profile."""
+    return _default_profile_runtime_defaults(profile).post_smoothing_window_frames
+
+
+def _default_runtime_post_hysteresis_enter_confidence(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned enter-confidence threshold for one profile."""
+    return _default_profile_runtime_defaults(profile).post_hysteresis_enter_confidence
+
+
+def _default_runtime_post_hysteresis_exit_confidence(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned exit-confidence threshold for one profile."""
+    return _default_profile_runtime_defaults(profile).post_hysteresis_exit_confidence
+
+
+def _default_runtime_post_min_segment_duration_seconds(profile: ArtifactProfileName) -> float:
+    """Returns the catalog-owned minimum segment duration for one profile."""
+    return _default_profile_runtime_defaults(profile).post_min_segment_duration_seconds
+
+
+def _default_runtime_process_isolation(profile: ArtifactProfileName) -> bool:
+    """Returns the catalog-owned process-isolation default for one profile."""
+    return _default_profile_runtime_defaults(profile).process_isolation
 
 
 def profile_artifact_file_names(
@@ -190,7 +284,7 @@ class TrainingConfig:
 class WhisperModelConfig:
     """Whisper model selection and storage location."""
 
-    name: str = "large-v2"
+    name: str = field(default_factory=_default_fast_whisper_model_name)
     relative_path: Path = Path("OpenAI/whisper")
 
 
@@ -258,9 +352,11 @@ class TimelineConfig:
 class TranscriptionConfig:
     """Runtime controls for Whisper transcription behavior."""
 
-    backend_id: TranscriptionBackendId = "stable_whisper"
-    use_demucs: bool = True
-    use_vad: bool = True
+    backend_id: TranscriptionBackendId = field(
+        default_factory=_default_fast_transcription_backend_id
+    )
+    use_demucs: bool = field(default_factory=_default_fast_transcription_use_demucs)
+    use_vad: bool = field(default_factory=_default_fast_transcription_use_vad)
     mps_low_memory_threshold_gb: float = 16.0
     mps_admission_control_enabled: bool = True
     mps_hard_oom_shortcut_enabled: bool = True
@@ -292,54 +388,173 @@ class ProfileRuntimeConfig:
     max_timeout_retries: int
     max_transient_retries: int
     retry_backoff_seconds: float
-    pool_window_size_seconds: float = 1.0
-    pool_window_stride_seconds: float = 1.0
-    post_smoothing_window_frames: int = 3
-    post_hysteresis_enter_confidence: float = 0.60
-    post_hysteresis_exit_confidence: float = 0.45
-    post_min_segment_duration_seconds: float = 0.40
-    process_isolation: bool = True
+    pool_window_size_seconds: float
+    pool_window_stride_seconds: float
+    post_smoothing_window_frames: int
+    post_hysteresis_enter_confidence: float
+    post_hysteresis_exit_confidence: float
+    post_min_segment_duration_seconds: float
+    process_isolation: bool
 
 
 @dataclass(frozen=True)
 class FastRuntimeConfig(ProfileRuntimeConfig):
     """Execution budgets and retry controls for fast profile runtime."""
 
-    timeout_seconds: float = 0.0
-    max_timeout_retries: int = 0
-    max_transient_retries: int = 0
-    retry_backoff_seconds: float = 0.0
-    process_isolation: bool = False
+    timeout_seconds: float = field(default_factory=lambda: _default_runtime_timeout_seconds("fast"))
+    max_timeout_retries: int = field(
+        default_factory=lambda: _default_runtime_max_timeout_retries("fast")
+    )
+    max_transient_retries: int = field(
+        default_factory=lambda: _default_runtime_max_transient_retries("fast")
+    )
+    retry_backoff_seconds: float = field(
+        default_factory=lambda: _default_runtime_retry_backoff_seconds("fast")
+    )
+    pool_window_size_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_size_seconds("fast")
+    )
+    pool_window_stride_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_stride_seconds("fast")
+    )
+    post_smoothing_window_frames: int = field(
+        default_factory=lambda: _default_runtime_post_smoothing_window_frames("fast")
+    )
+    post_hysteresis_enter_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence("fast")
+    )
+    post_hysteresis_exit_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence("fast")
+    )
+    post_min_segment_duration_seconds: float = field(
+        default_factory=lambda: _default_runtime_post_min_segment_duration_seconds("fast")
+    )
+    process_isolation: bool = field(
+        default_factory=lambda: _default_runtime_process_isolation("fast")
+    )
 
 
 @dataclass(frozen=True)
 class MediumRuntimeConfig(ProfileRuntimeConfig):
     """Execution budgets and retry controls for medium profile runtime."""
 
-    timeout_seconds: float = 60.0
-    max_timeout_retries: int = 1
-    max_transient_retries: int = 1
-    retry_backoff_seconds: float = 0.25
+    timeout_seconds: float = field(
+        default_factory=lambda: _default_runtime_timeout_seconds("medium")
+    )
+    max_timeout_retries: int = field(
+        default_factory=lambda: _default_runtime_max_timeout_retries("medium")
+    )
+    max_transient_retries: int = field(
+        default_factory=lambda: _default_runtime_max_transient_retries("medium")
+    )
+    retry_backoff_seconds: float = field(
+        default_factory=lambda: _default_runtime_retry_backoff_seconds("medium")
+    )
+    pool_window_size_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_size_seconds("medium")
+    )
+    pool_window_stride_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_stride_seconds("medium")
+    )
+    post_smoothing_window_frames: int = field(
+        default_factory=lambda: _default_runtime_post_smoothing_window_frames("medium")
+    )
+    post_hysteresis_enter_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence("medium")
+    )
+    post_hysteresis_exit_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence("medium")
+    )
+    post_min_segment_duration_seconds: float = field(
+        default_factory=lambda: _default_runtime_post_min_segment_duration_seconds("medium")
+    )
+    process_isolation: bool = field(
+        default_factory=lambda: _default_runtime_process_isolation("medium")
+    )
 
 
 @dataclass(frozen=True)
 class AccurateRuntimeConfig(ProfileRuntimeConfig):
     """Execution budgets and retry controls for accurate profile runtime."""
 
-    timeout_seconds: float = 120.0
-    max_timeout_retries: int = 0
-    max_transient_retries: int = 1
-    retry_backoff_seconds: float = 0.25
+    timeout_seconds: float = field(
+        default_factory=lambda: _default_runtime_timeout_seconds("accurate")
+    )
+    max_timeout_retries: int = field(
+        default_factory=lambda: _default_runtime_max_timeout_retries("accurate")
+    )
+    max_transient_retries: int = field(
+        default_factory=lambda: _default_runtime_max_transient_retries("accurate")
+    )
+    retry_backoff_seconds: float = field(
+        default_factory=lambda: _default_runtime_retry_backoff_seconds("accurate")
+    )
+    pool_window_size_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_size_seconds("accurate")
+    )
+    pool_window_stride_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_stride_seconds("accurate")
+    )
+    post_smoothing_window_frames: int = field(
+        default_factory=lambda: _default_runtime_post_smoothing_window_frames("accurate")
+    )
+    post_hysteresis_enter_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence("accurate")
+    )
+    post_hysteresis_exit_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence("accurate")
+    )
+    post_min_segment_duration_seconds: float = field(
+        default_factory=lambda: _default_runtime_post_min_segment_duration_seconds("accurate")
+    )
+    process_isolation: bool = field(
+        default_factory=lambda: _default_runtime_process_isolation("accurate")
+    )
 
 
 @dataclass(frozen=True)
 class AccurateResearchRuntimeConfig(ProfileRuntimeConfig):
     """Execution budgets and retry controls for accurate-research runtime."""
 
-    timeout_seconds: float = 120.0
-    max_timeout_retries: int = 0
-    max_transient_retries: int = 1
-    retry_backoff_seconds: float = 0.25
+    timeout_seconds: float = field(
+        default_factory=lambda: _default_runtime_timeout_seconds("accurate-research")
+    )
+    max_timeout_retries: int = field(
+        default_factory=lambda: _default_runtime_max_timeout_retries("accurate-research")
+    )
+    max_transient_retries: int = field(
+        default_factory=lambda: _default_runtime_max_transient_retries("accurate-research")
+    )
+    retry_backoff_seconds: float = field(
+        default_factory=lambda: _default_runtime_retry_backoff_seconds("accurate-research")
+    )
+    pool_window_size_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_size_seconds("accurate-research")
+    )
+    pool_window_stride_seconds: float = field(
+        default_factory=lambda: _default_runtime_pool_window_stride_seconds("accurate-research")
+    )
+    post_smoothing_window_frames: int = field(
+        default_factory=lambda: _default_runtime_post_smoothing_window_frames("accurate-research")
+    )
+    post_hysteresis_enter_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence(
+            "accurate-research"
+        )
+    )
+    post_hysteresis_exit_confidence: float = field(
+        default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence(
+            "accurate-research"
+        )
+    )
+    post_min_segment_duration_seconds: float = field(
+        default_factory=lambda: _default_runtime_post_min_segment_duration_seconds(
+            "accurate-research"
+        )
+    )
+    process_isolation: bool = field(
+        default_factory=lambda: _default_runtime_process_isolation("accurate-research")
+    )
 
 
 @dataclass(frozen=True)

@@ -67,9 +67,11 @@ def test_config_does_not_expose_removed_legacy_exports() -> None:
         assert export_name not in visible_names
 
 
-def test_internal_modules_do_not_named_import_removed_legacy_config_exports() -> None:
+def test_internal_modules_do_not_named_import_removed_legacy_config_exports(
+    repo_root: Path,
+) -> None:
     """Internal source should not import removed legacy config names by symbol."""
-    package_root = Path("ser")
+    package_root = repo_root / "ser"
     for source_path in package_root.rglob("*.py"):
         if source_path == package_root / "config.py":
             continue

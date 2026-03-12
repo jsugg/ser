@@ -448,7 +448,7 @@ def test_run_default_profile_benchmark_delegates_to_internal_helper(
     )
     monkeypatch.setattr(
         tp,
-        "get_settings",
+        "reload_settings",
         lambda: SimpleNamespace(models=SimpleNamespace(folder=tmp_path)),
     )
 
@@ -733,7 +733,7 @@ def test_run_transcription_runtime_calibration_delegates_to_internal_helper(
     )
 
     settings = SimpleNamespace(models=SimpleNamespace(folder=tmp_path))
-    monkeypatch.setattr(tp, "get_settings", lambda: settings)
+    monkeypatch.setattr(tp, "reload_settings", lambda: settings)
 
     result = tp.run_transcription_runtime_calibration(
         calibration_file=calibration_file,

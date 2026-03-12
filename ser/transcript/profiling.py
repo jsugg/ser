@@ -35,7 +35,7 @@ from ser._internal.transcription.public_boundary_profiling import (
 from ser.config import (
     AppConfig,
     ArtifactProfileName,
-    get_settings,
+    reload_settings,
     settings_override,
 )
 from ser.domain import TranscriptWord
@@ -361,8 +361,8 @@ def recommend_default_profile(
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
-    """Returns explicit settings or falls back to ambient public-boundary config."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a boundary-local settings snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 def run_default_profile_benchmark(

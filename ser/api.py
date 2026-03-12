@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Protocol
 import ser._internal.api.data as _data_api
 import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, reload_settings
 from ser.profiles import ProfileName
 
 if TYPE_CHECKING:
@@ -38,8 +38,8 @@ type RuntimePipelineBuilder = Callable[[AppConfig], _PublicRuntimePipeline]
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
-    """Returns explicit settings or falls back to ambient public-boundary config."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a boundary-local settings snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 def list_datasets() -> tuple[str, ...]:

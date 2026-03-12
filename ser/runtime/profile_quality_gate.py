@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, reload_settings
 from ser.data.data_loader import extract_ravdess_speaker_id_from_path
 from ser.models.emotion_model import load_model, predict_emotions
 from ser.repr import XLSRBackend
@@ -602,8 +602,8 @@ def _parse_args(settings: AppConfig) -> argparse.Namespace:
 
 
 def _resolve_boundary_settings(settings: AppConfig | None = None) -> AppConfig:
-    """Returns the active settings snapshot for quality-gate CLI wrappers."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a quality-gate CLI snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 def main() -> None:

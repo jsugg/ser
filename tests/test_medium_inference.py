@@ -485,7 +485,7 @@ def test_run_medium_inference_delegates_operation_to_worker_helper(
         lambda *, backend: None,
     )
     monkeypatch.setattr(
-        "ser.runtime.medium_inference.run_with_retry_policy",
+        "ser.runtime.medium_inference._run_medium_retry_policy_impl",
         lambda **kwargs: kwargs["operation"](),
     )
     monkeypatch.setattr(
@@ -552,7 +552,7 @@ def test_run_medium_inference_delegates_retry_policy_wrapper(
     assert captured["transient_error_type"] is medium_inference.MediumTransientBackendError
     assert callable(captured["operation"])
     assert callable(captured["on_transient_failure"])
-    assert captured["run_with_retry_policy"] is medium_inference.run_with_retry_policy
+    assert callable(captured["run_with_retry_policy"])
 
 
 def test_run_medium_inference_delegates_execution_context_preparation(

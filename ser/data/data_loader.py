@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 from sklearn.model_selection import train_test_split
 
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, reload_settings
 from ser.data.adapters.ravdess import build_ravdess_utterances
 from ser.data.dataset_prepare import prepare_from_registry_entry
 from ser.data.dataset_registry import load_dataset_registry
@@ -33,8 +33,8 @@ type LabeledAudioSample = tuple[str, str]
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
-    """Returns explicit settings or falls back to ambient public-boundary config."""
-    return settings if settings is not None else get_settings()
+    """Returns explicit settings or reloads a boundary-local settings snapshot."""
+    return settings if settings is not None else reload_settings()
 
 
 def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None:

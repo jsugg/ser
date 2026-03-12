@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Final, Literal
 
 from ser._internal.config.schema import default_profile_model_id
-from ser.config import AppConfig, get_settings
+from ser.config import AppConfig, reload_settings
 from ser.models.feature_runtime_encoding import resolve_profile_runtime_selectors
 from ser.repr import Emotion2VecBackend, WhisperBackend, XLSRBackend
 from ser.repr.runtime_policy import resolve_feature_runtime_policy
@@ -34,7 +34,7 @@ def resolve_model_id_from_settings(
     settings: AppConfig | None,
     model_attr: str,
     fallback_model_id: str,
-    read_settings: Callable[[], AppConfig] = get_settings,
+    read_settings: Callable[[], AppConfig] = reload_settings,
 ) -> str:
     """Resolves one configured model id from settings with safe fallback."""
     active_settings: AppConfig = settings if settings is not None else read_settings()
@@ -71,7 +71,6 @@ def resolve_medium_model_id(
         settings=settings,
         model_attr="medium_model_id",
         fallback_model_id=default_profile_model_id("medium"),
-        read_settings=get_settings,
     )
 
 
@@ -83,7 +82,6 @@ def resolve_accurate_model_id(
         settings=settings,
         model_attr="accurate_model_id",
         fallback_model_id=default_profile_model_id("accurate"),
-        read_settings=get_settings,
     )
 
 
@@ -95,7 +93,6 @@ def resolve_accurate_research_model_id(
         settings=settings,
         model_attr="accurate_research_model_id",
         fallback_model_id=default_profile_model_id("accurate-research"),
-        read_settings=get_settings,
     )
 
 

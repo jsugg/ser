@@ -57,7 +57,7 @@ def test_train_model_raises_when_dataset_is_missing(
         ),
         torch_runtime=SimpleNamespace(enable_mps_fallback=False),
     )
-    monkeypatch.setattr(em, "get_settings", lambda: settings)
+    monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(data_loader, "load_utterances", lambda *, settings=None: None)
     monkeypatch.setattr(
         data_loader,
@@ -88,7 +88,7 @@ def test_train_medium_model_wrapper_uses_explicit_settings_without_ambient_looku
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("wrapper must use explicit settings")),
     )
     monkeypatch.setattr(
@@ -111,7 +111,7 @@ def test_train_accurate_model_wrapper_uses_explicit_settings_without_ambient_loo
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("wrapper must use explicit settings")),
     )
     monkeypatch.setattr(
@@ -134,7 +134,7 @@ def test_train_accurate_research_model_wrapper_uses_explicit_settings_without_am
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("wrapper must use explicit settings")),
     )
     monkeypatch.setattr(
@@ -460,7 +460,7 @@ def test_load_model_delegates_to_internal_entrypoint_with_explicit_settings(
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("wrapper must use explicit settings")),
     )
     monkeypatch.setattr(
@@ -481,7 +481,8 @@ def test_load_model_delegates_to_internal_entrypoint_with_explicit_settings(
 
     assert result is sentinel
     assert captured["args"] == (settings,)
-    assert captured["settings_resolver"] is em.get_settings
+    settings_resolver = cast(Callable[[], em.AppConfig], captured["settings_resolver"])
+    assert settings_resolver() is settings
     assert captured["resolve_model_factory"] is em._resolve_model_for_loading
     assert captured["expected_backend_id"] == "hf_xlsr"
     assert captured["expected_profile"] == "medium"
@@ -498,7 +499,7 @@ def test_load_model_preserves_file_not_found_contract(
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: SimpleNamespace(
             models=SimpleNamespace(
                 folder=Path("."),
@@ -557,7 +558,7 @@ def test_predict_emotions_detailed_uses_explicit_settings_without_ambient_lookup
 
     monkeypatch.setattr(
         em,
-        "get_settings",
+        "reload_settings",
         lambda: (_ for _ in ()).throw(AssertionError("wrapper must use explicit settings")),
     )
     monkeypatch.setattr(

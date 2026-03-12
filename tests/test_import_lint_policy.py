@@ -11,17 +11,17 @@ import pytest
 pytestmark = pytest.mark.topology_contract
 
 
-def _load_ruff_lint_config() -> dict[str, Any]:
+def _load_ruff_lint_config(repo_root: Path) -> dict[str, Any]:
     """Loads Ruff lint configuration from pyproject."""
-    pyproject_data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    pyproject_data = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
     tool_config = cast(dict[str, Any], pyproject_data["tool"])
     ruff_config = cast(dict[str, Any], tool_config["ruff"])
     return cast(dict[str, Any], ruff_config["lint"])
 
 
-def test_import_lint_policy_covers_internal_api_modules() -> None:
+def test_import_lint_policy_covers_internal_api_modules(repo_root: Path) -> None:
     """Ruff banned-api policy should cover all internal API implementation modules."""
-    lint_config = _load_ruff_lint_config()
+    lint_config = _load_ruff_lint_config(repo_root)
     tidy_imports_config = cast(dict[str, Any], lint_config["flake8-tidy-imports"])
     banned_api = cast(dict[str, dict[str, str]], tidy_imports_config["banned-api"])
 
@@ -36,9 +36,9 @@ def test_import_lint_policy_covers_internal_api_modules() -> None:
         assert "ser.api" in banned_api[module_name]["msg"]
 
 
-def test_import_lint_policy_limits_tid251_exceptions_to_boundary_files() -> None:
+def test_import_lint_policy_limits_tid251_exceptions_to_boundary_files(repo_root: Path) -> None:
     """Only facade + API contract test files should bypass TID251 for internal imports."""
-    lint_config = _load_ruff_lint_config()
+    lint_config = _load_ruff_lint_config(repo_root)
     per_file_ignores = cast(dict[str, list[str]], lint_config["per-file-ignores"])
 
     allowed_tid251_files = {
@@ -55,9 +55,9 @@ def test_import_lint_policy_limits_tid251_exceptions_to_boundary_files() -> None
         assert "TID251" in per_file_ignores[allowed_file]
 
 
-def test_import_lint_lane_runs_boundary_contract_tests() -> None:
+def test_import_lint_lane_runs_boundary_contract_tests(repo_root: Path) -> None:
     """The import-lint lane should enforce both lint rules and boundary contracts."""
-    script = Path("scripts/run_import_lint.sh").read_text(encoding="utf-8")
+    script = (repo_root / "scripts" / "run_import_lint.sh").read_text(encoding="utf-8")
 
     assert "ruff check --select TID251" in script
     assert "tests/test_api_import_boundary.py" in script

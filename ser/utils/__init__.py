@@ -15,10 +15,10 @@ if TYPE_CHECKING:
 
 
 def _resolve_boundary_settings() -> AppConfig:
-    """Returns the active settings snapshot for public utility wrappers."""
-    from ser.config import get_settings
+    """Returns a fresh settings snapshot for public utility wrappers."""
+    from ser.config import reload_settings
 
-    return get_settings()
+    return reload_settings()
 
 
 def read_audio_file(
