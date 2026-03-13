@@ -76,7 +76,6 @@ jobs:
 
   selfhosted-gpu-validation:
     needs: verify-ci
-    continue-on-error: true
     uses: ./.github/workflows/linux-selfhosted-gpu-validation.yml
     with:
       run_cuda: true
@@ -85,7 +84,6 @@ jobs:
 
   full-dataset-quality-gate:
     needs: verify-ci
-    continue-on-error: true
     uses: ./.github/workflows/full-dataset-quality-gate-regression.yml
     with:
       run_training: true
