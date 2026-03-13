@@ -58,8 +58,18 @@ jobs:
               `CI verified for commit ${sha} via run #${ok.run_number}.`
             );
 
-  build-distributions:
+  linux-cli-validation:
     needs: verify-ci
+    uses: ./.github/workflows/linux-python-3_13-cli-validation.yml
+    with:
+      run_accurate_research: false
+
+  darwin-validation:
+    needs: verify-ci
+    uses: ./.github/workflows/darwin-x86_64-validation.yml
+
+  build-distributions:
+    needs: [verify-ci, linux-cli-validation, darwin-validation]
     runs-on: ubuntu-latest
 
     steps:
@@ -84,7 +94,7 @@ jobs:
           path: dist/
 
   publish-to-testpypi:
-    needs: [verify-ci, build-distributions]
+    needs: [verify-ci, linux-cli-validation, darwin-validation, build-distributions]
     runs-on: ubuntu-latest
 
     environment:

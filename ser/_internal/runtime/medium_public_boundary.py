@@ -3,15 +3,54 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any, Protocol, TypeVar, cast
+from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
+from typing import Any, Literal, Protocol, TypeVar, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.process_timeout import (
+    run_with_process_timeout as _run_with_process_timeout_impl,
+)
+from ser._internal.runtime.single_flight import SingleFlightRegistry
+from ser._internal.runtime.worker_bindings import (
+    is_setup_complete_message as _is_setup_complete_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    parse_worker_completion_message as _parse_worker_completion_message_binding,
+)
+from ser._internal.runtime.worker_bindings import raise_worker_error as _raise_worker_error_binding
+from ser._internal.runtime.worker_bindings import (
+    recv_worker_message as _recv_worker_message_binding,
+)
+from ser._internal.runtime.worker_bindings import run_worker_entry as _run_worker_entry_binding
+from ser._internal.runtime.worker_bindings import (
+    terminate_worker_process as _terminate_worker_process_binding,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    is_setup_complete_message as _is_setup_complete_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    parse_worker_completion_message as _parse_worker_completion_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import raise_worker_error as _raise_worker_error_impl
+from ser._internal.runtime.worker_lifecycle import recv_worker_message as _recv_worker_message_impl
+from ser._internal.runtime.worker_lifecycle import (
+    run_process_setup_compute_handshake as _run_process_setup_compute_handshake_impl,
+)
+from ser._internal.runtime.worker_lifecycle import run_with_timeout as _run_with_timeout_impl
+from ser._internal.runtime.worker_lifecycle import (
+    terminate_worker_process as _terminate_worker_process_impl,
+)
 from ser.config import AppConfig, MediumRuntimeConfig
+from ser.models.emotion_model import LoadedModel as EmotionLoadedModel
+from ser.models.emotion_model import load_model
+from ser.models.profile_runtime import resolve_medium_model_id
 from ser.repr import XLSRBackend
 from ser.repr.runtime_policy import FeatureRuntimePolicy
 from ser.runtime import medium_execution as medium_execution_helpers
@@ -45,12 +84,18 @@ from ser.runtime.medium_process_operation import (
 from ser.runtime.medium_process_operation import (
     run_process_operation as _run_process_operation_impl,
 )
+from ser.runtime.medium_retry_operation import (
+    run_medium_inference_with_retry_policy as _run_medium_retry_policy_impl,
+)
 from ser.runtime.medium_runtime_support import LoadedModelLike as _MediumRuntimeLoadedModelLike
 from ser.runtime.medium_runtime_support import (
     build_cpu_settings_snapshot as _build_cpu_settings_snapshot_impl,
 )
 from ser.runtime.medium_runtime_support import (
     build_medium_backend_for_settings as _build_medium_backend_for_settings_impl,
+)
+from ser.runtime.medium_runtime_support import (
+    build_runtime_settings_snapshot as _build_runtime_settings_snapshot_impl,
 )
 from ser.runtime.medium_runtime_support import (
     encode_medium_sequence as _encode_medium_sequence_impl,
@@ -69,6 +114,7 @@ from ser.runtime.phase_timing import (
 )
 from ser.runtime.policy import run_with_retry_policy
 from ser.runtime.schema import InferenceResult
+from ser.utils.audio_utils import read_audio_file
 
 
 class _MediumLoadedModel(_MediumExecutionLoadedModelLike, _MediumRuntimeLoadedModelLike, Protocol):
@@ -77,6 +123,109 @@ class _MediumLoadedModel(_MediumExecutionLoadedModelLike, _MediumRuntimeLoadedMo
 
 _MediumLoadedModelT = TypeVar("_MediumLoadedModelT", bound=_MediumLoadedModel)
 _MediumPayloadT = TypeVar("_MediumPayloadT", bound=_MediumPayloadLike)
+
+type WorkerPhaseMessage = tuple[Literal["phase"], Literal["setup_complete"]]
+type WorkerSuccessMessage = tuple[Literal["ok"], InferenceResult]
+type WorkerErrorMessage = tuple[Literal["err"], str, str]
+type WorkerMessage = WorkerPhaseMessage | WorkerSuccessMessage | WorkerErrorMessage
+
+_TERMINATE_GRACE_SECONDS = 0.5
+_KILL_GRACE_SECONDS = 0.5
+_SINGLE_FLIGHT_REGISTRY = SingleFlightRegistry()
+_WORKER_LOGGER = logging.getLogger("ser.runtime.medium_inference")
+
+
+@dataclass(frozen=True)
+class MediumProcessPayload:
+    """Serializable payload for one process-isolated medium inference attempt."""
+
+    request: InferenceRequest
+    settings: AppConfig
+    expected_backend_model_id: str
+
+
+class MediumModelUnavailableError(FileNotFoundError):
+    """Spawn-safe medium worker error marker for unavailable model artifacts."""
+
+
+class MediumRuntimeDependencyError(RuntimeError):
+    """Spawn-safe medium worker error marker for missing runtime dependencies."""
+
+
+class MediumModelLoadError(RuntimeError):
+    """Spawn-safe medium worker error marker for model load failures."""
+
+
+class MediumTransientBackendError(RuntimeError):
+    """Spawn-safe medium worker error marker for transient backend failures."""
+
+
+def _prepare_medium_process_operation(
+    payload: MediumProcessPayload,
+) -> medium_worker_operation_helpers.PreparedMediumOperation[EmotionLoadedModel, XLSRBackend]:
+    """Builds one medium worker operation using only module-level collaborators."""
+    return prepare_process_operation(
+        payload,
+        load_model_fn=load_model,
+        read_audio_file_fn=read_audio_file,
+        backend_factory=XLSRBackend,
+        resolve_runtime_policy=lambda settings: resolve_medium_feature_runtime_policy(
+            settings=settings
+        ),
+        logger=_WORKER_LOGGER,
+        model_unavailable_error_factory=MediumModelUnavailableError,
+        model_load_error_factory=MediumModelLoadError,
+        prepare_medium_backend_runtime=lambda active_backend: prepare_medium_backend_runtime(
+            backend=active_backend,
+            is_dependency_error=is_dependency_error,
+            dependency_error_factory=MediumRuntimeDependencyError,
+            transient_error_factory=MediumTransientBackendError,
+        ),
+    )
+
+
+def _run_medium_process_inference_once(
+    *,
+    loaded_model: _MediumLoadedModel,
+    backend: XLSRBackend,
+    audio: NDArray[np.float32],
+    sample_rate: int,
+    runtime_config: MediumRuntimeConfig,
+) -> InferenceResult:
+    """Runs one medium worker-process inference attempt."""
+    return run_medium_inference_once(
+        loaded_model=loaded_model,
+        backend=backend,
+        audio=audio,
+        sample_rate=sample_rate,
+        runtime_config=runtime_config,
+        logger=_WORKER_LOGGER,
+        is_dependency_error=is_dependency_error,
+        dependency_error_factory=MediumRuntimeDependencyError,
+        transient_error_factory=MediumTransientBackendError,
+    )
+
+
+def _run_medium_process_operation(
+    prepared: medium_worker_operation_helpers.PreparedMediumOperation[
+        EmotionLoadedModel, XLSRBackend
+    ],
+) -> InferenceResult:
+    """Runs one medium compute phase inside the spawned worker process."""
+    return run_process_operation(
+        prepared,
+        run_medium_inference_once=_run_medium_process_inference_once,
+    )
+
+
+def _medium_worker_entry(payload: MediumProcessPayload, connection: Connection) -> None:
+    """Executes one spawned medium worker using module-level collaborators only."""
+    _run_worker_entry_binding(
+        payload=payload,
+        connection=connection,
+        prepare_process_operation=_prepare_medium_process_operation,
+        run_process_operation=_run_medium_process_operation,
+    )
 
 
 def run_medium_inference_once(
@@ -114,6 +263,252 @@ def run_medium_inference_once(
             )
         ),
     )
+
+
+def run_medium_inference_from_public_boundary(
+    request: InferenceRequest,
+    settings: AppConfig,
+    *,
+    loaded_model: _MediumLoadedModel | None = None,
+    backend: XLSRBackend | None = None,
+    enforce_timeout: bool = True,
+    allow_retries: bool = True,
+    logger: logging.Logger,
+    model_unavailable_error_type: type[Exception],
+    runtime_dependency_error_type: type[Exception],
+    model_load_error_type: type[Exception],
+    timeout_error_type: type[Exception],
+    execution_error_type: type[Exception],
+    transient_error_type: type[Exception],
+) -> InferenceResult:
+    """Runs medium inference through the internal public-boundary owner."""
+
+    worker_error_factories: dict[str, Callable[[str], Exception]] = {
+        "ValueError": ValueError,
+        runtime_dependency_error_type.__name__: runtime_dependency_error_type,
+        transient_error_type.__name__: transient_error_type,
+        model_unavailable_error_type.__name__: model_unavailable_error_type,
+        model_load_error_type.__name__: model_load_error_type,
+        timeout_error_type.__name__: timeout_error_type,
+        "RuntimeError": RuntimeError,
+    }
+
+    def _run_with_timeout(
+        operation: Callable[[], InferenceResult],
+        timeout_seconds: float,
+    ) -> InferenceResult:
+        return _run_with_timeout_impl(
+            operation=operation,
+            timeout_seconds=timeout_seconds,
+            timeout_error_factory=timeout_error_type,
+            timeout_label="Medium inference",
+        )
+
+    def _run_medium_inference_once(
+        *,
+        loaded_model: _MediumLoadedModel,
+        backend: XLSRBackend,
+        audio: NDArray[np.float32],
+        sample_rate: int,
+        runtime_config: MediumRuntimeConfig,
+    ) -> InferenceResult:
+        return run_medium_inference_once(
+            loaded_model=loaded_model,
+            backend=backend,
+            audio=audio,
+            sample_rate=sample_rate,
+            runtime_config=runtime_config,
+            logger=logger,
+            is_dependency_error=is_dependency_error,
+            dependency_error_factory=runtime_dependency_error_type,
+            transient_error_factory=transient_error_type,
+        )
+
+    def _run_with_process_timeout(
+        payload: MediumProcessPayload,
+        timeout_seconds: float,
+    ) -> InferenceResult:
+        return _run_with_process_timeout_impl(
+            payload=payload,
+            resolve_profile=lambda _payload: "medium",
+            timeout_seconds=timeout_seconds,
+            get_context=mp.get_context,
+            logger=logger,
+            setup_phase_name=PHASE_EMOTION_SETUP,
+            inference_phase_name=PHASE_EMOTION_INFERENCE,
+            log_phase_started=log_phase_started,
+            log_phase_completed=log_phase_completed,
+            log_phase_failed=log_phase_failed,
+            run_process_setup_compute_handshake=_run_process_setup_compute_handshake_impl,
+            worker_target=_medium_worker_entry,
+            recv_worker_message=_recv_worker_message,
+            is_setup_complete_message=_is_setup_complete_message,
+            terminate_worker_process=_terminate_worker_process,
+            timeout_error_factory=timeout_error_type,
+            execution_error_factory=execution_error_type,
+            worker_label="Medium inference",
+            process_join_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            parse_worker_completion_message=_parse_worker_completion_message,
+        )
+
+    def _recv_worker_message(
+        connection: Connection,
+        *,
+        stage: str,
+    ) -> WorkerMessage:
+        return _recv_worker_message_binding(
+            connection=connection,
+            stage=stage,
+            impl=_recv_worker_message_impl,
+            worker_label="Medium inference",
+            error_factory=execution_error_type,
+        )
+
+    def _is_setup_complete_message(message: WorkerMessage) -> bool:
+        return _is_setup_complete_message_binding(
+            message=message,
+            impl=_is_setup_complete_message_impl,
+            worker_label="Medium inference",
+            error_factory=execution_error_type,
+        )
+
+    def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
+        return _parse_worker_completion_message_binding(
+            worker_message=worker_message,
+            impl=_parse_worker_completion_message_impl,
+            worker_label="Medium inference",
+            error_factory=execution_error_type,
+            raise_worker_error=_raise_worker_error,
+            result_type=InferenceResult,
+        )
+
+    def _prepare_in_process_operation(
+        *,
+        request: InferenceRequest,
+        settings: AppConfig,
+        loaded_model: _MediumLoadedModel | None,
+        backend: XLSRBackend | None,
+        expected_backend_model_id: str,
+        runtime_device: str,
+        runtime_dtype: str,
+    ) -> medium_worker_operation_helpers.PreparedMediumOperation[_MediumLoadedModel, XLSRBackend]:
+        return prepare_in_process_operation(
+            request=request,
+            settings=settings,
+            loaded_model=loaded_model,
+            backend=backend,
+            expected_backend_model_id=expected_backend_model_id,
+            runtime_device=runtime_device,
+            runtime_dtype=runtime_dtype,
+            load_model_fn=load_model,
+            read_audio_file_fn=read_audio_file,
+            backend_factory=XLSRBackend,
+            logger=logger,
+            model_unavailable_error_factory=model_unavailable_error_type,
+            model_load_error_factory=model_load_error_type,
+        )
+
+    def _prepare_execution_context(
+        *,
+        request: InferenceRequest,
+        settings: AppConfig,
+        loaded_model: _MediumLoadedModel | None,
+        backend: XLSRBackend | None,
+        enforce_timeout: bool,
+    ) -> MediumExecutionContext[MediumProcessPayload, _MediumLoadedModel, XLSRBackend]:
+        return prepare_execution_context(
+            request=request,
+            settings=settings,
+            loaded_model=loaded_model,
+            backend=backend,
+            enforce_timeout=enforce_timeout,
+            resolve_medium_model_id=resolve_medium_model_id,
+            resolve_runtime_policy=lambda active_settings: resolve_medium_feature_runtime_policy(
+                settings=active_settings
+            ),
+            prepare_retry_state=medium_worker_operation_helpers.prepare_retry_state,
+            prepare_in_process_operation=_prepare_in_process_operation,
+            build_process_payload=lambda backend_model_id, policy_device, policy_dtype: (
+                MediumProcessPayload(
+                    request=request,
+                    settings=_build_runtime_settings_snapshot_impl(
+                        settings,
+                        runtime_device=policy_device,
+                        runtime_dtype=policy_dtype,
+                    ),
+                    expected_backend_model_id=backend_model_id,
+                )
+            ),
+            logger=logger,
+        )
+
+    def _terminate_worker_process(process: BaseProcess) -> None:
+        _terminate_worker_process_binding(
+            process=process,
+            impl=_terminate_worker_process_impl,
+            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            kill_grace_seconds=_KILL_GRACE_SECONDS,
+        )
+
+    def _raise_worker_error(error_type: str, message: str) -> None:
+        _raise_worker_error_binding(
+            error_type=error_type,
+            message=message,
+            impl=_raise_worker_error_impl,
+            known_error_factories=worker_error_factories,
+            unknown_error_factory=execution_error_type,
+            worker_label="Medium inference",
+        )
+
+    execution_context = _prepare_execution_context(
+        request=request,
+        settings=settings,
+        loaded_model=loaded_model,
+        backend=backend,
+        enforce_timeout=enforce_timeout,
+    )
+    expected_backend_model_id = execution_context.expected_backend_model_id
+
+    with _SINGLE_FLIGHT_REGISTRY.lock(
+        profile="medium",
+        backend_model_id=expected_backend_model_id,
+    ):
+        return execute_medium_inference_with_retry(
+            execution_context=execution_context,
+            settings=settings,
+            injected_backend=backend,
+            enforce_timeout=enforce_timeout,
+            allow_retries=allow_retries,
+            expected_backend_model_id=expected_backend_model_id,
+            logger=logger,
+            run_with_process_timeout=_run_with_process_timeout,
+            run_process_operation=lambda prepared: run_process_operation(
+                prepared,
+                run_medium_inference_once=_run_medium_inference_once,
+            ),
+            run_with_timeout=_run_with_timeout,
+            prepare_medium_backend_runtime=lambda active_backend: prepare_medium_backend_runtime(
+                backend=active_backend,
+                is_dependency_error=is_dependency_error,
+                dependency_error_factory=runtime_dependency_error_type,
+                transient_error_factory=transient_error_type,
+            ),
+            cpu_backend_builder=lambda: _build_medium_backend_for_settings_impl(
+                settings=_build_cpu_settings_snapshot_impl(settings),
+                expected_backend_model_id=expected_backend_model_id,
+                runtime_device="cpu",
+                runtime_dtype="float32",
+                backend_factory=XLSRBackend,
+            ),
+            timeout_error_type=timeout_error_type,
+            transient_error_type=transient_error_type,
+            runtime_dependency_error_type=runtime_dependency_error_type,
+            execution_error_type=execution_error_type,
+            run_retry_policy_impl=_run_medium_retry_policy_impl,
+            retry_delay_seconds=retry_delay_seconds,
+            should_retry_on_cpu_after_transient_failure=should_retry_on_cpu_after_transient_failure,
+            summarize_transient_failure=summarize_transient_failure,
+        )
 
 
 def prepare_in_process_operation(
@@ -445,6 +840,7 @@ def prepare_medium_backend_runtime(
 
 
 __all__ = [
+    "run_medium_inference_from_public_boundary",
     "execute_medium_inference_with_retry",
     "is_dependency_error",
     "prepare_execution_context",

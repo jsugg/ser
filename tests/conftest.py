@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytest_plugins = ("tests.fixtures.settings",)
+
 
 @pytest.fixture(scope="session")
 def repo_root(pytestconfig: pytest.Config) -> Path:

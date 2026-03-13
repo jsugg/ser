@@ -58,8 +58,46 @@ jobs:
               `CI verified for commit ${sha} via run #${ok.run_number}.`
             );
 
-  build-distributions:
+  linux-cli-validation:
     needs: verify-ci
+    uses: ./.github/workflows/linux-python-3_13-cli-validation.yml
+    with:
+      run_accurate_research: false
+
+  darwin-validation:
+    needs: verify-ci
+    uses: ./.github/workflows/darwin-x86_64-validation.yml
+
+  macos-mps-validation:
+    needs: verify-ci
+    uses: ./.github/workflows/macos15-mps-validation.yml
+    with:
+      run_accurate_research: false
+
+  selfhosted-gpu-validation:
+    needs: verify-ci
+    continue-on-error: true
+    uses: ./.github/workflows/linux-selfhosted-gpu-validation.yml
+    with:
+      run_cuda: true
+      run_xpu: false
+      run_accurate_research: false
+
+  full-dataset-quality-gate:
+    needs: verify-ci
+    continue-on-error: true
+    uses: ./.github/workflows/full-dataset-quality-gate-regression.yml
+    with:
+      run_training: true
+
+  build-distributions:
+    needs:
+      [
+        verify-ci,
+        linux-cli-validation,
+        darwin-validation,
+        macos-mps-validation,
+      ]
     runs-on: ubuntu-latest
 
     steps:
@@ -84,7 +122,14 @@ jobs:
           path: dist/
 
   publish-to-pypi:
-    needs: [verify-ci, build-distributions]
+    needs:
+      [
+        verify-ci,
+        linux-cli-validation,
+        darwin-validation,
+        macos-mps-validation,
+        build-distributions,
+      ]
     runs-on: ubuntu-latest
 
     environment:

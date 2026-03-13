@@ -1,6 +1,7 @@
 name: Darwin x86_64 Validation
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

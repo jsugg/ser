@@ -1,6 +1,20 @@
 name: Linux Python 3.13 CLI Validation
 
 on:
+  workflow_call:
+    inputs:
+      run_accurate_research:
+        required: false
+        default: false
+        type: boolean
+      accurate_model_id:
+        required: false
+        default: "openai/whisper-tiny"
+        type: string
+      accurate_research_model_id:
+        required: false
+        default: "iic/emotion2vec_plus_large"
+        type: string
   workflow_dispatch:
     inputs:
       run_accurate_research:

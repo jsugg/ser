@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
 from collections.abc import Callable
 from typing import Literal, Never, Protocol, cast
 
@@ -35,6 +36,12 @@ from ser._internal.transcription.in_process_orchestration import (
 )
 from ser._internal.transcription.process_isolation import WorkerMessage as _WorkerMessage
 from ser._internal.transcription.process_isolation import (
+    raise_worker_error as _raise_worker_error_impl,
+)
+from ser._internal.transcription.process_isolation import (
+    recv_worker_message as _recv_worker_message_impl,
+)
+from ser._internal.transcription.process_isolation import (
     run_faster_whisper_process_isolated as _run_faster_whisper_process_isolated_impl,
 )
 from ser._internal.transcription.process_isolation import (
@@ -43,11 +50,35 @@ from ser._internal.transcription.process_isolation import (
 from ser._internal.transcription.process_isolation import (
     should_use_process_isolated_path as _should_use_process_isolated_path_impl,
 )
+from ser._internal.transcription.process_isolation import (
+    terminate_worker_process as _terminate_worker_process_impl,
+)
+from ser._internal.transcription.process_isolation import (
+    transcription_worker_entry as _transcription_worker_entry_impl,
+)
 from ser._internal.transcription.process_worker import (
     build_transcription_process_payload as _build_transcription_process_payload,
 )
 from ser._internal.transcription.public_boundary_process import (
+    raise_worker_error_from_public_boundary as _raise_worker_error_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    recv_worker_message_from_public_boundary as _recv_worker_message_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    resolve_transcription_adapter_from_public_boundary as _resolve_transcription_adapter_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
     run_faster_whisper_process_isolated_from_public_boundary as _run_faster_whisper_process_isolated_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    spawn_context_for_public_boundary as _spawn_context_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    terminate_worker_process_from_public_boundary as _terminate_worker_process_boundary_impl,
+)
+from ser._internal.transcription.public_boundary_process import (
+    transcription_worker_entry_from_public_boundary as _transcription_worker_entry_boundary_impl,
 )
 from ser._internal.transcription.public_boundary_runtime import (
     check_adapter_compatibility_from_public_boundary as _check_adapter_compatibility_boundary_impl,
@@ -128,6 +159,9 @@ type _WorkerErrorRaiser = Callable[[object], Never]
 type _WorkerTerminator = Callable[[object], None]
 type _WorkerEntry = Callable[[object, object], None]
 
+_TERMINATE_GRACE_SECONDS = 5.0
+_KILL_GRACE_SECONDS = 2.0
+
 
 def _runtime_request_from_profile(
     active_profile: _BackendProfile,
@@ -168,7 +202,7 @@ def check_adapter_compatibility(
     active_profile: _BackendProfile,
     settings: AppConfig,
     runtime_request: BackendRuntimeRequest | None = None,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
     logger: logging.Logger,
     error_factory: _ErrorFactory,
 ) -> CompatibilityReport:
@@ -191,7 +225,7 @@ def mark_compatibility_issues_as_emitted(
     backend_id: TranscriptionBackendId,
     issue_kind: _CompatibilityIssueKind,
     issue_codes: tuple[str, ...],
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
 ) -> None:
     """Marks compatibility issues as emitted so they are logged only once."""
     _mark_compatibility_issues_as_emitted_impl(
@@ -206,7 +240,7 @@ def transcription_setup_required(
     *,
     active_profile: _BackendProfile,
     settings: AppConfig,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
     logger: logging.Logger,
     error_factory: _ErrorFactory,
 ) -> bool:
@@ -230,7 +264,7 @@ def prepare_transcription_assets(
     *,
     active_profile: _BackendProfile,
     settings: AppConfig,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
     logger: logging.Logger,
     error_factory: _ErrorFactory,
 ) -> None:
@@ -256,7 +290,7 @@ def load_whisper_model_for_settings(
     settings: AppConfig,
     profile_factory: _ProfileFactory,
     logger: logging.Logger,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
     error_factory: _ErrorFactory,
 ) -> object:
     """Loads one transcription model using an explicit settings snapshot."""
@@ -301,6 +335,34 @@ def _runtime_request_for_isolated_faster_whisper(
     )
 
 
+def _spawn_context_for_public_boundary() -> object:
+    """Returns the multiprocessing spawn context used by the public boundary."""
+    return _spawn_context_boundary_impl(get_context=mp.get_context)
+
+
+def _resolve_transcription_adapter_for_public_boundary(
+    backend_id: TranscriptionBackendId,
+) -> object:
+    """Resolves one backend adapter for process-isolated public-boundary workers."""
+    return _resolve_transcription_adapter_boundary_impl(
+        backend_id,
+        adapter_resolver=resolve_transcription_backend_adapter,
+    )
+
+
+def _transcription_worker_entry_for_public_boundary(
+    payload: object,
+    connection: object,
+) -> None:
+    """Runs one process-isolated transcription worker with module-level collaborators."""
+    _transcription_worker_entry_boundary_impl(
+        payload,
+        connection,
+        transcription_worker_entry_impl=_transcription_worker_entry_impl,
+        adapter_resolver=_resolve_transcription_adapter_for_public_boundary,
+    )
+
+
 def run_faster_whisper_process_isolated(
     *,
     file_path: str,
@@ -309,15 +371,32 @@ def run_faster_whisper_process_isolated(
     settings: AppConfig,
     logger: logging.Logger,
     error_factory: _ErrorFactory,
-    terminate_grace_seconds: float,
-    transcript_word_factory: _TranscriptWordFactory,
-    spawn_context_resolver: _ResolveSpawnContext,
-    worker_entry: _WorkerEntry,
-    recv_worker_message_fn: _WorkerMessageReceiver,
-    raise_worker_error_fn: _WorkerErrorRaiser,
-    terminate_worker_process_fn: _WorkerTerminator,
 ) -> list[TranscriptWord]:
     """Runs faster-whisper transcription inside a spawned worker process."""
+
+    def _recv_worker_message(connection: object, *, stage: str) -> _WorkerMessage:
+        return _recv_worker_message_boundary_impl(
+            connection,
+            recv_worker_message_impl=_recv_worker_message_impl,
+            stage=stage,
+            error_factory=error_factory,
+        )
+
+    def _raise_worker_error(message: object) -> Never:
+        _raise_worker_error_boundary_impl(
+            cast(_WorkerMessage, message),
+            raise_worker_error_impl=_raise_worker_error_impl,
+            error_factory=error_factory,
+        )
+
+    def _terminate_worker_process(process: object) -> None:
+        _terminate_worker_process_boundary_impl(
+            process,
+            terminate_worker_process_impl=_terminate_worker_process_impl,
+            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            kill_grace_seconds=_KILL_GRACE_SECONDS,
+        )
+
     return _run_faster_whisper_process_isolated_boundary_impl(
         file_path=file_path,
         language=language,
@@ -333,14 +412,14 @@ def run_faster_whisper_process_isolated(
             )
         ),
         payload_factory=_build_transcription_process_payload,
-        spawn_context_resolver=spawn_context_resolver,
-        worker_entry=worker_entry,
-        recv_worker_message_fn=recv_worker_message_fn,
-        raise_worker_error_fn=raise_worker_error_fn,
-        terminate_worker_process_fn=terminate_worker_process_fn,
+        spawn_context_resolver=_spawn_context_for_public_boundary,
+        worker_entry=_transcription_worker_entry_for_public_boundary,
+        recv_worker_message_fn=_recv_worker_message,
+        raise_worker_error_fn=_raise_worker_error,
+        terminate_worker_process_fn=_terminate_worker_process,
         logger=logger,
         error_factory=error_factory,
-        terminate_grace_seconds=terminate_grace_seconds,
+        terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
     )
 
 
@@ -352,7 +431,7 @@ def extract_transcript_in_process(
     settings: AppConfig,
     profile_factory: _ProfileFactory,
     logger: logging.Logger,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
     error_factory: _ErrorFactory,
     release_memory_fn: Callable[..., None],
     phase_started_fn: Callable[..., float],
@@ -419,7 +498,7 @@ def transcribe_with_profile(
     settings: AppConfig,
     profile_factory: _ProfileFactory,
     logger: logging.Logger,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None = None,
     error_factory: _ErrorFactory,
     passthrough_error_cls: type[Exception],
 ) -> list[TranscriptWord]:
@@ -460,16 +539,8 @@ def extract_transcript(
     *,
     settings: AppConfig,
     profile_factory: _ProfileFactory,
-    transcript_word_factory: _TranscriptWordFactory,
     logger: logging.Logger,
-    emitted_issue_keys: set[tuple[str, str, str]],
     error_factory: _ErrorFactory,
-    terminate_grace_seconds: float,
-    spawn_context_resolver: _ResolveSpawnContext,
-    worker_entry: _WorkerEntry,
-    recv_worker_message_fn: _WorkerMessageReceiver,
-    raise_worker_error_fn: _WorkerErrorRaiser,
-    terminate_worker_process_fn: _WorkerTerminator,
     release_memory_fn: Callable[..., None],
     phase_started_fn: Callable[..., float],
     phase_completed_fn: Callable[..., float | None],
@@ -497,19 +568,11 @@ def extract_transcript(
             run_process_isolated_fn=lambda **kwargs: run_faster_whisper_process_isolated(
                 logger=logger,
                 error_factory=error_factory,
-                terminate_grace_seconds=terminate_grace_seconds,
-                transcript_word_factory=transcript_word_factory,
-                spawn_context_resolver=spawn_context_resolver,
-                worker_entry=worker_entry,
-                recv_worker_message_fn=recv_worker_message_fn,
-                raise_worker_error_fn=raise_worker_error_fn,
-                terminate_worker_process_fn=terminate_worker_process_fn,
                 **kwargs,
             ),
             run_in_process_fn=lambda **kwargs: extract_transcript_in_process(
                 profile_factory=profile_factory,
                 logger=logger,
-                emitted_issue_keys=emitted_issue_keys,
                 error_factory=error_factory,
                 release_memory_fn=release_memory_fn,
                 phase_started_fn=phase_started_fn,

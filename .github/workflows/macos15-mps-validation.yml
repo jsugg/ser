@@ -1,6 +1,24 @@
 name: macOS 15 MPS Validation
 
 on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        default: "3.12"
+        type: string
+      accurate_model_id:
+        required: false
+        default: "openai/whisper-tiny"
+        type: string
+      run_accurate_research:
+        required: false
+        default: false
+        type: boolean
+      accurate_research_model_id:
+        required: false
+        default: "iic/emotion2vec_plus_large"
+        type: string
   workflow_dispatch:
     inputs:
       python_version:
