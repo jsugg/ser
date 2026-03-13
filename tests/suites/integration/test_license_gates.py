@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -20,13 +19,10 @@ from ser.license_check import (
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
-
-@pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None]:
-    """Keeps runtime settings deterministic across tests."""
-    config.reload_settings()
-    yield
-    config.reload_settings()
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.usefixtures("reset_ambient_settings"),
+]
 
 
 def test_unrestricted_backend_allowed_without_restricted_opt_in() -> None:
