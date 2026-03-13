@@ -1,5 +1,7 @@
 """Behavior tests for resilient dataset loading."""
 
+import pickle
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -7,6 +9,7 @@ from typing import cast
 import numpy as np
 import pytest
 
+import ser.config as config
 from ser.config import AppConfig
 from ser.data import data_loader as dl
 from ser.data.manifest import MANIFEST_SCHEMA_VERSION
@@ -16,6 +19,8 @@ def _build_settings(max_failed_file_ratio: float = 0.5) -> SimpleNamespace:
     """Returns a minimal settings object for data-loader tests."""
     return SimpleNamespace(
         emotions={"03": "happy", "04": "sad"},
+        feature_flags=config.FeatureFlags(),
+        audio_read=config.AudioReadConfig(),
         dataset=SimpleNamespace(
             glob_pattern="unused",
             folder=Path("unused"),
@@ -113,11 +118,15 @@ def test_load_data_aborts_when_failure_ratio_exceeds_threshold(
         file: str,
         observed_emotions: set[str],
         emotion_map: dict[str, str],
-        settings: object,
+        *,
+        feature_flags: object | None = None,
+        audio_read_config: object | None = None,
+        settings: object | None = None,
     ) -> dl.ProcessFileResult:
         assert observed_emotions
         assert emotion_map
-        assert settings is not None
+        assert feature_flags is not None or settings is not None
+        assert audio_read_config is not None or settings is not None
         if file == "a.wav":
             return dl.ProcessFileResult(
                 sample=(np.asarray([1.0, 2.0], dtype=np.float64), "happy"),
@@ -149,11 +158,15 @@ def test_load_data_returns_split_for_valid_samples(
         file: str,
         observed_emotions: set[str],
         emotion_map: dict[str, str],
-        settings: object,
+        *,
+        feature_flags: object | None = None,
+        audio_read_config: object | None = None,
+        settings: object | None = None,
     ) -> dl.ProcessFileResult:
         assert observed_emotions
         assert emotion_map
-        assert settings is not None
+        assert feature_flags is not None or settings is not None
+        assert audio_read_config is not None or settings is not None
         return dl.ProcessFileResult(sample=sample_map[file], error=None)
 
     monkeypatch.setattr(dl, "process_file", fake_process_file)
@@ -165,6 +178,20 @@ def test_load_data_returns_split_for_valid_samples(
     assert x_train.shape[1] == 2
     assert x_test.shape[1] == 2
     assert len(y_train) + len(y_test) == 4
+
+
+def test_process_file_worker_partial_is_picklable_with_runtime_settings() -> None:
+    """Runtime settings snapshots should produce a picklable worker partial."""
+    settings = config.reload_settings()
+    process_fn = partial(
+        dl.process_file,
+        observed_emotions=set(settings.emotions.values()),
+        emotion_map=dict(settings.emotions),
+        feature_flags=settings.feature_flags,
+        audio_read_config=settings.audio_read,
+    )
+
+    pickle.dumps(process_fn)
 
 
 def test_load_utterances_prefers_manifest_when_configured(
