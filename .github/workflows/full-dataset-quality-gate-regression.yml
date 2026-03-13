@@ -70,6 +70,12 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-full-gate-
 
+      - name: Bootstrap synthetic RAVDESS dataset for hosted validation
+        run: python ./scripts/build_synthetic_ravdess_dataset.py
+
+      - name: Persist validation dataset consents
+        run: ./scripts/configure_validation_dataset_consents.sh
+
       - name: Run full-dataset quality gate suite (opt-in)
         env:
           SER_FULL_GATE_RUN_TRAINING: ${{ inputs.run_training && 'true' || 'false' }}

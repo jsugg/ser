@@ -125,6 +125,9 @@ jobs:
       - name: Build synthetic RAVDESS smoke dataset
         run: python ./scripts/build_synthetic_ravdess_dataset.py
 
+      - name: Persist validation dataset consents
+        run: ./scripts/configure_validation_dataset_consents.sh --python ${{ inputs.python_version }}
+
       - name: Run MPS-focused runtime policy tests
         run: >
           uv run --python ${{ inputs.python_version }} --extra dev pytest -q
