@@ -183,5 +183,9 @@ reportMissingTypeStubs = "none"
 testpaths = ["tests"]
 addopts = "-ra --strict-config --strict-markers"
 markers = [
+  "unit: narrow owner or helper tests with no multi-module workflow orchestration",
+  "integration: integration tests that cross module or workflow boundaries",
+  "process_isolation: tests covering spawned-process orchestration and contracts",
+  "smoke: fast user-path smoke tests through public workflows",
   "topology_contract: topology, boundary, or architecture behavior tests",
 ]

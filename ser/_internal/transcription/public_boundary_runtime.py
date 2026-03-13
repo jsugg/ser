@@ -50,7 +50,7 @@ def check_adapter_compatibility_from_public_boundary(
     check_adapter_compatibility_impl: Callable[..., CompatibilityReport],
     runtime_request_resolver: _RuntimeRequestResolver,
     adapter_resolver: _AdapterResolver,
-    emitted_issue_keys: set[tuple[str, str, str]],
+    emitted_issue_keys: set[tuple[str, str, str]] | None,
     logger: logging.Logger,
     error_factory: _ErrorFactory,
 ) -> CompatibilityReport:
