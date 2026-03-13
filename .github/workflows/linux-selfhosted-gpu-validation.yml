@@ -103,19 +103,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Configure runtime directories
-        run: |
-          {
-            echo "SER_MAX_WORKERS=1"
-            echo "SER_MODELS_DIR=$RUNNER_TEMP/ser-models"
-            echo "SER_DATA_DIR=$RUNNER_TEMP/ser-data"
-            echo "SER_CACHE_DIR=$RUNNER_TEMP/ser-cache"
-            echo "SER_TRANSCRIPTS_DIR=$RUNNER_TEMP/ser-transcripts"
-          } >> "$GITHUB_ENV"
-          mkdir -p \
-            "$RUNNER_TEMP/ser-models" \
-            "$RUNNER_TEMP/ser-data" \
-            "$RUNNER_TEMP/ser-cache" \
-            "$RUNNER_TEMP/ser-transcripts"
+        run: ./scripts/workflows/configure_runtime_dirs.sh
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -126,12 +114,7 @@ jobs:
         run: python -m pip install --upgrade pip uv
 
       - name: Verify ffmpeg availability on runner
-        run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            echo "ffmpeg is required on self-hosted CUDA runners." >&2
-            exit 1
-          fi
-          ffmpeg -version
+        run: ./scripts/workflows/ensure_ffmpeg.sh --mode required
 
       - name: Cache uv
         uses: actions/cache@v5
@@ -142,27 +125,17 @@ jobs:
             uv-${{ runner.os }}-selfhosted-cuda-py${{ inputs.python_version }}-
 
       - name: Sync validation dependencies
-        run: |
-          sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra medium)
-          if [[ "${{ inputs.run_accurate_research }}" == "true" ]]; then
-            sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra full)
-          fi
-          uv sync "${sync_args[@]}"
+        run: >
+          ./scripts/workflows/sync_validation_dependencies.sh
+          --python ${{ inputs.python_version }}
+          --with-dev
+          ${{ inputs.run_accurate_research && '--accurate-research' || '' }}
 
       - name: Verify CUDA runtime availability
-        run: |
-          uv run --python ${{ inputs.python_version }} python - <<'PY'
-          import importlib
-
-          torch = importlib.import_module("torch")
-          cuda = getattr(torch, "cuda", None)
-          is_available = getattr(cuda, "is_available", None)
-          available = bool(is_available()) if callable(is_available) else False
-          if not available:
-              raise SystemExit("CUDA runtime unavailable on selected self-hosted runner.")
-          device_count = getattr(cuda, "device_count", lambda: "unknown")
-          print(f"cuda_available={available}, cuda_device_count={device_count()}")
-          PY
+        run: >
+          uv run --python ${{ inputs.python_version }} python
+          ./scripts/workflows/check_torch_runtime.py
+          --runtime cuda
 
       - name: Build synthetic RAVDESS smoke dataset
         run: python ./scripts/build_synthetic_ravdess_dataset.py
@@ -179,59 +152,47 @@ jobs:
           tests/suites/integration/test_transcript_extractor.py
 
       - name: Medium profile train and predict (CUDA lane)
-        run: |
-          SER_TORCH_DEVICE=cuda \
-          SER_TORCH_DTYPE=float16 \
-          SER_MODEL_FILE_NAME=ser_model_medium_cuda.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_cuda.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile medium
-
-          SER_TORCH_DEVICE=cuda \
-          SER_TORCH_DTYPE=float16 \
-          SER_MODEL_FILE_NAME=ser_model_medium_cuda.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_cuda.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile medium
+        env:
+          SER_TORCH_DEVICE: cuda
+          SER_TORCH_DTYPE: float16
+          SER_MODEL_FILE_NAME: ser_model_medium_cuda.pkl
+          SER_TRAINING_REPORT_FILE_NAME: training_report_medium_cuda.json
+        run: >
+          ./scripts/workflows/run_profile_smoke.sh
+          --python ${{ inputs.python_version }}
+          --uv-extra medium
+          --profile medium
 
       - name: Accurate profile train and predict (CUDA lane)
-        run: |
-          SER_TORCH_DEVICE=cuda \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
-          WHISPER_MODEL=tiny \
-          WHISPER_DEMUCS=false \
-          WHISPER_VAD=false \
-          SER_MODEL_FILE_NAME=ser_model_accurate_cuda.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_cuda.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile accurate
-
-          SER_TORCH_DEVICE=cuda \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
-          WHISPER_MODEL=tiny \
-          WHISPER_DEMUCS=false \
-          WHISPER_VAD=false \
-          SER_MODEL_FILE_NAME=ser_model_accurate_cuda.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_cuda.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile accurate
+        env:
+          SER_TORCH_DEVICE: cuda
+          SER_TORCH_DTYPE: float16
+          SER_ACCURATE_MODEL_ID: ${{ inputs.accurate_model_id }}
+          WHISPER_MODEL: tiny
+          WHISPER_DEMUCS: "false"
+          WHISPER_VAD: "false"
+          SER_MODEL_FILE_NAME: ser_model_accurate_cuda.pkl
+          SER_TRAINING_REPORT_FILE_NAME: training_report_accurate_cuda.json
+        run: >
+          ./scripts/workflows/run_profile_smoke.sh
+          --python ${{ inputs.python_version }}
+          --uv-extra medium
+          --profile accurate
 
       - name: Accurate-research profile train and predict (optional)
         if: ${{ inputs.run_accurate_research }}
-        run: |
-          SER_ENABLE_RESTRICTED_BACKENDS=true \
-          SER_TORCH_DEVICE=cuda \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
-          SER_MODEL_FILE_NAME=ser_model_accurate_research_cuda.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_cuda.json \
-          uv run --python ${{ inputs.python_version }} --extra full ser --train --profile accurate-research
-
-          SER_ENABLE_RESTRICTED_BACKENDS=true \
-          SER_TORCH_DEVICE=cuda \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
-          SER_MODEL_FILE_NAME=ser_model_accurate_research_cuda.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_cuda.json \
-          uv run --python ${{ inputs.python_version }} --extra full ser --file sample.wav --profile accurate-research
+        env:
+          SER_ENABLE_RESTRICTED_BACKENDS: "true"
+          SER_TORCH_DEVICE: cuda
+          SER_TORCH_DTYPE: float16
+          SER_ACCURATE_RESEARCH_MODEL_ID: ${{ inputs.accurate_research_model_id }}
+          SER_MODEL_FILE_NAME: ser_model_accurate_research_cuda.pkl
+          SER_TRAINING_REPORT_FILE_NAME: training_report_accurate_research_cuda.json
+        run: >
+          ./scripts/workflows/run_profile_smoke.sh
+          --python ${{ inputs.python_version }}
+          --uv-extra full
+          --profile accurate-research
 
       - name: Upload CUDA validation artifacts
         if: always()
@@ -253,19 +214,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Configure runtime directories
-        run: |
-          {
-            echo "SER_MAX_WORKERS=1"
-            echo "SER_MODELS_DIR=$RUNNER_TEMP/ser-models"
-            echo "SER_DATA_DIR=$RUNNER_TEMP/ser-data"
-            echo "SER_CACHE_DIR=$RUNNER_TEMP/ser-cache"
-            echo "SER_TRANSCRIPTS_DIR=$RUNNER_TEMP/ser-transcripts"
-          } >> "$GITHUB_ENV"
-          mkdir -p \
-            "$RUNNER_TEMP/ser-models" \
-            "$RUNNER_TEMP/ser-data" \
-            "$RUNNER_TEMP/ser-cache" \
-            "$RUNNER_TEMP/ser-transcripts"
+        run: ./scripts/workflows/configure_runtime_dirs.sh
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -276,12 +225,7 @@ jobs:
         run: python -m pip install --upgrade pip uv
 
       - name: Verify ffmpeg availability on runner
-        run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            echo "ffmpeg is required on self-hosted XPU runners." >&2
-            exit 1
-          fi
-          ffmpeg -version
+        run: ./scripts/workflows/ensure_ffmpeg.sh --mode required
 
       - name: Cache uv
         uses: actions/cache@v5
@@ -292,26 +236,17 @@ jobs:
             uv-${{ runner.os }}-selfhosted-xpu-py${{ inputs.python_version }}-
 
       - name: Sync validation dependencies
-        run: |
-          sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra medium)
-          if [[ "${{ inputs.run_accurate_research }}" == "true" ]]; then
-            sync_args=(--frozen --python "${{ inputs.python_version }}" --extra dev --extra full)
-          fi
-          uv sync "${sync_args[@]}"
+        run: >
+          ./scripts/workflows/sync_validation_dependencies.sh
+          --python ${{ inputs.python_version }}
+          --with-dev
+          ${{ inputs.run_accurate_research && '--accurate-research' || '' }}
 
       - name: Verify XPU runtime availability
-        run: |
-          uv run --python ${{ inputs.python_version }} python - <<'PY'
-          import importlib
-
-          torch = importlib.import_module("torch")
-          xpu = getattr(torch, "xpu", None)
-          is_available = getattr(xpu, "is_available", None)
-          available = bool(is_available()) if callable(is_available) else False
-          if not available:
-              raise SystemExit("XPU runtime unavailable on selected self-hosted runner.")
-          print(f"xpu_available={available}")
-          PY
+        run: >
+          uv run --python ${{ inputs.python_version }} python
+          ./scripts/workflows/check_torch_runtime.py
+          --runtime xpu
 
       - name: Build synthetic RAVDESS smoke dataset
         run: python ./scripts/build_synthetic_ravdess_dataset.py
@@ -326,59 +261,47 @@ jobs:
           tests/test_accurate_research_inference.py
 
       - name: Medium profile train and predict (XPU lane)
-        run: |
-          SER_TORCH_DEVICE=xpu \
-          SER_TORCH_DTYPE=float16 \
-          SER_MODEL_FILE_NAME=ser_model_medium_xpu.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_xpu.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile medium
-
-          SER_TORCH_DEVICE=xpu \
-          SER_TORCH_DTYPE=float16 \
-          SER_MODEL_FILE_NAME=ser_model_medium_xpu.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_medium_xpu.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile medium
+        env:
+          SER_TORCH_DEVICE: xpu
+          SER_TORCH_DTYPE: float16
+          SER_MODEL_FILE_NAME: ser_model_medium_xpu.pkl
+          SER_TRAINING_REPORT_FILE_NAME: training_report_medium_xpu.json
+        run: >
+          ./scripts/workflows/run_profile_smoke.sh
+          --python ${{ inputs.python_version }}
+          --uv-extra medium
+          --profile medium
 
       - name: Accurate profile train and predict (XPU lane)
-        run: |
-          SER_TORCH_DEVICE=xpu \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
-          WHISPER_MODEL=tiny \
-          WHISPER_DEMUCS=false \
-          WHISPER_VAD=false \
-          SER_MODEL_FILE_NAME=ser_model_accurate_xpu.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_xpu.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile accurate
-
-          SER_TORCH_DEVICE=xpu \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
-          WHISPER_MODEL=tiny \
-          WHISPER_DEMUCS=false \
-          WHISPER_VAD=false \
-          SER_MODEL_FILE_NAME=ser_model_accurate_xpu.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_xpu.json \
-          uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile accurate
+        env:
+          SER_TORCH_DEVICE: xpu
+          SER_TORCH_DTYPE: float16
+          SER_ACCURATE_MODEL_ID: ${{ inputs.accurate_model_id }}
+          WHISPER_MODEL: tiny
+          WHISPER_DEMUCS: "false"
+          WHISPER_VAD: "false"
+          SER_MODEL_FILE_NAME: ser_model_accurate_xpu.pkl
+          SER_TRAINING_REPORT_FILE_NAME: training_report_accurate_xpu.json
+        run: >
+          ./scripts/workflows/run_profile_smoke.sh
+          --python ${{ inputs.python_version }}
+          --uv-extra medium
+          --profile accurate
 
       - name: Accurate-research profile train and predict (optional)
         if: ${{ inputs.run_accurate_research }}
-        run: |
-          SER_ENABLE_RESTRICTED_BACKENDS=true \
-          SER_TORCH_DEVICE=xpu \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
-          SER_MODEL_FILE_NAME=ser_model_accurate_research_xpu.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_xpu.json \
-          uv run --python ${{ inputs.python_version }} --extra full ser --train --profile accurate-research
-
-          SER_ENABLE_RESTRICTED_BACKENDS=true \
-          SER_TORCH_DEVICE=xpu \
-          SER_TORCH_DTYPE=float16 \
-          SER_ACCURATE_RESEARCH_MODEL_ID=${{ inputs.accurate_research_model_id }} \
-          SER_MODEL_FILE_NAME=ser_model_accurate_research_xpu.pkl \
-          SER_TRAINING_REPORT_FILE_NAME=training_report_accurate_research_xpu.json \
-          uv run --python ${{ inputs.python_version }} --extra full ser --file sample.wav --profile accurate-research
+        env:
+          SER_ENABLE_RESTRICTED_BACKENDS: "true"
+          SER_TORCH_DEVICE: xpu
+          SER_TORCH_DTYPE: float16
+          SER_ACCURATE_RESEARCH_MODEL_ID: ${{ inputs.accurate_research_model_id }}
+          SER_MODEL_FILE_NAME: ser_model_accurate_research_xpu.pkl
+          SER_TRAINING_REPORT_FILE_NAME: training_report_accurate_research_xpu.json
+        run: >
+          ./scripts/workflows/run_profile_smoke.sh
+          --python ${{ inputs.python_version }}
+          --uv-extra full
+          --profile accurate-research
 
       - name: Upload XPU validation artifacts
         if: always()
