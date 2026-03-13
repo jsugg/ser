@@ -1,6 +1,5 @@
 """Tests for typed configuration loading and environment refresh."""
 
-from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -9,13 +8,10 @@ import ser.config as config
 from ser._internal.config import bootstrap
 from ser._internal.config.settings_inputs import ResolvedSettingsInputs
 
-
-@pytest.fixture(autouse=True)
-def _reset_settings() -> Generator[None, None, None]:
-    """Keeps global settings stable across tests."""
-    config.reload_settings()
-    yield
-    config.reload_settings()
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.usefixtures("reset_ambient_settings"),
+]
 
 
 def test_reload_settings_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:
