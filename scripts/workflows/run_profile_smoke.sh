@@ -59,10 +59,11 @@ uv_run_args=()
 if [[ -n "$python_version" ]]; then
   uv_run_args+=(--python "$python_version")
 fi
-for extra in "${uv_extras[@]}"; do
-  uv_run_args+=(--extra "$extra")
-done
+if [[ ${#uv_extras[@]} -gt 0 ]]; then
+  for extra in "${uv_extras[@]}"; do
+    uv_run_args+=(--extra "$extra")
+  done
+fi
 
 uv run "${uv_run_args[@]}" ser --train --profile "$profile"
 uv run "${uv_run_args[@]}" ser --file "$sample_file" --profile "$profile"
-
