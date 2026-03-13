@@ -65,5 +65,13 @@ if [[ ${#uv_extras[@]} -gt 0 ]]; then
   done
 fi
 
-uv run "${uv_run_args[@]}" ser --train --profile "$profile"
-uv run "${uv_run_args[@]}" ser --file "$sample_file" --profile "$profile"
+run_uv() {
+  if [[ ${#uv_run_args[@]} -gt 0 ]]; then
+    uv run "${uv_run_args[@]}" "$@"
+    return 0
+  fi
+  uv run "$@"
+}
+
+run_uv ser --train --profile "$profile"
+run_uv ser --file "$sample_file" --profile "$profile"
