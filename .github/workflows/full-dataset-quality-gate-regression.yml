@@ -19,6 +19,10 @@ on:
         required: false
         default: "120"
         type: string
+      require_pass:
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       run_training:
@@ -41,6 +45,11 @@ on:
         required: true
         default: "120"
         type: string
+      require_pass:
+        description: "Fail the workflow when the synthetic hosted regression misses quality thresholds."
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -172,6 +181,7 @@ jobs:
       - name: Run full-dataset quality gate suite (opt-in)
         env:
           SER_FULL_GATE_RUN_TRAINING: "false"
+          SER_FULL_GATE_REQUIRE_PASS: ${{ inputs.require_pass && 'true' || 'false' }}
           SER_FULL_GATE_DATASET_GLOB: ${{ inputs.dataset_glob }}
           SER_FULL_GATE_REPORT_PATH: ${{ inputs.out_file }}
           SER_FULL_GATE_PROGRESS_EVERY: ${{ inputs.progress_every }}
