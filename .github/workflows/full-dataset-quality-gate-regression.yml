@@ -59,6 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
+      SER_MAX_WORKERS: "1"
       SER_MODELS_DIR: ${{ github.workspace }}/.ser-models
       FAST_MODEL_FILE_NAME: ser_model_fast_full.pkl
       FAST_TRAINING_REPORT_FILE_NAME: training_report_fast_full.json
@@ -137,6 +138,7 @@ jobs:
     needs:
       - train_full_dataset_quality_gate_artifacts
     env:
+      SER_MAX_WORKERS: "1"
       SER_MODELS_DIR: ${{ github.workspace }}/.ser-models
       FAST_MODEL_FILE_NAME: ser_model_fast_full.pkl
       FAST_TRAINING_REPORT_FILE_NAME: training_report_fast_full.json
