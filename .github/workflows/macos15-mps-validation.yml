@@ -143,12 +143,20 @@ jobs:
         run: |
           SER_TORCH_DEVICE=auto \
           SER_TORCH_DTYPE=auto \
+          WHISPER_BACKEND=faster_whisper \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
           SER_MODEL_FILE_NAME=ser_model_medium_macos15_mps.pkl \
           SER_TRAINING_REPORT_FILE_NAME=training_report_medium_macos15_mps.json \
           uv run --python ${{ inputs.python_version }} --extra medium ser --train --profile medium
 
           SER_TORCH_DEVICE=auto \
           SER_TORCH_DTYPE=auto \
+          WHISPER_BACKEND=faster_whisper \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
           SER_MODEL_FILE_NAME=ser_model_medium_macos15_mps.pkl \
           SER_TRAINING_REPORT_FILE_NAME=training_report_medium_macos15_mps.json \
           uv run --python ${{ inputs.python_version }} --extra medium ser --file sample.wav --profile medium
@@ -157,6 +165,7 @@ jobs:
         run: |
           SER_TORCH_DEVICE=auto \
           SER_TORCH_DTYPE=auto \
+          WHISPER_BACKEND=faster_whisper \
           SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
           WHISPER_MODEL=tiny \
           WHISPER_DEMUCS=false \
@@ -167,6 +176,7 @@ jobs:
 
           SER_TORCH_DEVICE=auto \
           SER_TORCH_DTYPE=auto \
+          WHISPER_BACKEND=faster_whisper \
           SER_ACCURATE_MODEL_ID=${{ inputs.accurate_model_id }} \
           WHISPER_MODEL=tiny \
           WHISPER_DEMUCS=false \

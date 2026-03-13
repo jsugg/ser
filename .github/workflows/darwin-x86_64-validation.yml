@@ -72,12 +72,20 @@ jobs:
         run: |
           SER_ENABLE_PROFILE_PIPELINE=true \
           SER_ENABLE_MEDIUM_PROFILE=true \
+          WHISPER_BACKEND=faster_whisper \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
           SER_MODEL_FILE_NAME=ser_model_medium_darwin_x86_64.pkl \
           SER_TRAINING_REPORT_FILE_NAME=training_report_medium_darwin_x86_64.json \
           uv run --extra medium ser --train
 
           SER_ENABLE_PROFILE_PIPELINE=true \
           SER_ENABLE_MEDIUM_PROFILE=true \
+          WHISPER_BACKEND=faster_whisper \
+          WHISPER_MODEL=tiny \
+          WHISPER_DEMUCS=false \
+          WHISPER_VAD=false \
           SER_MODEL_FILE_NAME=ser_model_medium_darwin_x86_64.pkl \
           SER_TRAINING_REPORT_FILE_NAME=training_report_medium_darwin_x86_64.json \
           uv run --extra medium ser --file sample.wav
@@ -86,6 +94,7 @@ jobs:
         run: |
           SER_ENABLE_PROFILE_PIPELINE=true \
           SER_ENABLE_ACCURATE_PROFILE=true \
+          WHISPER_BACKEND=faster_whisper \
           SER_ACCURATE_MODEL_ID=openai/whisper-tiny \
           WHISPER_MODEL=tiny \
           WHISPER_DEMUCS=false \
@@ -96,6 +105,7 @@ jobs:
 
           SER_ENABLE_PROFILE_PIPELINE=true \
           SER_ENABLE_ACCURATE_PROFILE=true \
+          WHISPER_BACKEND=faster_whisper \
           SER_ACCURATE_MODEL_ID=openai/whisper-tiny \
           WHISPER_MODEL=tiny \
           WHISPER_DEMUCS=false \
