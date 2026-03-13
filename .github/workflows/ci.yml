@@ -214,18 +214,4 @@ jobs:
           twine check dist/*
 
       - name: Smoke-test wheel installation
-        run: |
-          python -m venv .pkg-smoke
-          . .pkg-smoke/bin/activate
-          python -m pip install --upgrade pip
-          pip install --no-deps dist/*.whl
-          tmp_dir="$(mktemp -d)"
-          cd "$tmp_dir"
-          python - <<'PY'
-          import importlib.metadata as md
-          import ser
-
-          print(f"Installed ser version: {md.version('ser')}")
-          print(f"Imported from: {ser.__file__}")
-          print(f"Exports: {', '.join(ser.__all__)}")
-          PY
+        run: ./scripts/workflows/smoke_test_wheel_install.sh
