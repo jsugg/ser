@@ -92,8 +92,8 @@ jobs:
       - name: Persist validation dataset consents
         run: ./scripts/configure_validation_dataset_consents.sh
 
-      - name: Prepare artifact workspace
-        run: mkdir -p "${SER_MODELS_DIR}"
+      - name: Configure runtime directories
+        run: ./scripts/workflows/configure_runtime_dirs.sh --models-dir "${SER_MODELS_DIR}"
 
       - name: Require training artifacts on hosted runners
         if: ${{ !inputs.run_training }}
@@ -171,8 +171,8 @@ jobs:
       - name: Persist validation dataset consents
         run: ./scripts/configure_validation_dataset_consents.sh
 
-      - name: Prepare artifact workspace
-        run: mkdir -p "${SER_MODELS_DIR}"
+      - name: Configure runtime directories
+        run: ./scripts/workflows/configure_runtime_dirs.sh --models-dir "${SER_MODELS_DIR}"
 
       - name: Download full-gate training artifacts
         uses: actions/download-artifact@v4
