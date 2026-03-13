@@ -137,13 +137,70 @@ def test_move_model_to_mps_with_alignment_placeholder_rolls_back_to_cpu_on_failu
     assert model.alignment_heads.device.type == "cpu"
 
 
+def test_is_mps_log_mel_compatibility_error_detects_fft_gap() -> None:
+    """MPS FFT operator gaps should trigger CPU log-mel offload."""
+    err = NotImplementedError(
+        "The operator 'aten::_fft_r2c' is not currently implemented for the MPS device."
+    )
+
+    assert mps_compat._is_mps_log_mel_compatibility_error(err) is True
+
+
+def test_is_mps_log_mel_compatibility_error_detects_complex_dtype_gap() -> None:
+    """Complex dtype materialization failures should trigger CPU log-mel offload."""
+    err = TypeError(
+        "Trying to convert ComplexFloat to the MPS backend but it does not have support for that dtype."
+    )
+
+    assert mps_compat._is_mps_log_mel_compatibility_error(err) is True
+
+
+def test_resolve_mps_log_mel_compatibility_decision_enables_cpu_offload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Detected MPS log-mel frontend gaps should enable the CPU offload patch."""
+    mps_compat._resolve_mps_log_mel_compatibility_decision.cache_clear()
+    monkeypatch.setattr(mps_compat, "_mps_backend_available", lambda: True)
+    monkeypatch.setattr(
+        mps_compat,
+        "_probe_mps_log_mel_frontend",
+        lambda: (_ for _ in ()).throw(
+            NotImplementedError(
+                "The operator 'aten::_fft_r2c' is not currently implemented for the MPS device."
+            )
+        ),
+    )
+
+    decision = mps_compat._resolve_mps_log_mel_compatibility_decision()
+
+    assert decision.enable_cpu_offload is True
+    assert decision.reason_code == "mps_log_mel_frontend_cpu_offload_required"
+
+
+def test_resolve_mps_log_mel_compatibility_decision_skips_patch_when_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Healthy MPS log-mel frontends should keep the patch disabled."""
+    mps_compat._resolve_mps_log_mel_compatibility_decision.cache_clear()
+    monkeypatch.setattr(mps_compat, "_mps_backend_available", lambda: True)
+    monkeypatch.setattr(mps_compat, "_probe_mps_log_mel_frontend", lambda: None)
+
+    decision = mps_compat._resolve_mps_log_mel_compatibility_decision()
+
+    assert decision.enable_cpu_offload is False
+    assert decision.reason_code == "mps_log_mel_frontend_supported"
+
+
 def test_mps_timing_compatibility_context_patches_and_restores_aliases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Context should patch DTW/std_mean/_compute_qks aliases and restore on exit."""
+    """Context should patch MPS compatibility aliases and restore them on exit."""
 
     def _original_compute_qks(*_args: object, **_kwargs: object) -> None:
         return None
+
+    def _original_log_mel(*_args: object, **_kwargs: object) -> torch.Tensor:
+        return torch.ones((80, 8), dtype=torch.float32)
 
     @contextmanager
     def _disable_sdpa() -> Any:
@@ -156,7 +213,10 @@ def test_mps_timing_compatibility_context_patches_and_restores_aliases(
     fake_compat = SimpleNamespace(
         dtw=lambda _x: "compat_original",
         disable_sdpa=_disable_sdpa,
+        log_mel_spectrogram=_original_log_mel,
     )
+    fake_original_whisper = SimpleNamespace(log_mel_spectrogram=_original_log_mel)
+    fake_whisper_audio = SimpleNamespace(log_mel_spectrogram=_original_log_mel)
     fake_whisper_timing = SimpleNamespace(dtw_cpu=lambda x: ("cpu", x))
 
     def _fake_import_module(name: str) -> object:
@@ -164,19 +224,39 @@ def test_mps_timing_compatibility_context_patches_and_restores_aliases(
             return fake_timing
         if name == "stable_whisper.whisper_compatibility":
             return fake_compat
+        if name == "stable_whisper.whisper_word_level.original_whisper":
+            return fake_original_whisper
+        if name == "whisper.audio":
+            return fake_whisper_audio
         if name == "whisper.timing":
             return fake_whisper_timing
         raise ModuleNotFoundError(name)
 
     monkeypatch.setattr(mps_compat.importlib, "import_module", _fake_import_module)
+    monkeypatch.setattr(
+        mps_compat,
+        "_resolve_mps_log_mel_compatibility_decision",
+        lambda: mps_compat._MpsLogMelCompatibilityDecision(
+            enable_cpu_offload=True,
+            reason_code="mps_log_mel_frontend_cpu_offload_required",
+            python_version="3.12.8",
+            torch_version="2.2.2",
+        ),
+    )
     original_std_mean = torch.std_mean
     original_compute_qks = fake_timing._compute_qks
+    original_compat_log_mel = fake_compat.log_mel_spectrogram
+    original_original_whisper_log_mel = fake_original_whisper.log_mel_spectrogram
+    original_whisper_audio_log_mel = fake_whisper_audio.log_mel_spectrogram
 
     with mps_compat.stable_whisper_mps_timing_compatibility_context():
         assert fake_timing.dtw is not None
         assert fake_timing.dtw is fake_compat.dtw
         assert torch.std_mean is not original_std_mean
         assert fake_timing._compute_qks is not original_compute_qks
+        assert fake_compat.log_mel_spectrogram is not original_compat_log_mel
+        assert fake_original_whisper.log_mel_spectrogram is not original_original_whisper_log_mel
+        assert fake_whisper_audio.log_mel_spectrogram is not original_whisper_audio_log_mel
         dtw_result = cast(object, fake_timing.dtw(torch.tensor([1.0])))
         assert isinstance(dtw_result, tuple)
         assert dtw_result[0] == "cpu"
@@ -185,6 +265,9 @@ def test_mps_timing_compatibility_context_patches_and_restores_aliases(
     assert fake_compat.dtw(torch.tensor([1.0])) == "compat_original"
     assert torch.std_mean is original_std_mean
     assert fake_timing._compute_qks is original_compute_qks
+    assert fake_compat.log_mel_spectrogram is original_compat_log_mel
+    assert fake_original_whisper.log_mel_spectrogram is original_original_whisper_log_mel
+    assert fake_whisper_audio.log_mel_spectrogram is original_whisper_audio_log_mel
 
 
 def test_mps_timing_compatibility_context_offloads_compute_qks_to_cpu(
@@ -219,6 +302,13 @@ def test_mps_timing_compatibility_context_offloads_compute_qks_to_cpu(
     fake_compat = SimpleNamespace(
         dtw=lambda _x: "compat_original",
         disable_sdpa=_disable_sdpa,
+        log_mel_spectrogram=lambda *_args, **_kwargs: torch.ones((80, 8), dtype=torch.float32),
+    )
+    fake_original_whisper = SimpleNamespace(
+        log_mel_spectrogram=lambda *_args, **_kwargs: torch.ones((80, 8), dtype=torch.float32)
+    )
+    fake_whisper_audio = SimpleNamespace(
+        log_mel_spectrogram=lambda *_args, **_kwargs: torch.ones((80, 8), dtype=torch.float32)
     )
     fake_whisper_timing = SimpleNamespace(dtw_cpu=lambda x: ("cpu", x))
 
@@ -227,6 +317,10 @@ def test_mps_timing_compatibility_context_offloads_compute_qks_to_cpu(
             return fake_timing
         if name == "stable_whisper.whisper_compatibility":
             return fake_compat
+        if name == "stable_whisper.whisper_word_level.original_whisper":
+            return fake_original_whisper
+        if name == "whisper.audio":
+            return fake_whisper_audio
         if name == "whisper.timing":
             return fake_whisper_timing
         raise ModuleNotFoundError(name)

@@ -1,6 +1,24 @@
 name: Full-Dataset Quality Gate Regression
 
 on:
+  workflow_call:
+    inputs:
+      run_training:
+        required: false
+        default: true
+        type: boolean
+      dataset_glob:
+        required: false
+        default: "ser/dataset/ravdess/Actor_*/*.wav"
+        type: string
+      out_file:
+        required: false
+        default: "profile_quality_gate_report_full.json"
+        type: string
+      progress_every:
+        required: false
+        default: "120"
+        type: string
   workflow_dispatch:
     inputs:
       run_training:

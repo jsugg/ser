@@ -135,15 +135,11 @@ jobs:
       - name: Run tests
         run: uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q
 
-      - name: Enforce Python 3.13 medium contract checks
+      - name: Enforce Python 3.13 organized workflow suites
         if: matrix.python-version == '3.13'
         run: >
           uv run --frozen --python ${{ matrix.python-version }} --extra dev --extra medium pytest -q
-          tests/test_medium_inference.py
-          tests/test_medium_timeout_and_fallback.py
-          tests/test_backend_hooks.py
-          tests/test_runtime_registry.py
-          tests/test_runtime_pipeline.py
+          tests/suites
 
   contract-gates:
     runs-on: ubuntu-latest
@@ -172,6 +168,12 @@ jobs:
 
       - name: Enforce API import boundary lint gate
         run: make import-lint
+
+      - name: Enforce organized smoke and process-isolation suites
+        run: >
+          uv run --frozen --python 3.12 --extra dev pytest -q
+          tests/suites
+          -m "smoke or process_isolation"
 
       - name: Enforce transcription benchmark contract gate
         run: >

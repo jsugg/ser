@@ -1,6 +1,40 @@
 name: Linux Self-Hosted GPU Validation
 
 on:
+  workflow_call:
+    inputs:
+      python_version:
+        required: false
+        default: "3.12"
+        type: string
+      run_cuda:
+        required: false
+        default: true
+        type: boolean
+      run_xpu:
+        required: false
+        default: false
+        type: boolean
+      cuda_runner_labels_json:
+        required: false
+        default: '["self-hosted","linux","x64","cuda"]'
+        type: string
+      xpu_runner_labels_json:
+        required: false
+        default: '["self-hosted","linux","x64","xpu"]'
+        type: string
+      accurate_model_id:
+        required: false
+        default: "openai/whisper-tiny"
+        type: string
+      run_accurate_research:
+        required: false
+        default: false
+        type: boolean
+      accurate_research_model_id:
+        required: false
+        default: "iic/emotion2vec_plus_large"
+        type: string
   workflow_dispatch:
     inputs:
       python_version:
@@ -139,7 +173,7 @@ jobs:
           tests/test_torch_inference.py
           tests/test_feature_runtime_policy.py
           tests/test_transcription_runtime_policy.py
-          tests/test_transcript_extractor.py
+          tests/suites/integration/test_transcript_extractor.py
 
       - name: Medium profile train and predict (CUDA lane)
         run: |

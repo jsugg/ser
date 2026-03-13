@@ -3,20 +3,57 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any, Protocol, TypeVar, cast
+from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
+from typing import Any, Literal, Protocol, TypeVar, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.process_timeout import (
+    run_with_process_timeout as _run_with_process_timeout_impl,
+)
+from ser._internal.runtime.single_flight import SingleFlightRegistry
+from ser._internal.runtime.worker_bindings import (
+    is_setup_complete_message as _is_setup_complete_message_binding,
+)
+from ser._internal.runtime.worker_bindings import (
+    parse_worker_completion_message as _parse_worker_completion_message_binding,
+)
+from ser._internal.runtime.worker_bindings import raise_worker_error as _raise_worker_error_binding
+from ser._internal.runtime.worker_bindings import (
+    recv_worker_message as _recv_worker_message_binding,
+)
+from ser._internal.runtime.worker_bindings import run_worker_entry as _run_worker_entry_binding
+from ser._internal.runtime.worker_bindings import (
+    terminate_worker_process as _terminate_worker_process_binding,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    is_setup_complete_message as _is_setup_complete_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import (
+    parse_worker_completion_message as _parse_worker_completion_message_impl,
+)
+from ser._internal.runtime.worker_lifecycle import raise_worker_error as _raise_worker_error_impl
+from ser._internal.runtime.worker_lifecycle import recv_worker_message as _recv_worker_message_impl
+from ser._internal.runtime.worker_lifecycle import (
+    run_process_setup_compute_handshake as _run_process_setup_compute_handshake_impl,
+)
+from ser._internal.runtime.worker_lifecycle import run_with_timeout as _run_with_timeout_impl
+from ser._internal.runtime.worker_lifecycle import (
+    terminate_worker_process as _terminate_worker_process_impl,
+)
 from ser.config import AppConfig, ProfileRuntimeConfig
+from ser.models.emotion_model import load_model
 from ser.models.profile_runtime import (
     resolve_accurate_model_id,
     resolve_accurate_research_model_id,
 )
-from ser.repr import FeatureBackend
+from ser.repr import Emotion2VecBackend, FeatureBackend, WhisperBackend
 from ser.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.runtime import mps_oom as mps_oom_helpers
 from ser.runtime.accurate_backend_runtime import (
@@ -63,6 +100,9 @@ from ser.runtime.accurate_runtime_support import (
     build_cpu_settings_snapshot as _build_cpu_settings_snapshot_impl,
 )
 from ser.runtime.accurate_runtime_support import (
+    build_process_settings_snapshot as _build_process_settings_snapshot_impl,
+)
+from ser.runtime.accurate_runtime_support import (
     encode_accurate_sequence as _encode_accurate_sequence_impl,
 )
 from ser.runtime.accurate_runtime_support import (
@@ -76,6 +116,11 @@ from ser.runtime.accurate_worker_operation import (
 from ser.runtime.accurate_worker_operation import (
     finalize_in_process_setup as _finalize_in_process_setup_impl,
 )
+from ser.runtime.accurate_worker_operation import prepare_retry_state as _prepare_retry_state_impl
+from ser.runtime.accurate_worker_operation import (
+    run_inference_operation as _run_inference_operation_impl,
+)
+from ser.runtime.contracts import InferenceRequest
 from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
 from ser.runtime.phase_timing import (
     log_phase_completed,
@@ -87,6 +132,7 @@ from ser.runtime.retry_primitives import (
     jittered_retry_delay_seconds as _jittered_retry_delay_seconds_impl,
 )
 from ser.runtime.schema import InferenceResult
+from ser.utils.audio_utils import read_audio_file
 
 
 class _AccurateLoadedModel(ArtifactMetadataCarrier, _AccurateLoadedModelLike, Protocol):
@@ -95,6 +141,118 @@ class _AccurateLoadedModel(ArtifactMetadataCarrier, _AccurateLoadedModelLike, Pr
 
 _AccurateLoadedModelT = TypeVar("_AccurateLoadedModelT", bound=_AccurateLoadedModel)
 _AccuratePayloadT = TypeVar("_AccuratePayloadT", bound=_AccuratePayloadLike)
+
+type WorkerPhaseMessage = tuple[Literal["phase"], Literal["setup_complete"]]
+type WorkerSuccessMessage = tuple[Literal["ok"], InferenceResult]
+type WorkerErrorMessage = tuple[Literal["err"], str, str]
+type WorkerMessage = WorkerPhaseMessage | WorkerSuccessMessage | WorkerErrorMessage
+
+_TERMINATE_GRACE_SECONDS = 0.5
+_KILL_GRACE_SECONDS = 0.5
+_SINGLE_FLIGHT_REGISTRY = SingleFlightRegistry()
+_WORKER_LOGGER = logging.getLogger("ser.runtime.accurate_inference")
+
+
+@dataclass(frozen=True)
+class AccurateProcessPayload:
+    """Serializable payload for one process-isolated accurate inference attempt."""
+
+    request: InferenceRequest
+    settings: AppConfig
+    expected_backend_id: str
+    expected_profile: str
+    expected_backend_model_id: str | None
+
+
+class AccurateModelUnavailableError(FileNotFoundError):
+    """Spawn-safe accurate worker error marker for unavailable model artifacts."""
+
+
+class AccurateRuntimeDependencyError(RuntimeError):
+    """Spawn-safe accurate worker error marker for missing runtime dependencies."""
+
+
+class AccurateModelLoadError(RuntimeError):
+    """Spawn-safe accurate worker error marker for model load failures."""
+
+
+class AccurateTransientBackendError(RuntimeError):
+    """Spawn-safe accurate worker error marker for transient backend failures."""
+
+
+def _build_backend_for_worker_profile(
+    *,
+    expected_backend_id: str,
+    expected_backend_model_id: str | None,
+    settings: AppConfig,
+) -> FeatureBackend:
+    """Builds one accurate worker backend with spawn-safe error types."""
+    return build_backend_for_profile(
+        expected_backend_id=expected_backend_id,
+        expected_backend_model_id=expected_backend_model_id,
+        settings=settings,
+        whisper_backend_factory=WhisperBackend,
+        emotion2vec_backend_factory=Emotion2VecBackend,
+        unsupported_backend_error=AccurateModelUnavailableError,
+    )
+
+
+def _prepare_accurate_process_operation(
+    payload: AccurateProcessPayload,
+) -> PreparedAccurateOperation[_AccurateLoadedModel, FeatureBackend]:
+    """Builds one accurate worker operation using module-level collaborators."""
+    return prepare_process_operation(
+        payload,
+        load_model_fn=load_model,
+        read_audio_file_fn=read_audio_file,
+        build_backend_for_profile_fn=_build_backend_for_worker_profile,
+        logger=_WORKER_LOGGER,
+        model_unavailable_error_factory=AccurateModelUnavailableError,
+        model_load_error_factory=AccurateModelLoadError,
+        runtime_dependency_error_factory=AccurateRuntimeDependencyError,
+        transient_error_factory=AccurateTransientBackendError,
+    )
+
+
+def _run_accurate_process_inference_once(
+    *,
+    loaded_model: _AccurateLoadedModel,
+    backend: FeatureBackend,
+    audio: NDArray[np.float32],
+    sample_rate: int,
+    runtime_config: ProfileRuntimeConfig,
+) -> InferenceResult:
+    """Runs one accurate worker-process inference attempt."""
+    return run_accurate_inference_once(
+        loaded_model=loaded_model,
+        backend=backend,
+        audio=audio,
+        sample_rate=sample_rate,
+        runtime_config=runtime_config,
+        logger=_WORKER_LOGGER,
+        dependency_error_factory=AccurateRuntimeDependencyError,
+        transient_error_factory=AccurateTransientBackendError,
+    )
+
+
+def _run_accurate_process_operation(
+    prepared: PreparedAccurateOperation[_AccurateLoadedModel, FeatureBackend],
+) -> InferenceResult:
+    """Runs one accurate compute phase inside the spawned worker process."""
+    return run_process_operation(
+        prepared,
+        run_accurate_inference_once=_run_accurate_process_inference_once,
+    )
+
+
+def _accurate_worker_entry(payload: AccurateProcessPayload, connection: Connection) -> None:
+    """Executes one spawned accurate worker using module-level collaborators only."""
+    _run_worker_entry_binding(
+        payload=payload,
+        connection=connection,
+        prepare_process_operation=_prepare_accurate_process_operation,
+        run_process_operation=_run_accurate_process_operation,
+    )
 
 
 def run_accurate_inference_once(
@@ -133,6 +291,266 @@ def run_accurate_inference_once(
             )
         ),
     )
+
+
+def run_accurate_inference_from_public_boundary(
+    request: InferenceRequest,
+    settings: AppConfig,
+    *,
+    loaded_model: _AccurateLoadedModel | None = None,
+    backend: FeatureBackend | None = None,
+    enforce_timeout: bool = True,
+    allow_retries: bool = True,
+    expected_backend_id: str = "hf_whisper",
+    expected_profile: str = "accurate",
+    expected_backend_model_id: str | None = None,
+    logger: logging.Logger,
+    model_unavailable_error_type: type[Exception],
+    runtime_dependency_error_type: type[Exception],
+    model_load_error_type: type[Exception],
+    timeout_error_type: type[Exception],
+    inference_execution_error_type: type[Exception],
+    transient_backend_error_type: type[Exception],
+) -> InferenceResult:
+    """Runs accurate inference through the internal public-boundary owner."""
+
+    worker_error_factories: dict[str, Callable[[str], Exception]] = {
+        "ValueError": ValueError,
+        runtime_dependency_error_type.__name__: runtime_dependency_error_type,
+        transient_backend_error_type.__name__: transient_backend_error_type,
+        model_unavailable_error_type.__name__: model_unavailable_error_type,
+        model_load_error_type.__name__: model_load_error_type,
+        timeout_error_type.__name__: timeout_error_type,
+        "RuntimeError": RuntimeError,
+    }
+
+    def _run_with_process_timeout(
+        payload: AccurateProcessPayload,
+        *,
+        timeout_seconds: float,
+    ) -> InferenceResult:
+        return _run_with_process_timeout_impl(
+            payload=payload,
+            resolve_profile=lambda active_payload: active_payload.expected_profile,
+            timeout_seconds=timeout_seconds,
+            get_context=mp.get_context,
+            logger=logger,
+            setup_phase_name=PHASE_EMOTION_SETUP,
+            inference_phase_name=PHASE_EMOTION_INFERENCE,
+            log_phase_started=log_phase_started,
+            log_phase_completed=log_phase_completed,
+            log_phase_failed=log_phase_failed,
+            run_process_setup_compute_handshake=_run_process_setup_compute_handshake_impl,
+            worker_target=_accurate_worker_entry,
+            recv_worker_message=_recv_worker_message,
+            is_setup_complete_message=_is_setup_complete_message,
+            terminate_worker_process=_terminate_worker_process,
+            timeout_error_factory=timeout_error_type,
+            execution_error_factory=inference_execution_error_type,
+            worker_label="Accurate inference",
+            process_join_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            parse_worker_completion_message=_parse_worker_completion_message,
+        )
+
+    def _recv_worker_message(
+        connection: Connection,
+        *,
+        stage: str,
+    ) -> WorkerMessage:
+        return _recv_worker_message_binding(
+            connection=connection,
+            stage=stage,
+            impl=_recv_worker_message_impl,
+            worker_label="Accurate inference",
+            error_factory=inference_execution_error_type,
+        )
+
+    def _is_setup_complete_message(message: WorkerMessage) -> bool:
+        return _is_setup_complete_message_binding(
+            message=message,
+            impl=_is_setup_complete_message_impl,
+            worker_label="Accurate inference",
+            error_factory=inference_execution_error_type,
+        )
+
+    def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
+        return _parse_worker_completion_message_binding(
+            worker_message=worker_message,
+            impl=_parse_worker_completion_message_impl,
+            worker_label="Accurate inference",
+            error_factory=inference_execution_error_type,
+            raise_worker_error=_raise_worker_error,
+            result_type=InferenceResult,
+        )
+
+    def _prepare_in_process_accurate_operation(
+        *,
+        request: _AccurateRequestLike,
+        settings: AppConfig,
+        runtime_config: ProfileRuntimeConfig,
+        loaded_model: _AccurateLoadedModel | None,
+        backend: FeatureBackend | None,
+        expected_backend_id: str,
+        expected_profile: str,
+        expected_backend_model_id: str | None,
+    ) -> PreparedAccurateOperation[_AccurateLoadedModel, FeatureBackend]:
+        return prepare_in_process_accurate_operation(
+            request=request,
+            settings=settings,
+            runtime_config=runtime_config,
+            loaded_model=loaded_model,
+            backend=backend,
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
+            expected_backend_model_id=expected_backend_model_id,
+            load_model_fn=load_model,
+            read_audio_file_fn=read_audio_file,
+            build_backend_for_profile_fn=_build_backend_for_profile,
+            logger=logger,
+            model_unavailable_error_factory=model_unavailable_error_type,
+            model_load_error_factory=model_load_error_type,
+        )
+
+    def _run_accurate_inference_once(
+        *,
+        loaded_model: _AccurateLoadedModel,
+        backend: FeatureBackend,
+        audio: NDArray[np.float32],
+        sample_rate: int,
+        runtime_config: ProfileRuntimeConfig,
+    ) -> InferenceResult:
+        return run_accurate_inference_once(
+            loaded_model=loaded_model,
+            backend=backend,
+            audio=audio,
+            sample_rate=sample_rate,
+            runtime_config=runtime_config,
+            logger=logger,
+            dependency_error_factory=runtime_dependency_error_type,
+            transient_error_factory=transient_backend_error_type,
+        )
+
+    def _build_backend_for_profile(
+        *,
+        expected_backend_id: str,
+        expected_backend_model_id: str | None,
+        settings: AppConfig,
+        expected_profile: str | None = None,
+    ) -> FeatureBackend:
+        del expected_profile
+        return build_backend_for_profile(
+            expected_backend_id=expected_backend_id,
+            expected_backend_model_id=expected_backend_model_id,
+            settings=settings,
+            whisper_backend_factory=WhisperBackend,
+            emotion2vec_backend_factory=Emotion2VecBackend,
+            unsupported_backend_error=model_unavailable_error_type,
+        )
+
+    def _terminate_worker_process(process: BaseProcess) -> None:
+        _terminate_worker_process_binding(
+            process=process,
+            impl=_terminate_worker_process_impl,
+            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            kill_grace_seconds=_KILL_GRACE_SECONDS,
+        )
+
+    def _raise_worker_error(error_type: str, message: str) -> None:
+        _raise_worker_error_binding(
+            error_type=error_type,
+            message=message,
+            impl=_raise_worker_error_impl,
+            known_error_factories=worker_error_factories,
+            unknown_error_factory=inference_execution_error_type,
+            worker_label="Accurate inference",
+        )
+
+    runtime_config = _runtime_config_for_profile_impl(
+        settings=settings,
+        expected_profile=expected_profile,
+        unsupported_profile_error=model_unavailable_error_type,
+    )
+    resolved_expected_backend_model_id = expected_backend_model_id
+    if resolved_expected_backend_model_id is None and expected_backend_id == "hf_whisper":
+        resolved_expected_backend_model_id = resolve_accurate_model_id(settings)
+    use_process_isolation = (
+        enforce_timeout
+        and loaded_model is None
+        and backend is None
+        and settings.runtime_flags.profile_pipeline
+        and runtime_config.process_isolation
+    )
+    process_payload: AccurateProcessPayload | None = None
+    if use_process_isolation:
+        process_payload = AccurateProcessPayload(
+            request=request,
+            settings=_build_process_settings_snapshot_impl(settings),
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
+            expected_backend_model_id=resolved_expected_backend_model_id,
+        )
+    cpu_settings = _build_cpu_settings_snapshot_impl(settings)
+    cpu_backend_builder: Callable[[], FeatureBackend] = partial(
+        _build_backend_for_profile,
+        expected_backend_id=expected_backend_id,
+        expected_backend_model_id=resolved_expected_backend_model_id,
+        settings=cpu_settings,
+        expected_profile=expected_profile,
+    )
+
+    retry_state, prepared_operation, setup_started_at = _prepare_retry_state_impl(
+        use_process_isolation=use_process_isolation,
+        request=request,
+        settings=settings,
+        runtime_config=runtime_config,
+        loaded_model=loaded_model,
+        backend=backend,
+        logger=logger,
+        profile=expected_profile,
+        setup_phase_name=PHASE_EMOTION_SETUP,
+        log_phase_started=log_phase_started,
+        log_phase_failed=log_phase_failed,
+        process_payload=process_payload,
+        prepare_in_process_operation=partial(
+            _prepare_in_process_accurate_operation,
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
+            expected_backend_model_id=resolved_expected_backend_model_id,
+        ),
+    )
+    with _SINGLE_FLIGHT_REGISTRY.lock(
+        profile=expected_profile,
+        backend_model_id=resolved_expected_backend_model_id,
+    ):
+        return execute_accurate_inference_with_retry(
+            use_process_isolation=use_process_isolation,
+            retry_state=retry_state,
+            prepared_operation=prepared_operation,
+            setup_started_at=setup_started_at,
+            settings=settings,
+            backend=backend,
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
+            allow_retries=allow_retries,
+            enforce_timeout=enforce_timeout,
+            cpu_backend_builder=cpu_backend_builder,
+            logger=logger,
+            run_accurate_retryable_operation=lambda **kwargs: run_accurate_retryable_operation(
+                logger=logger,
+                run_with_process_timeout=_run_with_process_timeout,
+                run_accurate_inference_once=_run_accurate_inference_once,
+                run_with_timeout=_run_with_timeout_impl,
+                run_inference_operation=_run_inference_operation_impl,
+                timeout_error_factory=timeout_error_type,
+                **kwargs,
+            ),
+            retry_delay_seconds=retry_delay_seconds,
+            process_payload_cpu_fallback=payload_with_cpu_settings,
+            timeout_error_type=timeout_error_type,
+            runtime_dependency_error_type=runtime_dependency_error_type,
+            inference_execution_error_type=inference_execution_error_type,
+            transient_backend_error_type=transient_backend_error_type,
+        )
 
 
 def run_accurate_retryable_operation(
@@ -430,6 +848,7 @@ def payload_with_cpu_settings(payload: _AccuratePayloadT) -> _AccuratePayloadT:
 
 
 __all__ = [
+    "run_accurate_inference_from_public_boundary",
     "build_backend_for_profile",
     "execute_accurate_inference_with_retry",
     "payload_with_cpu_settings",
