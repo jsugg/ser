@@ -2,7 +2,6 @@
 
 import importlib
 import os
-from collections.abc import Generator
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,14 +12,10 @@ from ser._internal.config import bootstrap
 from ser._internal.config.schema import profile_artifact_file_names
 from ser.profiles import get_profile_catalog
 
-
-@pytest.fixture(autouse=True)
-def _reset_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
-    """Keeps global settings stable across tests."""
-    config.reload_settings()
-    yield
-    monkeypatch.delenv("WHISPER_BACKEND", raising=False)
-    config.reload_settings()
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.usefixtures("reset_ambient_settings"),
+]
 
 
 def test_runtime_flags_and_schema_defaults() -> None:
