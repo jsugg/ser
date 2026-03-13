@@ -46,9 +46,15 @@ permissions:
   contents: read
 
 jobs:
-  full_dataset_quality_gate:
+  train_full_dataset_quality_gate_artifacts:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 180
+    env:
+      SER_MODELS_DIR: ${{ github.workspace }}/.ser-models
+      FAST_MODEL_FILE_NAME: ser_model_fast_full.pkl
+      FAST_TRAINING_REPORT_FILE_NAME: training_report_fast_full.json
+      MEDIUM_MODEL_FILE_NAME: ser_model_medium_full.pkl
+      MEDIUM_TRAINING_REPORT_FILE_NAME: training_report_medium_full.json
 
     steps:
       - name: Checkout
@@ -76,13 +82,104 @@ jobs:
       - name: Persist validation dataset consents
         run: ./scripts/configure_validation_dataset_consents.sh
 
+      - name: Prepare artifact workspace
+        run: mkdir -p "${SER_MODELS_DIR}"
+
+      - name: Require training artifacts on hosted runners
+        if: ${{ !inputs.run_training }}
+        run: |
+          echo "run_training=false is not supported on hosted runners without pre-provisioned full-gate artifacts."
+          echo "Dispatch this workflow with run_training=true so the workflow can build and pass the required artifacts to the gate job."
+          exit 1
+
+      - name: Train fast full-gate artifact
+        env:
+          SER_RANDOM_STATE: "42"
+          SER_TEST_SIZE: "0.25"
+          SER_MODEL_FILE_NAME: ${{ env.FAST_MODEL_FILE_NAME }}
+          SER_TRAINING_REPORT_FILE_NAME: ${{ env.FAST_TRAINING_REPORT_FILE_NAME }}
+        run: uv run ser --train
+
+      - name: Train medium full-gate artifact
+        env:
+          SER_ENABLE_PROFILE_PIPELINE: "true"
+          SER_ENABLE_MEDIUM_PROFILE: "true"
+          SER_RANDOM_STATE: "42"
+          SER_TEST_SIZE: "0.25"
+          SER_MODEL_FILE_NAME: ${{ env.MEDIUM_MODEL_FILE_NAME }}
+          SER_TRAINING_REPORT_FILE_NAME: ${{ env.MEDIUM_TRAINING_REPORT_FILE_NAME }}
+        run: uv run --extra medium ser --train
+
+      - name: Upload full-gate training artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-dataset-quality-gate-artifacts
+          path: |
+            ${{ env.SER_MODELS_DIR }}/${{ env.FAST_MODEL_FILE_NAME }}
+            ${{ env.SER_MODELS_DIR }}/${{ env.FAST_TRAINING_REPORT_FILE_NAME }}
+            ${{ env.SER_MODELS_DIR }}/${{ env.MEDIUM_MODEL_FILE_NAME }}
+            ${{ env.SER_MODELS_DIR }}/${{ env.MEDIUM_TRAINING_REPORT_FILE_NAME }}
+          if-no-files-found: error
+          retention-days: 1
+
+  full_dataset_quality_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    needs:
+      - train_full_dataset_quality_gate_artifacts
+    env:
+      SER_MODELS_DIR: ${{ github.workspace }}/.ser-models
+      FAST_MODEL_FILE_NAME: ser_model_fast_full.pkl
+      FAST_TRAINING_REPORT_FILE_NAME: training_report_fast_full.json
+      MEDIUM_MODEL_FILE_NAME: ser_model_medium_full.pkl
+      MEDIUM_TRAINING_REPORT_FILE_NAME: training_report_medium_full.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Cache uv
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-full-gate-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-full-gate-
+
+      - name: Bootstrap synthetic RAVDESS dataset for hosted validation
+        run: python ./scripts/build_synthetic_ravdess_dataset.py
+
+      - name: Persist validation dataset consents
+        run: ./scripts/configure_validation_dataset_consents.sh
+
+      - name: Prepare artifact workspace
+        run: mkdir -p "${SER_MODELS_DIR}"
+
+      - name: Download full-gate training artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: full-dataset-quality-gate-artifacts
+          path: ${{ env.SER_MODELS_DIR }}
+
       - name: Run full-dataset quality gate suite (opt-in)
         env:
-          SER_FULL_GATE_RUN_TRAINING: ${{ inputs.run_training && 'true' || 'false' }}
+          SER_FULL_GATE_RUN_TRAINING: "false"
           SER_FULL_GATE_DATASET_GLOB: ${{ inputs.dataset_glob }}
           SER_FULL_GATE_REPORT_PATH: ${{ inputs.out_file }}
           SER_FULL_GATE_PROGRESS_EVERY: ${{ inputs.progress_every }}
           SER_FULL_GATE_ARCHIVE_REPORT: "false"
+          SER_FULL_GATE_FAST_MODEL_FILE_NAME: ${{ env.FAST_MODEL_FILE_NAME }}
+          SER_FULL_GATE_FAST_TRAINING_REPORT_FILE_NAME: ${{ env.FAST_TRAINING_REPORT_FILE_NAME }}
+          SER_FULL_GATE_MEDIUM_MODEL_FILE_NAME: ${{ env.MEDIUM_MODEL_FILE_NAME }}
+          SER_FULL_GATE_MEDIUM_TRAINING_REPORT_FILE_NAME: ${{ env.MEDIUM_TRAINING_REPORT_FILE_NAME }}
         run: ./scripts/run_full_dataset_quality_gate.sh
 
       - name: Upload full-dataset gate report
