@@ -13,14 +13,14 @@ import numpy as np
 from numpy.typing import NDArray
 from sklearn.model_selection import train_test_split
 
-from ser.config import AppConfig, reload_settings
+from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
 from ser.data.adapters.ravdess import build_ravdess_utterances
 from ser.data.dataset_prepare import prepare_from_registry_entry
 from ser.data.dataset_registry import load_dataset_registry
 from ser.data.label_ontology import resolve_label_ontology
 from ser.data.manifest import Utterance
 from ser.data.manifest_jsonl import load_manifest_jsonl
-from ser.features import extract_feature
+from ser.features.feature_extractor import _extract_feature_for_settings
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
@@ -169,7 +169,10 @@ def process_file(
     file: str,
     observed_emotions: Collection[str],
     emotion_map: dict[str, str],
-    settings: AppConfig,
+    *,
+    settings: AppConfig | None = None,
+    feature_flags: FeatureFlags | None = None,
+    audio_read_config: AudioReadConfig | None = None,
 ) -> ProcessFileResult:
     """Extracts features for a file when its label is in the target emotion set.
 
@@ -177,6 +180,9 @@ def process_file(
         file: Path to an audio file.
         observed_emotions: Emotion labels accepted for training.
         emotion_map: Mapping from dataset emotion codes to labels.
+        settings: Optional full settings snapshot for direct callers.
+        feature_flags: Explicit feature flag snapshot for worker-safe extraction.
+        audio_read_config: Explicit audio-read settings for worker-safe extraction.
 
     Returns:
         A result object containing the extracted `(feature_vector, emotion_label)` or
@@ -198,8 +204,19 @@ def process_file(
 
         if not emotion or emotion not in observed_emotions:
             return ProcessFileResult(sample=None, error=None)
+        if settings is not None:
+            feature_flags = settings.feature_flags
+            audio_read_config = settings.audio_read
+        if feature_flags is None or audio_read_config is None:
+            raise ValueError(
+                "process_file requires either settings or explicit feature extraction config."
+            )
         features: FeatureVector = np.asarray(
-            extract_feature(file, settings=settings),
+            _extract_feature_for_settings(
+                file,
+                feature_flags=feature_flags,
+                audio_read_config=audio_read_config,
+            ),
             dtype=np.float64,
         )
 
@@ -271,7 +288,8 @@ def _load_data_for_settings(
         process_file,
         observed_emotions=observed_emotions,
         emotion_map=dict(settings.emotions),
-        settings=settings,
+        feature_flags=settings.feature_flags,
+        audio_read_config=settings.audio_read,
     )
     worker_count: int = _resolve_worker_count(
         max_cores=settings.models.num_cores,
