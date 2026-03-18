@@ -30,11 +30,14 @@ from ser._internal.cli.runtime import (
 )
 from ser.config import AppConfig, reload_settings, settings_override
 from ser.profiles import ProfileName
+from ser.runtime.contracts import SubtitleFormat
 from ser.runtime.phase_timing import format_duration
 from ser.utils.logger import configure_logging, get_logger
+from ser.utils.subtitles import SUPPORTED_SUBTITLE_FORMATS
 
 logger: logging.Logger = get_logger("ser")
 type CliProfileName = ProfileName
+type CliSubtitleFormat = SubtitleFormat
 _PROFILE_CHOICES: tuple[CliProfileName, ...] = (
     "fast",
     "medium",
@@ -122,6 +125,24 @@ def main() -> None:
         "--save_transcript",
         action="store_true",
         help="Save the transcript to a CSV file",
+    )
+    parser.add_argument(
+        "--subtitle-output",
+        type=str,
+        default=None,
+        help=(
+            "Write timeline subtitles to the given path. "
+            "If --subtitle-format is omitted, the format is inferred from the file suffix."
+        ),
+    )
+    parser.add_argument(
+        "--subtitle-format",
+        choices=SUPPORTED_SUBTITLE_FORMATS,
+        default=None,
+        help=(
+            "Subtitle export format. When provided without --subtitle-output, the file is "
+            "written under the configured timeline folder using the source audio stem."
+        ),
     )
     parser.add_argument(
         "--no-transcript",
@@ -308,6 +329,13 @@ def main() -> None:
             language=str(args.language),
             save_transcript=bool(args.save_transcript),
             include_transcript=not bool(args.no_transcript),
+            subtitle_output_path=(
+                args.subtitle_output if isinstance(args.subtitle_output, str) else None
+            ),
+            subtitle_format=cast(
+                CliSubtitleFormat | None,
+                args.subtitle_format if isinstance(args.subtitle_format, str) else None,
+            ),
             pipeline_builder=build_runtime_pipeline,
         )
         if disposition is not None:
@@ -317,8 +345,12 @@ def main() -> None:
                 exc_info=disposition.include_traceback,
             )
             sys.exit(disposition.exit_code)
-        if execution is not None and execution.timeline_csv_path is not None:
-            logger.info(msg=f"Timeline saved to {execution.timeline_csv_path}")
+        timeline_csv_path = getattr(execution, "timeline_csv_path", None) if execution else None
+        subtitle_path = getattr(execution, "subtitle_path", None) if execution else None
+        if timeline_csv_path is not None:
+            logger.info(msg=f"Timeline saved to {timeline_csv_path}")
+        if subtitle_path is not None:
+            logger.info("Timeline subtitles saved to %s", subtitle_path)
         logger.info(
             "SER workflow completed in %s.",
             format_duration(time.perf_counter() - start_time),

@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ser.config import AppConfig
+from ser.utils.subtitles import resolve_subtitle_export_request
 
 if TYPE_CHECKING:
-    from ser.runtime.contracts import InferenceExecution
+    from ser.runtime.contracts import InferenceExecution, SubtitleFormat
     from ser.transcript.profiling import RuntimeCalibrationResult
 
 type _TrainingWorkflow = Callable[..., None]
@@ -143,6 +144,8 @@ def run_inference_command(
     language: str,
     save_transcript: bool,
     include_transcript: bool,
+    subtitle_output_path: str | None = None,
+    subtitle_format: SubtitleFormat | None = None,
     pipeline_builder: object | None,
     run_inference_workflow: _InferenceWorkflow,
     classify_inference_error: _InferenceErrorClassifier,
@@ -157,12 +160,36 @@ def run_inference_command(
             ),
         )
     try:
+        subtitle_export = resolve_subtitle_export_request(
+            output_path=subtitle_output_path,
+            subtitle_format=subtitle_format,
+        )
+    except ValueError as err:
+        return (None, WorkflowErrorDisposition(exit_code=2, message=str(err)))
+    if subtitle_export is not None and not include_transcript:
+        return (
+            None,
+            WorkflowErrorDisposition(
+                exit_code=2,
+                message="Subtitle export requires transcript extraction; remove --no-transcript.",
+            ),
+        )
+    resolved_subtitle_format: SubtitleFormat | None
+    resolved_subtitle_output_path: str | None
+    if subtitle_export is None:
+        resolved_subtitle_format = None
+        resolved_subtitle_output_path = None
+    else:
+        resolved_subtitle_format, resolved_subtitle_output_path = subtitle_export
+    try:
         execution = run_inference_workflow(
             settings=settings,
             file_path=file_path,
             language=language,
             save_transcript=save_transcript,
             include_transcript=include_transcript,
+            subtitle_output_path=resolved_subtitle_output_path,
+            subtitle_format=resolved_subtitle_format,
             pipeline_builder=pipeline_builder,
         )
     except Exception as err:
