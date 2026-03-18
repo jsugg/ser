@@ -354,6 +354,7 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
             file_path,
             subtitle_format=subtitle_format,
             output_path=output_path,
+            timeline_config=settings.timeline,
         )
 
     return RuntimePipeline(
