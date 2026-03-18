@@ -14,7 +14,7 @@ from ser.profiles import ProfileName
 
 if TYPE_CHECKING:
     from ser.diagnostics.domain import DiagnosticReport
-    from ser.runtime.contracts import InferenceExecution, InferenceRequest
+    from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
 
 ComplianceMode = _data_api.ComplianceMode
 DatasetPrepareResult = _data_api.DatasetPrepareResult
@@ -161,6 +161,8 @@ def infer(
     language: str | None = None,
     save_transcript: bool = False,
     include_transcript: bool = True,
+    subtitle_output_path: str | None = None,
+    subtitle_format: SubtitleFormat | None = None,
     settings: AppConfig | None = None,
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> InferenceExecution:
@@ -171,6 +173,8 @@ def infer(
         language=language,
         save_transcript=save_transcript,
         include_transcript=include_transcript,
+        subtitle_output_path=subtitle_output_path,
+        subtitle_format=subtitle_format,
         settings=_resolve_boundary_settings(settings),
         pipeline_builder=pipeline_builder,
     )

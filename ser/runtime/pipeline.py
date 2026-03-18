@@ -20,6 +20,7 @@ from ser.runtime.contracts import (
     BackendInferenceCallable,
     InferenceExecution,
     InferenceRequest,
+    SubtitleFormat,
 )
 from ser.runtime.phase_contract import (
     PHASE_TIMELINE_BUILD,
@@ -37,6 +38,7 @@ from ser.runtime.registry import (
 )
 from ser.runtime.schema import InferenceResult, to_legacy_emotion_segments
 from ser.utils.logger import get_logger
+from ser.utils.subtitles import resolve_subtitle_export_request
 from ser.utils.transcription_compat import (
     has_known_faster_whisper_openmp_runtime_conflict,
 )
@@ -51,6 +53,10 @@ type BuildTimelineCallable = Callable[
 ]
 type PrintTimelineCallable = Callable[[list[TimelineEntry]], None]
 type SaveTimelineCallable = Callable[[list[TimelineEntry], str], str]
+type SaveSubtitleCallable = Callable[
+    [list[TimelineEntry], str, SubtitleFormat, str | None],
+    str,
+]
 
 logger = get_logger(__name__)
 
@@ -130,6 +136,7 @@ class RuntimePipeline:
     build_timeline: BuildTimelineCallable
     print_timeline: PrintTimelineCallable
     save_timeline_to_csv: SaveTimelineCallable
+    save_timeline_to_subtitles: SaveSubtitleCallable | None = None
     backend_inference: BackendInferenceCallable | None = None
 
     def run_training(self) -> None:
@@ -145,6 +152,15 @@ class RuntimePipeline:
     def run_inference(self, request: InferenceRequest) -> InferenceExecution:
         """Runs inference and timeline generation for one audio file."""
         ensure_profile_supported(self.capability)
+        subtitle_export = resolve_subtitle_export_request(
+            output_path=request.subtitle_output_path,
+            subtitle_format=request.subtitle_format,
+        )
+        if subtitle_export is not None and not request.include_transcript:
+            raise ValueError(
+                "Subtitle export requires transcript extraction; disable subtitle export or "
+                "remove the no-transcript option."
+            )
         runtime_environment = build_runtime_environment_plan(self.settings)
         with (
             settings_override(self.settings),
@@ -214,8 +230,19 @@ class RuntimePipeline:
                 )
                 raise
             timeline_csv_path: str | None = None
+            subtitle_path: str | None = None
             if request.save_transcript:
                 timeline_csv_path = self.save_timeline_to_csv(timeline, request.file_path)
+            if subtitle_export is not None:
+                if self.save_timeline_to_subtitles is None:
+                    raise RuntimeError("Subtitle export is unavailable for the active runtime.")
+                resolved_subtitle_format, resolved_subtitle_output_path = subtitle_export
+                subtitle_path = self.save_timeline_to_subtitles(
+                    timeline,
+                    request.file_path,
+                    resolved_subtitle_format,
+                    resolved_subtitle_output_path,
+                )
             phase_timings[PHASE_TIMELINE_OUTPUT] = log_phase_completed(
                 logger,
                 phase_name=PHASE_TIMELINE_OUTPUT,
@@ -231,6 +258,7 @@ class RuntimePipeline:
                 timeline=timeline,
                 used_backend_path=used_backend_path,
                 timeline_csv_path=timeline_csv_path,
+                subtitle_path=subtitle_path,
                 detailed_result=detailed_result,
                 phase_timings_seconds=phase_timings,
             )
@@ -256,6 +284,7 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         train_model,
     )
     from ser.transcript import TranscriptionProfile, extract_transcript
+    from ser.utils.subtitles import save_timeline_to_subtitles
     from ser.utils.timeline_utils import (
         build_timeline,
         print_timeline,
@@ -314,6 +343,19 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
     def predict_emotions_detailed_for_settings(file_path: str) -> InferenceResult:
         return predict_emotions_detailed(file_path, settings=settings)
 
+    def save_timeline_to_subtitles_for_settings(
+        timeline: list[TimelineEntry],
+        file_path: str,
+        subtitle_format: SubtitleFormat,
+        output_path: str | None,
+    ) -> str:
+        return save_timeline_to_subtitles(
+            timeline,
+            file_path,
+            subtitle_format=subtitle_format,
+            output_path=output_path,
+        )
+
     return RuntimePipeline(
         settings=settings,
         profile=profile,
@@ -326,4 +368,5 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         build_timeline=build_timeline,
         print_timeline=print_timeline,
         save_timeline_to_csv=save_timeline_to_csv,
+        save_timeline_to_subtitles=save_timeline_to_subtitles_for_settings,
     )
