@@ -3,6 +3,7 @@
 import sys
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
 
@@ -10,7 +11,7 @@ import pytest
 
 import ser.config as config
 import ser.runtime.pipeline as runtime_pipeline_module
-from ser.config import AppConfig
+from ser.config import AppConfig, TimelineConfig
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile
 from ser.runtime.contracts import InferenceRequest
@@ -700,6 +701,74 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     assert profile.use_demucs is expected_use_demucs
     assert profile.use_vad is True
     assert captured["settings"] is settings
+
+
+def test_create_runtime_pipeline_uses_settings_timeline_folder_for_default_subtitle_export(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Factory-backed subtitle export should forward the configured timeline folder."""
+    monkeypatch.setattr("ser.runtime.pipeline.build_backend_hooks", lambda _settings: {})
+    monkeypatch.setattr(
+        "ser.models.emotion_model.predict_emotions",
+        lambda _file_path, *, settings=None: [EmotionSegment("happy", 0.0, 1.0)],
+    )
+    monkeypatch.setattr(
+        "ser.models.emotion_model.predict_emotions_detailed",
+        lambda _file_path, *, settings=None: (_ for _ in ()).throw(
+            AssertionError("Detailed path should not run when schema flag is disabled.")
+        ),
+    )
+    monkeypatch.setattr(
+        "ser.transcript.extract_transcript",
+        lambda _file_path, _language, profile=None, *, settings=None: [
+            TranscriptWord("hello", 0.0, 0.5)
+        ],
+    )
+    monkeypatch.setattr(
+        "ser.utils.timeline_utils.build_timeline",
+        lambda _transcript, _emotions: [TimelineEntry(0.0, "happy", "hello")],
+    )
+    monkeypatch.setattr("ser.utils.timeline_utils.print_timeline", lambda _timeline: None)
+    captured: dict[str, object] = {}
+
+    def fake_save_timeline_to_subtitles(
+        timeline: list[TimelineEntry],
+        file_name: str,
+        *,
+        subtitle_format: str,
+        output_path: str | None = None,
+        timeline_config: TimelineConfig | None = None,
+    ) -> str:
+        captured["call"] = (timeline, file_name, subtitle_format, output_path, timeline_config)
+        return "custom/sample.vtt"
+
+    monkeypatch.setattr(
+        "ser.utils.subtitles.save_timeline_to_subtitles",
+        fake_save_timeline_to_subtitles,
+    )
+    settings = replace(
+        config.reload_settings(),
+        timeline=TimelineConfig(folder=tmp_path / "exports"),
+    )
+    pipeline = create_runtime_pipeline(settings)
+
+    execution = pipeline.run_inference(
+        InferenceRequest(
+            file_path="sample.wav",
+            language="en",
+            subtitle_format="vtt",
+        )
+    )
+
+    assert execution.subtitle_path == "custom/sample.vtt"
+    assert captured["call"] == (
+        [TimelineEntry(0.0, "happy", "hello")],
+        "sample.wav",
+        "vtt",
+        None,
+        settings.timeline,
+    )
 
 
 def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
