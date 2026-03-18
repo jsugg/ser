@@ -33,6 +33,7 @@ type BuildTimelineCallable = Callable[
 ]
 type PrintTimelineCallable = Callable[[list[TimelineEntry]], None]
 type SaveTimelineCallable = Callable[[list[TimelineEntry], str], str]
+type SaveSubtitleCallable = Callable[[list[TimelineEntry], str, str, str | None], str]
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("reset_ambient_settings")]
 
@@ -46,6 +47,7 @@ def _build_test_pipeline(
     build_timeline: BuildTimelineCallable,
     print_timeline: PrintTimelineCallable,
     save_timeline_to_csv: SaveTimelineCallable,
+    save_timeline_to_subtitles: SaveSubtitleCallable | None = None,
     backend_inference: Callable[[InferenceRequest], InferenceResult] | None = None,
     settings: AppConfig | None = None,
 ) -> RuntimePipeline:
@@ -70,6 +72,7 @@ def _build_test_pipeline(
         build_timeline=build_timeline,
         print_timeline=print_timeline,
         save_timeline_to_csv=save_timeline_to_csv,
+        save_timeline_to_subtitles=save_timeline_to_subtitles,
     )
 
 
@@ -194,6 +197,53 @@ def test_run_inference_with_save_transcript_enabled() -> None:
     assert calls["save"] == (timeline, "sample.wav")
 
 
+def test_run_inference_with_subtitle_export_enabled() -> None:
+    """Pipeline inference should export subtitles when requested."""
+    calls: dict[str, object] = {}
+    emotions = [EmotionSegment("happy", 0.0, 1.0)]
+    transcript = [TranscriptWord("ola", 0.0, 0.5)]
+    timeline = [TimelineEntry(0.0, "happy", "ola")]
+
+    def fake_save_subtitles(
+        timeline_rows: list[TimelineEntry],
+        file_path: str,
+        subtitle_format: str,
+        output_path: str | None,
+    ) -> str:
+        calls["save_subtitles"] = (timeline_rows, file_path, subtitle_format, output_path)
+        return "timeline.vtt"
+
+    pipeline = _build_test_pipeline(
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: emotions,
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Detailed path should not run when schema flag is disabled.")
+        ),
+        extract_transcript=lambda _file_path, _language: transcript,
+        build_timeline=lambda _transcript, _emotions: timeline,
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+        save_timeline_to_subtitles=fake_save_subtitles,
+    )
+
+    execution = pipeline.run_inference(
+        InferenceRequest(
+            file_path="sample.wav",
+            language="pt",
+            subtitle_output_path="exports/sample.vtt",
+        )
+    )
+
+    assert execution.subtitle_path == "timeline.vtt"
+    assert execution.timeline_csv_path is None
+    assert calls["save_subtitles"] == (
+        timeline,
+        "sample.wav",
+        "vtt",
+        "exports/sample.vtt",
+    )
+
+
 def test_run_inference_scopes_pipeline_settings_for_dependencies() -> None:
     """Inference dependencies should observe the pipeline's explicit settings snapshot."""
     ambient_settings = config.reload_settings()
@@ -256,6 +306,35 @@ def test_run_inference_skips_save_when_flag_is_disabled() -> None:
     assert execution.backend_id == "handcrafted"
     assert execution.used_backend_path is False
     assert execution.timeline_csv_path is None
+    assert execution.subtitle_path is None
+
+
+def test_run_inference_rejects_subtitle_export_without_transcript() -> None:
+    """Subtitle export requires transcript content and should fail when disabled."""
+    pipeline = _build_test_pipeline(
+        train_model=lambda: None,
+        predict_emotions=lambda _file_path: [EmotionSegment("calm", 0.0, 1.0)],
+        predict_emotions_detailed=lambda _file_path: (_ for _ in ()).throw(
+            AssertionError("Detailed path should not run when schema flag is disabled.")
+        ),
+        extract_transcript=lambda _file_path, _language: [TranscriptWord("oi", 0.0, 0.4)],
+        build_timeline=lambda _transcript, _emotions: [TimelineEntry(0.0, "calm", "oi")],
+        print_timeline=lambda _timeline: None,
+        save_timeline_to_csv=lambda _timeline, _file_path: "unused.csv",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Subtitle export requires transcript extraction",
+    ):
+        pipeline.run_inference(
+            InferenceRequest(
+                file_path="sample.wav",
+                language="en",
+                include_transcript=False,
+                subtitle_format="srt",
+            )
+        )
 
 
 def test_run_inference_skips_transcript_extraction_when_disabled() -> None:

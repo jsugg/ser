@@ -48,7 +48,7 @@ from ser.utils.logger import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from ser.runtime.contracts import InferenceExecution, InferenceRequest
+    from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
     from ser.transcript.profiling import RuntimeCalibrationResult
 
 
@@ -297,6 +297,8 @@ def run_inference_workflow(
     language: str,
     save_transcript: bool,
     include_transcript: bool,
+    subtitle_output_path: str | None = None,
+    subtitle_format: SubtitleFormat | None = None,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> InferenceExecution:
     """Runs CLI-equivalent inference workflow through one API boundary."""
@@ -308,6 +310,8 @@ def run_inference_workflow(
         language=language,
         save_transcript=save_transcript,
         include_transcript=include_transcript,
+        subtitle_output_path=subtitle_output_path,
+        subtitle_format=subtitle_format,
     )
     return builder(settings).run_inference(request)
 
@@ -319,6 +323,8 @@ def infer(
     language: str | None = None,
     save_transcript: bool = False,
     include_transcript: bool = True,
+    subtitle_output_path: str | None = None,
+    subtitle_format: SubtitleFormat | None = None,
     settings: AppConfig,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> InferenceExecution:
@@ -335,6 +341,8 @@ def infer(
         language=resolved_language,
         save_transcript=save_transcript,
         include_transcript=include_transcript,
+        subtitle_output_path=subtitle_output_path,
+        subtitle_format=subtitle_format,
         pipeline_builder=pipeline_builder,
     )
 
@@ -386,6 +394,8 @@ def run_inference_command(
     language: str,
     save_transcript: bool,
     include_transcript: bool,
+    subtitle_output_path: str | None = None,
+    subtitle_format: SubtitleFormat | None = None,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> tuple[InferenceExecution | None, WorkflowErrorDisposition | None]:
     """Runs inference command and returns execution plus optional failure disposition."""
@@ -395,6 +405,8 @@ def run_inference_command(
         language=language,
         save_transcript=save_transcript,
         include_transcript=include_transcript,
+        subtitle_output_path=subtitle_output_path,
+        subtitle_format=subtitle_format,
         pipeline_builder=pipeline_builder,
         run_inference_workflow=run_inference_workflow,
         classify_inference_error=classify_inference_exception,

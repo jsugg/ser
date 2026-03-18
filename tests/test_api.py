@@ -252,6 +252,27 @@ def test_run_inference_command_validates_missing_file_path() -> None:
     assert disposition.include_traceback is False
 
 
+def test_run_inference_command_rejects_subtitle_export_without_transcript() -> None:
+    """Subtitle export should fail fast when transcript extraction is disabled."""
+    execution, disposition = api_runtime_module.run_inference_command(
+        settings=config_module.reload_settings(),
+        file_path="sample.wav",
+        language="en",
+        save_transcript=False,
+        include_transcript=False,
+        subtitle_format="vtt",
+        pipeline_builder=None,
+    )
+
+    assert execution is None
+    assert disposition is not None
+    assert disposition.exit_code == 2
+    assert disposition.message == (
+        "Subtitle export requires transcript extraction; remove --no-transcript."
+    )
+    assert disposition.include_traceback is False
+
+
 def test_run_inference_command_delegates_arguments_on_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -286,7 +307,9 @@ def test_run_inference_command_delegates_arguments_on_success(
         file_path="sample.wav",
         language="en",
         save_transcript=True,
-        include_transcript=False,
+        include_transcript=True,
+        subtitle_output_path="exports/sample.vtt",
+        subtitle_format="vtt",
         pipeline_builder=_pipeline_builder,
     )
 
@@ -297,7 +320,9 @@ def test_run_inference_command_delegates_arguments_on_success(
     assert kwargs["file_path"] == "sample.wav"
     assert kwargs["language"] == "en"
     assert kwargs["save_transcript"] is True
-    assert kwargs["include_transcript"] is False
+    assert kwargs["include_transcript"] is True
+    assert kwargs["subtitle_output_path"] == "exports/sample.vtt"
+    assert kwargs["subtitle_format"] == "vtt"
     assert kwargs["pipeline_builder"] is _pipeline_builder
 
 
@@ -743,6 +768,8 @@ def test_infer_builds_inference_request(
         language="en",
         save_transcript=True,
         include_transcript=False,
+        subtitle_output_path="exports/sample.vtt",
+        subtitle_format="vtt",
         pipeline_builder=lambda _settings: _FakePipeline(),
     )
 
@@ -752,6 +779,8 @@ def test_infer_builds_inference_request(
     assert request.language == "en"
     assert request.save_transcript is True
     assert request.include_transcript is False
+    assert request.subtitle_output_path == "exports/sample.vtt"
+    assert request.subtitle_format == "vtt"
 
 
 def test_classify_inference_exception_for_unsupported_profile() -> None:

@@ -237,6 +237,77 @@ def test_cli_prediction_does_not_save_when_flag_is_absent(
     assert request.include_transcript is True
 
 
+def test_cli_prediction_passes_subtitle_export_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prediction path should pass normalized subtitle export settings to pipeline."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--subtitle-output", "exports/sample.vtt"],
+    )
+    calls: dict[str, object] = {}
+
+    class FakePipeline:
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path=None, subtitle_path="exports/sample.vtt")
+
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
+
+    cli.main()
+
+    request = cast(InferenceRequest, calls["request"])
+    assert request.file_path == "sample.wav"
+    assert request.subtitle_output_path == "exports/sample.vtt"
+    assert request.subtitle_format == "vtt"
+    assert request.include_transcript is True
+
+
+def test_cli_prediction_allows_default_subtitle_path_when_format_is_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit subtitle format alone should request default subtitle placement."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--subtitle-format", "ass"],
+    )
+    calls: dict[str, object] = {}
+
+    class FakePipeline:
+        def run_inference(self, request: object) -> object:
+            calls["request"] = request
+            return SimpleNamespace(timeline_csv_path=None, subtitle_path="sample.ass")
+
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
+
+    cli.main()
+
+    request = cast(InferenceRequest, calls["request"])
+    assert request.subtitle_output_path is None
+    assert request.subtitle_format == "ass"
+
+
+def test_cli_prediction_rejects_subtitle_export_without_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Subtitle export should fail fast when transcript extraction is disabled."""
+    _patch_common_cli_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--file", "sample.wav", "--no-transcript", "--subtitle-format", "srt"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+
+
 def test_cli_train_option_uses_runtime_pipeline_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
