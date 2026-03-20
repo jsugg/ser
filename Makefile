@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint clean
+.PHONY: help setup setup-runtime fmt lint type test test-cov check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint clean
 
 .DEFAULT_GOAL := help
 
@@ -12,6 +12,7 @@ help:
 	@echo "  lint     - run linters"
 	@echo "  type     - run type checks"
 	@echo "  test     - run tests"
+	@echo "  test-cov - run tests with branch coverage gating"
 	@echo "  check    - lint + type + test"
 	@echo "  prepush  - run local pre-push quality gates (autofix + verify)"
 	@echo "  prepush-check - run canonical pre-push hook command (check-only)"
@@ -46,6 +47,9 @@ type:
 
 test:
 	uv run pytest -q
+
+test-cov:
+	uv run --frozen --extra dev pytest -q --cov=ser --cov-report=term-missing --cov-report=xml
 
 check: lint type test
 
