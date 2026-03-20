@@ -160,6 +160,17 @@ class MediumTransientBackendError(RuntimeError):
     """Spawn-safe medium worker error marker for transient backend failures."""
 
 
+@dataclass(frozen=True)
+class _MediumBoundaryDependencies:
+    """Precomputed collaborators and execution plan for medium boundary orchestration."""
+
+    execution_context: MediumExecutionContext[MediumProcessPayload, _MediumLoadedModel, XLSRBackend]
+    expected_backend_model_id: str
+    run_with_timeout: Callable[..., InferenceResult]
+    run_with_process_timeout: Callable[..., InferenceResult]
+    run_inference_once: Callable[..., InferenceResult]
+
+
 def _prepare_medium_process_operation(
     payload: MediumProcessPayload,
 ) -> medium_worker_operation_helpers.PreparedMediumOperation[EmotionLoadedModel, XLSRBackend]:
@@ -265,14 +276,13 @@ def run_medium_inference_once(
     )
 
 
-def run_medium_inference_from_public_boundary(
+def _build_medium_boundary_dependencies(
+    *,
     request: InferenceRequest,
     settings: AppConfig,
-    *,
-    loaded_model: _MediumLoadedModel | None = None,
-    backend: XLSRBackend | None = None,
-    enforce_timeout: bool = True,
-    allow_retries: bool = True,
+    loaded_model: _MediumLoadedModel | None,
+    backend: XLSRBackend | None,
+    enforce_timeout: bool,
     logger: logging.Logger,
     model_unavailable_error_type: type[Exception],
     runtime_dependency_error_type: type[Exception],
@@ -280,9 +290,8 @@ def run_medium_inference_from_public_boundary(
     timeout_error_type: type[Exception],
     execution_error_type: type[Exception],
     transient_error_type: type[Exception],
-) -> InferenceResult:
-    """Runs medium inference through the internal public-boundary owner."""
-
+) -> _MediumBoundaryDependencies:
+    """Builds medium boundary collaborators and execution plan once per invocation."""
     worker_error_factories: dict[str, Callable[[str], Exception]] = {
         "ValueError": ValueError,
         runtime_dependency_error_type.__name__: runtime_dependency_error_type,
@@ -302,26 +311,6 @@ def run_medium_inference_from_public_boundary(
             timeout_seconds=timeout_seconds,
             timeout_error_factory=timeout_error_type,
             timeout_label="Medium inference",
-        )
-
-    def _run_medium_inference_once(
-        *,
-        loaded_model: _MediumLoadedModel,
-        backend: XLSRBackend,
-        audio: NDArray[np.float32],
-        sample_rate: int,
-        runtime_config: MediumRuntimeConfig,
-    ) -> InferenceResult:
-        return run_medium_inference_once(
-            loaded_model=loaded_model,
-            backend=backend,
-            audio=audio,
-            sample_rate=sample_rate,
-            runtime_config=runtime_config,
-            logger=logger,
-            is_dependency_error=is_dependency_error,
-            dependency_error_factory=runtime_dependency_error_type,
-            transient_error_factory=transient_error_type,
         )
 
     def _run_with_process_timeout(
@@ -370,6 +359,24 @@ def run_medium_inference_from_public_boundary(
             impl=_is_setup_complete_message_impl,
             worker_label="Medium inference",
             error_factory=execution_error_type,
+        )
+
+    def _terminate_worker_process(process: BaseProcess) -> None:
+        _terminate_worker_process_binding(
+            process=process,
+            impl=_terminate_worker_process_impl,
+            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            kill_grace_seconds=_KILL_GRACE_SECONDS,
+        )
+
+    def _raise_worker_error(error_type: str, message: str) -> None:
+        _raise_worker_error_binding(
+            error_type=error_type,
+            message=message,
+            impl=_raise_worker_error_impl,
+            known_error_factories=worker_error_factories,
+            unknown_error_factory=execution_error_type,
+            worker_label="Medium inference",
         )
 
     def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
@@ -442,22 +449,24 @@ def run_medium_inference_from_public_boundary(
             logger=logger,
         )
 
-    def _terminate_worker_process(process: BaseProcess) -> None:
-        _terminate_worker_process_binding(
-            process=process,
-            impl=_terminate_worker_process_impl,
-            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
-            kill_grace_seconds=_KILL_GRACE_SECONDS,
-        )
-
-    def _raise_worker_error(error_type: str, message: str) -> None:
-        _raise_worker_error_binding(
-            error_type=error_type,
-            message=message,
-            impl=_raise_worker_error_impl,
-            known_error_factories=worker_error_factories,
-            unknown_error_factory=execution_error_type,
-            worker_label="Medium inference",
+    def _run_medium_inference_once(
+        *,
+        loaded_model: _MediumLoadedModel,
+        backend: XLSRBackend,
+        audio: NDArray[np.float32],
+        sample_rate: int,
+        runtime_config: MediumRuntimeConfig,
+    ) -> InferenceResult:
+        return run_medium_inference_once(
+            loaded_model=loaded_model,
+            backend=backend,
+            audio=audio,
+            sample_rate=sample_rate,
+            runtime_config=runtime_config,
+            logger=logger,
+            is_dependency_error=is_dependency_error,
+            dependency_error_factory=runtime_dependency_error_type,
+            transient_error_factory=transient_error_type,
         )
 
     execution_context = _prepare_execution_context(
@@ -467,26 +476,65 @@ def run_medium_inference_from_public_boundary(
         backend=backend,
         enforce_timeout=enforce_timeout,
     )
-    expected_backend_model_id = execution_context.expected_backend_model_id
+    return _MediumBoundaryDependencies(
+        execution_context=execution_context,
+        expected_backend_model_id=execution_context.expected_backend_model_id,
+        run_with_timeout=_run_with_timeout,
+        run_with_process_timeout=_run_with_process_timeout,
+        run_inference_once=_run_medium_inference_once,
+    )
+
+
+def run_medium_inference_from_public_boundary(
+    request: InferenceRequest,
+    settings: AppConfig,
+    *,
+    loaded_model: _MediumLoadedModel | None = None,
+    backend: XLSRBackend | None = None,
+    enforce_timeout: bool = True,
+    allow_retries: bool = True,
+    logger: logging.Logger,
+    model_unavailable_error_type: type[Exception],
+    runtime_dependency_error_type: type[Exception],
+    model_load_error_type: type[Exception],
+    timeout_error_type: type[Exception],
+    execution_error_type: type[Exception],
+    transient_error_type: type[Exception],
+) -> InferenceResult:
+    """Runs medium inference through the internal public-boundary owner."""
+    dependencies = _build_medium_boundary_dependencies(
+        request=request,
+        settings=settings,
+        loaded_model=loaded_model,
+        backend=backend,
+        enforce_timeout=enforce_timeout,
+        logger=logger,
+        model_unavailable_error_type=model_unavailable_error_type,
+        runtime_dependency_error_type=runtime_dependency_error_type,
+        model_load_error_type=model_load_error_type,
+        timeout_error_type=timeout_error_type,
+        execution_error_type=execution_error_type,
+        transient_error_type=transient_error_type,
+    )
 
     with _SINGLE_FLIGHT_REGISTRY.lock(
         profile="medium",
-        backend_model_id=expected_backend_model_id,
+        backend_model_id=dependencies.expected_backend_model_id,
     ):
         return execute_medium_inference_with_retry(
-            execution_context=execution_context,
+            execution_context=dependencies.execution_context,
             settings=settings,
             injected_backend=backend,
             enforce_timeout=enforce_timeout,
             allow_retries=allow_retries,
-            expected_backend_model_id=expected_backend_model_id,
+            expected_backend_model_id=dependencies.expected_backend_model_id,
             logger=logger,
-            run_with_process_timeout=_run_with_process_timeout,
+            run_with_process_timeout=dependencies.run_with_process_timeout,
             run_process_operation=lambda prepared: run_process_operation(
                 prepared,
-                run_medium_inference_once=_run_medium_inference_once,
+                run_medium_inference_once=dependencies.run_inference_once,
             ),
-            run_with_timeout=_run_with_timeout,
+            run_with_timeout=dependencies.run_with_timeout,
             prepare_medium_backend_runtime=lambda active_backend: prepare_medium_backend_runtime(
                 backend=active_backend,
                 is_dependency_error=is_dependency_error,
@@ -495,7 +543,7 @@ def run_medium_inference_from_public_boundary(
             ),
             cpu_backend_builder=lambda: _build_medium_backend_for_settings_impl(
                 settings=_build_cpu_settings_snapshot_impl(settings),
-                expected_backend_model_id=expected_backend_model_id,
+                expected_backend_model_id=dependencies.expected_backend_model_id,
                 runtime_device="cpu",
                 runtime_dtype="float32",
                 backend_factory=XLSRBackend,
