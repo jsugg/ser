@@ -80,6 +80,8 @@ from ser.utils.transcription_compat import (
 if TYPE_CHECKING:
     from ser.config import AppConfig
 
+type SummarizeRuntimeErrorWithLimit = Callable[[Exception, int], str]
+
 _INVALID_ESCAPE_POLICY_ID = "stable_whisper.invalid_escape_sequence"
 _INVALID_ESCAPE_MESSAGE_REGEX = r"^invalid escape sequence '\\,'$"
 _INVALID_ESCAPE_MODULE_REGEX = r"^stable_whisper\.result$"
@@ -144,6 +146,453 @@ _STABLE_WHISPER_TRANSCRIBE_POLICY = DependencyLogPolicy(
 )
 
 
+def _default_stable_whisper_noise_issues() -> list[CompatibilityIssue]:
+    """Returns baseline non-blocking noise issues for stable-whisper environments."""
+    return [
+        CompatibilityIssue(
+            code="stable_whisper_invalid_escape_sequence",
+            message=(
+                "stable-whisper may emit SyntaxWarning invalid escape sequence "
+                "during module import; scoped warning policy is required."
+            ),
+            impact="informational",
+        ),
+        CompatibilityIssue(
+            code="stable_whisper_fp16_cpu_fallback_warning",
+            message=(
+                "stable-whisper may emit a CPU fp16 fallback UserWarning "
+                "during transcription; adapter resolves device-aware precision "
+                "and uses a "
+                "scoped warning policy fallback."
+            ),
+            impact="informational",
+        ),
+        CompatibilityIssue(
+            code="stable_whisper_demucs_deprecated_warning",
+            message=(
+                "stable-whisper may emit a demucs deprecation UserWarning "
+                "when legacy demucs argument is used; adapter prefers "
+                "denoiser='demucs' and keeps a scoped warning policy fallback."
+            ),
+            impact="informational",
+        ),
+    ]
+
+
+def _torio_ffmpeg_probe_noise_issue() -> CompatibilityIssue:
+    """Returns the informational torio FFmpeg probe noise issue."""
+    return CompatibilityIssue(
+        code="torio_ffmpeg_probe_debug_traceback",
+        message=(
+            "torio may emit DEBUG traceback probe logs while checking "
+            "FFmpeg extension availability; adapter applies scoped "
+            "suppression to keep dependency noise bounded."
+        ),
+        impact="informational",
+    )
+
+
+def _check_stable_whisper_compatibility(
+    *, backend_id: TranscriptionBackendId
+) -> CompatibilityReport:
+    """Builds one stable-whisper compatibility report using scoped dependency policies."""
+    functional_issues: list[CompatibilityIssue] = []
+    operational_issues: list[CompatibilityIssue] = []
+    noise_issues = _default_stable_whisper_noise_issues()
+    with scoped_dependency_log_policy(
+        policy=_STABLE_WHISPER_IMPORT_POLICY,
+        context=DependencyPolicyContext(
+            backend_id=backend_id,
+            phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+            op_tag="stable_whisper.compatibility",
+        ),
+        keep_demoted=False,
+    ):
+        torio_issue = stable_whisper_torio_probe.detect_default_torio_ffmpeg_operational_issue()
+    if torio_issue is not None:
+        operational_issues.append(torio_issue)
+        noise_issues.append(_torio_ffmpeg_probe_noise_issue())
+    if not stable_whisper_torio_probe.is_module_available("stable_whisper"):
+        functional_issues.append(
+            CompatibilityIssue(
+                code="missing_dependency_stable_whisper",
+                message=(
+                    "Missing stable-whisper dependencies. Ensure project dependencies "
+                    "are installed."
+                ),
+                impact="blocking",
+            )
+        )
+    return CompatibilityReport(
+        backend_id="stable_whisper",
+        functional_issues=tuple(functional_issues),
+        operational_issues=tuple(operational_issues),
+        noise_issues=tuple(noise_issues),
+        policy_ids=(
+            _INVALID_ESCAPE_POLICY_ID,
+            _FP16_CPU_WARNING_POLICY_ID,
+            _DEMUCS_DEPRECATED_POLICY_ID,
+            _TORIO_FFMPEG_PROBE_POLICY_ID,
+        ),
+    )
+
+
+def _prepare_stable_whisper_assets(
+    *,
+    runtime_request: BackendRuntimeRequest,
+    settings: AppConfig,
+    resolve_download_target: Callable[..., Path | None],
+) -> None:
+    """Downloads stable-whisper checkpoint assets when registry metadata resolves cleanly."""
+    target_path = resolve_download_target(
+        model_name=runtime_request.model_name,
+        settings=settings,
+    )
+    if target_path is None or target_path.is_file():
+        return
+    try:
+        whisper_module = importlib.import_module("whisper")
+    except ModuleNotFoundError:
+        return
+    model_registry = getattr(whisper_module, "_MODELS", None)
+    download_fn = getattr(whisper_module, "_download", None)
+    if not isinstance(model_registry, dict) or not callable(download_fn):
+        return
+    model_url = model_registry.get(runtime_request.model_name)
+    if not isinstance(model_url, str):
+        return
+    os.makedirs(settings.models.whisper_download_root, exist_ok=True)
+    download_fn(
+        model_url,
+        str(settings.models.whisper_download_root),
+        False,
+    )
+
+
+def _load_stable_whisper_mps_model(
+    *,
+    runtime_request: BackendRuntimeRequest,
+    settings: AppConfig,
+    load_model: Callable[..., object],
+    download_root: Path,
+    resolve_mps_admission_decision: Callable[..., MpsAdmissionDecision | None],
+    log_mps_admission_control_fallback: Callable[..., None],
+    mps_compatibility_fallback_reason: Callable[[Exception], str | None],
+    release_torch_runtime_memory_for_retry: Callable[[], None],
+    move_model_to_cpu_runtime: Callable[[object], bool],
+    summarize_runtime_error: SummarizeRuntimeErrorWithLimit,
+) -> object:
+    """Loads a stable-whisper model while handling MPS admission and fallback policy."""
+    load_admission = resolve_mps_admission_decision(
+        settings=settings,
+        runtime_request=runtime_request,
+        phase="model_load",
+    )
+    if load_admission is not None and not load_admission.allow_mps:
+        log_mps_admission_control_fallback(
+            phase="model_load",
+            decision=load_admission,
+        )
+        model = load_model(
+            name=runtime_request.model_name,
+            device="cpu",
+            dq=False,
+            download_root=str(download_root),
+            in_memory=True,
+        )
+        set_stable_whisper_mps_compatibility_enabled(
+            model,
+            enabled=False,
+        )
+        set_stable_whisper_runtime_device(model, device_type="cpu")
+        return model
+
+    model = load_model(
+        name=runtime_request.model_name,
+        device="cpu",
+        dq=False,
+        download_root=str(download_root),
+        in_memory=True,
+    )
+    set_stable_whisper_runtime_device(model, device_type="cpu")
+    try:
+        model = enable_stable_whisper_mps_compatibility(model)
+    except Exception as err:
+        fallback_reason = mps_compatibility_fallback_reason(err)
+        if fallback_reason is None:
+            raise
+        if fallback_reason == "retryable_runtime_error":
+            release_torch_runtime_memory_for_retry()
+        move_model_to_cpu_runtime(model)
+        error_summary = summarize_runtime_error(err, 180)
+        logging.getLogger(__name__).warning(
+            "MPS compatibility mode unavailable; using cpu runtime " "(reason=%s, error=%s).",
+            fallback_reason,
+            error_summary,
+        )
+        set_stable_whisper_mps_compatibility_enabled(
+            model,
+            enabled=False,
+        )
+        set_stable_whisper_runtime_device(model, device_type="cpu")
+    else:
+        set_stable_whisper_runtime_device(model, device_type="mps")
+        if has_known_stable_whisper_sparse_mps_incompatibility():
+            logging.getLogger(__name__).info(
+                "MPS compatibility mode enabled " "(sparse_mps_operator_gap_detected)."
+            )
+        else:
+            logging.getLogger(__name__).info("MPS compatibility mode enabled.")
+    return model
+
+
+def _load_stable_whisper_device_model(
+    *,
+    runtime_request: BackendRuntimeRequest,
+    load_model: Callable[..., object],
+    download_root: Path,
+    is_retryable_precision_failure: Callable[[Exception], bool],
+    release_torch_runtime_memory_for_retry: Callable[[], None],
+    summarize_runtime_error: SummarizeRuntimeErrorWithLimit,
+) -> object:
+    """Loads a stable-whisper model on the requested device with CPU retry fallback."""
+    try:
+        model = load_model(
+            name=runtime_request.model_name,
+            device=runtime_request.device_spec,
+            dq=False,
+            download_root=str(download_root),
+            in_memory=True,
+        )
+        set_stable_whisper_runtime_device(
+            model,
+            device_type=runtime_request.device_type,
+        )
+        return model
+    except Exception as err:
+        should_retry_on_cpu = runtime_request.device_type in {
+            "mps",
+            "cuda",
+        } and is_retryable_precision_failure(err)
+        if not should_retry_on_cpu:
+            raise
+        release_torch_runtime_memory_for_retry()
+        error_summary = summarize_runtime_error(err, 180)
+        logging.getLogger(__name__).warning(
+            "Model load failed on %s due to retryable runtime " "error; retrying on cpu (%s).",
+            runtime_request.device_spec,
+            error_summary,
+        )
+        model = load_model(
+            name=runtime_request.model_name,
+            device="cpu",
+            dq=False,
+            download_root=str(download_root),
+            in_memory=True,
+        )
+        set_stable_whisper_mps_compatibility_enabled(
+            model,
+            enabled=False,
+        )
+        set_stable_whisper_runtime_device(model, device_type="cpu")
+        return model
+
+
+def _load_stable_whisper_runtime_model(
+    *,
+    backend_id: TranscriptionBackendId,
+    runtime_request: BackendRuntimeRequest,
+    settings: AppConfig,
+    resolve_mps_admission_decision: Callable[..., MpsAdmissionDecision | None],
+    log_mps_admission_control_fallback: Callable[..., None],
+    is_retryable_precision_failure: Callable[[Exception], bool],
+    mps_compatibility_fallback_reason: Callable[[Exception], str | None],
+    release_torch_runtime_memory_for_retry: Callable[[], None],
+    move_model_to_cpu_runtime: Callable[[object], bool],
+    summarize_runtime_error: SummarizeRuntimeErrorWithLimit,
+) -> object:
+    """Loads one stable-whisper model for the requested runtime path."""
+    with scoped_dependency_log_policy(
+        policy=_STABLE_WHISPER_IMPORT_POLICY,
+        context=DependencyPolicyContext(
+            backend_id=backend_id,
+            phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
+            op_tag="stable_whisper.import",
+        ),
+        keep_demoted=False,
+    ):
+        download_root: Path = settings.models.whisper_download_root
+        torch_cache_root: Path = settings.models.torch_cache_root
+        os.makedirs(download_root, exist_ok=True)
+        os.makedirs(torch_cache_root, exist_ok=True)
+        runtime_environment = build_runtime_environment_plan(settings)
+        with temporary_process_env(
+            runtime_environment.torch_runtime.merged(runtime_environment.stable_whisper)
+        ):
+            try:
+                stable_whisper = importlib.import_module("stable_whisper")
+            except ModuleNotFoundError as err:
+                raise RuntimeError(
+                    "Missing stable-whisper dependencies. Ensure project dependencies "
+                    "are installed."
+                ) from err
+
+            load_model = getattr(stable_whisper, "load_model", None)
+            if not callable(load_model):
+                raise RuntimeError(
+                    "stable-whisper package does not expose a callable load_model()."
+                )
+            if runtime_request.device_type == "mps":
+                model = _load_stable_whisper_mps_model(
+                    runtime_request=runtime_request,
+                    settings=settings,
+                    load_model=load_model,
+                    download_root=download_root,
+                    resolve_mps_admission_decision=resolve_mps_admission_decision,
+                    log_mps_admission_control_fallback=log_mps_admission_control_fallback,
+                    mps_compatibility_fallback_reason=mps_compatibility_fallback_reason,
+                    release_torch_runtime_memory_for_retry=release_torch_runtime_memory_for_retry,
+                    move_model_to_cpu_runtime=move_model_to_cpu_runtime,
+                    summarize_runtime_error=summarize_runtime_error,
+                )
+            else:
+                model = _load_stable_whisper_device_model(
+                    runtime_request=runtime_request,
+                    load_model=load_model,
+                    download_root=download_root,
+                    is_retryable_precision_failure=is_retryable_precision_failure,
+                    release_torch_runtime_memory_for_retry=release_torch_runtime_memory_for_retry,
+                    summarize_runtime_error=summarize_runtime_error,
+                )
+    resolved_device_type = get_stable_whisper_runtime_device(
+        model,
+        default_device_type=runtime_request.device_type,
+    )
+    logging.getLogger(__name__).info(
+        "Runtime device ready (%s).",
+        resolved_device_type,
+    )
+    return model
+
+
+def _transcribe_with_stable_whisper_model(
+    *,
+    backend_id: TranscriptionBackendId,
+    model: object,
+    runtime_request: BackendRuntimeRequest,
+    file_path: str,
+    language: str,
+    settings: AppConfig,
+    build_transcribe_kwargs: Callable[..., dict[str, object]],
+    resolve_mps_admission_decision: Callable[..., MpsAdmissionDecision | None],
+    should_enforce_transcribe_admission: Callable[[MpsAdmissionDecision], bool],
+    log_mps_admission_control_fallback: Callable[..., None],
+    move_model_to_cpu_runtime: Callable[[object], bool],
+    effective_precision_candidates_fn: Callable[..., tuple[str, ...]],
+    classify_transcription_failure: Callable[..., TranscriptionFailureClassification],
+    release_runtime_memory_for_retry: Callable[[], None],
+    summarize_runtime_error: SummarizeRuntimeErrorWithLimit,
+    normalize_result: Callable[[object], object],
+    format_transcript: Callable[[object], list[TranscriptWord]],
+) -> list[TranscriptWord]:
+    """Runs one stable-whisper transcription call and formats word timings."""
+    transcribe = getattr(model, "transcribe", None)
+    if not callable(transcribe):
+        raise RuntimeError("Loaded stable-whisper model does not expose a callable transcribe().")
+    typed_transcribe = cast(Callable[..., object], transcribe)
+    logger = logging.getLogger(__name__)
+    runtime_device_type = get_stable_whisper_runtime_device(
+        model,
+        default_device_type=runtime_request.device_type,
+    )
+    runtime_device_type = resolve_stable_whisper_transcribe_runtime_device(
+        model=model,
+        runtime_request=runtime_request,
+        settings=settings,
+        runtime_device_type=runtime_device_type,
+        resolve_mps_admission_decision=resolve_mps_admission_decision,
+        should_enforce_transcribe_admission=should_enforce_transcribe_admission,
+        log_mps_admission_control_fallback=log_mps_admission_control_fallback,
+        move_model_to_cpu_runtime=move_model_to_cpu_runtime,
+        set_mps_compatibility_enabled=set_stable_whisper_mps_compatibility_enabled,
+        set_runtime_device=set_stable_whisper_runtime_device,
+        logger=logger,
+    )
+    precision_candidates = effective_precision_candidates_fn(
+        runtime_request=runtime_request,
+        runtime_device_type=runtime_device_type,
+    )
+
+    def _build_transcribe_kwargs_for_runtime(
+        request: BackendRuntimeRequest,
+        precision: str,
+    ) -> dict[str, object]:
+        return build_transcribe_kwargs(
+            transcribe_callable=typed_transcribe,
+            runtime_request=request,
+            file_path=file_path,
+            language=language,
+            precision=precision,
+        )
+
+    def _invoke_runtime_transcribe(
+        transcribe_kwargs: dict[str, object],
+        runtime_device: str,
+    ) -> object:
+        with scoped_dependency_log_policy(
+            policy=_STABLE_WHISPER_TRANSCRIBE_POLICY,
+            context=DependencyPolicyContext(
+                backend_id=backend_id,
+                phase_name=PHASE_TRANSCRIPTION,
+                op_tag="stable_whisper.transcribe",
+            ),
+        ):
+            mps_compat_context = (
+                stable_whisper_mps_timing_compatibility_context()
+                if (runtime_device == "mps" and is_stable_whisper_mps_compatibility_enabled(model))
+                else nullcontext()
+            )
+            with mps_compat_context:
+                return typed_transcribe(**transcribe_kwargs)
+
+    return run_stable_whisper_transcribe_with_retry(
+        model=model,
+        runtime_request=runtime_request,
+        settings=settings,
+        runtime_device_type=runtime_device_type,
+        precision_candidates=precision_candidates,
+        typed_transcribe=typed_transcribe,
+        build_transcribe_kwargs=_build_transcribe_kwargs_for_runtime,
+        invoke_runtime_transcribe=_invoke_runtime_transcribe,
+        classify_failure=(
+            lambda err, precision, current_settings: classify_transcription_failure(
+                err=err,
+                runtime_device_type=runtime_device_type,
+                precision=precision,
+                settings=current_settings,
+            )
+        ),
+        release_runtime_memory_for_retry=release_runtime_memory_for_retry,
+        summarize_runtime_error=lambda err: summarize_runtime_error(err, 180),
+        move_model_to_cpu_runtime=move_model_to_cpu_runtime,
+        set_mps_compatibility_disabled=(
+            lambda runtime_model: set_stable_whisper_mps_compatibility_enabled(
+                runtime_model,
+                enabled=False,
+            )
+        ),
+        set_runtime_device_cpu=(
+            lambda runtime_model: set_stable_whisper_runtime_device(
+                runtime_model,
+                device_type="cpu",
+            )
+        ),
+        normalize_result=normalize_result,
+        format_transcript=format_transcript,
+        logger=logger,
+    )
+
+
 class StableWhisperAdapter(TranscriptionBackendAdapter):
     """Adapter for stable-whisper backend behavior and compatibility checks."""
 
@@ -161,82 +610,8 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         """Checks stable-whisper dependency/runtime compatibility."""
         del runtime_request
         del settings
-        functional_issues: list[CompatibilityIssue] = []
-        operational_issues: list[CompatibilityIssue] = []
-        noise_issues: list[CompatibilityIssue] = [
-            CompatibilityIssue(
-                code="stable_whisper_invalid_escape_sequence",
-                message=(
-                    "stable-whisper may emit SyntaxWarning invalid escape sequence "
-                    "during module import; scoped warning policy is required."
-                ),
-                impact="informational",
-            ),
-            CompatibilityIssue(
-                code="stable_whisper_fp16_cpu_fallback_warning",
-                message=(
-                    "stable-whisper may emit a CPU fp16 fallback UserWarning "
-                    "during transcription; adapter resolves device-aware precision "
-                    "and uses a "
-                    "scoped warning policy fallback."
-                ),
-                impact="informational",
-            ),
-            CompatibilityIssue(
-                code="stable_whisper_demucs_deprecated_warning",
-                message=(
-                    "stable-whisper may emit a demucs deprecation UserWarning "
-                    "when legacy demucs argument is used; adapter prefers "
-                    "denoiser='demucs' and keeps a scoped warning policy fallback."
-                ),
-                impact="informational",
-            ),
-        ]
-        with scoped_dependency_log_policy(
-            policy=_STABLE_WHISPER_IMPORT_POLICY,
-            context=DependencyPolicyContext(
-                backend_id=self.backend_id,
-                phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
-                op_tag="stable_whisper.compatibility",
-            ),
-            keep_demoted=False,
-        ):
-            torio_issue = stable_whisper_torio_probe.detect_default_torio_ffmpeg_operational_issue()
-        if torio_issue is not None:
-            operational_issues.append(torio_issue)
-            noise_issues.append(
-                CompatibilityIssue(
-                    code="torio_ffmpeg_probe_debug_traceback",
-                    message=(
-                        "torio may emit DEBUG traceback probe logs while checking "
-                        "FFmpeg extension availability; adapter applies scoped "
-                        "suppression to keep dependency noise bounded."
-                    ),
-                    impact="informational",
-                )
-            )
-        if not stable_whisper_torio_probe.is_module_available("stable_whisper"):
-            functional_issues.append(
-                CompatibilityIssue(
-                    code="missing_dependency_stable_whisper",
-                    message=(
-                        "Missing stable-whisper dependencies. Ensure project dependencies "
-                        "are installed."
-                    ),
-                    impact="blocking",
-                )
-            )
-        return CompatibilityReport(
-            backend_id="stable_whisper",
-            functional_issues=tuple(functional_issues),
-            operational_issues=tuple(operational_issues),
-            noise_issues=tuple(noise_issues),
-            policy_ids=(
-                _INVALID_ESCAPE_POLICY_ID,
-                _FP16_CPU_WARNING_POLICY_ID,
-                _DEMUCS_DEPRECATED_POLICY_ID,
-                _TORIO_FFMPEG_PROBE_POLICY_ID,
-            ),
+        return _check_stable_whisper_compatibility(
+            backend_id=self.backend_id,
         )
 
     def setup_required(
@@ -261,28 +636,10 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         settings: AppConfig,
     ) -> None:
         """Downloads stable-whisper checkpoint assets when required."""
-        target_path = self._stable_whisper_download_target(
-            model_name=runtime_request.model_name,
+        _prepare_stable_whisper_assets(
+            runtime_request=runtime_request,
             settings=settings,
-        )
-        if target_path is None or target_path.is_file():
-            return
-        try:
-            whisper_module = importlib.import_module("whisper")
-        except ModuleNotFoundError:
-            return
-        model_registry = getattr(whisper_module, "_MODELS", None)
-        download_fn = getattr(whisper_module, "_download", None)
-        if not isinstance(model_registry, dict) or not callable(download_fn):
-            return
-        model_url = model_registry.get(runtime_request.model_name)
-        if not isinstance(model_url, str):
-            return
-        os.makedirs(settings.models.whisper_download_root, exist_ok=True)
-        download_fn(
-            model_url,
-            str(settings.models.whisper_download_root),
-            False,
+            resolve_download_target=self._stable_whisper_download_target,
         )
 
     def load_model(
@@ -292,147 +649,18 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         settings: AppConfig,
     ) -> object:
         """Loads one stable-whisper model for resolved runtime device inference."""
-        with scoped_dependency_log_policy(
-            policy=_STABLE_WHISPER_IMPORT_POLICY,
-            context=DependencyPolicyContext(
-                backend_id=self.backend_id,
-                phase_name=PHASE_TRANSCRIPTION_MODEL_LOAD,
-                op_tag="stable_whisper.import",
-            ),
-            keep_demoted=False,
-        ):
-            download_root: Path = settings.models.whisper_download_root
-            torch_cache_root: Path = settings.models.torch_cache_root
-            os.makedirs(download_root, exist_ok=True)
-            os.makedirs(torch_cache_root, exist_ok=True)
-            runtime_environment = build_runtime_environment_plan(settings)
-            with temporary_process_env(
-                runtime_environment.torch_runtime.merged(runtime_environment.stable_whisper)
-            ):
-                try:
-                    stable_whisper = importlib.import_module("stable_whisper")
-                except ModuleNotFoundError as err:
-                    raise RuntimeError(
-                        "Missing stable-whisper dependencies. Ensure project dependencies "
-                        "are installed."
-                    ) from err
-
-                load_model = getattr(stable_whisper, "load_model", None)
-                if not callable(load_model):
-                    raise RuntimeError(
-                        "stable-whisper package does not expose a callable load_model()."
-                    )
-                if runtime_request.device_type == "mps":
-                    load_admission = self._resolve_mps_admission_decision(
-                        settings=settings,
-                        runtime_request=runtime_request,
-                        phase="model_load",
-                    )
-                    if load_admission is not None and not load_admission.allow_mps:
-                        self._log_mps_admission_control_fallback(
-                            phase="model_load",
-                            decision=load_admission,
-                        )
-                        model = load_model(
-                            name=runtime_request.model_name,
-                            device="cpu",
-                            dq=False,
-                            download_root=str(download_root),
-                            in_memory=True,
-                        )
-                        set_stable_whisper_mps_compatibility_enabled(
-                            model,
-                            enabled=False,
-                        )
-                        set_stable_whisper_runtime_device(model, device_type="cpu")
-                    else:
-                        model = load_model(
-                            name=runtime_request.model_name,
-                            device="cpu",
-                            dq=False,
-                            download_root=str(download_root),
-                            in_memory=True,
-                        )
-                        set_stable_whisper_runtime_device(model, device_type="cpu")
-                        try:
-                            model = enable_stable_whisper_mps_compatibility(model)
-                        except Exception as err:
-                            fallback_reason = self._mps_compatibility_fallback_reason(err)
-                            if fallback_reason is None:
-                                raise
-                            if fallback_reason == "retryable_runtime_error":
-                                self._release_torch_runtime_memory_for_retry()
-                            self._move_model_to_cpu_runtime(model)
-                            error_summary = self._summarize_runtime_error(err)
-                            logging.getLogger(__name__).warning(
-                                "MPS compatibility mode unavailable; using cpu runtime "
-                                "(reason=%s, error=%s).",
-                                fallback_reason,
-                                error_summary,
-                            )
-                            set_stable_whisper_mps_compatibility_enabled(
-                                model,
-                                enabled=False,
-                            )
-                            set_stable_whisper_runtime_device(model, device_type="cpu")
-                        else:
-                            set_stable_whisper_runtime_device(model, device_type="mps")
-                            if has_known_stable_whisper_sparse_mps_incompatibility():
-                                logging.getLogger(__name__).info(
-                                    "MPS compatibility mode enabled "
-                                    "(sparse_mps_operator_gap_detected)."
-                                )
-                            else:
-                                logging.getLogger(__name__).info("MPS compatibility mode enabled.")
-                else:
-                    try:
-                        model = load_model(
-                            name=runtime_request.model_name,
-                            device=runtime_request.device_spec,
-                            dq=False,
-                            download_root=str(download_root),
-                            in_memory=True,
-                        )
-                        set_stable_whisper_runtime_device(
-                            model,
-                            device_type=runtime_request.device_type,
-                        )
-                    except Exception as err:
-                        should_retry_on_cpu = runtime_request.device_type in {
-                            "mps",
-                            "cuda",
-                        } and self._is_retryable_precision_failure(err)
-                        if not should_retry_on_cpu:
-                            raise
-                        self._release_torch_runtime_memory_for_retry()
-                        error_summary = self._summarize_runtime_error(err)
-                        logging.getLogger(__name__).warning(
-                            "Model load failed on %s due to retryable runtime "
-                            "error; retrying on cpu (%s).",
-                            runtime_request.device_spec,
-                            error_summary,
-                        )
-                        model = load_model(
-                            name=runtime_request.model_name,
-                            device="cpu",
-                            dq=False,
-                            download_root=str(download_root),
-                            in_memory=True,
-                        )
-                        set_stable_whisper_mps_compatibility_enabled(
-                            model,
-                            enabled=False,
-                        )
-                        set_stable_whisper_runtime_device(model, device_type="cpu")
-            resolved_device_type = get_stable_whisper_runtime_device(
-                model,
-                default_device_type=runtime_request.device_type,
-            )
-            logging.getLogger(__name__).info(
-                "Runtime device ready (%s).",
-                resolved_device_type,
-            )
-            return model
+        return _load_stable_whisper_runtime_model(
+            backend_id=self.backend_id,
+            runtime_request=runtime_request,
+            settings=settings,
+            resolve_mps_admission_decision=self._resolve_mps_admission_decision,
+            log_mps_admission_control_fallback=self._log_mps_admission_control_fallback,
+            is_retryable_precision_failure=self._is_retryable_precision_failure,
+            mps_compatibility_fallback_reason=self._mps_compatibility_fallback_reason,
+            release_torch_runtime_memory_for_retry=self._release_torch_runtime_memory_for_retry,
+            move_model_to_cpu_runtime=self._move_model_to_cpu_runtime,
+            summarize_runtime_error=self._summarize_runtime_error,
+        )
 
     def transcribe(
         self,
@@ -444,108 +672,24 @@ class StableWhisperAdapter(TranscriptionBackendAdapter):
         settings: AppConfig,
     ) -> list[TranscriptWord]:
         """Runs one stable-whisper transcription call and formats word timings."""
-        transcribe = getattr(model, "transcribe", None)
-        if not callable(transcribe):
-            raise RuntimeError(
-                "Loaded stable-whisper model does not expose a callable transcribe()."
-            )
-        typed_transcribe = cast(Callable[..., object], transcribe)
-        logger = logging.getLogger(__name__)
-        runtime_device_type = get_stable_whisper_runtime_device(
-            model,
-            default_device_type=runtime_request.device_type,
-        )
-        runtime_device_type = resolve_stable_whisper_transcribe_runtime_device(
+        return _transcribe_with_stable_whisper_model(
+            backend_id=self.backend_id,
             model=model,
             runtime_request=runtime_request,
+            file_path=file_path,
+            language=language,
             settings=settings,
-            runtime_device_type=runtime_device_type,
+            build_transcribe_kwargs=self._build_transcribe_kwargs,
             resolve_mps_admission_decision=self._resolve_mps_admission_decision,
             should_enforce_transcribe_admission=self._should_enforce_transcribe_admission,
             log_mps_admission_control_fallback=self._log_mps_admission_control_fallback,
             move_model_to_cpu_runtime=self._move_model_to_cpu_runtime,
-            set_mps_compatibility_enabled=set_stable_whisper_mps_compatibility_enabled,
-            set_runtime_device=set_stable_whisper_runtime_device,
-            logger=logger,
-        )
-
-        precision_candidates = self._effective_precision_candidates(
-            runtime_request=runtime_request,
-            runtime_device_type=runtime_device_type,
-        )
-
-        def _build_transcribe_kwargs_for_runtime(
-            request: BackendRuntimeRequest,
-            precision: str,
-        ) -> dict[str, object]:
-            return self._build_transcribe_kwargs(
-                transcribe_callable=typed_transcribe,
-                runtime_request=request,
-                file_path=file_path,
-                language=language,
-                precision=precision,
-            )
-
-        def _invoke_runtime_transcribe(
-            transcribe_kwargs: dict[str, object],
-            runtime_device: str,
-        ) -> object:
-            with scoped_dependency_log_policy(
-                policy=_STABLE_WHISPER_TRANSCRIBE_POLICY,
-                context=DependencyPolicyContext(
-                    backend_id=self.backend_id,
-                    phase_name=PHASE_TRANSCRIPTION,
-                    op_tag="stable_whisper.transcribe",
-                ),
-            ):
-                mps_compat_context = (
-                    stable_whisper_mps_timing_compatibility_context()
-                    if (
-                        runtime_device == "mps"
-                        and is_stable_whisper_mps_compatibility_enabled(model)
-                    )
-                    else nullcontext()
-                )
-                with mps_compat_context:
-                    return typed_transcribe(**transcribe_kwargs)
-
-        return run_stable_whisper_transcribe_with_retry(
-            model=model,
-            runtime_request=runtime_request,
-            settings=settings,
-            runtime_device_type=runtime_device_type,
-            precision_candidates=precision_candidates,
-            typed_transcribe=typed_transcribe,
-            build_transcribe_kwargs=_build_transcribe_kwargs_for_runtime,
-            invoke_runtime_transcribe=_invoke_runtime_transcribe,
-            classify_failure=(
-                lambda err, precision, current_settings: (
-                    self._classify_transcription_failure(
-                        err=err,
-                        runtime_device_type=runtime_device_type,
-                        precision=precision,
-                        settings=current_settings,
-                    )
-                )
-            ),
+            effective_precision_candidates_fn=self._effective_precision_candidates,
+            classify_transcription_failure=self._classify_transcription_failure,
             release_runtime_memory_for_retry=self._release_torch_runtime_memory_for_retry,
             summarize_runtime_error=self._summarize_runtime_error,
-            move_model_to_cpu_runtime=self._move_model_to_cpu_runtime,
-            set_mps_compatibility_disabled=(
-                lambda runtime_model: set_stable_whisper_mps_compatibility_enabled(
-                    runtime_model,
-                    enabled=False,
-                )
-            ),
-            set_runtime_device_cpu=(
-                lambda runtime_model: set_stable_whisper_runtime_device(
-                    runtime_model,
-                    device_type="cpu",
-                )
-            ),
             normalize_result=self._normalize_result,
             format_transcript=self._format_transcript,
-            logger=logger,
         )
 
     @classmethod

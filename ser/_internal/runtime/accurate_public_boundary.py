@@ -180,6 +180,23 @@ class AccurateTransientBackendError(RuntimeError):
     """Spawn-safe accurate worker error marker for transient backend failures."""
 
 
+@dataclass(frozen=True)
+class _AccurateBoundaryDependencies:
+    """Precomputed collaborators and execution plan for accurate boundary orchestration."""
+
+    runtime_config: ProfileRuntimeConfig
+    resolved_expected_backend_model_id: str | None
+    use_process_isolation: bool
+    process_payload: AccurateProcessPayload | None
+    cpu_backend_builder: Callable[[], FeatureBackend]
+    prepare_in_process_operation: Callable[
+        ...,
+        PreparedAccurateOperation[_AccurateLoadedModel, FeatureBackend],
+    ]
+    run_with_process_timeout: Callable[..., InferenceResult]
+    run_inference_once: Callable[..., InferenceResult]
+
+
 def _build_backend_for_worker_profile(
     *,
     expected_backend_id: str,
@@ -293,17 +310,16 @@ def run_accurate_inference_once(
     )
 
 
-def run_accurate_inference_from_public_boundary(
+def _build_accurate_boundary_dependencies(
+    *,
     request: InferenceRequest,
     settings: AppConfig,
-    *,
-    loaded_model: _AccurateLoadedModel | None = None,
-    backend: FeatureBackend | None = None,
-    enforce_timeout: bool = True,
-    allow_retries: bool = True,
-    expected_backend_id: str = "hf_whisper",
-    expected_profile: str = "accurate",
-    expected_backend_model_id: str | None = None,
+    loaded_model: _AccurateLoadedModel | None,
+    backend: FeatureBackend | None,
+    enforce_timeout: bool,
+    expected_backend_id: str,
+    expected_profile: str,
+    expected_backend_model_id: str | None,
     logger: logging.Logger,
     model_unavailable_error_type: type[Exception],
     runtime_dependency_error_type: type[Exception],
@@ -311,9 +327,8 @@ def run_accurate_inference_from_public_boundary(
     timeout_error_type: type[Exception],
     inference_execution_error_type: type[Exception],
     transient_backend_error_type: type[Exception],
-) -> InferenceResult:
-    """Runs accurate inference through the internal public-boundary owner."""
-
+) -> _AccurateBoundaryDependencies:
+    """Builds accurate boundary collaborators and execution plan once per invocation."""
     worker_error_factories: dict[str, Callable[[str], Exception]] = {
         "ValueError": ValueError,
         runtime_dependency_error_type.__name__: runtime_dependency_error_type,
@@ -373,6 +388,24 @@ def run_accurate_inference_from_public_boundary(
             error_factory=inference_execution_error_type,
         )
 
+    def _terminate_worker_process(process: BaseProcess) -> None:
+        _terminate_worker_process_binding(
+            process=process,
+            impl=_terminate_worker_process_impl,
+            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
+            kill_grace_seconds=_KILL_GRACE_SECONDS,
+        )
+
+    def _raise_worker_error(error_type: str, message: str) -> None:
+        _raise_worker_error_binding(
+            error_type=error_type,
+            message=message,
+            impl=_raise_worker_error_impl,
+            known_error_factories=worker_error_factories,
+            unknown_error_factory=inference_execution_error_type,
+            worker_label="Accurate inference",
+        )
+
     def _parse_worker_completion_message(worker_message: WorkerMessage) -> InferenceResult:
         return _parse_worker_completion_message_binding(
             worker_message=worker_message,
@@ -381,6 +414,50 @@ def run_accurate_inference_from_public_boundary(
             error_factory=inference_execution_error_type,
             raise_worker_error=_raise_worker_error,
             result_type=InferenceResult,
+        )
+
+    runtime_config = _runtime_config_for_profile_impl(
+        settings=settings,
+        expected_profile=expected_profile,
+        unsupported_profile_error=model_unavailable_error_type,
+    )
+    resolved_expected_backend_model_id = expected_backend_model_id
+    if resolved_expected_backend_model_id is None and expected_backend_id == "hf_whisper":
+        resolved_expected_backend_model_id = resolve_accurate_model_id(settings)
+    use_process_isolation = (
+        enforce_timeout
+        and loaded_model is None
+        and backend is None
+        and settings.runtime_flags.profile_pipeline
+        and runtime_config.process_isolation
+    )
+    process_payload = (
+        AccurateProcessPayload(
+            request=request,
+            settings=_build_process_settings_snapshot_impl(settings),
+            expected_backend_id=expected_backend_id,
+            expected_profile=expected_profile,
+            expected_backend_model_id=resolved_expected_backend_model_id,
+        )
+        if use_process_isolation
+        else None
+    )
+
+    def _build_backend_for_profile(
+        *,
+        expected_backend_id: str,
+        expected_backend_model_id: str | None,
+        settings: AppConfig,
+        expected_profile: str | None = None,
+    ) -> FeatureBackend:
+        del expected_profile
+        return build_backend_for_profile(
+            expected_backend_id=expected_backend_id,
+            expected_backend_model_id=expected_backend_model_id,
+            settings=settings,
+            whisper_backend_factory=WhisperBackend,
+            emotion2vec_backend_factory=Emotion2VecBackend,
+            unsupported_backend_error=model_unavailable_error_type,
         )
 
     def _prepare_in_process_accurate_operation(
@@ -430,65 +507,6 @@ def run_accurate_inference_from_public_boundary(
             transient_error_factory=transient_backend_error_type,
         )
 
-    def _build_backend_for_profile(
-        *,
-        expected_backend_id: str,
-        expected_backend_model_id: str | None,
-        settings: AppConfig,
-        expected_profile: str | None = None,
-    ) -> FeatureBackend:
-        del expected_profile
-        return build_backend_for_profile(
-            expected_backend_id=expected_backend_id,
-            expected_backend_model_id=expected_backend_model_id,
-            settings=settings,
-            whisper_backend_factory=WhisperBackend,
-            emotion2vec_backend_factory=Emotion2VecBackend,
-            unsupported_backend_error=model_unavailable_error_type,
-        )
-
-    def _terminate_worker_process(process: BaseProcess) -> None:
-        _terminate_worker_process_binding(
-            process=process,
-            impl=_terminate_worker_process_impl,
-            terminate_grace_seconds=_TERMINATE_GRACE_SECONDS,
-            kill_grace_seconds=_KILL_GRACE_SECONDS,
-        )
-
-    def _raise_worker_error(error_type: str, message: str) -> None:
-        _raise_worker_error_binding(
-            error_type=error_type,
-            message=message,
-            impl=_raise_worker_error_impl,
-            known_error_factories=worker_error_factories,
-            unknown_error_factory=inference_execution_error_type,
-            worker_label="Accurate inference",
-        )
-
-    runtime_config = _runtime_config_for_profile_impl(
-        settings=settings,
-        expected_profile=expected_profile,
-        unsupported_profile_error=model_unavailable_error_type,
-    )
-    resolved_expected_backend_model_id = expected_backend_model_id
-    if resolved_expected_backend_model_id is None and expected_backend_id == "hf_whisper":
-        resolved_expected_backend_model_id = resolve_accurate_model_id(settings)
-    use_process_isolation = (
-        enforce_timeout
-        and loaded_model is None
-        and backend is None
-        and settings.runtime_flags.profile_pipeline
-        and runtime_config.process_isolation
-    )
-    process_payload: AccurateProcessPayload | None = None
-    if use_process_isolation:
-        process_payload = AccurateProcessPayload(
-            request=request,
-            settings=_build_process_settings_snapshot_impl(settings),
-            expected_backend_id=expected_backend_id,
-            expected_profile=expected_profile,
-            expected_backend_model_id=resolved_expected_backend_model_id,
-        )
     cpu_settings = _build_cpu_settings_snapshot_impl(settings)
     cpu_backend_builder: Callable[[], FeatureBackend] = partial(
         _build_backend_for_profile,
@@ -497,12 +515,61 @@ def run_accurate_inference_from_public_boundary(
         settings=cpu_settings,
         expected_profile=expected_profile,
     )
-
-    retry_state, prepared_operation, setup_started_at = _prepare_retry_state_impl(
+    return _AccurateBoundaryDependencies(
+        runtime_config=runtime_config,
+        resolved_expected_backend_model_id=resolved_expected_backend_model_id,
         use_process_isolation=use_process_isolation,
+        process_payload=process_payload,
+        cpu_backend_builder=cpu_backend_builder,
+        prepare_in_process_operation=_prepare_in_process_accurate_operation,
+        run_with_process_timeout=_run_with_process_timeout,
+        run_inference_once=_run_accurate_inference_once,
+    )
+
+
+def run_accurate_inference_from_public_boundary(
+    request: InferenceRequest,
+    settings: AppConfig,
+    *,
+    loaded_model: _AccurateLoadedModel | None = None,
+    backend: FeatureBackend | None = None,
+    enforce_timeout: bool = True,
+    allow_retries: bool = True,
+    expected_backend_id: str = "hf_whisper",
+    expected_profile: str = "accurate",
+    expected_backend_model_id: str | None = None,
+    logger: logging.Logger,
+    model_unavailable_error_type: type[Exception],
+    runtime_dependency_error_type: type[Exception],
+    model_load_error_type: type[Exception],
+    timeout_error_type: type[Exception],
+    inference_execution_error_type: type[Exception],
+    transient_backend_error_type: type[Exception],
+) -> InferenceResult:
+    """Runs accurate inference through the internal public-boundary owner."""
+    dependencies = _build_accurate_boundary_dependencies(
         request=request,
         settings=settings,
-        runtime_config=runtime_config,
+        loaded_model=loaded_model,
+        backend=backend,
+        enforce_timeout=enforce_timeout,
+        expected_backend_id=expected_backend_id,
+        expected_profile=expected_profile,
+        expected_backend_model_id=expected_backend_model_id,
+        logger=logger,
+        model_unavailable_error_type=model_unavailable_error_type,
+        runtime_dependency_error_type=runtime_dependency_error_type,
+        model_load_error_type=model_load_error_type,
+        timeout_error_type=timeout_error_type,
+        inference_execution_error_type=inference_execution_error_type,
+        transient_backend_error_type=transient_backend_error_type,
+    )
+
+    retry_state, prepared_operation, setup_started_at = _prepare_retry_state_impl(
+        use_process_isolation=dependencies.use_process_isolation,
+        request=request,
+        settings=settings,
+        runtime_config=dependencies.runtime_config,
         loaded_model=loaded_model,
         backend=backend,
         logger=logger,
@@ -510,20 +577,20 @@ def run_accurate_inference_from_public_boundary(
         setup_phase_name=PHASE_EMOTION_SETUP,
         log_phase_started=log_phase_started,
         log_phase_failed=log_phase_failed,
-        process_payload=process_payload,
+        process_payload=dependencies.process_payload,
         prepare_in_process_operation=partial(
-            _prepare_in_process_accurate_operation,
+            dependencies.prepare_in_process_operation,
             expected_backend_id=expected_backend_id,
             expected_profile=expected_profile,
-            expected_backend_model_id=resolved_expected_backend_model_id,
+            expected_backend_model_id=dependencies.resolved_expected_backend_model_id,
         ),
     )
     with _SINGLE_FLIGHT_REGISTRY.lock(
         profile=expected_profile,
-        backend_model_id=resolved_expected_backend_model_id,
+        backend_model_id=dependencies.resolved_expected_backend_model_id,
     ):
         return execute_accurate_inference_with_retry(
-            use_process_isolation=use_process_isolation,
+            use_process_isolation=dependencies.use_process_isolation,
             retry_state=retry_state,
             prepared_operation=prepared_operation,
             setup_started_at=setup_started_at,
@@ -533,12 +600,12 @@ def run_accurate_inference_from_public_boundary(
             expected_profile=expected_profile,
             allow_retries=allow_retries,
             enforce_timeout=enforce_timeout,
-            cpu_backend_builder=cpu_backend_builder,
+            cpu_backend_builder=dependencies.cpu_backend_builder,
             logger=logger,
             run_accurate_retryable_operation=lambda **kwargs: run_accurate_retryable_operation(
                 logger=logger,
-                run_with_process_timeout=_run_with_process_timeout,
-                run_accurate_inference_once=_run_accurate_inference_once,
+                run_with_process_timeout=dependencies.run_with_process_timeout,
+                run_accurate_inference_once=dependencies.run_inference_once,
                 run_with_timeout=_run_with_timeout_impl,
                 run_inference_operation=_run_inference_operation_impl,
                 timeout_error_factory=timeout_error_type,
