@@ -58,11 +58,16 @@ Run the boundary lane whenever your change touches `ser/api.py`, `ser/_internal/
 
 ```bash
 make import-lint
-uv run pytest -q tests/test_import_lint_policy.py tests/test_api_import_boundary.py tests/test_api.py tests/test_cli.py
+uv run pytest -q \
+  tests/suites/integration/architecture/test_import_lint_policy.py \
+  tests/suites/integration/architecture/test_api_import_boundary.py \
+  tests/suites/integration/api/test_api.py \
+  tests/suites/integration/cli/test_cli.py
 ```
 
 ## CI Topology
 Default CI is defined in `.github/workflows/ci.yml`.
+It runs on pull requests, pushes to `main`, and a weekly scheduled sweep every Monday at `06:00 UTC`.
 
 Quality and validation lanes:
 - `changes`: classifies pull requests so docs-only PRs can skip heavy jobs while `push` to `main` still runs the full pipeline.
@@ -72,8 +77,15 @@ Quality and validation lanes:
 - `contract-gates`: deterministic contract lane on Python 3.12 (API boundary import-lint gate + transcription benchmark contract test).
 - `build`: package build + metadata/wheel smoke checks.
 
+## Test Suite Layout
+- `tests/suites/unit`: narrow owner or helper behavior.
+- `tests/suites/integration`: multi-module orchestration, boundary, or workflow coverage.
+- `tests/suites/smoke`: cheap user-path workflow checks.
+- Structural markers (`unit`, `integration`, `smoke`, `topology_contract`) come from suite placement in `tests/conftest.py`.
+- Non-structural markers must stay explicitly declared by the modules that need them.
+
 ## Hardware Validation
-Hardware-specific workflows are manual (`workflow_dispatch`):
+Hardware-specific workflows are manual by default (`workflow_dispatch`) and are also reusable by release orchestration through `workflow_call`:
 - [docs/ci/hardware-validation.md](docs/ci/hardware-validation.md)
 
 Policy note:
