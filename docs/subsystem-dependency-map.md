@@ -230,7 +230,7 @@ smaller abstract service boundaries.
 
 Public modules allowed to import `_internal` directly by design are defined in
 [`boundary_policy.toml`](../boundary_policy.toml). That file is authoritative:
-[`tests/test_api_import_boundary.py`](../tests/test_api_import_boundary.py)
+[`tests/suites/integration/architecture/test_api_import_boundary.py`](../tests/suites/integration/architecture/test_api_import_boundary.py)
 loads it directly, and `make import-lint` enforces the same contract.
 
 Each `[[public_internal_import]]` entry in `boundary_policy.toml` carries both

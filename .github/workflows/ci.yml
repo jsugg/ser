@@ -206,7 +206,7 @@ jobs:
       - name: Enforce transcription benchmark contract gate
         run: >
           uv run --frozen --python 3.12 --extra dev pytest -q
-          tests/test_transcription_profiling.py
+          tests/suites/unit/internal/transcription/test_transcription_profiling.py
 
   build:
     runs-on: ubuntu-latest
