@@ -11,7 +11,7 @@ formal artifacts in [`docs/architecture-diagram.md`](architecture-diagram.md),
 These counts are a current working-tree snapshot taken on March 27, 2026.
 
 - Source modules under `ser/`: `228`
-- Test modules under `tests/`: `145`
+- Test modules under `tests/`: `150`
 - Public modules outside `_internal/`: `167`
 - Internal owner/helper modules under `_internal/`: `61`
 - Public modules importing `_internal` directly: `24`
