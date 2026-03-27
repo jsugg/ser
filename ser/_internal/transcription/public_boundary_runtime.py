@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from ser.config import AppConfig
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends import BackendRuntimeRequest, CompatibilityReport
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest, CompatibilityReport
 
 type _ResolveTranscriptionProfileImpl = Callable[..., object]
 type _ResolveBackendId = Callable[..., TranscriptionBackendId]

@@ -6,15 +6,17 @@ import logging
 from collections.abc import Callable
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
-from typing import Never, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Never, Protocol, TypeVar, cast
 
 from ser.config import AppConfig
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends import BackendRuntimeRequest
 
 from .process_isolation import WorkerMessage
 from .process_worker import TranscriptionProcessPayload
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 class _ProcessIsolatedProfile(Protocol):
