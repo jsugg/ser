@@ -169,6 +169,28 @@ def test_extract_transcript_in_process_runs_setup_and_releases_model_on_success(
     active_profile = _Profile()
     model = object()
 
+    def _phase_started(_logger: logging.Logger, *, phase_name: str) -> float:
+        phase_events.append(("start", phase_name))
+        return 1.0
+
+    def _phase_completed(
+        _logger: logging.Logger,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("complete", phase_name))
+
+    def _phase_failed(
+        _logger: logging.Logger,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("failed", phase_name))
+
     resolved = ipo.extract_transcript_in_process(
         file_path="sample.wav",
         language="en",
@@ -181,16 +203,9 @@ def test_extract_transcript_in_process_runs_setup_and_releases_model_on_success(
         load_model_fn=lambda profile: model,
         transcribe_with_profile_fn=lambda model, language, file_path, active_profile: ["word"],
         release_memory_fn=lambda *, model: release_calls.append(model),
-        phase_started_fn=lambda logger, *, phase_name: phase_events.append(("start", phase_name))
-        or 1.0,
-        phase_completed_fn=lambda logger, *, phase_name, started_at: phase_events.append(
-            ("complete", phase_name)
-        )
-        or None,
-        phase_failed_fn=lambda logger, *, phase_name, started_at: phase_events.append(
-            ("failed", phase_name)
-        )
-        or None,
+        phase_started_fn=_phase_started,
+        phase_completed_fn=_phase_completed,
+        phase_failed_fn=_phase_failed,
         logger=logging.getLogger("ser.tests.in_process_orchestration"),
     )
 
@@ -215,6 +230,28 @@ def test_extract_transcript_in_process_reports_transcription_failure_and_release
     model = object()
     settings = cast(AppConfig, SimpleNamespace())
 
+    def _phase_started(_logger: logging.Logger, *, phase_name: str) -> float:
+        phase_events.append(("start", phase_name))
+        return 1.0
+
+    def _phase_completed(
+        _logger: logging.Logger,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("complete", phase_name))
+
+    def _phase_failed(
+        _logger: logging.Logger,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("failed", phase_name))
+
     with pytest.raises(ValueError, match="transcribe failed"):
         ipo.extract_transcript_in_process(
             file_path="sample.wav",
@@ -228,18 +265,9 @@ def test_extract_transcript_in_process_reports_transcription_failure_and_release
                 (_ for _ in ()).throw(ValueError("transcribe failed"))
             ),
             release_memory_fn=lambda *, model: release_calls.append(model),
-            phase_started_fn=lambda logger, *, phase_name: phase_events.append(
-                ("start", phase_name)
-            )
-            or 1.0,
-            phase_completed_fn=lambda logger, *, phase_name, started_at: phase_events.append(
-                ("complete", phase_name)
-            )
-            or None,
-            phase_failed_fn=lambda logger, *, phase_name, started_at: phase_events.append(
-                ("failed", phase_name)
-            )
-            or None,
+            phase_started_fn=_phase_started,
+            phase_completed_fn=_phase_completed,
+            phase_failed_fn=_phase_failed,
             logger=logging.getLogger("ser.tests.in_process_orchestration"),
         )
 
