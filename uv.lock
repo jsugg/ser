@@ -1656,20 +1656,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytest-cov"
-version = "6.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "coverage" },
-    { name = "pluggy" },
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/30/4c/f883ab8f0daad69f47efdf95f55a66b51a8b939c430dadce0611508d9e99/pytest_cov-6.3.0.tar.gz", hash = "sha256:35c580e7800f87ce892e687461166e1ac2bcb8fb9e13aea79032518d6e503ff2", size = 70398, upload-time = "2025-09-06T15:40:14.361Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/b4/bb7263e12aade3842b938bc5c6958cae79c5ee18992f9b9349019579da0f/pytest_cov-6.3.0-py3-none-any.whl", hash = "sha256:440db28156d2468cafc0415b4f8e50856a0d11faefa38f30906048fe490f1749", size = 25115, upload-time = "2025-09-06T15:40:12.44Z" },
-]
-
-[[package]]
 name = "python-dotenv"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2020,7 +2006,6 @@ dev = [
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
-    { name = "pytest-cov" },
     { name = "pyupgrade" },
     { name = "ruff" },
 ]
@@ -2060,7 +2045,6 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=18.1.0,<20.0.0" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.390,<2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0,<9.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0,<7.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.1,<2.0.0" },
     { name = "pyupgrade", marker = "extra == 'dev'", specifier = ">=3.21.2,<4.0.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
