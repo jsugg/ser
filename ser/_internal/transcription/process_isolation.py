@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from numbers import Real
 from pathlib import Path
 from types import ModuleType
-from typing import Literal, Never, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, Never, Protocol, TypeVar, cast
 
 from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
@@ -20,11 +21,14 @@ from ser.runtime.phase_timing import (
     log_phase_failed,
     log_phase_started,
 )
-from ser.transcript.backends import BackendRuntimeRequest
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest
 
 type _WorkerPhase = Literal["setup_complete", "model_loaded"]
 type WorkerPhaseMessage = tuple[Literal["phase"], _WorkerPhase]
-type WorkerSuccessMessage = tuple[Literal["ok"], list[tuple[str, float, float]]]
+type SerializedTranscriptWord = tuple[str, float, float]
+type WorkerSuccessMessage = tuple[Literal["ok"], list[SerializedTranscriptWord]]
 type WorkerErrorMessage = tuple[Literal["err"], str, str, str]
 type WorkerMessage = WorkerPhaseMessage | WorkerSuccessMessage | WorkerErrorMessage
 
@@ -247,6 +251,71 @@ class _TranscriptionAdapter(Protocol):
 type _AdapterResolver = Callable[[TranscriptionBackendId], object]
 
 
+def _is_real_timestamp(value: object) -> bool:
+    """Returns whether one worker timestamp payload is numeric and non-bool."""
+    return isinstance(value, Real) and not isinstance(value, bool)
+
+
+def _serialize_transcript_words(
+    transcript_words: list[object],
+) -> list[SerializedTranscriptWord]:
+    """Converts backend transcript words into a validated worker payload."""
+    serialized_words: list[SerializedTranscriptWord] = []
+    for index, raw_word in enumerate(transcript_words):
+        word = cast(_TranscriptWordLike, raw_word)
+        if not isinstance(word.word, str):
+            raise TypeError(
+                "Transcription worker produced a non-string token " f"at index {index}."
+            )
+        if not _is_real_timestamp(word.start_seconds) or not _is_real_timestamp(word.end_seconds):
+            raise TypeError(
+                "Transcription worker produced non-numeric timestamps " f"at index {index}."
+            )
+        serialized_words.append(
+            (
+                word.word,
+                float(word.start_seconds),
+                float(word.end_seconds),
+            )
+        )
+    return serialized_words
+
+
+def _deserialize_transcript_words(
+    serialized_words: object,
+    *,
+    transcript_word_factory: Callable[[str, float, float], _TTranscriptWord],
+    error_factory: _ErrorFactory,
+) -> list[_TTranscriptWord]:
+    """Builds transcript words from validated worker payload tuples."""
+    if not isinstance(serialized_words, list):
+        raise error_factory("Transcription worker returned malformed transcript payload.")
+    transcript_words: list[_TTranscriptWord] = []
+    for index, raw_word in enumerate(serialized_words):
+        if not isinstance(raw_word, tuple) or len(raw_word) != 3:
+            raise error_factory(
+                "Transcription worker returned malformed transcript payload " f"at index {index}."
+            )
+        word, start_seconds, end_seconds = raw_word
+        if not isinstance(word, str):
+            raise error_factory(
+                "Transcription worker returned non-string transcript token " f"at index {index}."
+            )
+        if not _is_real_timestamp(start_seconds) or not _is_real_timestamp(end_seconds):
+            raise error_factory(
+                "Transcription worker returned non-numeric transcript timestamps "
+                f"at index {index}."
+            )
+        transcript_words.append(
+            transcript_word_factory(
+                word,
+                float(start_seconds),
+                float(end_seconds),
+            )
+        )
+    return transcript_words
+
+
 def should_use_process_isolated_path(profile: _ProcessIsolatedProfile) -> bool:
     """Returns whether one transcription profile should use worker-process isolation."""
     return profile.backend_id == "faster_whisper"
@@ -260,6 +329,8 @@ def runtime_request_for_isolated_faster_whisper(
     logger: logging.Logger,
 ) -> BackendRuntimeRequest:
     """Builds one faster-whisper runtime request without importing torch in worker."""
+    from ser.transcript.backends.base import BackendRuntimeRequest
+
     if profile.backend_id != "faster_whisper":
         raise error_factory(
             "Process-isolated runtime request only supports faster-whisper backend."
@@ -388,14 +459,7 @@ def transcription_worker_entry(
             language=payload.language,
             settings=settings,
         )
-        serialized_words = [
-            (
-                cast(_TranscriptWordLike, word).word,
-                cast(_TranscriptWordLike, word).start_seconds,
-                cast(_TranscriptWordLike, word).end_seconds,
-            )
-            for word in transcript_words
-        ]
+        serialized_words = _serialize_transcript_words(transcript_words)
         connection.send(("ok", serialized_words))
     except BaseException as err:
         connection.send(("err", stage, type(err).__name__, str(err)))
@@ -488,9 +552,7 @@ def run_faster_whisper_process_isolated(
             isinstance(completion_message, tuple)
             and len(completion_message) == 2
             and completion_message[0] == "ok"
-            and isinstance(completion_message[1], list)
         ):
-            serialized_words = completion_message[1]
             if transcription_started_at is None:
                 raise error_factory(
                     "Transcription worker completed transcription before phase timer start."
@@ -500,10 +562,11 @@ def run_faster_whisper_process_isolated(
                 phase_name=PHASE_TRANSCRIPTION,
                 started_at=transcription_started_at,
             )
-            return [
-                transcript_word_factory(word, start_seconds, end_seconds)
-                for word, start_seconds, end_seconds in serialized_words
-            ]
+            return _deserialize_transcript_words(
+                completion_message[1],
+                transcript_word_factory=transcript_word_factory,
+                error_factory=error_factory,
+            )
         raise_worker_error_fn(completion_message)
     except Exception:
         if transcription_started_at is not None:

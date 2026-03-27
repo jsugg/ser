@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
 from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends import (
-    BackendRuntimeRequest,
-    CompatibilityIssueImpact,
-    CompatibilityReport,
-)
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import (
+        BackendRuntimeRequest,
+        CompatibilityIssueImpact,
+        CompatibilityReport,
+    )
 
 type _CompatibilityIssueKind = Literal["noise", "operational"]
 type _EmittedIssueKeySet = set[tuple[str, str, str]]

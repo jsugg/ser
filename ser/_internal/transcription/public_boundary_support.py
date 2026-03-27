@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 from collections.abc import Callable
-from typing import Literal, Never, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Never, Protocol, cast
 
 from ser._internal.transcription.compatibility import (
     check_adapter_compatibility as _check_adapter_compatibility_impl,
@@ -113,15 +113,14 @@ from ser._internal.transcription.runtime_profile import (
 from ser.config import AppConfig
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends import (
-    BackendRuntimeRequest,
-    CompatibilityReport,
-    resolve_transcription_backend_adapter,
-)
+from ser.transcript.backends.factory import resolve_transcription_backend_adapter
 from ser.transcript.runtime_policy import (
     DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
     resolve_transcription_runtime_policy,
 )
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest, CompatibilityReport
 
 _CompatibilityIssueKind = Literal["noise", "operational"]
 

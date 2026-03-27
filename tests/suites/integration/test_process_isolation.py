@@ -9,7 +9,8 @@ from collections.abc import Callable
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
-from typing import cast
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from tests.utils.helpers import process_spawn_support
@@ -20,8 +21,12 @@ from ser._internal.transcription import process_isolation as transcription_proce
 from ser._internal.transcription import public_boundary_support as transcription_boundary_support
 from ser.config import AppConfig, reload_settings
 from ser.domain import TranscriptWord
-from ser.transcript.backends import BackendRuntimeRequest
 from ser.transcript.transcript_extractor import TranscriptionProfile
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest
+else:
+    BackendRuntimeRequest = object
 
 pytestmark = [
     pytest.mark.integration,
@@ -136,14 +141,17 @@ def _run_runtime_process_timeout(
 
 
 def _transcription_runtime_request() -> BackendRuntimeRequest:
-    return BackendRuntimeRequest(
-        model_name="tiny",
-        use_demucs=False,
-        use_vad=True,
-        device_spec="cpu",
-        device_type="cpu",
-        precision_candidates=("float32",),
-        memory_tier="not_applicable",
+    return cast(
+        BackendRuntimeRequest,
+        SimpleNamespace(
+            model_name="tiny",
+            use_demucs=False,
+            use_vad=True,
+            device_spec="cpu",
+            device_type="cpu",
+            precision_candidates=("float32",),
+            memory_tier="not_applicable",
+        ),
     )
 
 
