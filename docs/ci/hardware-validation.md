@@ -1,11 +1,13 @@
 # Hardware Validation Workflows
 
-Manual hardware validation is intentionally separated from default CI.
+Hardware validation is intentionally separated from default CI.
+These workflows support manual execution via `workflow_dispatch` and release orchestration via
+`workflow_call`.
 
 ## MPS (GitHub-hosted)
 
 - Workflow: `.github/workflows/macos15-mps-validation.yml`
-- Trigger: `workflow_dispatch`
+- Triggers: `workflow_dispatch`, `workflow_call`
 - Runner: `macos-15`
 - Requirement: an Apple Silicon macOS 15 runner with MPS available.
   - The workflow fails fast if `torch.backends.mps.is_available()` or
@@ -28,7 +30,7 @@ gh workflow run .github/workflows/macos15-mps-validation.yml \
 ## CUDA and XPU (Self-hosted)
 
 - Workflow: `.github/workflows/linux-selfhosted-gpu-validation.yml`
-- Trigger: `workflow_dispatch`
+- Triggers: `workflow_dispatch`, `workflow_call`
 - Runner: self-hosted Linux runners selected via JSON label inputs.
   - Default CUDA labels: `["self-hosted","linux","x64","cuda"]`
   - Default XPU labels: `["self-hosted","linux","x64","xpu"]`
@@ -75,4 +77,5 @@ gh workflow run .github/workflows/linux-selfhosted-gpu-validation.yml \
 - Project support policy still includes local macOS13 validation targets:
   - `darwin-x86_64-macos13-python3.12` (full profile support)
   - `darwin-x86_64-macos13-python3.13` (partial, fast profile only)
+- Default CI still does not call these workflows automatically.
 - Keep hardware lanes manual unless runtime/cost constraints change.
