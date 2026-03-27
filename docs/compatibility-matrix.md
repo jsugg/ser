@@ -1,11 +1,12 @@
 # Compatibility Matrix (Live Snapshot)
 
 Date initialized: 2026-02-19
-Last updated: 2026-02-26
+Last updated: 2026-03-27
 Purpose: Track compatibility coverage across Python versions, dependency extras, and runtime profiles.
 Evidence source:
-1. `ser_refactor_implementation_journal.md` (latest: Iteration 57, ratified default/profile policy + Darwin 3.13 support-scope clarification)
-2. `ser_refactor_status.md`
+1. `.github/workflows/darwin-x86_64-validation.yml`
+2. `.github/workflows/linux-python-3_13-cli-validation.yml`
+3. `README.md`
 
 ## Matrix
 
