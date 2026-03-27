@@ -112,5 +112,5 @@ uv run pytest -q tests/test_import_lint_policy.py tests/test_api_import_boundary
 - Contributor guide: [CONTRIBUTING.md](https://github.com/jsugg/ser/blob/main/CONTRIBUTING.md)
 - Compatibility details: [docs/compatibility-matrix.md](https://github.com/jsugg/ser/blob/main/docs/compatibility-matrix.md)
 - Hardware validation workflows: [docs/ci/hardware-validation.md](https://github.com/jsugg/ser/blob/main/docs/ci/hardware-validation.md)
-- Architecture decisions: [docs/adr](https://github.com/jsugg/ser/tree/main/docs/adr)
+- Architecture decisions index: [docs/adr/README.md](https://github.com/jsugg/ser/blob/main/docs/adr/README.md)
 - License: [LICENSE](https://github.com/jsugg/ser/blob/main/LICENSE)

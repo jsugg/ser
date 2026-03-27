@@ -8,9 +8,14 @@ import statistics
 import time
 from pathlib import Path
 
-from ser.models.emotion_model import predict_emotions
-
 type BenchmarkSummary = dict[str, float | int]
+
+
+def _predict_emotions(audio_path: str) -> object:
+    """Resolves the public predictor lazily to keep benchmark startup lightweight."""
+    from ser.models.emotion_model import predict_emotions
+
+    return predict_emotions(audio_path)
 
 
 def benchmark_predict(audio_path: str, runs: int) -> BenchmarkSummary:
@@ -32,7 +37,7 @@ def benchmark_predict(audio_path: str, runs: int) -> BenchmarkSummary:
     samples: list[float] = []
     for _ in range(runs):
         start_time = time.perf_counter()
-        _ = predict_emotions(audio_path)
+        _ = _predict_emotions(audio_path)
         samples.append(time.perf_counter() - start_time)
 
     ordered_samples = sorted(samples)

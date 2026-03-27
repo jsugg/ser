@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
+
+from ser.utils.dsp import configure_feature_extraction_warning_filters
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,18 +30,7 @@ class QualityGateCliDefaults:
 
 def configure_cli_noise_controls() -> None:
     """Suppresses non-actionable warning/log noise for long gate executions."""
-    warnings.filterwarnings(
-        "ignore",
-        message=r"n_fft=\d+ is too large for input signal of length=.*",
-        category=UserWarning,
-        module=r"librosa\.core\.spectrum",
-    )
-    warnings.filterwarnings(
-        "ignore",
-        message=r"Trying to estimate tuning from empty frequency set\.",
-        category=UserWarning,
-        module=r"librosa\.core\.pitch",
-    )
+    configure_feature_extraction_warning_filters()
     logging.getLogger("ser.models.emotion_model").setLevel(logging.WARNING)
     logging.getLogger("ser.features.feature_extractor").setLevel(logging.ERROR)
     logging.getLogger("ser.runtime.medium_inference").setLevel(logging.WARNING)
