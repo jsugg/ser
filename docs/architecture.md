@@ -8,7 +8,7 @@ Use this page as the canonical starting point for SER architecture and change-pl
 - Text architecture diagram: [`docs/architecture-diagram.md`](architecture-diagram.md)
 - Subsystem dependency map: [`docs/subsystem-dependency-map.md`](subsystem-dependency-map.md)
 - Refactor hotspot inventory: [`docs/refactor-hotspot-checks.md`](refactor-hotspot-checks.md)
-- Architecture decisions: [`docs/adr/`](adr/)
+- Architecture decisions index: [`docs/adr/README.md`](adr/README.md)
 - Compatibility matrix: [`docs/compatibility-matrix.md`](compatibility-matrix.md)
 - Hardware validation policy: [`docs/ci/hardware-validation.md`](ci/hardware-validation.md)
 
