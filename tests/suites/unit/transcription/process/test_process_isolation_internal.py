@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -64,7 +64,7 @@ class _Process:
 
     def __init__(self, *, alive_after_join: bool = False) -> None:
         self.args: tuple[object, ...] | None = None
-        self.target = None
+        self.target: object | None = None
         self.daemon: bool | None = None
         self.started = False
         self.join_calls: list[float | None] = []
@@ -114,7 +114,7 @@ class _SpawnContext:
     def Process(
         self,
         *,
-        target,
+        target: object,
         args: tuple[object, ...],
         daemon: bool,
     ) -> _Process:
@@ -192,7 +192,9 @@ def _worker_payload(*, profile: _Profile | None = None) -> TranscriptionProcessP
 def test_should_use_process_isolated_path_only_for_faster_whisper() -> None:
     """Only faster-whisper profiles should use the spawned-worker path."""
     assert isolation.should_use_process_isolated_path(_Profile()) is True
-    assert isolation.should_use_process_isolated_path(_Profile(backend_id="stable_whisper")) is False
+    assert (
+        isolation.should_use_process_isolated_path(_Profile(backend_id="stable_whisper")) is False
+    )
 
 
 def test_runtime_request_for_isolated_faster_whisper_uses_cuda_precision_candidates() -> None:
@@ -350,20 +352,43 @@ def test_run_faster_whisper_process_isolated_returns_validated_transcript_words(
 ) -> None:
     """Parent orchestration should deserialize worker success payloads into TranscriptWord rows."""
     phase_events: list[tuple[str, str]] = []
+
+    def _log_started(_logger: object, *, phase_name: str) -> float:
+        phase_events.append(("start", phase_name))
+        return 1.0
+
+    def _log_completed(
+        _logger: object,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("complete", phase_name))
+
+    def _log_failed(
+        _logger: object,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("failed", phase_name))
+
     monkeypatch.setattr(
         isolation,
         "log_phase_started",
-        lambda _logger, *, phase_name: phase_events.append(("start", phase_name)) or 1.0,
+        _log_started,
     )
     monkeypatch.setattr(
         isolation,
         "log_phase_completed",
-        lambda _logger, *, phase_name, started_at: phase_events.append(("complete", phase_name)),
+        _log_completed,
     )
     monkeypatch.setattr(
         isolation,
         "log_phase_failed",
-        lambda _logger, *, phase_name, started_at: phase_events.append(("failed", phase_name)),
+        _log_failed,
     )
     parent_connection = _Connection(
         received=[
@@ -379,7 +404,9 @@ def test_run_faster_whisper_process_isolated_returns_validated_transcript_words(
         child_connection=child_connection,
         process=process,
     )
-    settings = cast(AppConfig, SimpleNamespace(torch_runtime=SimpleNamespace(device="cpu", dtype="auto")))
+    settings = cast(
+        AppConfig, SimpleNamespace(torch_runtime=SimpleNamespace(device="cpu", dtype="auto"))
+    )
     profile = _Profile()
 
     resolved = isolation.run_faster_whisper_process_isolated(
@@ -431,20 +458,43 @@ def test_run_faster_whisper_process_isolated_rejects_malformed_transcript_payloa
 ) -> None:
     """Parent orchestration should fail cleanly on malformed worker success payloads."""
     phase_events: list[tuple[str, str]] = []
+
+    def _log_started(_logger: object, *, phase_name: str) -> float:
+        phase_events.append(("start", phase_name))
+        return 1.0
+
+    def _log_completed(
+        _logger: object,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("complete", phase_name))
+
+    def _log_failed(
+        _logger: object,
+        *,
+        phase_name: str,
+        started_at: float,
+    ) -> None:
+        del started_at
+        phase_events.append(("failed", phase_name))
+
     monkeypatch.setattr(
         isolation,
         "log_phase_started",
-        lambda _logger, *, phase_name: phase_events.append(("start", phase_name)) or 1.0,
+        _log_started,
     )
     monkeypatch.setattr(
         isolation,
         "log_phase_completed",
-        lambda _logger, *, phase_name, started_at: phase_events.append(("complete", phase_name)),
+        _log_completed,
     )
     monkeypatch.setattr(
         isolation,
         "log_phase_failed",
-        lambda _logger, *, phase_name, started_at: phase_events.append(("failed", phase_name)),
+        _log_failed,
     )
     context = _SpawnContext(
         parent_connection=_Connection(
@@ -457,7 +507,9 @@ def test_run_faster_whisper_process_isolated_rejects_malformed_transcript_payloa
         child_connection=_Connection(),
         process=_Process(),
     )
-    settings = cast(AppConfig, SimpleNamespace(torch_runtime=SimpleNamespace(device="cpu", dtype="auto")))
+    settings = cast(
+        AppConfig, SimpleNamespace(torch_runtime=SimpleNamespace(device="cpu", dtype="auto"))
+    )
 
     with pytest.raises(
         RuntimeError,

@@ -265,13 +265,11 @@ def _serialize_transcript_words(
         word = cast(_TranscriptWordLike, raw_word)
         if not isinstance(word.word, str):
             raise TypeError(
-                "Transcription worker produced a non-string token "
-                f"at index {index}."
+                "Transcription worker produced a non-string token " f"at index {index}."
             )
         if not _is_real_timestamp(word.start_seconds) or not _is_real_timestamp(word.end_seconds):
             raise TypeError(
-                "Transcription worker produced non-numeric timestamps "
-                f"at index {index}."
+                "Transcription worker produced non-numeric timestamps " f"at index {index}."
             )
         serialized_words.append(
             (
@@ -296,14 +294,12 @@ def _deserialize_transcript_words(
     for index, raw_word in enumerate(serialized_words):
         if not isinstance(raw_word, tuple) or len(raw_word) != 3:
             raise error_factory(
-                "Transcription worker returned malformed transcript payload "
-                f"at index {index}."
+                "Transcription worker returned malformed transcript payload " f"at index {index}."
             )
         word, start_seconds, end_seconds = raw_word
         if not isinstance(word, str):
             raise error_factory(
-                "Transcription worker returned non-string transcript token "
-                f"at index {index}."
+                "Transcription worker returned non-string transcript token " f"at index {index}."
             )
         if not _is_real_timestamp(start_seconds) or not _is_real_timestamp(end_seconds):
             raise error_factory(
