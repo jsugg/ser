@@ -8,12 +8,12 @@ formal artifacts in [`docs/architecture-diagram.md`](architecture-diagram.md),
 
 ## Scope and current state
 
-These counts are a current working-tree snapshot taken on March 12, 2026.
+These counts are a current working-tree snapshot taken on March 27, 2026.
 
-- Source modules under `ser/`: `226`
-- Test modules under `tests/`: `136`
-- Public modules outside `_internal/`: `166`
-- Internal owner/helper modules under `_internal/`: `60`
+- Source modules under `ser/`: `228`
+- Test modules under `tests/`: `145`
+- Public modules outside `_internal/`: `167`
+- Internal owner/helper modules under `_internal/`: `61`
 - Public modules importing `_internal` directly: `24`
 
 This is a modular monolith with explicit subsystem seams. It is not a textbook
