@@ -27,4 +27,5 @@ ser/models/*.json
 .hypothesis
 .local/
 .coverage
+.coverage.*
 coverage.xml

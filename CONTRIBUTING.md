@@ -31,6 +31,7 @@ make fmt       # pyupgrade --py312-plus + ruff --fix + isort + black
 make lint      # ruff + black --check + isort --check-only
 make type      # mypy + pyright (pythonversion 3.12)
 make test      # pytest -q
+make test-cov  # coverage.py branch gate, including multiprocessing workers
 make prepush-check      # canonical pre-push hook command
 make prepush-hook       # hook workflow: autofix + verify + abort if files changed
 make import-lint        # API boundary import lint lane (TID251 banned-api policy)

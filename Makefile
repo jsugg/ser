@@ -49,7 +49,11 @@ test:
 	uv run pytest -q
 
 test-cov:
-	uv run --frozen --extra dev pytest -q --cov=ser --cov-report=term-missing --cov-report=xml
+	uv run --frozen --extra dev coverage erase
+	uv run --frozen --extra dev coverage run -m pytest -q
+	uv run --frozen --extra dev coverage combine
+	uv run --frozen --extra dev coverage report
+	uv run --frozen --extra dev coverage xml
 
 check: lint type test
 
@@ -79,3 +83,4 @@ quality-gate-full:
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build .pkg-smoke
+	find . -maxdepth 1 -type f \( -name ".coverage" -o -name ".coverage.*" -o -name "coverage.xml" \) -delete
