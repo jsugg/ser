@@ -8,11 +8,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends import BackendRuntimeRequest
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 class ProcessIsolatedProfileLike(Protocol):

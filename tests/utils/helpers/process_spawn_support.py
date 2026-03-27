@@ -6,9 +6,12 @@ import time
 from dataclasses import dataclass
 from multiprocessing.connection import Connection
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends import BackendRuntimeRequest
+
+if TYPE_CHECKING:
+    from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 @dataclass(frozen=True, slots=True)
