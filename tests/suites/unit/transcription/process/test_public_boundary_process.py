@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Never, cast
@@ -49,7 +49,9 @@ def _runtime_request() -> BackendRuntimeRequest:
     )
 
 
-def test_run_faster_whisper_process_isolated_from_public_boundary_injects_settings_snapshot() -> None:
+def test_run_faster_whisper_process_isolated_from_public_boundary_injects_settings_snapshot() -> (
+    None
+):
     """Boundary runner should pass explicit settings and TranscriptWord factory downstream."""
     settings = cast(AppConfig, SimpleNamespace(name="settings"))
     profile = _Profile()
@@ -57,7 +59,7 @@ def test_run_faster_whisper_process_isolated_from_public_boundary_injects_settin
 
     def _run_impl(**kwargs: object) -> list[TranscriptWord]:
         captured.update(kwargs)
-        settings_resolver = cast("object", kwargs["settings_resolver"])
+        settings_resolver = kwargs["settings_resolver"]
         assert callable(settings_resolver)
         assert settings_resolver() is settings
         transcript_word_factory = cast(type[TranscriptWord], kwargs["transcript_word_factory"])
