@@ -146,9 +146,9 @@ jobs:
       - name: Run CUDA-focused policy/runtime tests
         run: >
           uv run --python ${{ inputs.python_version }} --extra dev pytest -q
-          tests/test_torch_inference.py
-          tests/test_feature_runtime_policy.py
-          tests/test_transcription_runtime_policy.py
+          tests/suites/unit/utils/test_torch_inference.py
+          tests/suites/unit/repr/test_feature_runtime_policy.py
+          tests/suites/unit/transcription/test_transcription_runtime_policy.py
           tests/suites/integration/test_transcript_extractor.py
 
       - name: Medium profile train and predict (CUDA lane)
@@ -254,11 +254,11 @@ jobs:
       - name: Run XPU-focused policy/runtime tests
         run: >
           uv run --python ${{ inputs.python_version }} --extra dev pytest -q
-          tests/test_torch_inference.py
-          tests/test_feature_runtime_policy.py
-          tests/test_transcription_runtime_policy.py
-          tests/test_emotion2vec_backend.py
-          tests/test_accurate_research_inference.py
+          tests/suites/unit/utils/test_torch_inference.py
+          tests/suites/unit/repr/test_feature_runtime_policy.py
+          tests/suites/unit/transcription/test_transcription_runtime_policy.py
+          tests/suites/unit/repr/test_emotion2vec_backend.py
+          tests/suites/integration/runtime/test_accurate_research_inference.py
 
       - name: Medium profile train and predict (XPU lane)
         env:

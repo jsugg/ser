@@ -46,7 +46,7 @@ def test_import_lint_policy_limits_tid251_exceptions_to_boundary_files(repo_root
         "ser/_internal/cli/data.py",
         "ser/_internal/cli/diagnostics.py",
         "ser/_internal/cli/runtime.py",
-        "tests/test_api.py",
+        "tests/suites/integration/api/test_api.py",
     }
     for file_path, ignored_rules in per_file_ignores.items():
         if "TID251" in ignored_rules:
@@ -60,5 +60,5 @@ def test_import_lint_lane_runs_boundary_contract_tests(repo_root: Path) -> None:
     script = (repo_root / "scripts" / "run_import_lint.sh").read_text(encoding="utf-8")
 
     assert "ruff check --select TID251" in script
-    assert "tests/test_api_import_boundary.py" in script
-    assert "tests/test_import_lint_policy.py" in script
+    assert "tests/suites/integration/architecture/test_api_import_boundary.py" in script
+    assert "tests/suites/integration/architecture/test_import_lint_policy.py" in script

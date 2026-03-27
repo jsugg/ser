@@ -151,7 +151,7 @@ ignore = ["E501"]
 "ser/_internal/cli/data.py" = ["TID251"]
 "ser/_internal/cli/diagnostics.py" = ["TID251"]
 "ser/_internal/cli/runtime.py" = ["TID251"]
-"tests/test_api.py" = ["TID251"]
+"tests/suites/integration/api/test_api.py" = ["TID251"]
 
 [tool.ruff.format]
 quote-style = "double"

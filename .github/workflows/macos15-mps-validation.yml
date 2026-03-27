@@ -97,13 +97,13 @@ jobs:
       - name: Run MPS-focused runtime policy tests
         run: >
           uv run --python ${{ inputs.python_version }} --extra dev pytest -q
-          tests/test_torch_inference.py
-          tests/test_feature_runtime_policy.py
-          tests/test_transcription_runtime_policy.py
-          tests/test_stable_whisper_mps_compat.py
-          tests/test_transcription_mps_admission.py
-          tests/test_transcription_runtime_failures.py
-          tests/test_transcription_backends.py
+          tests/suites/unit/utils/test_torch_inference.py
+          tests/suites/unit/repr/test_feature_runtime_policy.py
+          tests/suites/unit/transcription/test_transcription_runtime_policy.py
+          tests/suites/unit/transcription/test_stable_whisper_mps_compat.py
+          tests/suites/unit/transcription/test_transcription_mps_admission.py
+          tests/suites/unit/transcription/test_transcription_runtime_failures.py
+          tests/suites/unit/transcription/test_transcription_backends.py
 
       - name: Medium profile train and predict (MPS lane)
         env:

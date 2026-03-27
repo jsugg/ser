@@ -271,7 +271,7 @@ Strengths:
 
 - narrow public API in [`ser/api.py`](../ser/api.py)
 - stable public config facade in [`ser/config.py`](../ser/config.py)
-- boundary tests in [`tests/test_api_import_boundary.py`](../tests/test_api_import_boundary.py)
+- boundary tests in [`tests/suites/integration/architecture/test_api_import_boundary.py`](../tests/suites/integration/architecture/test_api_import_boundary.py)
 - documented hotspot inventory in [`docs/refactor-hotspot-checks.md`](refactor-hotspot-checks.md)
 - CI lanes enforcing lint, typing, tests, contracts, and build in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 

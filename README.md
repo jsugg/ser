@@ -99,7 +99,11 @@ If your change touches `ser/api.py`, `ser/_internal/api/*`, or `ser/__main__.py`
 
 ```bash
 make import-lint
-uv run pytest -q tests/test_import_lint_policy.py tests/test_api_import_boundary.py tests/test_api.py tests/test_cli.py
+uv run pytest -q \
+  tests/suites/integration/architecture/test_import_lint_policy.py \
+  tests/suites/integration/architecture/test_api_import_boundary.py \
+  tests/suites/integration/api/test_api.py \
+  tests/suites/integration/cli/test_cli.py
 ```
 
 ## Acknowledgments
