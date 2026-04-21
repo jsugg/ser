@@ -121,7 +121,7 @@ jobs:
         run: uv run --extra medium ser --train
 
       - name: Upload full-gate training artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: full-dataset-quality-gate-artifacts
           path: |
@@ -175,7 +175,7 @@ jobs:
         run: ./scripts/workflows/configure_runtime_dirs.sh --models-dir "${SER_MODELS_DIR}"
 
       - name: Download full-gate training artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: full-dataset-quality-gate-artifacts
           path: ${{ env.SER_MODELS_DIR }}
@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload full-dataset gate report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: full-dataset-quality-gate-report
           path: ${{ inputs.out_file }}
