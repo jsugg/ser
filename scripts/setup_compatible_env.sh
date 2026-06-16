@@ -75,6 +75,12 @@ done
 os_name="$(uname -s)"
 arch_name="$(uname -m)"
 default_python="3.13"
+if [[ -f .python-version ]]; then
+  pinned_python="$(head -n 1 .python-version | tr -d '[:space:]')"
+  if [[ -n "$pinned_python" ]]; then
+    default_python="$pinned_python"
+  fi
+fi
 
 python_version="${SER_SETUP_PYTHON:-$default_python}"
 include_dev="$(normalize_bool "${SER_SETUP_INCLUDE_DEV:-true}" "SER_SETUP_INCLUDE_DEV")"
