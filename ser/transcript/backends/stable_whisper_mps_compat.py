@@ -229,8 +229,8 @@ def _resolve_mps_log_mel_target_device(
         if explicit_device is None or explicit_device.type != "mps":
             return None
         return explicit_device
-    if torch.is_tensor(audio) and cast(torch.Tensor, audio).device.type == "mps":
-        return cast(torch.Tensor, audio).device
+    if isinstance(audio, torch.Tensor) and audio.device.type == "mps":
+        return audio.device
     return None
 
 
@@ -256,7 +256,7 @@ def _build_mps_safe_log_mel_spectrogram(
                     device=device,
                 ),
             )
-        cpu_audio = cast(torch.Tensor, audio).float().cpu() if torch.is_tensor(audio) else audio
+        cpu_audio = audio.float().cpu() if isinstance(audio, torch.Tensor) else audio
         cpu_log_mel = cast(
             torch.Tensor,
             original_log_mel_spectrogram(
