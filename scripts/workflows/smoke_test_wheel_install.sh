@@ -11,10 +11,11 @@ if [[ ${#wheels[@]} -eq 0 ]]; then
   exit 2
 fi
 
+rm -rf .pkg-smoke
 python -m venv .pkg-smoke
 . .pkg-smoke/bin/activate
 python -m pip install --upgrade pip
-pip install --no-deps "${wheels[@]}"
+pip install --force-reinstall --no-deps "${wheels[@]}"
 
 tmp_dir="$(mktemp -d)"
 cd "$tmp_dir"
