@@ -5,12 +5,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from email.message import Message
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib import error
 
 import pytest
 
 from ser.data import provider_downloads
+
+
+class _DiskUsage(NamedTuple):
+    """Minimal disk-usage result for download preflight tests."""
+
+    total: int
+    used: int
+    free: int
 
 
 def test_download_file_with_retries_reuses_existing_file_without_hash(
@@ -97,6 +105,151 @@ def test_download_file_with_retries_streams_and_validates_payload(
     assert headers["user-agent"] == "ser-data-downloader/1.0"
     assert headers["x-test"] == "1"
     assert not destination_path.with_suffix(".zip.partial").exists()
+
+
+def test_download_file_with_retries_aborts_before_request_when_expected_size_exceeds_disk(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Known-size downloads should fail before network I/O when disk is too small."""
+    destination_path = tmp_path / "archive.zip"
+    urlopen_called = False
+    retried = False
+
+    def _urlopen(req: object, timeout: float) -> object:
+        nonlocal urlopen_called
+        del req, timeout
+        urlopen_called = True
+        raise AssertionError("network I/O should not start")
+
+    def _with_retries(*, description: str, action: Callable[[], None]) -> None:
+        nonlocal retried
+        del description, action
+        retried = True
+
+    monkeypatch.setattr(provider_downloads.request, "urlopen", _urlopen)
+    monkeypatch.setattr(
+        provider_downloads.shutil,
+        "disk_usage",
+        lambda _path: _DiskUsage(total=10, used=9, free=1),
+    )
+
+    with pytest.raises(RuntimeError, match="insufficient disk space"):
+        provider_downloads.download_file_with_retries(
+            url="https://example.invalid/archive.zip",
+            destination_path=destination_path,
+            expected_size=10,
+            with_retries=_with_retries,
+            compute_file_md5=lambda _path: "unused",
+            timeout_seconds=1.0,
+            chunk_size=1024,
+        )
+
+    assert retried is False
+    assert urlopen_called is False
+    assert not destination_path.exists()
+
+
+def test_download_file_with_retries_aborts_on_content_length_when_disk_is_too_small(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Unknown-size downloads should use Content-Length for disk-space preflight."""
+    destination_path = tmp_path / "archive.zip"
+
+    class _FakeResponse:
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            del exc_type, exc, tb
+
+        def getheader(self, name: str, default: str | None = None) -> str | None:
+            if name.lower() == "content-length":
+                return "10"
+            return default
+
+        def read(self, _size: int) -> bytes:
+            raise AssertionError("payload should not be read after disk-space failure")
+
+    def _urlopen(req: object, timeout: float) -> _FakeResponse:
+        del req, timeout
+        return _FakeResponse()
+
+    def _with_retries(*, description: str, action: Callable[[], None]) -> None:
+        del description
+        action()
+
+    monkeypatch.setattr(provider_downloads.request, "urlopen", _urlopen)
+    monkeypatch.setattr(
+        provider_downloads.shutil,
+        "disk_usage",
+        lambda _path: _DiskUsage(total=10, used=9, free=1),
+    )
+
+    with pytest.raises(RuntimeError, match="insufficient disk space"):
+        provider_downloads.download_file_with_retries(
+            url="https://example.invalid/archive.zip",
+            destination_path=destination_path,
+            with_retries=_with_retries,
+            compute_file_md5=lambda _path: "unused",
+            timeout_seconds=1.0,
+            chunk_size=1024,
+        )
+
+    assert not destination_path.exists()
+    assert not destination_path.with_suffix(".zip.partial").exists()
+
+
+def test_download_file_with_retries_uses_larger_content_length_than_expected_size(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Response size should protect disk even when stale metadata underestimates bytes."""
+    destination_path = tmp_path / "archive.zip"
+
+    class _FakeResponse:
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            del exc_type, exc, tb
+
+        def getheader(self, name: str, default: str | None = None) -> str | None:
+            if name.lower() == "content-length":
+                return "10"
+            return default
+
+        def read(self, _size: int) -> bytes:
+            raise AssertionError("payload should not be read after disk-space failure")
+
+    def _urlopen(req: object, timeout: float) -> _FakeResponse:
+        del req, timeout
+        return _FakeResponse()
+
+    def _with_retries(*, description: str, action: Callable[[], None]) -> None:
+        del description
+        action()
+
+    monkeypatch.setattr(provider_downloads.request, "urlopen", _urlopen)
+    monkeypatch.setattr(
+        provider_downloads.shutil,
+        "disk_usage",
+        lambda _path: _DiskUsage(total=10, used=5, free=5),
+    )
+
+    with pytest.raises(RuntimeError, match="insufficient disk space"):
+        provider_downloads.download_file_with_retries(
+            url="https://example.invalid/archive.zip",
+            destination_path=destination_path,
+            expected_size=2,
+            with_retries=_with_retries,
+            compute_file_md5=lambda _path: "unused",
+            timeout_seconds=1.0,
+            chunk_size=1024,
+        )
+
+    assert not destination_path.exists()
 
 
 def test_read_github_latest_release_assets_parses_expected_payload() -> None:
