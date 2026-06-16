@@ -10,7 +10,6 @@ The repository currently keeps its architecture guidance in these maintained doc
 - [`../codebase-architecture.md`](../codebase-architecture.md): narrative codebase analysis
 - [`../subsystem-dependency-map.md`](../subsystem-dependency-map.md): subsystem dependency directions and soft-boundary policy
 - [`../refactor-hotspot-checks.md`](../refactor-hotspot-checks.md): hotspot inventory for careful refactors
-- [`../architecture-refactor-roadmap.md`](../architecture-refactor-roadmap.md): staged refactor priorities
 
 ## How this directory should be used
 
