@@ -13,8 +13,9 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from email.message import Message
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from urllib import error, request
 
 
@@ -61,6 +62,69 @@ class RunWithRetries(Protocol):
         description: str,
         action: Callable[[], None],
     ) -> None: ...
+
+
+@runtime_checkable
+class _ResponseWithGetHeader(Protocol):
+    """HTTP response subset exposing header lookup."""
+
+    def getheader(self, name: str, default: str | None = None) -> str | None: ...
+
+
+def _format_bytes(size_bytes: int) -> str:
+    """Formats byte counts for actionable diagnostics."""
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(size_bytes)
+    unit = units[0]
+    for current_unit in units:
+        unit = current_unit
+        if value < 1024.0 or current_unit == units[-1]:
+            break
+        value /= 1024.0
+    if unit == "B":
+        return f"{int(value)} {unit}"
+    return f"{value:.2f} {unit}"
+
+
+def _parse_content_length(value: str | None) -> int | None:
+    """Parses a positive HTTP content length value."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        parsed = int(normalized)
+    except ValueError:
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _response_content_length(response: object) -> int | None:
+    """Returns a response content length when the server exposes one."""
+    if isinstance(response, _ResponseWithGetHeader):
+        return _parse_content_length(response.getheader("Content-Length"))
+    headers = getattr(response, "headers", None)
+    if isinstance(headers, Message):
+        return _parse_content_length(headers.get("Content-Length"))
+    return None
+
+
+def _ensure_download_disk_space(*, destination_path: Path, required_bytes: int | None) -> None:
+    """Raises when known download size exceeds free space at the destination."""
+    if required_bytes is None or required_bytes <= 0:
+        return
+    free_bytes = shutil.disk_usage(destination_path.parent).free
+    if free_bytes >= required_bytes:
+        return
+    raise RuntimeError(
+        "Dataset download aborted due to insufficient disk space. "
+        f"Required at least {_format_bytes(required_bytes)}, "
+        f"free {_format_bytes(free_bytes)} at {destination_path.parent}. "
+        "Use `--dataset-root` on a volume with enough space or free local storage first."
+    )
 
 
 def is_retryable_http_status(status_code: int) -> bool:
@@ -168,6 +232,8 @@ def download_file_with_retries(
         elif existing_size > 0:
             return destination_path
     tmp_path = destination_path.with_suffix(destination_path.suffix + ".partial")
+    tmp_path.unlink(missing_ok=True)
+    _ensure_download_disk_space(destination_path=destination_path, required_bytes=expected_size)
 
     def _action() -> None:
         req = request.Request(
@@ -179,6 +245,13 @@ def download_file_with_retries(
             method="GET",
         )
         with request.urlopen(req, timeout=timeout_seconds) as response:
+            response_size = _response_content_length(response)
+            if response_size is not None:
+                required_bytes = max(expected_size or 0, response_size)
+                _ensure_download_disk_space(
+                    destination_path=destination_path,
+                    required_bytes=required_bytes,
+                )
             with tmp_path.open("wb") as output_handle:
                 while True:
                     chunk = response.read(chunk_size)

@@ -12,7 +12,19 @@ medium_model_file_name="${SER_FULL_GATE_MEDIUM_MODEL_FILE_NAME:-ser_model_medium
 medium_training_report_file_name="${SER_FULL_GATE_MEDIUM_TRAINING_REPORT_FILE_NAME:-training_report_medium_full.json}"
 report_path="${SER_FULL_GATE_REPORT_PATH:-profile_quality_gate_report_full.json}"
 progress_every="${SER_FULL_GATE_PROGRESS_EVERY:-120}"
-models_dir="${SER_MODELS_DIR:-$HOME/Library/Application Support/ser/models}"
+
+default_models_dir() {
+  case "$(uname -s)" in
+    Darwin)
+      printf '%s\n' "$HOME/Library/Application Support/ser/models"
+      ;;
+    *)
+      printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/ser/models"
+      ;;
+  esac
+}
+
+models_dir="${SER_MODELS_DIR:-$(default_models_dir)}"
 
 if [[ "$run_training" != "true" && "$run_training" != "false" ]]; then
   printf 'SER_FULL_GATE_RUN_TRAINING must be true or false, got: %s\n' "$run_training" >&2
