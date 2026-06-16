@@ -31,22 +31,22 @@ setup-runtime:
 	SER_SETUP_INCLUDE_DEV=false ./scripts/setup_compatible_env.sh
 
 fmt:
-	uv run --extra dev pyupgrade --py312-plus --exit-zero-even-if-changed $$(rg --files ser tests -g '*.py')
-	uv run ruff check --fix ser tests
-	uv run isort ser tests
-	uv run black ser tests
+	uv run --frozen --extra dev pyupgrade --py312-plus --exit-zero-even-if-changed $$(rg --files ser tests -g '*.py')
+	uv run --frozen --extra dev ruff check --fix ser tests
+	uv run --frozen --extra dev isort ser tests
+	uv run --frozen --extra dev black ser tests
 
 lint:
-	uv run ruff check ser tests
-	uv run black --check ser tests
-	uv run isort --check-only ser tests
+	uv run --frozen --extra dev ruff check ser tests
+	uv run --frozen --extra dev black --check ser tests
+	uv run --frozen --extra dev isort --check-only ser tests
 
 type:
-	uv run mypy ser tests
-	uv run pyright --pythonversion 3.12 ser tests
+	uv run --frozen --extra dev mypy ser tests
+	uv run --frozen --extra dev pyright --pythonversion 3.12 ser tests
 
 test:
-	uv run pytest -q
+	uv run --frozen --extra dev pytest -q
 
 test-cov:
 	uv run --frozen --extra dev coverage erase
