@@ -49,7 +49,7 @@ if [[ -z "$python_version" ]]; then
   exit 2
 fi
 
-setup_args=(--python "$python_version" --skip-git-hooks)
+setup_args=(--python "$python_version" --frozen --skip-git-hooks)
 if [[ "$run_accurate_research" == "true" ]]; then
   setup_args+=(--extra full)
 else
@@ -60,4 +60,3 @@ if [[ "$include_dev" == "false" ]]; then
 fi
 
 ./scripts/setup_compatible_env.sh "${setup_args[@]}"
-

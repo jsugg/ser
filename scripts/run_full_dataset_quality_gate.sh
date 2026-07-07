@@ -66,7 +66,7 @@ if [[ "$run_training" == "true" ]]; then
   SER_TEST_SIZE=0.25 \
   SER_MODEL_FILE_NAME="$fast_model_file_name" \
   SER_TRAINING_REPORT_FILE_NAME="$fast_training_report_file_name" \
-  uv run ser --train
+  uv run --frozen ser --train
 
   printf '[full-gate] training medium artifact: %s\n' "$medium_model_file_name"
   SER_ENABLE_PROFILE_PIPELINE=true \
@@ -75,11 +75,11 @@ if [[ "$run_training" == "true" ]]; then
   SER_TEST_SIZE=0.25 \
   SER_MODEL_FILE_NAME="$medium_model_file_name" \
   SER_TRAINING_REPORT_FILE_NAME="$medium_training_report_file_name" \
-  uv run --extra medium ser --train
+  uv run --frozen --extra medium ser --train
 fi
 
 gate_cmd=(
-  uv run --extra medium python -m ser.runtime.profile_quality_gate
+  uv run --frozen --extra medium python -m ser.runtime.profile_quality_gate
   --dataset-glob "$dataset_glob"
   --random-state 42
   --test-size 0.25

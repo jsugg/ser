@@ -1,0 +1,40 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/dependabot.yml"
+      - ".github/workflows/**"
+      - ".pre-commit-config.yaml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Run dependency review advisory
+        id: dependency-review
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+        with:
+          fail-on-severity: critical
+
+      - name: Summarize advisory result
+        if: always()
+        run: |
+          {
+            echo "### Dependency review advisory"
+            echo
+            echo "- Scope: dependency manifests, lockfile, workflow, and dependency-bot changes."
+            echo "- Rollout: advisory first; not required by the ruleset until tuned."
+            echo "- Step outcome: \`${{ steps.dependency-review.outcome }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
