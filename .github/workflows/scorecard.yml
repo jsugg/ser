@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Scorecard advisory
-        uses: ossf/scorecard-action@v2.4.2
+        uses: ossf/scorecard-action@v2.4.3
         with:
           publish_results: false
           results_file: scorecard-results.sarif
