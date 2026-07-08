@@ -229,7 +229,7 @@ def test_dependency_review_and_update_automation_are_advisory(repo_root: Path) -
     review_steps = _steps(review_job)
     review_step = next(step for step in review_steps if step.get("id") == "dependency-review")
 
-    assert review_step["uses"] == "actions/dependency-review-action@v4"
+    assert review_step["uses"] == "actions/dependency-review-action@v5"
     assert review_step["continue-on-error"] == "true"
     assert "critical" in str(review_step["with"])
 
