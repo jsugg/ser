@@ -85,7 +85,7 @@ def run_startup_preflight(
     include_transcription_checks: bool,
 ) -> DiagnosticReport:
     """Runs one startup preflight diagnostics check suite."""
-    from ser.diagnostics.service import run_startup_preflight as _run_startup_preflight
+    from ser.diagnostics.service import _run_startup_preflight
 
     return _run_startup_preflight(
         settings=settings,

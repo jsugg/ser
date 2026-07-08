@@ -102,7 +102,7 @@ def test_fast_timeout_retries_up_to_configured_budget(
 
     monkeypatch.setattr(fast_boundary, "_run_with_timeout_impl", fake_timeout_runner)
     monkeypatch.setattr(
-        "ser.runtime.policy.time.sleep",
+        "ser._internal.runtime.policy.time.sleep",
         lambda _delay: calls.__setitem__("sleeps", calls["sleeps"] + 1),
     )
 
@@ -143,7 +143,7 @@ def test_fast_profile_pipeline_uses_process_timeout_runner(
     monkeypatch.setattr(fast_boundary, "load_model", fail_if_called)
     monkeypatch.setattr(fast_boundary, "_run_with_process_timeout_impl", fake_process_runner)
     monkeypatch.setattr(
-        "ser.runtime.policy.time.sleep",
+        "ser._internal.runtime.policy.time.sleep",
         lambda _delay: calls.__setitem__("sleep", calls["sleep"] + 1),
     )
 

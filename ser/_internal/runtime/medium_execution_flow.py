@@ -6,11 +6,11 @@ import logging
 from collections.abc import Callable
 from typing import TypeVar
 
-from ser.runtime.medium_execution_context import MediumExecutionContext
-from ser.runtime.medium_worker_operation import (
+from ser._internal.runtime.medium_execution_context import MediumExecutionContext
+from ser._internal.runtime.medium_worker_operation import (
     PreparedMediumOperation,
 )
-from ser.runtime.medium_worker_operation import _PayloadLike as _MediumPayloadLike
+from ser._internal.runtime.medium_worker_operation import _PayloadLike as _MediumPayloadLike
 
 _PayloadT = TypeVar("_PayloadT", bound=_MediumPayloadLike)
 _LoadedModelT = TypeVar("_LoadedModelT")

@@ -2,6 +2,8 @@
 
 from typing import NamedTuple
 
+__all__ = ["EmotionSegment", "TimelineEntry", "TranscriptWord"]
+
 
 class TranscriptWord(NamedTuple):
     """A transcript word with start/end timing in seconds."""

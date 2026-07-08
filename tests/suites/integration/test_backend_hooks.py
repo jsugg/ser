@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+import ser._internal.runtime.backend_hooks as backend_hooks
 import ser.config as config
-import ser.runtime.backend_hooks as backend_hooks
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 

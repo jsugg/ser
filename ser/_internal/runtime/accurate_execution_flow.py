@@ -7,12 +7,12 @@ from collections.abc import Callable
 from functools import partial
 from typing import TypeVar
 
-from ser.config import AppConfig
-from ser.runtime.accurate_worker_operation import (
+from ser._internal.runtime.accurate_worker_operation import (
     AccurateRetryOperationState,
     PreparedAccurateOperation,
 )
-from ser.runtime.accurate_worker_operation import _PayloadLike as _AccuratePayloadLike
+from ser._internal.runtime.accurate_worker_operation import _PayloadLike as _AccuratePayloadLike
+from ser.config import AppConfig
 
 _PayloadT = TypeVar("_PayloadT", bound=_AccuratePayloadLike)
 _LoadedModelT = TypeVar("_LoadedModelT")
