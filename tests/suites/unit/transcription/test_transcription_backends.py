@@ -13,6 +13,7 @@ from typing import cast
 import pytest
 
 from ser.config import AppConfig
+from ser.transcript.backends import stable_whisper_torio_probe
 from ser.transcript.backends.base import (
     BackendRuntimeRequest,
     CompatibilityIssue,
@@ -170,15 +171,14 @@ def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
         raise ModuleNotFoundError(name)
 
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper_torio_probe.importlib.import_module",
-        _fake_import_module,
+        stable_whisper_torio_probe,
+        "importlib",
+        SimpleNamespace(import_module=_fake_import_module),
     )
+    monkeypatch.setattr(stable_whisper_torio_probe, "is_module_available", lambda _name: True)
     monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper_torio_probe.is_module_available",
-        lambda _module_name: True,
-    )
-    monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper_torio_probe.format_torio_ffmpeg_remediation",
+        stable_whisper_torio_probe,
+        "format_torio_ffmpeg_remediation",
         lambda *, missing_library: (f"lane-aware-remediation:{missing_library or 'none'}"),
     )
 
@@ -188,10 +188,7 @@ def test_stable_whisper_detect_torio_ffmpeg_issue_reports_abi_mismatch(
             "  Referenced from: /tmp/libtorio_ffmpeg6.so"
         )
 
-    monkeypatch.setattr(
-        "ser.transcript.backends.stable_whisper_torio_probe.ctypes.CDLL",
-        _raise_dlopen,
-    )
+    monkeypatch.setattr(stable_whisper_torio_probe.ctypes, "CDLL", _raise_dlopen)
 
     issue = detect_default_torio_ffmpeg_operational_issue()
 

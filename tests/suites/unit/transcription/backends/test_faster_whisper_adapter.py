@@ -12,6 +12,7 @@ import pytest
 
 from ser.config import AppConfig
 from ser.domain import TranscriptWord
+from ser.transcript.backends import faster_whisper as faster_whisper_backend
 from ser.transcript.backends.base import BackendRuntimeRequest
 from ser.transcript.backends.faster_whisper import FasterWhisperAdapter
 
@@ -149,11 +150,14 @@ def test_setup_required_accepts_string_and_pathlike_directory_probes(
         return str(cached_dir)
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
-        lambda name: (
-            SimpleNamespace(download_model=_download_from_string)
-            if name == "faster_whisper.utils"
-            else (_ for _ in ()).throw(ModuleNotFoundError(name))
+        faster_whisper_backend,
+        "importlib",
+        SimpleNamespace(
+            import_module=lambda name: (
+                SimpleNamespace(download_model=_download_from_string)
+                if name == "faster_whisper.utils"
+                else (_ for _ in ()).throw(ModuleNotFoundError(name))
+            )
         ),
     )
     assert (
@@ -175,11 +179,14 @@ def test_setup_required_accepts_string_and_pathlike_directory_probes(
         return _FspathValue(str(cached_dir))
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
-        lambda name: (
-            SimpleNamespace(download_model=_download_from_pathlike)
-            if name == "faster_whisper.utils"
-            else (_ for _ in ()).throw(ModuleNotFoundError(name))
+        faster_whisper_backend,
+        "importlib",
+        SimpleNamespace(
+            import_module=lambda name: (
+                SimpleNamespace(download_model=_download_from_pathlike)
+                if name == "faster_whisper.utils"
+                else (_ for _ in ()).throw(ModuleNotFoundError(name))
+            )
         ),
     )
     assert (
