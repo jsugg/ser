@@ -258,4 +258,4 @@ def test_advisory_code_scanning_and_scorecard_are_configured(repo_root: Path) ->
     scorecard = _workflow(repo_root, "scorecard.yml")
     assert {"schedule", "workflow_dispatch"} == _event_names(scorecard)
     scorecard_steps = _steps(_job(scorecard, "scorecard"))
-    assert any(step.get("uses") == "ossf/scorecard-action@v2.4.2" for step in scorecard_steps)
+    assert any(step.get("uses") == "ossf/scorecard-action@v2.4.3" for step in scorecard_steps)
