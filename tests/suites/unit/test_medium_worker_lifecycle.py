@@ -10,7 +10,7 @@ from typing import cast
 
 import pytest
 
-from ser.runtime import medium_worker_lifecycle
+from ser._internal.runtime import medium_worker_lifecycle
 
 pytestmark = pytest.mark.unit
 

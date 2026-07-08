@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.config import AppConfig, ProfileRuntimeConfig
-from ser.runtime.accurate_worker_operation import (
+from ser._internal.runtime.accurate_worker_operation import (
     AccurateRetryOperationState,
     PreparedAccurateOperation,
     finalize_in_process_setup,
@@ -22,6 +21,7 @@ from ser.runtime.accurate_worker_operation import (
     run_inference_operation,
     run_process_operation,
 )
+from ser.config import AppConfig, ProfileRuntimeConfig
 from ser.runtime.contracts import InferenceRequest
 
 pytestmark = pytest.mark.unit

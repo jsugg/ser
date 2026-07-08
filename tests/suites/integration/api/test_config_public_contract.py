@@ -8,7 +8,13 @@ from pathlib import Path
 import ser.config as config
 
 _REMOVED_LEGACY_EXPORTS = {
+    "DEFAULT_FAST_MODEL_FILE_NAME",
+    "DEFAULT_FAST_SECURE_MODEL_FILE_NAME",
+    "DEFAULT_FAST_TRAINING_REPORT_FILE_NAME",
+    "FeatureRuntimeBackendOverride",
     "ProfileCatalogEntry",
+    "ResolvedSettingsInputs",
+    "SettingsInputDeps",
     "TranscriptionBackendId",
     "apply_settings",
     "default_profile_model_id",
@@ -23,9 +29,6 @@ def test_config_public_surface_snapshot_matches_expected_contract() -> None:
     """Stable config facade snapshot should only change through explicit review."""
     assert config.__all__ == [
         "APP_NAME",
-        "DEFAULT_FAST_MODEL_FILE_NAME",
-        "DEFAULT_FAST_SECURE_MODEL_FILE_NAME",
-        "DEFAULT_FAST_TRAINING_REPORT_FILE_NAME",
         "AccurateResearchRuntimeConfig",
         "AccurateRuntimeConfig",
         "AppConfig",
@@ -35,7 +38,6 @@ def test_config_public_surface_snapshot_matches_expected_contract() -> None:
         "DatasetConfig",
         "FastRuntimeConfig",
         "FeatureFlags",
-        "FeatureRuntimeBackendOverride",
         "FeatureRuntimePolicyConfig",
         "MediumRuntimeConfig",
         "MediumTrainingConfig",
@@ -43,10 +45,8 @@ def test_config_public_surface_snapshot_matches_expected_contract() -> None:
         "NeuralNetConfig",
         "ProfileRuntimeConfig",
         "QualityGateConfig",
-        "ResolvedSettingsInputs",
         "RuntimeFlags",
         "SchemaConfig",
-        "SettingsInputDeps",
         "TimelineConfig",
         "TorchRuntimeConfig",
         "TrainingConfig",

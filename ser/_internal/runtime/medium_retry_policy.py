@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from ser.runtime.retry_primitives import (
+from ser._internal.runtime.retry_primitives import (
     is_optional_dependency_runtime_error as _is_optional_dependency_runtime_error_impl,
 )
-from ser.runtime.retry_primitives import (
+from ser._internal.runtime.retry_primitives import (
     jittered_retry_delay_seconds as _jittered_retry_delay_seconds_impl,
 )
 

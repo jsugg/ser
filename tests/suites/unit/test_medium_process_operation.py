@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_process_operation import (
+from ser._internal.runtime.medium_process_operation import (
     prepare_process_operation,
     run_process_operation,
 )
-from ser.runtime.medium_worker_operation import PreparedMediumOperation
+from ser._internal.runtime.medium_worker_operation import PreparedMediumOperation
+from ser.runtime.contracts import InferenceRequest
 
 pytestmark = pytest.mark.unit
 

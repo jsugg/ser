@@ -1,4 +1,4 @@
-"""Worker lifecycle adapters for process-isolated accurate inference."""
+"""Worker lifecycle adapters for process-isolated medium inference."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import TypeVar
 
+from ser._internal.runtime import medium_process_timeout as medium_process_timeout_helpers
 from ser._internal.runtime.worker_bindings import (
     is_setup_complete_message as _is_setup_complete_message_binding,
 )
@@ -22,12 +23,7 @@ from ser._internal.runtime.worker_bindings import run_worker_entry as _run_worke
 from ser._internal.runtime.worker_bindings import (
     terminate_worker_process as _terminate_worker_process_binding,
 )
-from ser.runtime import accurate_process_timeout as accurate_process_timeout_helpers
 
-_ProcessPayloadT = TypeVar(
-    "_ProcessPayloadT",
-    bound=accurate_process_timeout_helpers.AccurateProcessPayloadLike,
-)
 _PayloadT = TypeVar("_PayloadT")
 _MessageT = TypeVar("_MessageT", bound=tuple[object, ...])
 _PreparedOperationT = TypeVar("_PreparedOperationT")
@@ -35,8 +31,9 @@ _ResultT = TypeVar("_ResultT")
 
 
 def run_with_process_timeout(
-    payload: accurate_process_timeout_helpers.AccurateProcessPayloadLike,
+    payload: object,
     *,
+    profile: str,
     timeout_seconds: float,
     get_context: Callable[[str], object],
     logger: logging.Logger,
@@ -56,9 +53,10 @@ def run_with_process_timeout(
     process_join_grace_seconds: float,
     parse_worker_completion_message: Callable[[_MessageT], _ResultT],
 ) -> _ResultT:
-    """Runs one isolated accurate attempt with setup-aware timeout handling."""
-    return accurate_process_timeout_helpers.run_with_process_timeout(
+    """Runs one isolated medium attempt with setup-aware timeout handling."""
+    return medium_process_timeout_helpers.run_with_process_timeout(
         payload=payload,
+        profile=profile,
         timeout_seconds=timeout_seconds,
         get_context=get_context,
         logger=logger,
@@ -88,7 +86,7 @@ def recv_worker_message(
     worker_label: str,
     error_factory: Callable[[str], Exception] | type[Exception],
 ) -> tuple[object, ...]:
-    """Receives one worker message with accurate-specific error mapping."""
+    """Receives one worker message with medium-specific error mapping."""
     return _recv_worker_message_binding(
         connection=connection,
         stage=stage,
@@ -123,7 +121,7 @@ def parse_worker_completion_message(
     raise_worker_error: Callable[[str, str], None],
     result_type: type[_ResultT],
 ) -> _ResultT:
-    """Parses one worker completion message for accurate inference."""
+    """Parses one worker completion message for medium inference."""
     return _parse_worker_completion_message_binding(
         worker_message=worker_message,
         impl=impl,
@@ -141,7 +139,7 @@ def run_worker_entry(
     prepare_process_operation: Callable[[_PayloadT], _PreparedOperationT],
     run_process_operation: Callable[[_PreparedOperationT], object],
 ) -> None:
-    """Executes one accurate inference operation inside a child process."""
+    """Executes one medium inference operation inside a child process."""
     _run_worker_entry_binding(
         payload=payload,
         connection=connection,
@@ -175,7 +173,7 @@ def raise_worker_error(
     unknown_error_factory: Callable[[str], Exception] | type[Exception],
     worker_label: str,
 ) -> None:
-    """Rehydrates accurate worker failures into runtime-domain exceptions."""
+    """Rehydrates medium worker failures into runtime-domain exceptions."""
     _raise_worker_error_binding(
         error_type=error_type,
         message=message,

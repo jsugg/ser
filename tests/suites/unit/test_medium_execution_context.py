@@ -9,11 +9,11 @@ from typing import cast
 
 import pytest
 
+from ser._internal.runtime.medium_execution_context import prepare_execution_context
+from ser._internal.runtime.medium_worker_operation import MediumRetryOperationState
 from ser.config import AppConfig
 from ser.repr.runtime_policy import FeatureRuntimePolicy
 from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_execution_context import prepare_execution_context
-from ser.runtime.medium_worker_operation import MediumRetryOperationState
 
 pytestmark = pytest.mark.unit
 

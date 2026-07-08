@@ -32,26 +32,26 @@ _internal/api/runtime.py
 runtime/pipeline.py
         |
         +--> runtime/registry.py
-        +--> runtime/backend_hooks.py
+        +--> _internal/runtime/backend_hooks.py
         +--> _internal/runtime/environment_plan.py
         +--> _internal/runtime/process_env.py
         |
         +--> fast_inference.py
         +--> medium_inference.py
-        |      +--> medium_execution_context.py
-        |      +--> medium_execution_flow.py
+        |      +--> _internal/runtime/medium_execution_context.py
+        |      +--> _internal/runtime/medium_execution_flow.py
         |      +--> medium_execution.py
-        |      +--> medium_worker_operation.py
-        |      +--> medium_worker_lifecycle.py
-        |      +--> medium_runtime_support.py
+        |      +--> _internal/runtime/medium_worker_operation.py
+        |      +--> _internal/runtime/medium_worker_lifecycle.py
+        |      +--> _internal/runtime/medium_runtime_support.py
         |
         +--> accurate_inference.py
-               +--> accurate_execution_flow.py
+               +--> _internal/runtime/accurate_execution_flow.py
                +--> accurate_execution.py
-               +--> accurate_operation_setup.py
-               +--> accurate_worker_operation.py
-               +--> accurate_worker_lifecycle.py
-               +--> accurate_runtime_support.py
+               +--> _internal/runtime/accurate_operation_setup.py
+               +--> _internal/runtime/accurate_worker_operation.py
+               +--> _internal/runtime/accurate_worker_lifecycle.py
+               +--> _internal/runtime/accurate_runtime_support.py
 ```
 
 Shared runtime primitives:
@@ -59,8 +59,8 @@ Shared runtime primitives:
 ```text
 _internal/runtime/worker_lifecycle.py
 _internal/runtime/retry_scaffold.py
-runtime/policy.py
-runtime/retry_primitives.py
+_internal/runtime/policy.py
+_internal/runtime/retry_primitives.py
 ```
 
 ## Level 3: transcription execution

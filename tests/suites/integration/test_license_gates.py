@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import ser._internal.runtime.backend_hooks as backend_hooks
 import ser.config as config
-import ser.runtime.backend_hooks as backend_hooks
 from ser.license_check import (
     BackendLicensePolicyError,
     ensure_backend_access,

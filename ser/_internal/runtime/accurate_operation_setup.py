@@ -7,9 +7,9 @@ from typing import Protocol, TypeVar
 
 from numpy.typing import NDArray
 
+from ser._internal.runtime import accurate_worker_operation as accurate_worker_operation_helpers
+from ser._internal.runtime.accurate_worker_operation import PreparedAccurateOperation
 from ser.config import AppConfig, ProfileRuntimeConfig
-from ser.runtime import accurate_worker_operation as accurate_worker_operation_helpers
-from ser.runtime.accurate_worker_operation import PreparedAccurateOperation
 
 _LoadedModelT = TypeVar("_LoadedModelT")
 _BackendT = TypeVar("_BackendT")

@@ -10,14 +10,14 @@ from typing import Generic, Protocol, TypeVar, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime.accurate_retry_operation import (
+    run_accurate_retry_operation as _run_accurate_retry_operation_impl,
+)
 from ser._internal.runtime.retry_scaffold import (
     finalize_in_process_setup as _finalize_in_process_setup_impl,
 )
 from ser._internal.runtime.retry_scaffold import prepare_retry_state as _prepare_retry_state_impl
 from ser.config import AppConfig, ProfileRuntimeConfig
-from ser.runtime.accurate_retry_operation import (
-    run_accurate_retry_operation as _run_accurate_retry_operation_impl,
-)
 
 
 class _PayloadLike(Protocol):

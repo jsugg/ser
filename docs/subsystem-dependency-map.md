@@ -43,7 +43,7 @@ Shared primitives, schemas, utils, external libraries
 ### Primary nodes
 
 - `runtime/pipeline.py`
-- `runtime/backend_hooks.py`
+- `_internal/runtime/backend_hooks.py`
 - `runtime/registry.py`
 - `runtime/*_inference.py`
 - `_internal/runtime/accurate_public_boundary.py`
@@ -210,7 +210,7 @@ Obsolete references:
 ## Cross-cutting shared primitives
 
 - Config schema and bootstrap: `_internal/config/*`
-- Runtime worker lifecycle and retries: `_internal/runtime/*`, `runtime/policy.py`, `runtime/retry_primitives.py`
+- Runtime worker lifecycle and retries: `_internal/runtime/*`, `_internal/runtime/policy.py`, `_internal/runtime/retry_primitives.py`
 - Domain contracts: `domain.py`, `runtime/contracts.py`, `runtime/schema.py`
 - Logging and timing: `utils/logger.py`, `runtime/phase_timing.py`
 

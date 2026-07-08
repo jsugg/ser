@@ -9,9 +9,9 @@ from typing import cast
 import numpy as np
 import pytest
 
+from ser._internal.runtime import accurate_operation_setup
+from ser._internal.runtime.accurate_worker_operation import PreparedAccurateOperation
 from ser.config import AppConfig, ProfileRuntimeConfig
-from ser.runtime import accurate_operation_setup
-from ser.runtime.accurate_worker_operation import PreparedAccurateOperation
 
 pytestmark = pytest.mark.unit
 
