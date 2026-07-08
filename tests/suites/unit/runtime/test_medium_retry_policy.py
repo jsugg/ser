@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ser.runtime import medium_retry_policy
+from ser._internal.runtime import medium_retry_policy
 
 
 def test_retry_delay_seconds_returns_zero_for_non_positive_base_delay() -> None:
@@ -21,7 +21,7 @@ def test_retry_delay_seconds_applies_attempt_scaling_with_jitter(
     def _fixed_uniform(_start: float, _end: float) -> float:
         return 0.05
 
-    monkeypatch.setattr("ser.runtime.retry_primitives.random.uniform", _fixed_uniform)
+    monkeypatch.setattr("ser._internal.runtime.retry_primitives.random.uniform", _fixed_uniform)
 
     assert medium_retry_policy.retry_delay_seconds(base_delay=0.5, attempt=2) == pytest.approx(1.05)
 

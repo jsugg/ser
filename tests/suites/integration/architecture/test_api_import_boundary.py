@@ -165,3 +165,91 @@ def test_legacy_api_implementation_modules_are_not_publicly_importable(
     """Legacy top-level API implementation modules should stay removed."""
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(module_name)
+
+
+_TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
+    "ser": (
+        "EmotionSegment",
+        "TimelineEntry",
+        "TranscriptWord",
+    ),
+    "ser.api": (
+        "ComplianceMode",
+        "DatasetPrepareResult",
+        "DatasetRegistryHealthIssueRecord",
+        "DatasetRegistryRecord",
+        "RuntimePipeline",
+        "RuntimePipelineBuilder",
+        "configure_dataset_consents",
+        "infer",
+        "list_dataset_registry_health_issues",
+        "list_datasets",
+        "list_profiles",
+        "list_registered_datasets",
+        "load_profile",
+        "prepare_dataset",
+        "run_startup_preflight",
+        "show_dataset_consents",
+        "train",
+    ),
+    "ser.config": (
+        "APP_NAME",
+        "AccurateResearchRuntimeConfig",
+        "AccurateRuntimeConfig",
+        "AppConfig",
+        "ArtifactProfileName",
+        "AudioReadConfig",
+        "DataLoaderConfig",
+        "DatasetConfig",
+        "FastRuntimeConfig",
+        "FeatureFlags",
+        "FeatureRuntimePolicyConfig",
+        "MediumRuntimeConfig",
+        "MediumTrainingConfig",
+        "ModelsConfig",
+        "NeuralNetConfig",
+        "ProfileRuntimeConfig",
+        "QualityGateConfig",
+        "RuntimeFlags",
+        "SchemaConfig",
+        "TimelineConfig",
+        "TorchRuntimeConfig",
+        "TrainingConfig",
+        "TranscriptionConfig",
+        "WhisperModelConfig",
+        "get_settings",
+        "reload_settings",
+        "settings_override",
+    ),
+    "ser.domain": (
+        "EmotionSegment",
+        "TimelineEntry",
+        "TranscriptWord",
+    ),
+    "ser.utils": (
+        "build_timeline",
+        "display_elapsed_time",
+        "get_logger",
+        "print_timeline",
+        "read_audio_file",
+        "save_timeline_to_csv",
+    ),
+}
+
+
+@pytest.mark.parametrize("module_name", sorted(_TIER_ONE_PUBLIC_EXPORTS))
+def test_tier_one_public_exports_do_not_grow_without_contract_review(
+    module_name: str,
+) -> None:
+    """Tier-1 `__all__` surfaces should never change without contract review."""
+    module = importlib.import_module(module_name)
+    exported = getattr(module, "__all__", None)
+    assert exported is not None, f"{module_name} must declare an explicit __all__."
+    assert len(set(exported)) == len(
+        exported
+    ), f"{module_name}.__all__ must not contain duplicates."
+    assert tuple(sorted(exported)) == _TIER_ONE_PUBLIC_EXPORTS[module_name], (
+        f"{module_name}.__all__ diverged from the tier-1 public contract. "
+        "Shrinking or renaming requires updating this snapshot; growth requires "
+        "explicit API review."
+    )

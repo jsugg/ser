@@ -242,7 +242,7 @@ def load_profile(
     settings: AppConfig,
 ) -> None:
     """Validates profile availability and dependency capability for execution."""
-    from ser.runtime.backend_hooks import build_backend_hooks
+    from ser._internal.runtime.backend_hooks import build_backend_hooks
     from ser.runtime.registry import (
         ensure_profile_supported,
         resolve_runtime_capability,

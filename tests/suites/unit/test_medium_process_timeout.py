@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from ser.runtime import medium_process_timeout
+from ser._internal.runtime import medium_process_timeout
 
 pytestmark = pytest.mark.unit
 

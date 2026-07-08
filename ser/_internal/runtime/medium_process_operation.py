@@ -8,9 +8,9 @@ from typing import Protocol, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.runtime import medium_worker_operation as medium_worker_operation_helpers
+from ser._internal.runtime.medium_worker_operation import PreparedMediumOperation
 from ser.config import AppConfig, MediumRuntimeConfig
-from ser.runtime import medium_worker_operation as medium_worker_operation_helpers
-from ser.runtime.medium_worker_operation import PreparedMediumOperation
 
 _LoadedModelT = TypeVar("_LoadedModelT")
 _BackendT = TypeVar("_BackendT")

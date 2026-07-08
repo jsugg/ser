@@ -7,14 +7,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
-from ser.config import AppConfig, MediumRuntimeConfig
-from ser.repr.runtime_policy import FeatureRuntimePolicy
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_worker_operation import (
+from ser._internal.runtime.medium_worker_operation import (
     MediumRetryOperationState,
     PreparedMediumOperation,
 )
-from ser.runtime.medium_worker_operation import _PayloadLike as _MediumPayloadLike
+from ser._internal.runtime.medium_worker_operation import _PayloadLike as _MediumPayloadLike
+from ser.config import AppConfig, MediumRuntimeConfig
+from ser.repr.runtime_policy import FeatureRuntimePolicy
+from ser.runtime.contracts import InferenceRequest
 
 _PayloadT = TypeVar("_PayloadT", bound=_MediumPayloadLike)
 _LoadedModelT = TypeVar("_LoadedModelT")

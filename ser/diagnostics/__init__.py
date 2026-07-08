@@ -15,7 +15,6 @@ from .service import (
     format_startup_preflight_one_liner,
     parse_preflight_mode,
     run_doctor_diagnostics,
-    run_startup_preflight,
     should_fail_preflight,
 )
 
@@ -32,6 +31,5 @@ __all__ = [
     "parse_preflight_mode",
     "run_doctor_command",
     "run_doctor_diagnostics",
-    "run_startup_preflight",
     "should_fail_preflight",
 ]

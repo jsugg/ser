@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from ser.runtime.medium_retry_operation import run_medium_inference_with_retry_policy
+from ser._internal.runtime.medium_retry_operation import run_medium_inference_with_retry_policy
 
 pytestmark = pytest.mark.unit
 

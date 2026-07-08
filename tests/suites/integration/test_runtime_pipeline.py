@@ -502,7 +502,7 @@ def test_create_runtime_pipeline_uses_resolved_profile(
     """Factory should resolve medium profile when medium flag is enabled."""
     monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.backend_hooks._missing_optional_modules",
+        "ser._internal.runtime.backend_hooks._missing_optional_modules",
         lambda _required_modules: ("transformers",),
     )
     settings = config.reload_settings()
