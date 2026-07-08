@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ser.runtime import retry_primitives
+from ser._internal.runtime import retry_primitives
 
 
 def test_jittered_retry_delay_seconds_returns_zero_for_non_positive_base_delay() -> None:
@@ -22,7 +22,7 @@ def test_jittered_retry_delay_seconds_applies_attempt_scaling_with_jitter(
         return 0.05
 
     monkeypatch.setattr(
-        "ser.runtime.retry_primitives.random.uniform",
+        "ser._internal.runtime.retry_primitives.random.uniform",
         _fixed_uniform,
     )
 

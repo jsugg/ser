@@ -1120,6 +1120,8 @@ def test_api_public_surface_snapshot_matches_expected_contract() -> None:
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
+        "RuntimePipeline",
+        "RuntimePipelineBuilder",
         "configure_dataset_consents",
         "infer",
         "list_dataset_registry_health_issues",

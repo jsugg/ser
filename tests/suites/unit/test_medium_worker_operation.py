@@ -9,8 +9,7 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_worker_operation import (
+from ser._internal.runtime.medium_worker_operation import (
     MediumRetryOperationState,
     PreparedMediumOperation,
     build_transient_failure_handler,
@@ -22,6 +21,7 @@ from ser.runtime.medium_worker_operation import (
     run_inference_operation,
     run_process_operation,
 )
+from ser.runtime.contracts import InferenceRequest
 
 pytestmark = pytest.mark.unit
 

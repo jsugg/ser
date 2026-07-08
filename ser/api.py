@@ -22,7 +22,7 @@ DatasetRegistryHealthIssueRecord = _data_api.DatasetRegistryHealthIssueRecord
 DatasetRegistryRecord = _data_api.DatasetRegistryRecord
 
 
-class _PublicRuntimePipeline(Protocol):
+class RuntimePipeline(Protocol):
     """Minimal runtime pipeline contract exposed at the public API facade."""
 
     def run_training(self) -> None:
@@ -34,7 +34,7 @@ class _PublicRuntimePipeline(Protocol):
         ...
 
 
-type RuntimePipelineBuilder = Callable[[AppConfig], _PublicRuntimePipeline]
+type RuntimePipelineBuilder = Callable[[AppConfig], RuntimePipeline]
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
@@ -197,6 +197,8 @@ __all__ = [
     "DatasetPrepareResult",
     "DatasetRegistryHealthIssueRecord",
     "DatasetRegistryRecord",
+    "RuntimePipeline",
+    "RuntimePipelineBuilder",
     "configure_dataset_consents",
     "infer",
     "list_dataset_registry_health_issues",

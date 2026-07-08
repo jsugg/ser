@@ -61,7 +61,7 @@ def apply_profile_override_for_diagnostics(
     return replace(settings, runtime_flags=runtime_flags)
 
 
-def run_startup_preflight(
+def _run_startup_preflight(
     *,
     settings: AppConfig,
     include_transcription_checks: bool,

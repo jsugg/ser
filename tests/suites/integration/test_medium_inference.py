@@ -194,7 +194,7 @@ def test_medium_timeout_retries_up_to_configured_budget(
     monkeypatch.setattr(medium_boundary, "_run_with_timeout_impl", fake_timeout_runner)
     monkeypatch.setattr(medium_boundary, "retry_delay_seconds", lambda **_kwargs: 0.1)
     monkeypatch.setattr(
-        "ser.runtime.policy.time.sleep",
+        "ser._internal.runtime.policy.time.sleep",
         lambda _delay: calls.__setitem__("sleeps", calls["sleeps"] + 1),
     )
 

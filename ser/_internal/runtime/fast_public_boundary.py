@@ -10,6 +10,7 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Literal
 
+from ser._internal.runtime.policy import run_with_retry_policy
 from ser._internal.runtime.process_timeout import (
     run_with_process_timeout as _run_with_process_timeout_impl,
 )
@@ -52,7 +53,6 @@ from ser.runtime.phase_timing import (
     log_phase_failed,
     log_phase_started,
 )
-from ser.runtime.policy import run_with_retry_policy
 from ser.runtime.schema import InferenceResult
 
 type WorkerPhaseMessage = tuple[Literal["phase"], Literal["setup_complete"]]

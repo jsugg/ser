@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from types import ModuleType
 
 from ser._internal.config.bootstrap import resolve_profile_transcription_config
+from ser._internal.runtime.backend_hooks import build_backend_hooks
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
 from ser.config import AppConfig, settings_override
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile, TranscriptionBackendId, resolve_profile
-from ser.runtime.backend_hooks import build_backend_hooks
 from ser.runtime.contracts import (
     BackendInferenceCallable,
     InferenceExecution,

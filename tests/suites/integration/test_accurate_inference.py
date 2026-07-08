@@ -152,7 +152,7 @@ def test_accurate_timeout_retries_up_to_configured_budget(
         lambda **_kwargs: 0.1,
     )
     monkeypatch.setattr(
-        "ser.runtime.policy.time.sleep",
+        "ser._internal.runtime.policy.time.sleep",
         lambda _delay: calls.__setitem__("sleeps", calls["sleeps"] + 1),
     )
 

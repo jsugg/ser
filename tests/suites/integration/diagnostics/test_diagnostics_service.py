@@ -12,12 +12,12 @@ import ser.config as config_module
 import ser.diagnostics.service as diagnostics_service
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
 from ser.diagnostics.service import (
+    _run_startup_preflight,
     format_report_brief,
     format_report_json,
     format_report_text,
     parse_preflight_mode,
     run_doctor_diagnostics,
-    run_startup_preflight,
     should_fail_preflight,
 )
 from ser.transcript.backends import CompatibilityIssue, CompatibilityReport
@@ -194,7 +194,7 @@ def test_fast_openmp_conflict_is_info_for_cli_diagnostics(
         lambda _backend_id: _FakeAdapter(),
     )
 
-    report = run_startup_preflight(
+    report = _run_startup_preflight(
         settings=settings,
         include_transcription_checks=True,
     )

@@ -9,16 +9,18 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from ser.config import AppConfig
-from ser.repr import EncodedSequence, XLSRBackend
-from ser.runtime import medium_worker_operation as medium_worker_operation_helpers
-from ser.runtime.medium_backend_runtime import build_medium_backend as _build_medium_backend_impl
-from ser.runtime.medium_backend_runtime import (
+from ser._internal.runtime import medium_worker_operation as medium_worker_operation_helpers
+from ser._internal.runtime.medium_backend_runtime import (
+    build_medium_backend as _build_medium_backend_impl,
+)
+from ser._internal.runtime.medium_backend_runtime import (
     settings_with_torch_runtime as _settings_with_torch_runtime_impl,
 )
-from ser.runtime.medium_backend_runtime import (
+from ser._internal.runtime.medium_backend_runtime import (
     warn_on_runtime_selector_mismatch as _warn_on_runtime_selector_mismatch_impl,
 )
+from ser.config import AppConfig
+from ser.repr import EncodedSequence, XLSRBackend
 
 
 class LoadedModelLike(Protocol):

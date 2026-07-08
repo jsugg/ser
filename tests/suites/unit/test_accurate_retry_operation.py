@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from ser.runtime.accurate_retry_operation import run_accurate_retry_operation
+from ser._internal.runtime.accurate_retry_operation import run_accurate_retry_operation
 
 pytestmark = pytest.mark.unit
 

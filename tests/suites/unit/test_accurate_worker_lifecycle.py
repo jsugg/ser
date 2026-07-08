@@ -11,7 +11,7 @@ from typing import cast
 
 import pytest
 
-from ser.runtime import accurate_worker_lifecycle
+from ser._internal.runtime import accurate_worker_lifecycle
 
 pytestmark = pytest.mark.unit
 

@@ -110,10 +110,10 @@ It coordinates:
 
 Supporting runtime ownership is split between:
 
-- backend hook construction: [`ser/runtime/backend_hooks.py`](../ser/runtime/backend_hooks.py)
+- backend hook construction: [`ser/_internal/runtime/backend_hooks.py`](../ser/_internal/runtime/backend_hooks.py)
 - capability resolution: [`ser/runtime/registry.py`](../ser/runtime/registry.py)
-- retry policy: [`ser/runtime/policy.py`](../ser/runtime/policy.py)
-- shared retry/error primitives: [`ser/runtime/retry_primitives.py`](../ser/runtime/retry_primitives.py)
+- retry policy: [`ser/_internal/runtime/policy.py`](../ser/_internal/runtime/policy.py)
+- shared retry/error primitives: [`ser/_internal/runtime/retry_primitives.py`](../ser/_internal/runtime/retry_primitives.py)
 - process env planning: [`ser/_internal/runtime/environment_plan.py`](../ser/_internal/runtime/environment_plan.py)
 - scoped env application: [`ser/_internal/runtime/process_env.py`](../ser/_internal/runtime/process_env.py)
 
@@ -130,10 +130,10 @@ longer monolithic runtime modules. They now delegate heavily into owner modules:
 
 - public-boundary orchestration: [`ser/_internal/runtime/accurate_public_boundary.py`](../ser/_internal/runtime/accurate_public_boundary.py), [`ser/_internal/runtime/medium_public_boundary.py`](../ser/_internal/runtime/medium_public_boundary.py)
 - execution: [`ser/runtime/medium_execution.py`](../ser/runtime/medium_execution.py), [`ser/runtime/accurate_execution.py`](../ser/runtime/accurate_execution.py)
-- setup/context: [`ser/runtime/medium_execution_context.py`](../ser/runtime/medium_execution_context.py), [`ser/runtime/accurate_operation_setup.py`](../ser/runtime/accurate_operation_setup.py)
-- retry/execution flow: [`ser/runtime/medium_execution_flow.py`](../ser/runtime/medium_execution_flow.py), [`ser/runtime/accurate_execution_flow.py`](../ser/runtime/accurate_execution_flow.py)
-- worker lifecycle: [`ser/runtime/medium_worker_lifecycle.py`](../ser/runtime/medium_worker_lifecycle.py), [`ser/runtime/accurate_worker_lifecycle.py`](../ser/runtime/accurate_worker_lifecycle.py)
-- runtime support: [`ser/runtime/medium_runtime_support.py`](../ser/runtime/medium_runtime_support.py), [`ser/runtime/accurate_runtime_support.py`](../ser/runtime/accurate_runtime_support.py)
+- setup/context: [`ser/_internal/runtime/medium_execution_context.py`](../ser/_internal/runtime/medium_execution_context.py), [`ser/_internal/runtime/accurate_operation_setup.py`](../ser/_internal/runtime/accurate_operation_setup.py)
+- retry/execution flow: [`ser/_internal/runtime/medium_execution_flow.py`](../ser/_internal/runtime/medium_execution_flow.py), [`ser/_internal/runtime/accurate_execution_flow.py`](../ser/_internal/runtime/accurate_execution_flow.py)
+- worker lifecycle: [`ser/_internal/runtime/medium_worker_lifecycle.py`](../ser/_internal/runtime/medium_worker_lifecycle.py), [`ser/_internal/runtime/accurate_worker_lifecycle.py`](../ser/_internal/runtime/accurate_worker_lifecycle.py)
+- runtime support: [`ser/_internal/runtime/medium_runtime_support.py`](../ser/_internal/runtime/medium_runtime_support.py), [`ser/_internal/runtime/accurate_runtime_support.py`](../ser/_internal/runtime/accurate_runtime_support.py)
 
 Underneath those, shared internal worker primitives provide the real reusable
 mechanics:
