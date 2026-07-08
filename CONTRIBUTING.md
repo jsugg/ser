@@ -35,6 +35,9 @@ make test-cov  # coverage.py branch gate, including multiprocessing workers
 make prepush-check      # canonical pre-push hook command
 make prepush-hook       # hook workflow: autofix + verify + abort if files changed
 make import-lint        # API boundary import lint lane (TID251 banned-api policy)
+make lock-check         # verify uv.lock is fresh without mutating it
+make workflow-lint      # run actionlint over GitHub Actions workflows
+make ci-contracts       # run workflow and change-classifier contract tests
 ```
 
 CI code-quality lane command:
@@ -75,8 +78,30 @@ Quality and validation lanes:
 - `code-quality`: runs pre-push stage hooks (ruff/black/isort/mypy/pyright), with formatter hooks in check-only mode.
 - `resolve`: validates lock/extras resolution for Python 3.12 and 3.13.
 - `tests`: runs pytest matrix on Python 3.12 and 3.13.
+- `coverage`: enforces the branch coverage threshold and uploads XML/HTML reports.
 - `contract-gates`: deterministic contract lane on Python 3.12 (API boundary import-lint gate + transcription benchmark contract test).
 - `build`: package build + metadata/wheel smoke checks.
+- `required-ci`: always-reporting aggregate intended for branch rulesets. It fails when any critical
+  code-change gate fails and succeeds only for explicitly classified docs-only pull requests.
+
+Docs-only pull requests may skip heavy lanes only when `scripts/ci_classify_changes.sh` reports
+`reason=docs_only_pull_request`. Push and scheduled runs always execute full CI.
+
+Workflow and classifier policy are covered by:
+
+```bash
+make ci-contracts
+make workflow-lint
+```
+
+Dependency review starts as advisory for dependency, lockfile, workflow, and dependency-bot changes.
+Do not make it required until advisory noise and severity thresholds are tuned.
+
+## Advisory Security Checks
+
+Dependency Review, CodeQL, and Scorecard start as advisory checks and must not become required
+until their alert noise is tuned. Current Dependabot alert triage is documented in
+[docs/ci/dependabot-alert-triage.md](docs/ci/dependabot-alert-triage.md).
 
 ## Test Suite Layout
 - `tests/suites/unit`: narrow owner or helper behavior.

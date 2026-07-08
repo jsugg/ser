@@ -38,6 +38,7 @@ repos:
     hooks:
       - id: mypy
         pass_filenames: false
+        additional_dependencies: ["types-PyYAML>=6.0.12,<7.0.0"]
         args: [ser, tests]
         stages: [pre-push]
 

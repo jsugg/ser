@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test test-cov check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint clean
+.PHONY: help setup setup-runtime fmt lint type test test-cov check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint lock-check workflow-lint ci-contracts clean
 
 .DEFAULT_GOAL := help
 
@@ -18,6 +18,9 @@ help:
 	@echo "  prepush-check - run canonical pre-push hook command (check-only)"
 	@echo "  prepush-hook - run the git pre-push hook workflow (autofix + abort if files change)"
 	@echo "  import-lint - run public API boundary import-lint lane"
+	@echo "  lock-check - verify uv.lock is fresh without mutating it"
+	@echo "  workflow-lint - run actionlint over GitHub Actions workflows"
+	@echo "  ci-contracts - run CI/CD policy contract tests"
 	@echo "  train    - train model"
 	@echo "  predict  - run prediction (set FILE=sample.wav)"
 	@echo "  optin-all-restricted - persist consent for all known restricted backends"
@@ -54,6 +57,7 @@ test-cov:
 	uv run --frozen --extra dev coverage combine
 	uv run --frozen --extra dev coverage report
 	uv run --frozen --extra dev coverage xml
+	uv run --frozen --extra dev coverage html
 
 check: lint type test
 
@@ -67,6 +71,17 @@ prepush-hook:
 
 import-lint:
 	bash ./scripts/run_import_lint.sh
+
+lock-check:
+	uv lock --check
+
+workflow-lint:
+	uvx --from actionlint-py==1.7.12.24 actionlint
+
+ci-contracts:
+	uv run --frozen --extra dev pytest -q \
+		tests/suites/integration/architecture/test_ci_workflow_contracts.py \
+		tests/suites/integration/architecture/test_ci_change_classifier.py
 
 train:
 	uv run ser --train
@@ -82,5 +97,5 @@ quality-gate-full:
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
-	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build .pkg-smoke
+	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build .pkg-smoke htmlcov reports release-evidence
 	find . -maxdepth 1 -type f \( -name ".coverage" -o -name ".coverage.*" -o -name "coverage.xml" \) -delete

@@ -70,8 +70,17 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-py3.12-
 
+      - name: Verify lockfile freshness
+        run: make lock-check
+
       - name: Run linters and type checks (pre-push stage)
         run: make prepush-check
+
+      - name: Run CI/CD policy contract tests
+        run: make ci-contracts
+
+      - name: Lint GitHub Actions workflows
+        run: make workflow-lint
 
   resolve:
     needs: [changes]
@@ -135,13 +144,25 @@ jobs:
             uv-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Run tests
-        run: uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q
+        run: >
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q
+          --junitxml=reports/pytest/pytest-${{ matrix.python-version }}.xml
 
       - name: Enforce Python 3.13 organized workflow suites
         if: matrix.python-version == '3.13'
         run: >
           uv run --frozen --python ${{ matrix.python-version }} --extra dev --extra medium pytest -q
           tests/suites
+          --junitxml=reports/pytest/pytest-suites-${{ matrix.python-version }}.xml
+
+      - name: Upload pytest reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-reports-${{ matrix.python-version }}
+          path: reports/pytest/*.xml
+          if-no-files-found: warn
+          retention-days: 7
 
   coverage:
     needs: [changes]
@@ -170,6 +191,28 @@ jobs:
 
       - name: Enforce branch coverage threshold
         run: make test-cov
+
+      - name: Write coverage summary
+        if: always()
+        run: |
+          {
+            echo "### Coverage gate"
+            echo
+            echo "- Command: \`make test-cov\`"
+            echo "- XML: \`coverage.xml\`"
+            echo "- HTML: \`htmlcov/index.html\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-reports
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 7
 
   contract-gates:
     runs-on: ubuntu-latest
@@ -239,9 +282,105 @@ jobs:
         run: uv build
 
       - name: Check package metadata
-        run: |
-          python -m pip install --upgrade twine
-          twine check dist/*
+        run: uvx --from twine twine check --strict dist/*
 
       - name: Smoke-test wheel installation
         run: ./scripts/workflows/smoke_test_wheel_install.sh
+
+      - name: Write build summary
+        if: always()
+        run: |
+          {
+            echo "### Build gate"
+            echo
+            echo "- Command: \`uv build\`"
+            echo "- Metadata: \`uvx --from twine twine check --strict dist/*\`"
+            echo "- Wheel smoke: \`./scripts/workflows/smoke_test_wheel_install.sh\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build distributions
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-build-distributions
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 7
+
+  required-ci:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - code-quality
+      - resolve
+      - tests
+      - coverage
+      - contract-gates
+      - build
+    if: ${{ always() }}
+
+    steps:
+      - name: Evaluate required CI gates
+        env:
+          RUN_FULL: ${{ needs.changes.outputs.run_full }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          CLASSIFIER_REASON: ${{ needs.changes.outputs.reason }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_QUALITY_RESULT: ${{ needs.code-quality.result }}
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          CONTRACT_GATES_RESULT: ${{ needs.contract-gates.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Required CI aggregate"
+            echo
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| changes | ${CHANGES_RESULT} |"
+            echo "| code-quality | ${CODE_QUALITY_RESULT} |"
+            echo "| resolve | ${RESOLVE_RESULT} |"
+            echo "| tests | ${TESTS_RESULT} |"
+            echo "| coverage | ${COVERAGE_RESULT} |"
+            echo "| contract-gates | ${CONTRACT_GATES_RESULT} |"
+            echo "| build | ${BUILD_RESULT} |"
+            echo
+            echo "Classifier reason: \`${CLASSIFIER_REASON:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Change classification failed: ${CHANGES_RESULT}" >&2
+            exit 1
+          fi
+
+          if [[ "$RUN_FULL" == "false" && "$DOCS_ONLY" == "true" ]]; then
+            if [[ "$CLASSIFIER_REASON" != "docs_only_pull_request" ]]; then
+              echo "Docs-only skip used unexpected reason: ${CLASSIFIER_REASON}" >&2
+              exit 1
+            fi
+            echo "Docs-only pull request: heavy gates skipped intentionally."
+            exit 0
+          fi
+
+          if [[ "$RUN_FULL" != "true" ]]; then
+            echo "Unexpected classifier output: run_full=${RUN_FULL}, docs_only=${DOCS_ONLY}" >&2
+            exit 1
+          fi
+
+          for gate in \
+            CODE_QUALITY_RESULT \
+            RESOLVE_RESULT \
+            TESTS_RESULT \
+            COVERAGE_RESULT \
+            CONTRACT_GATES_RESULT \
+            BUILD_RESULT; do
+            if [[ "${!gate}" != "success" ]]; then
+              echo "Required gate failed or skipped: ${gate}=${!gate}" >&2
+              exit 1
+            fi
+          done
+
+          echo "All required CI gates passed."

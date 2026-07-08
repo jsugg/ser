@@ -9,6 +9,7 @@ Options:
   --python <version>       Override Python version (default: platform-aware).
   --extra <group>          Include an optional dependency group; repeatable.
   --no-dev                 Skip development dependencies.
+  --frozen                 Assert the lockfile is current during uv sync.
   --skip-git-hooks         Do not install git hooks even when `.git/` exists.
   --skip-ffmpeg-check      Do not fail if ffmpeg is missing on PATH.
   --dry-run                Print planned commands without executing them.
@@ -18,6 +19,7 @@ Environment overrides:
   SER_SETUP_PYTHON         Same as --python.
   SER_SETUP_EXTRAS         Comma-separated optional dependency groups.
   SER_SETUP_INCLUDE_DEV    true/false (default: true).
+  SER_SETUP_FROZEN         true/false (default: false).
   SER_SETUP_INSTALL_GIT_HOOKS true/false (default: true).
   SER_SETUP_CHECK_FFMPEG   true/false (default: true).
   SER_SETUP_DRY_RUN        true/false (default: false).
@@ -84,6 +86,7 @@ fi
 
 python_version="${SER_SETUP_PYTHON:-$default_python}"
 include_dev="$(normalize_bool "${SER_SETUP_INCLUDE_DEV:-true}" "SER_SETUP_INCLUDE_DEV")"
+frozen_sync="$(normalize_bool "${SER_SETUP_FROZEN:-false}" "SER_SETUP_FROZEN")"
 install_git_hooks="$(normalize_bool "${SER_SETUP_INSTALL_GIT_HOOKS:-true}" "SER_SETUP_INSTALL_GIT_HOOKS")"
 check_ffmpeg="$(normalize_bool "${SER_SETUP_CHECK_FFMPEG:-true}" "SER_SETUP_CHECK_FFMPEG")"
 dry_run="$(normalize_bool "${SER_SETUP_DRY_RUN:-false}" "SER_SETUP_DRY_RUN")"
@@ -116,6 +119,10 @@ while [[ $# -gt 0 ]]; do
       include_dev="false"
       shift
       ;;
+    --frozen)
+      frozen_sync="true"
+      shift
+      ;;
     --skip-git-hooks)
       install_git_hooks="false"
       shift
@@ -145,6 +152,9 @@ if [[ ${#extras[@]} -eq 0 ]]; then
 fi
 
 sync_args=(--python "$python_version")
+if [[ "$frozen_sync" == "true" ]]; then
+  sync_args+=(--frozen)
+fi
 for extra in "${extras[@]}"; do
   sync_args+=(--extra "$extra")
 done
@@ -157,6 +167,7 @@ printf '[setup] platform: %s/%s\n' "$os_name" "$arch_name"
 printf '[setup] python: %s\n' "$python_version"
 printf '[setup] extras: %s\n' "${extras[*]}"
 printf '[setup] include dev tools: %s\n' "$include_dev"
+printf '[setup] frozen lockfile: %s\n' "$frozen_sync"
 printf '[setup] install git hooks: %s\n' "$install_git_hooks"
 printf '[setup] ffmpeg check: %s\n' "$check_ffmpeg"
 

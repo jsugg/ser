@@ -56,6 +56,7 @@ if [[ -z "$profile" ]]; then
 fi
 
 uv_run_args=()
+uv_run_args+=(--frozen)
 if [[ -n "$python_version" ]]; then
   uv_run_args+=(--python "$python_version")
 fi
@@ -66,11 +67,7 @@ if [[ ${#uv_extras[@]} -gt 0 ]]; then
 fi
 
 run_uv() {
-  if [[ ${#uv_run_args[@]} -gt 0 ]]; then
-    uv run "${uv_run_args[@]}" "$@"
-    return 0
-  fi
-  uv run "$@"
+  uv run "${uv_run_args[@]}" "$@"
 }
 
 run_uv ser --train --profile "$profile"
