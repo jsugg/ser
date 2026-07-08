@@ -109,6 +109,7 @@ jobs:
       - name: Accurate-research profile train and predict (compatibility smoke)
         if: ${{ inputs.run_accurate_research }}
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SER_ENABLE_RESTRICTED_BACKENDS: "true"
           SER_ACCURATE_RESEARCH_MODEL_ID: ${{ inputs.accurate_research_model_id }}
           SER_MODEL_FILE_NAME: ser_model_accurate_research_linux_py313.pkl

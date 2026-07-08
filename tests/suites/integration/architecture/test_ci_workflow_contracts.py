@@ -74,6 +74,14 @@ def _run_commands(job: dict[str, object]) -> str:
     return "\n".join(str(step["run"]) for step in _steps(job) if "run" in step)
 
 
+def _step_by_name(job: dict[str, object], step_name: str) -> dict[str, object]:
+    """Returns one workflow step by display name."""
+    for step in _steps(job):
+        if step.get("name") == step_name:
+            return step
+    raise AssertionError(f"Missing workflow step: {step_name}")
+
+
 def _event_names(workflow: dict[str, object]) -> set[str]:
     """Returns event names from one workflow trigger block."""
     trigger = workflow["on"]
@@ -220,6 +228,39 @@ def test_ci_visibility_and_lock_controls_are_wired(repo_root: Path) -> None:
     assert "uv build" in build_commands
     assert "uvx --from twine twine check --strict dist/*" in build_commands
     assert any(step.get("uses") == "actions/upload-artifact@v7" for step in _steps(build_job))
+
+
+def test_accurate_research_smokes_pass_github_token_to_torch_hub(repo_root: Path) -> None:
+    """Accurate-research VAD should avoid unauthenticated `torch.hub` API rate limits."""
+    expectations = (
+        (
+            "linux-python-3_13-cli-validation.yml",
+            "linux-py313-profile-smoke",
+            "Accurate-research profile train and predict (compatibility smoke)",
+        ),
+        (
+            "linux-selfhosted-gpu-validation.yml",
+            "cuda-selfhosted-profile-smoke",
+            "Accurate-research profile train and predict (optional)",
+        ),
+        (
+            "linux-selfhosted-gpu-validation.yml",
+            "xpu-selfhosted-profile-smoke",
+            "Accurate-research profile train and predict (optional)",
+        ),
+        (
+            "macos15-mps-validation.yml",
+            "macos15-mps-profile-smoke",
+            "Accurate-research profile train and predict (optional)",
+        ),
+    )
+
+    for workflow_name, job_id, step_name in expectations:
+        workflow = _workflow(repo_root, workflow_name)
+        step = _step_by_name(_job(workflow, job_id), step_name)
+        env = _as_mapping(step["env"], context=f"{workflow_name}:{job_id}:{step_name} env")
+
+        assert env["GITHUB_TOKEN"] == "${{ github.token }}"
 
 
 def test_dependency_review_and_update_automation_are_advisory(repo_root: Path) -> None:

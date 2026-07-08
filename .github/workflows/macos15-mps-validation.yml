@@ -141,6 +141,7 @@ jobs:
       - name: Accurate-research profile train and predict (optional)
         if: ${{ inputs.run_accurate_research }}
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SER_ENABLE_RESTRICTED_BACKENDS: "true"
           SER_TORCH_DEVICE: auto
           SER_TORCH_DTYPE: auto
