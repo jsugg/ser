@@ -117,7 +117,7 @@ jobs:
         run: ./scripts/workflows/ensure_ffmpeg.sh --mode required
 
       - name: Cache uv
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-selfhosted-cuda-py${{ inputs.python_version }}-${{ hashFiles('uv.lock') }}
@@ -228,7 +228,7 @@ jobs:
         run: ./scripts/workflows/ensure_ffmpeg.sh --mode required
 
       - name: Cache uv
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-selfhosted-xpu-py${{ inputs.python_version }}-${{ hashFiles('uv.lock') }}
