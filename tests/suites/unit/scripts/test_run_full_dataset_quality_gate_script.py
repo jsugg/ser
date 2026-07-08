@@ -24,3 +24,15 @@ def test_full_dataset_quality_gate_default_models_dir_is_platform_aware(repo_roo
         'models_dir="${SER_MODELS_DIR:-$HOME/Library/Application Support/ser/models}"'
         not in script_text
     )
+
+
+def test_full_dataset_quality_gate_uses_frozen_uv_commands(repo_root: Path) -> None:
+    """Full-gate script should not mutate the project lockfile in CI lanes."""
+    script_path = repo_root / "scripts" / "run_full_dataset_quality_gate.sh"
+    script_text = script_path.read_text(encoding="utf-8")
+
+    assert "uv run --frozen ser --train" in script_text
+    assert "uv run --frozen --extra medium ser --train" in script_text
+    assert (
+        "uv run --frozen --extra medium python -m ser.runtime.profile_quality_gate" in script_text
+    )
