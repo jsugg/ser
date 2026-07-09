@@ -148,7 +148,7 @@ all callers (CLI, tests).
 | P1-02 | pyright `--verifytypes` ratchet gate | DONE | P0-01 |
 | P1-03 | Import-cost contract test | DONE | P0-03 |
 | P1-04 | ruff TID251 boundary lint | DONE | — |
-| P1-05 | CI wiring for the new gates | TODO | P1-01..04 |
+| P1-05 | CI wiring for the new gates | DONE | P1-01..04 |
 
 **P1-01** — Add `griffe` to the dev extra (`uv lock` refresh; `make lock-check` must
 pass). Script `scripts/dump_public_api.py` dumps names + signatures + annotations for
@@ -308,6 +308,30 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-09 21:00 — P1-05 done
+- What: Wired `make type-completeness` into CI code-quality, added
+  `workflow_dispatch` to CI so the validation workflow can be dispatched for this
+  phase, and extended CI contract tests to require the new gate and snapshot test
+  presence. Publish workflows were untouched.
+- Evidence: `make workflow-lint ci-contracts` → actionlint passed and CI contracts
+  `22 passed`; `make prepush-check` → Ruff, Black, isort, mypy, import-lint, and
+  pyright hooks passed; `gh workflow run ci.yml --ref refactor/public-api-hardening-p1`
+  → dispatched run `https://github.com/jsugg/ser/actions/runs/29058563279`; `gh run
+  view 29058563279 --json status,conclusion,jobs,url,headSha,displayTitle` →
+  `status=completed`, `conclusion=success`, `headSha=f89c63c...`; code-quality job
+  completed successfully including `Verify public API type completeness`; required-ci
+  completed successfully.
+- Deviations / follow-ups: CI initially had no `workflow_dispatch` trigger, so the
+  first `gh workflow run ci.yml --ref refactor/public-api-hardening-p1` returned
+  HTTP 422; added dispatch support to CI only, then reran successfully.
+
+### 2026-07-09 20:40 — P1-05 started
+- What: Wire the new public API gates into CI quality contracts without touching
+  publish workflows.
+- Evidence: P1-01 snapshot test is collected by full pytest; P1-02
+  `type-completeness` exists locally and now needs CI workflow coverage.
+- Deviations / follow-ups: none.
 
 ### 2026-07-09 20:40 — P1-04 done
 - What: Broadened Ruff TID251 to ban `ser._internal` for public source files,

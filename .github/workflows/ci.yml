@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1"
 
@@ -75,6 +76,9 @@ jobs:
 
       - name: Run linters and type checks (pre-push stage)
         run: make prepush-check
+
+      - name: Verify public API type completeness
+        run: make type-completeness
 
       - name: Run CI/CD policy contract tests
         run: make ci-contracts

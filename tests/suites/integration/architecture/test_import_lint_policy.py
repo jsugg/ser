@@ -67,3 +67,13 @@ def test_import_lint_lane_runs_boundary_contract_tests(repo_root: Path) -> None:
     assert "ruff check --select TID251" in script
     assert "tests/suites/integration/architecture/test_api_import_boundary.py" in script
     assert "tests/suites/integration/architecture/test_import_lint_policy.py" in script
+
+
+def test_prepush_lint_routes_tid251_through_import_lint(repo_root: Path) -> None:
+    """Pre-push Ruff should avoid broad TID251 and use the public-boundary lane."""
+    config = (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    assert "args: [--fix, --ignore, TID251]" in config
+    assert "args: [--ignore, TID251]" in config
+    assert "id: import-lint" in config
+    assert "entry: bash scripts/run_import_lint.sh" in config
