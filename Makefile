@@ -1,4 +1,4 @@
-.PHONY: help setup setup-runtime fmt lint type test test-cov check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint lock-check workflow-lint ci-contracts clean
+.PHONY: help setup setup-runtime fmt lint type type-completeness test test-cov check ci train predict optin-all-restricted quality-gate-full prepush prepush-check prepush-hook import-lint lock-check workflow-lint ci-contracts clean
 
 .DEFAULT_GOAL := help
 
@@ -11,6 +11,7 @@ help:
 	@echo "  fmt      - format code"
 	@echo "  lint     - run linters"
 	@echo "  type     - run type checks"
+	@echo "  type-completeness - enforce pyright verifytypes public API completeness"
 	@echo "  test     - run tests"
 	@echo "  test-cov - run tests with branch coverage gating"
 	@echo "  check    - lint + type + test"
@@ -47,6 +48,9 @@ lint:
 type:
 	uv run --frozen --extra dev mypy ser tests
 	uv run --frozen --extra dev pyright --pythonversion 3.12 ser tests
+
+type-completeness:
+	uv run --frozen --extra dev python scripts/check_type_completeness.py
 
 test:
 	uv run --frozen --extra dev pytest -q

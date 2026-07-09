@@ -145,7 +145,7 @@ all callers (CLI, tests).
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
 | P1-01 | Public-API snapshot + drift contract test | DONE | P0-03, P0-04, P0-05 |
-| P1-02 | pyright `--verifytypes` ratchet gate | TODO | P0-01 |
+| P1-02 | pyright `--verifytypes` ratchet gate | DONE | P0-01 |
 | P1-03 | Import-cost contract test | TODO | P0-03 |
 | P1-04 | ruff TID251 boundary lint | TODO | — |
 | P1-05 | CI wiring for the new gates | TODO | P1-01..04 |
@@ -308,6 +308,24 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-09 20:32 — P1-02 done
+- What: Added `make type-completeness`, backed by
+  `scripts/check_type_completeness.py`, with the baseline stored at
+  `[tool.ser.type_completeness].threshold`.
+- Evidence: `make type-completeness` → `pyright verifytypes completeness:
+  0.9788235294 (threshold 0.9788235294)`; `uv run --frozen --extra dev black
+  --check scripts/check_type_completeness.py` → unchanged.
+- Deviations / follow-ups: Baseline already exceeds 95%, so no ratchet-to-95%
+  follow-up needed.
+
+### 2026-07-09 20:30 — P1-02 started
+- What: Add a `make type-completeness` gate around pyright `--verifytypes ser` and
+  record the current completeness baseline as the threshold.
+- Evidence: `uv run --frozen --extra dev pyright --verifytypes ser --ignoreexternal
+  --outputjson` → completeness score `0.9788235294117648` with zero diagnostics
+  before adding the gate.
+- Deviations / follow-ups: none.
 
 ### 2026-07-09 20:29 — P1-01 done
 - What: Added `griffe` to the dev extra, `scripts/dump_public_api.py`, the tier-1
