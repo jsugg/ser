@@ -183,6 +183,9 @@ exclude = ["**/__pycache__", "dist", "build", ".venv", ".*"]
 reportMissingImports = "warning"
 reportMissingTypeStubs = "none"
 
+[tool.ser.type_completeness]
+threshold = 0.9788235294117648
+
 [tool.coverage.run]
 branch = true
 concurrency = ["multiprocessing"]
