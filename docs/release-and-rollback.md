@@ -22,7 +22,7 @@ fresh registry/admin check proves otherwise.
 ## Required release sequence
 
 1. Run or refresh the live-state export in
-   [`docs/ci/ci-cd-quality-implementation-journal.md`](ci/ci-cd-quality-implementation-journal.md).
+   internal CI/CD quality implementation journal.
 2. Verify the target distribution name and trusted-publisher configuration in PyPI/TestPyPI.
 3. Ensure default CI passed for the exact release commit.
 4. Create a prerelease and run the TestPyPI workflow.
