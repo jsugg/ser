@@ -4,17 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import ser._internal.api.data as _data_api
 import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
 from ser.config import AppConfig, reload_settings
+from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport, DiagnosticSeverity
 from ser.profiles import ProfileName
-
-if TYPE_CHECKING:
-    from ser.diagnostics.domain import DiagnosticReport
-    from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
+from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
 
 ComplianceMode = _data_api.ComplianceMode
 DatasetPrepareResult = _data_api.DatasetPrepareResult
@@ -193,12 +191,20 @@ def run_startup_preflight(
 
 
 __all__ = [
+    "AppConfig",
     "ComplianceMode",
     "DatasetPrepareResult",
     "DatasetRegistryHealthIssueRecord",
     "DatasetRegistryRecord",
+    "DiagnosticFinding",
+    "DiagnosticReport",
+    "DiagnosticSeverity",
+    "InferenceExecution",
+    "InferenceRequest",
+    "ProfileName",
     "RuntimePipeline",
     "RuntimePipelineBuilder",
+    "SubtitleFormat",
     "configure_dataset_consents",
     "infer",
     "list_dataset_registry_health_issues",

@@ -1094,10 +1094,17 @@ def test_api_public_surface_includes_user_oriented_entrypoints() -> None:
     """Stable API contract should expose user-oriented library entrypoints only."""
     exported = set(api.__all__)
     required = {
+        "AppConfig",
         "ComplianceMode",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
+        "DiagnosticFinding",
+        "DiagnosticReport",
+        "DiagnosticSeverity",
+        "InferenceExecution",
+        "InferenceRequest",
+        "ProfileName",
         "configure_dataset_consents",
         "infer",
         "train",
@@ -1109,6 +1116,7 @@ def test_api_public_surface_includes_user_oriented_entrypoints() -> None:
         "list_registered_datasets",
         "list_dataset_registry_health_issues",
         "show_dataset_consents",
+        "SubtitleFormat",
     }
     assert required.issubset(exported)
 
@@ -1116,12 +1124,20 @@ def test_api_public_surface_includes_user_oriented_entrypoints() -> None:
 def test_api_public_surface_snapshot_matches_expected_contract() -> None:
     """Public API export snapshot should only change via explicit contract updates."""
     assert api.__all__ == [
+        "AppConfig",
         "ComplianceMode",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
+        "DiagnosticFinding",
+        "DiagnosticReport",
+        "DiagnosticSeverity",
+        "InferenceExecution",
+        "InferenceRequest",
+        "ProfileName",
         "RuntimePipeline",
         "RuntimePipelineBuilder",
+        "SubtitleFormat",
         "configure_dataset_consents",
         "infer",
         "list_dataset_registry_health_issues",
