@@ -11,6 +11,7 @@ import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
 from ser.config import AppConfig, reload_settings
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport, DiagnosticSeverity
+from ser.domain import DatasetConsents
 from ser.profiles import ProfileName
 from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
 
@@ -66,7 +67,7 @@ def list_dataset_registry_health_issues(
 def show_dataset_consents(
     *,
     settings: AppConfig | None = None,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> DatasetConsents:
     """Returns persisted dataset consents using the active settings snapshot."""
     return _data_api.show_dataset_consents(settings=_resolve_boundary_settings(settings))
 
@@ -77,7 +78,7 @@ def configure_dataset_consents(
     accept_license_ids: tuple[str, ...] = (),
     settings: AppConfig | None = None,
     source: str = "ser.api.configure_dataset_consents",
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> DatasetConsents:
     """Persists dataset consents using the active settings snapshot."""
     return _data_api.configure_dataset_consents(
         accept_policy_ids=accept_policy_ids,
@@ -193,6 +194,7 @@ def run_startup_preflight(
 __all__ = [
     "AppConfig",
     "ComplianceMode",
+    "DatasetConsents",
     "DatasetPrepareResult",
     "DatasetRegistryHealthIssueRecord",
     "DatasetRegistryRecord",

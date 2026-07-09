@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from ser.config import AppConfig
+from ser.domain import DatasetConsents
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -117,14 +118,14 @@ def list_dataset_registry_health_issues(
 def show_dataset_consents(
     *,
     settings: AppConfig,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> DatasetConsents:
     """Returns persisted dataset consent IDs as `(policy_ids, license_ids)`."""
     from ser.data.dataset_consents import load_persisted_dataset_consents
 
     consents = load_persisted_dataset_consents(settings=settings)
-    return (
-        tuple(sorted(consents.policy_consents)),
-        tuple(sorted(consents.license_consents)),
+    return DatasetConsents(
+        policy_ids=tuple(sorted(consents.policy_consents)),
+        license_ids=tuple(sorted(consents.license_consents)),
     )
 
 
@@ -134,7 +135,7 @@ def configure_dataset_consents(
     accept_license_ids: tuple[str, ...] = (),
     settings: AppConfig,
     source: str = "ser.api.configure_dataset_consents",
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> DatasetConsents:
     """Persists dataset consents and returns updated `(policy_ids, license_ids)`."""
     from ser.data.dataset_consents import (
         load_persisted_dataset_consents,
@@ -148,9 +149,9 @@ def configure_dataset_consents(
         source=source,
     )
     updated = load_persisted_dataset_consents(settings=settings)
-    return (
-        tuple(sorted(updated.policy_consents)),
-        tuple(sorted(updated.license_consents)),
+    return DatasetConsents(
+        policy_ids=tuple(sorted(updated.policy_consents)),
+        license_ids=tuple(sorted(updated.license_consents)),
     )
 
 

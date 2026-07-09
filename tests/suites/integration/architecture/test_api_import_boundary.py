@@ -177,6 +177,7 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
     "ser.api": (
         "AppConfig",
         "ComplianceMode",
+        "DatasetConsents",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
@@ -231,6 +232,7 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "settings_override",
     ),
     "ser.domain": (
+        "DatasetConsents",
         "EmotionSegment",
         "TimelineEntry",
         "TranscriptWord",
