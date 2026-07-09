@@ -1,0 +1,1066 @@
+{
+  "modules": {
+    "ser": {
+      "exports": {
+        "EmotionSegment": {
+          "kind": "class",
+          "target_path": "ser.domain.EmotionSegment"
+        },
+        "TimelineEntry": {
+          "kind": "class",
+          "target_path": "ser.domain.TimelineEntry"
+        },
+        "TranscriptWord": {
+          "kind": "class",
+          "target_path": "ser.domain.TranscriptWord"
+        },
+        "__version__": {
+          "annotation": "str",
+          "kind": "attribute",
+          "value": "version('ser')"
+        }
+      },
+      "source": "explicit __all__"
+    },
+    "ser.api": {
+      "exports": {
+        "AppConfig": {
+          "kind": "class",
+          "target_path": "ser.config.AppConfig"
+        },
+        "ComplianceMode": {
+          "annotation": null,
+          "kind": "attribute",
+          "value": "_data_api.ComplianceMode"
+        },
+        "DatasetConsents": {
+          "kind": "class",
+          "target_path": "ser.domain.DatasetConsents"
+        },
+        "DatasetPrepareResult": {
+          "annotation": null,
+          "kind": "attribute",
+          "value": "_data_api.DatasetPrepareResult"
+        },
+        "DatasetRegistryHealthIssueRecord": {
+          "annotation": null,
+          "kind": "attribute",
+          "value": "_data_api.DatasetRegistryHealthIssueRecord"
+        },
+        "DatasetRegistryRecord": {
+          "annotation": null,
+          "kind": "attribute",
+          "value": "_data_api.DatasetRegistryRecord"
+        },
+        "DiagnosticFinding": {
+          "kind": "class",
+          "target_path": "ser.diagnostics.domain.DiagnosticFinding"
+        },
+        "DiagnosticReport": {
+          "kind": "class",
+          "target_path": "ser.diagnostics.domain.DiagnosticReport"
+        },
+        "DiagnosticSeverity": {
+          "kind": "type alias",
+          "target_path": "ser.diagnostics.domain.DiagnosticSeverity"
+        },
+        "InferenceExecution": {
+          "kind": "class",
+          "target_path": "ser.runtime.contracts.InferenceExecution"
+        },
+        "InferenceRequest": {
+          "kind": "class",
+          "target_path": "ser.runtime.contracts.InferenceRequest"
+        },
+        "ProfileName": {
+          "kind": "type alias",
+          "target_path": "ser.profiles.ProfileName"
+        },
+        "RuntimePipeline": {
+          "bases": [
+            "Protocol"
+          ],
+          "kind": "class",
+          "members": {
+            "run_inference": {
+              "kind": "function",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "kind": "positional or keyword",
+                  "name": "self"
+                },
+                {
+                  "annotation": "InferenceRequest",
+                  "default": null,
+                  "kind": "positional or keyword",
+                  "name": "request"
+                }
+              ],
+              "returns": "InferenceExecution",
+              "signature": "(self, request: InferenceRequest) -> InferenceExecution"
+            },
+            "run_training": {
+              "kind": "function",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "kind": "positional or keyword",
+                  "name": "self"
+                }
+              ],
+              "returns": "None",
+              "signature": "(self) -> None"
+            }
+          }
+        },
+        "RuntimePipelineBuilder": {
+          "annotation": null,
+          "kind": "type alias",
+          "value": "Callable[[AppConfig], RuntimePipeline]"
+        },
+        "SubtitleFormat": {
+          "kind": "type alias",
+          "target_path": "ser.runtime.contracts.SubtitleFormat"
+        },
+        "configure_dataset_consents": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "tuple[str, ...]",
+              "default": "()",
+              "kind": "keyword-only",
+              "name": "accept_policy_ids"
+            },
+            {
+              "annotation": "tuple[str, ...]",
+              "default": "()",
+              "kind": "keyword-only",
+              "name": "accept_license_ids"
+            },
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            },
+            {
+              "annotation": "str",
+              "default": "'ser.api.configure_dataset_consents'",
+              "kind": "keyword-only",
+              "name": "source"
+            }
+          ],
+          "returns": "DatasetConsents",
+          "signature": "(*, accept_policy_ids: tuple[str, ...] = (), accept_license_ids: tuple[str, ...] = (), settings: AppConfig | None = None, source: str = 'ser.api.configure_dataset_consents') -> DatasetConsents"
+        },
+        "infer": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "str | Path",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "file_path"
+            },
+            {
+              "annotation": "ProfileName | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "profile"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "language"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "kind": "keyword-only",
+              "name": "save_transcript"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "kind": "keyword-only",
+              "name": "include_transcript"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "subtitle_output_path"
+            },
+            {
+              "annotation": "SubtitleFormat | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "subtitle_format"
+            },
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            },
+            {
+              "annotation": "RuntimePipelineBuilder | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "pipeline_builder"
+            }
+          ],
+          "returns": "InferenceExecution",
+          "signature": "(file_path: str | Path, *, profile: ProfileName | None = None, language: str | None = None, save_transcript: bool = False, include_transcript: bool = True, subtitle_output_path: str | None = None, subtitle_format: SubtitleFormat | None = None, settings: AppConfig | None = None, pipeline_builder: RuntimePipelineBuilder | None = None) -> InferenceExecution"
+        },
+        "list_dataset_registry_health_issues": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            }
+          ],
+          "returns": "tuple[DatasetRegistryHealthIssueRecord, ...]",
+          "signature": "(*, settings: AppConfig | None = None) -> tuple[DatasetRegistryHealthIssueRecord, ...]"
+        },
+        "list_datasets": {
+          "kind": "function",
+          "parameters": [],
+          "returns": "tuple[str, ...]",
+          "signature": "() -> tuple[str, ...]"
+        },
+        "list_profiles": {
+          "kind": "function",
+          "parameters": [],
+          "returns": "tuple[ProfileName, ...]",
+          "signature": "() -> tuple[ProfileName, ...]"
+        },
+        "list_registered_datasets": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            }
+          ],
+          "returns": "tuple[DatasetRegistryRecord, ...]",
+          "signature": "(*, settings: AppConfig | None = None) -> tuple[DatasetRegistryRecord, ...]"
+        },
+        "load_profile": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "ProfileName",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "profile"
+            },
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            }
+          ],
+          "returns": "None",
+          "signature": "(profile: ProfileName, *, settings: AppConfig | None = None) -> None"
+        },
+        "prepare_dataset": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "kind": "keyword-only",
+              "name": "dataset_id"
+            },
+            {
+              "annotation": "Path | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "dataset_root"
+            },
+            {
+              "annotation": "Path | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "manifest_path"
+            },
+            {
+              "annotation": "Path | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "labels_csv_path"
+            },
+            {
+              "annotation": "Path | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "audio_base_dir"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "source_repo_id"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "source_revision"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "default_language"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "kind": "keyword-only",
+              "name": "skip_download"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "kind": "keyword-only",
+              "name": "accept_license"
+            },
+            {
+              "annotation": "ComplianceMode",
+              "default": "'advisory'",
+              "kind": "keyword-only",
+              "name": "compliance_mode"
+            },
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            }
+          ],
+          "returns": "DatasetPrepareResult",
+          "signature": "(*, dataset_id: str, dataset_root: Path | None = None, manifest_path: Path | None = None, labels_csv_path: Path | None = None, audio_base_dir: Path | None = None, source_repo_id: str | None = None, source_revision: str | None = None, default_language: str | None = None, skip_download: bool = False, accept_license: bool = False, compliance_mode: ComplianceMode = 'advisory', settings: AppConfig | None = None) -> DatasetPrepareResult"
+        },
+        "run_startup_preflight": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "bool",
+              "default": null,
+              "kind": "keyword-only",
+              "name": "include_transcription_checks"
+            },
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            }
+          ],
+          "returns": "DiagnosticReport",
+          "signature": "(*, include_transcription_checks: bool, settings: AppConfig | None = None) -> DiagnosticReport"
+        },
+        "show_dataset_consents": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            }
+          ],
+          "returns": "DatasetConsents",
+          "signature": "(*, settings: AppConfig | None = None) -> DatasetConsents"
+        },
+        "train": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "ProfileName | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "profile"
+            },
+            {
+              "annotation": "AppConfig | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "settings"
+            },
+            {
+              "annotation": "RuntimePipelineBuilder | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "pipeline_builder"
+            }
+          ],
+          "returns": "None",
+          "signature": "(*, profile: ProfileName | None = None, settings: AppConfig | None = None, pipeline_builder: RuntimePipelineBuilder | None = None) -> None"
+        }
+      },
+      "source": "explicit __all__"
+    },
+    "ser.config": {
+      "exports": {
+        "APP_NAME": {
+          "kind": "attribute",
+          "target_path": "ser._internal.config.schema.APP_NAME"
+        },
+        "AccurateResearchRuntimeConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.AccurateResearchRuntimeConfig"
+        },
+        "AccurateRuntimeConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.AccurateRuntimeConfig"
+        },
+        "AppConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.AppConfig"
+        },
+        "ArtifactProfileName": {
+          "kind": "type alias",
+          "target_path": "ser._internal.config.schema.ArtifactProfileName"
+        },
+        "AudioReadConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.AudioReadConfig"
+        },
+        "DataLoaderConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.DataLoaderConfig"
+        },
+        "DatasetConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.DatasetConfig"
+        },
+        "FastRuntimeConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.FastRuntimeConfig"
+        },
+        "FeatureFlags": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.FeatureFlags"
+        },
+        "FeatureRuntimePolicyConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.FeatureRuntimePolicyConfig"
+        },
+        "MediumRuntimeConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.MediumRuntimeConfig"
+        },
+        "MediumTrainingConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.MediumTrainingConfig"
+        },
+        "ModelsConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.ModelsConfig"
+        },
+        "NeuralNetConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.NeuralNetConfig"
+        },
+        "ProfileRuntimeConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.ProfileRuntimeConfig"
+        },
+        "QualityGateConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.QualityGateConfig"
+        },
+        "RuntimeFlags": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.RuntimeFlags"
+        },
+        "SchemaConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.SchemaConfig"
+        },
+        "TimelineConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.TimelineConfig"
+        },
+        "TorchRuntimeConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.TorchRuntimeConfig"
+        },
+        "TrainingConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.TrainingConfig"
+        },
+        "TranscriptionConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.TranscriptionConfig"
+        },
+        "WhisperModelConfig": {
+          "kind": "class",
+          "target_path": "ser._internal.config.schema.WhisperModelConfig"
+        },
+        "get_settings": {
+          "kind": "function",
+          "target_path": "ser._internal.config.bootstrap.get_settings"
+        },
+        "reload_settings": {
+          "kind": "function",
+          "target_path": "ser._internal.config.bootstrap.reload_settings"
+        },
+        "settings_override": {
+          "kind": "function",
+          "target_path": "ser._internal.config.bootstrap.settings_override"
+        }
+      },
+      "source": "explicit __all__"
+    },
+    "ser.domain": {
+      "exports": {
+        "DatasetConsents": {
+          "bases": [
+            "NamedTuple"
+          ],
+          "kind": "class",
+          "members": {
+            "license_ids": {
+              "annotation": "tuple[str, ...]",
+              "kind": "attribute",
+              "value": null
+            },
+            "policy_ids": {
+              "annotation": "tuple[str, ...]",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "EmotionSegment": {
+          "bases": [
+            "NamedTuple"
+          ],
+          "kind": "class",
+          "members": {
+            "emotion": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "end_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "start_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "TimelineEntry": {
+          "bases": [
+            "NamedTuple"
+          ],
+          "kind": "class",
+          "members": {
+            "emotion": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "speech": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "timestamp_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "TranscriptWord": {
+          "bases": [
+            "NamedTuple"
+          ],
+          "kind": "class",
+          "members": {
+            "end_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "start_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "word": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        }
+      },
+      "source": "explicit __all__"
+    },
+    "ser.profiles": {
+      "exports": {
+        "ProfileCatalogEntry": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "backend_id": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "description": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "enable_flag": {
+              "annotation": "ProfileEnableFlag | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "enabled_by_default": {
+              "annotation": "bool",
+              "kind": "attribute",
+              "value": null
+            },
+            "feature_runtime_defaults": {
+              "annotation": "ProfileFeatureRuntimeDefaults | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "model": {
+              "annotation": "ProfileModelDefinition",
+              "kind": "attribute",
+              "value": null
+            },
+            "name": {
+              "annotation": "ProfileName",
+              "kind": "attribute",
+              "value": null
+            },
+            "required_modules": {
+              "annotation": "tuple[str, ...]",
+              "kind": "attribute",
+              "value": null
+            },
+            "runtime_defaults": {
+              "annotation": "ProfileRuntimeDefaults",
+              "kind": "attribute",
+              "value": null
+            },
+            "runtime_env": {
+              "annotation": "ProfileRuntimeEnvDefinition",
+              "kind": "attribute",
+              "value": null
+            },
+            "transcription_defaults": {
+              "annotation": "ProfileTranscriptionDefaults",
+              "kind": "attribute",
+              "value": null
+            },
+            "transcription_env": {
+              "annotation": "ProfileTranscriptionEnvDefinition",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "ProfileEnableFlag": {
+          "annotation": null,
+          "kind": "type alias",
+          "value": "Literal['SER_ENABLE_MEDIUM_PROFILE', 'SER_ENABLE_ACCURATE_PROFILE', 'SER_ENABLE_ACCURATE_RESEARCH_PROFILE']"
+        },
+        "ProfileFeatureRuntimeDefaults": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "torch_device": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "torch_dtype": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "ProfileModelDefinition": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "default_model_id": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "env_var": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "ProfileName": {
+          "annotation": null,
+          "kind": "type alias",
+          "value": "Literal['fast', 'medium', 'accurate', 'accurate-research']"
+        },
+        "ProfileRuntimeDefaults": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "max_timeout_retries": {
+              "annotation": "int",
+              "kind": "attribute",
+              "value": null
+            },
+            "max_transient_retries": {
+              "annotation": "int",
+              "kind": "attribute",
+              "value": null
+            },
+            "pool_window_size_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "pool_window_stride_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_hysteresis_enter_confidence": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_hysteresis_exit_confidence": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_min_segment_duration_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_smoothing_window_frames": {
+              "annotation": "int",
+              "kind": "attribute",
+              "value": null
+            },
+            "process_isolation": {
+              "annotation": "bool",
+              "kind": "attribute",
+              "value": null
+            },
+            "retry_backoff_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            },
+            "timeout_seconds": {
+              "annotation": "float",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "ProfileRuntimeEnvDefinition": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "max_timeout_retries": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "max_transient_retries": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "pool_window_size_seconds": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "pool_window_stride_seconds": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_hysteresis_enter_confidence": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_hysteresis_exit_confidence": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_min_segment_duration_seconds": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "post_smoothing_window_frames": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "process_isolation": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "retry_backoff_seconds": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "timeout_seconds": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "ProfileTranscriptionDefaults": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "backend_id": {
+              "annotation": "TranscriptionBackendId",
+              "kind": "attribute",
+              "value": null
+            },
+            "model_name": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "use_demucs": {
+              "annotation": "bool",
+              "kind": "attribute",
+              "value": null
+            },
+            "use_vad": {
+              "annotation": "bool",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "ProfileTranscriptionEnvDefinition": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "backend_id": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "model_name": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "use_demucs": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            },
+            "use_vad": {
+              "annotation": "str | None",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "RuntimeProfile": {
+          "bases": [],
+          "kind": "class",
+          "members": {
+            "description": {
+              "annotation": "str",
+              "kind": "attribute",
+              "value": null
+            },
+            "name": {
+              "annotation": "ProfileName",
+              "kind": "attribute",
+              "value": null
+            }
+          }
+        },
+        "TranscriptionBackendId": {
+          "annotation": null,
+          "kind": "type alias",
+          "value": "Literal['stable_whisper', 'faster_whisper']"
+        },
+        "available_profiles": {
+          "kind": "function",
+          "parameters": [],
+          "returns": "Mapping[str, RuntimeProfile]",
+          "signature": "() -> Mapping[str, RuntimeProfile]"
+        },
+        "get_profile_catalog": {
+          "kind": "function",
+          "parameters": [],
+          "returns": "Mapping[ProfileName, ProfileCatalogEntry]",
+          "signature": "() -> Mapping[ProfileName, ProfileCatalogEntry]"
+        },
+        "resolve_profile": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "AppConfig",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "settings"
+            }
+          ],
+          "returns": "RuntimeProfile",
+          "signature": "(settings: AppConfig) -> RuntimeProfile"
+        },
+        "resolve_profile_name": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "AppConfig",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "settings"
+            }
+          ],
+          "returns": "ProfileName",
+          "signature": "(settings: AppConfig) -> ProfileName"
+        }
+      },
+      "source": "public definitions"
+    },
+    "ser.utils": {
+      "exports": {
+        "build_timeline": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "list[TranscriptWord]",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "text_with_timestamps"
+            },
+            {
+              "annotation": "list[EmotionSegment]",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "emotion_with_timestamps"
+            }
+          ],
+          "returns": "list[TimelineEntry]",
+          "signature": "(text_with_timestamps: list[TranscriptWord], emotion_with_timestamps: list[EmotionSegment]) -> list[TimelineEntry]"
+        },
+        "display_elapsed_time": {
+          "kind": "function",
+          "target_path": "ser.utils.common_utils.display_elapsed_time"
+        },
+        "get_logger": {
+          "kind": "function",
+          "target_path": "ser.utils.logger.get_logger"
+        },
+        "print_timeline": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "list[TimelineEntry]",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "timeline"
+            }
+          ],
+          "returns": "None",
+          "signature": "(timeline: list[TimelineEntry]) -> None"
+        },
+        "read_audio_file": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "file_path"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "start_seconds"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "kind": "keyword-only",
+              "name": "duration_seconds"
+            }
+          ],
+          "returns": "tuple[np.ndarray, int]",
+          "signature": "(file_path: str, *, start_seconds: float | None = None, duration_seconds: float | None = None) -> tuple[np.ndarray, int]"
+        },
+        "save_timeline_to_csv": {
+          "kind": "function",
+          "parameters": [
+            {
+              "annotation": "list[TimelineEntry]",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "timeline"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "kind": "positional or keyword",
+              "name": "file_name"
+            }
+          ],
+          "returns": "str",
+          "signature": "(timeline: list[TimelineEntry], file_name: str) -> str"
+        }
+      },
+      "source": "explicit __all__"
+    }
+  },
+  "schema_version": 1,
+  "tier_one_modules": [
+    "ser",
+    "ser.api",
+    "ser.config",
+    "ser.domain",
+    "ser.profiles",
+    "ser.utils"
+  ]
+}
