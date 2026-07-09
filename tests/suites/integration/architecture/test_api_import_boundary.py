@@ -172,6 +172,7 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "EmotionSegment",
         "TimelineEntry",
         "TranscriptWord",
+        "__version__",
     ),
     "ser.api": (
         "ComplianceMode",
@@ -253,3 +254,10 @@ def test_tier_one_public_exports_do_not_grow_without_contract_review(
         "Shrinking or renaming requires updating this snapshot; growth requires "
         "explicit API review."
     )
+
+
+def test_root_package_exposes_metadata_version() -> None:
+    """Root package should expose the installed package version."""
+    import ser
+
+    assert ser.__version__ == "1.0.0"

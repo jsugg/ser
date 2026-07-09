@@ -103,7 +103,7 @@ One task `IN-PROGRESS` at a time. Update this table **and** the journal on every
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
 | P0-01 | `py.typed` marker shipped in the wheel | DONE | — |
-| P0-02 | `ser.__version__` | TODO | — |
+| P0-02 | `ser.__version__` | DONE | — |
 | P0-03 | `ser.api` self-sufficiency (re-export signature vocabulary) | TODO | — |
 | P0-04 | `DatasetConsents` NamedTuple | TODO | — |
 | P0-05 | `train()` single extension point | TODO | — |
@@ -308,6 +308,25 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-08 23:13 — P0-02 done
+- What: Added `ser.__version__` via `importlib.metadata.version("ser")` with
+  `PackageNotFoundError` fallback, exported it from root package, and updated the
+  tier-1 export contract.
+- Evidence: verifier-lite `019f44a7-7f9c-7221-a2c9-45f943e29bf2` ran
+  `rtk uv run --frozen --extra dev python -c "import ser; print(ser.__version__)"` →
+  `1.0.0`; import-cost check → exit 0 with `torch` absent; boundary test →
+  `13 passed`; `rtk make lint` → passed. Parent reran `rtk make type` with a long
+  window → mypy `Success: no issues found in 390 source files`; pyright `0 errors, 0
+  warnings, 0 informations`.
+- Deviations / follow-ups: verifier-lite's first `make type` timeout was too short for
+  local pyright; parent rerun completed successfully.
+
+### 2026-07-08 23:13 — P0-02 started
+- What: Expose `ser.__version__` from package metadata without adding heavy imports.
+- Evidence: `ser/__init__.py` currently only re-exports domain NamedTuples; tier-1
+  export snapshot for `ser` contains no `__version__`.
+- Deviations / follow-ups: none.
 
 ### 2026-07-08 22:07 — P0-01 done
 - What: Added empty `ser/py.typed` and included it in the hatchling wheel manifest.
