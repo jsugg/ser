@@ -106,7 +106,7 @@ One task `IN-PROGRESS` at a time. Update this table **and** the journal on every
 | P0-02 | `ser.__version__` | DONE | — |
 | P0-03 | `ser.api` self-sufficiency (re-export signature vocabulary) | DONE | — |
 | P0-04 | `DatasetConsents` NamedTuple | DONE | — |
-| P0-05 | `train()` single extension point | TODO | — |
+| P0-05 | `train()` single extension point | DONE | — |
 
 **P0-01** — Create empty `ser/py.typed`. Add it to the hatchling build include in
 `pyproject.toml` (next to the existing `ser/profile_defs.yaml` include).
@@ -309,6 +309,23 @@ Template:
 - Deviations / follow-ups: …
 ```
 
+### 2026-07-09 03:10 — P0-05 done
+- What: Removed `use_profile_pipeline` from `ser.api.train`, the internal train/
+  training-command chain, the CLI, and the restricted-backend gate plumbing;
+  `pipeline_builder` is the sole training override. Gate-side booleans renamed to
+  `profile_resolution_enabled`/`profile_routing_enabled` with identical value flow
+  (CLI still feeds `profile_pipeline_enabled(settings)`), so no behavior change.
+- Evidence: `rg -n "use_profile_pipeline" ser tests` → no matches (exit 1);
+  `uv run --frozen --extra dev python -c "import ser; print(ser.__version__)"` →
+  `1.0.0`; import-cost one-liner importing all P0-03/P0-04 symbols from `ser.api`
+  → exit 0 with `torch` absent; `uv build` → wheel built, `unzip -l` shows
+  `ser/py.typed`; verifier-lite gate sweep → `make lint` (all checks passed),
+  `make type` (mypy 0 issues / pyright 0 errors), `make test-cov`
+  (`1025 passed in 181.76s`, coverage gate held), `make import-lint`
+  (16 passed), `make lock-check` (lock verified) — all exit 0.
+- Deviations / follow-ups: none; NG6 respected (CLI flags untouched, only internal
+  call plumbing updated).
+
 ### 2026-07-09 00:28 — P0-04 done
 - What: Added `DatasetConsents(NamedTuple)`, returned it from consent APIs, exported it
   from `ser.domain` and `ser.api`, and added field-access regression assertions.
@@ -319,6 +336,14 @@ Template:
   pyright `0 errors, 0 warnings, 0 informations`, pytest `1025 passed`.
 - Deviations / follow-ups: verifier-lite unavailable due account usage limit; parent
   ran checks directly per stop-free fallback.
+
+### 2026-07-09 00:34 — P0-05 started
+- What: Remove the `train()` profile-pipeline escape hatch and make
+  `pipeline_builder` the only training override.
+- Evidence: `rtk rg -n "use_profile_pipeline" ser tests` showed public API, CLI,
+  restricted-backend gate, command-wrapper, and tests still carrying the old flag.
+- Deviations / follow-ups: no runtime behavior change intended; restricted-backend
+  profile-routing flag is renamed, not semantically changed.
 
 ### 2026-07-08 23:47 — P0-04 started
 - What: Add `DatasetConsents` tuple-compatible named return type and export it through

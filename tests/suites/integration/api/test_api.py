@@ -190,7 +190,6 @@ def test_run_training_command_maps_training_exceptions_to_disposition(
 
     disposition = api_runtime_module.run_training_command(
         settings=config_module.reload_settings(),
-        use_profile_pipeline=True,
     )
 
     assert disposition is not None
@@ -224,14 +223,12 @@ def test_run_training_command_delegates_arguments_on_success(
 
     disposition = api_runtime_module.run_training_command(
         settings=settings,
-        use_profile_pipeline=False,
         pipeline_builder=_pipeline_builder,
     )
 
     assert disposition is None
     kwargs = cast(dict[str, object], captured["kwargs"])
     assert kwargs["settings"] is settings
-    assert kwargs["use_profile_pipeline"] is False
     assert kwargs["pipeline_builder"] is _pipeline_builder
 
 
@@ -332,7 +329,7 @@ def test_run_restricted_backend_cli_gate_short_circuits_without_command_path() -
 
     logs, exit_code = api_runtime_module.run_restricted_backend_cli_gate(
         settings=settings,
-        use_profile_pipeline=False,
+        profile_resolution_enabled=False,
         train_requested=False,
         file_path=None,
         accept_restricted_backends=False,
@@ -367,7 +364,7 @@ def test_run_restricted_backend_cli_gate_short_circuits_opt_in_only_invocation(
 
     logs, exit_code = api_runtime_module.run_restricted_backend_cli_gate(
         settings=settings,
-        use_profile_pipeline=True,
+        profile_resolution_enabled=True,
         train_requested=False,
         file_path=None,
         accept_restricted_backends=True,
@@ -406,7 +403,7 @@ def test_run_restricted_backend_cli_gate_maps_policy_errors_to_exit_2(
 
     logs, exit_code = api_runtime_module.run_restricted_backend_cli_gate(
         settings=settings,
-        use_profile_pipeline=True,
+        profile_resolution_enabled=True,
         train_requested=True,
         file_path=None,
         accept_restricted_backends=False,
@@ -661,10 +658,10 @@ def test_list_dataset_registry_health_issues_exposes_issue_records(
     assert issue.message == "Mismatch."
 
 
-def test_train_uses_pipeline_builder_when_enabled(
+def test_train_uses_custom_pipeline_builder(
     tmp_path: Path,
 ) -> None:
-    """Stable training API should use injected pipeline builder when enabled."""
+    """Stable training API should use the injected pipeline builder."""
     settings = _settings(tmp_path)
     calls: dict[str, bool] = {"training": False}
 
@@ -678,17 +675,16 @@ def test_train_uses_pipeline_builder_when_enabled(
 
     api.train(
         settings=settings,
-        use_profile_pipeline=True,
         pipeline_builder=lambda _settings: _FakePipeline(),
     )
 
     assert calls["training"] is True
 
 
-def test_train_uses_pipeline_builder_when_disabled(
+def test_run_training_workflow_uses_default_pipeline_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Stable training API should keep routing through the pipeline when disabled."""
+    """Training workflow should use the default pipeline builder when none is injected."""
     settings = config_module.reload_settings()
     captured: dict[str, object] = {"training": False}
 
@@ -700,21 +696,14 @@ def test_train_uses_pipeline_builder_when_disabled(
             del request
             raise AssertionError("unreachable")
 
-    def _pipeline_builder(received_settings: AppConfig) -> _FakePipeline:
+    def _build_runtime_pipeline(received_settings: AppConfig) -> _FakePipeline:
         captured["settings"] = received_settings
         return _FakePipeline()
 
-    monkeypatch.setattr(
-        "ser.models.emotion_model.train_model",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("Legacy training branch should remain unreachable.")
-        ),
-    )
+    monkeypatch.setattr(api_runtime_module, "_build_runtime_pipeline", _build_runtime_pipeline)
 
-    api.train(
+    api_runtime_module.run_training_workflow(
         settings=settings,
-        use_profile_pipeline=False,
-        pipeline_builder=_pipeline_builder,
     )
 
     assert captured["settings"] is settings
@@ -741,7 +730,6 @@ def test_train_passes_scoped_settings_to_pipeline_builder() -> None:
 
     api.train(
         settings=scoped_settings,
-        use_profile_pipeline=False,
         pipeline_builder=_pipeline_builder,
     )
 
@@ -831,7 +819,7 @@ def test_required_restricted_backends_for_profile_returns_research_backend() -> 
 
     required = restricted_backends_module.required_restricted_backends_for_current_profile(
         scoped,
-        use_profile_pipeline=True,
+        profile_resolution_enabled=True,
     )
 
     assert required == ("emotion2vec",)
@@ -906,14 +894,14 @@ def test_runtime_profile_helpers_cover_pipeline_and_resolution_paths() -> None:
     assert api_runtime_module.profile_pipeline_enabled(pipeline_settings) is True
     assert (
         api_runtime_module.profile_resolution_requested(
-            use_profile_pipeline=False,
+            profile_routing_enabled=False,
             file_path=None,
         )
         is False
     )
     assert (
         api_runtime_module.profile_resolution_requested(
-            use_profile_pipeline=False,
+            profile_routing_enabled=False,
             file_path="sample.wav",
         )
         is True
