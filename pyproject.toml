@@ -102,7 +102,7 @@ exclude = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["ser"]
-include = ["ser/profile_defs.yaml"]
+include = ["ser/profile_defs.yaml", "ser/py.typed"]
 exclude = [
   "ser/.gitignore",
   "ser/configure",
