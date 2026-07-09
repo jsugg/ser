@@ -480,9 +480,12 @@ def test_prepare_dataset_accept_license_persists_missing_consents(
     assert result.manifest_paths == (manifest_path,)
     assert result.missing_policy_consents == ()
     assert result.missing_license_consents == ()
-    policies, licenses = api.show_dataset_consents(settings=settings)
+    consents = api.show_dataset_consents(settings=settings)
+    policies, licenses = consents
     assert "academic_only" in policies
     assert "msp-academic-license" in licenses
+    assert consents.policy_ids == policies
+    assert consents.license_ids == licenses
     kwargs = captured["kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["dataset_id"] == "msp-podcast"
@@ -1096,6 +1099,7 @@ def test_api_public_surface_includes_user_oriented_entrypoints() -> None:
     required = {
         "AppConfig",
         "ComplianceMode",
+        "DatasetConsents",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
@@ -1126,6 +1130,7 @@ def test_api_public_surface_snapshot_matches_expected_contract() -> None:
     assert api.__all__ == [
         "AppConfig",
         "ComplianceMode",
+        "DatasetConsents",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",

@@ -2,7 +2,14 @@
 
 from typing import NamedTuple
 
-__all__ = ["EmotionSegment", "TimelineEntry", "TranscriptWord"]
+__all__ = ["DatasetConsents", "EmotionSegment", "TimelineEntry", "TranscriptWord"]
+
+
+class DatasetConsents(NamedTuple):
+    """Persisted dataset policy and license consent identifiers."""
+
+    policy_ids: tuple[str, ...]
+    license_ids: tuple[str, ...]
 
 
 class TranscriptWord(NamedTuple):

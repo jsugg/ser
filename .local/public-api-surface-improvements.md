@@ -105,7 +105,7 @@ One task `IN-PROGRESS` at a time. Update this table **and** the journal on every
 | P0-01 | `py.typed` marker shipped in the wheel | DONE | — |
 | P0-02 | `ser.__version__` | DONE | — |
 | P0-03 | `ser.api` self-sufficiency (re-export signature vocabulary) | DONE | — |
-| P0-04 | `DatasetConsents` NamedTuple | TODO | — |
+| P0-04 | `DatasetConsents` NamedTuple | DONE | — |
 | P0-05 | `train()` single extension point | TODO | — |
 
 **P0-01** — Create empty `ser/py.typed`. Add it to the hatchling build include in
@@ -308,6 +308,24 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-09 00:28 — P0-04 done
+- What: Added `DatasetConsents(NamedTuple)`, returned it from consent APIs, exported it
+  from `ser.domain` and `ser.api`, and added field-access regression assertions.
+- Evidence: import/tuple-compatibility check for `ser.api.DatasetConsents` → exit 0
+  with `torch` absent; targeted API/boundary/dataset-consent tests → `56 passed`; first
+  targeted run failed only on `ser.api.__all__` ordering and passed after reorder;
+  `rtk make check` → lint passed, mypy `Success: no issues found in 390 source files`,
+  pyright `0 errors, 0 warnings, 0 informations`, pytest `1025 passed`.
+- Deviations / follow-ups: verifier-lite unavailable due account usage limit; parent
+  ran checks directly per stop-free fallback.
+
+### 2026-07-08 23:47 — P0-04 started
+- What: Add `DatasetConsents` tuple-compatible named return type and export it through
+  `ser.domain` and `ser.api`.
+- Evidence: consent APIs currently return anonymous `tuple[tuple[str, ...],
+  tuple[str, ...]]`; existing API test only proves unpacking, not field access.
+- Deviations / follow-ups: none.
 
 ### 2026-07-08 23:31 — P0-03 done
 - What: Runtime-exported `InferenceRequest`, `InferenceExecution`, `SubtitleFormat`,
