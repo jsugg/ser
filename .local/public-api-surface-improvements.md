@@ -104,7 +104,7 @@ One task `IN-PROGRESS` at a time. Update this table **and** the journal on every
 |----|------|--------|------------|
 | P0-01 | `py.typed` marker shipped in the wheel | DONE | — |
 | P0-02 | `ser.__version__` | DONE | — |
-| P0-03 | `ser.api` self-sufficiency (re-export signature vocabulary) | TODO | — |
+| P0-03 | `ser.api` self-sufficiency (re-export signature vocabulary) | DONE | — |
 | P0-04 | `DatasetConsents` NamedTuple | TODO | — |
 | P0-05 | `train()` single extension point | TODO | — |
 
@@ -308,6 +308,26 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-08 23:31 — P0-03 done
+- What: Runtime-exported `InferenceRequest`, `InferenceExecution`, `SubtitleFormat`,
+  `DiagnosticReport`, `DiagnosticFinding`, `DiagnosticSeverity`, `AppConfig`, and
+  `ProfileName` from `ser.api`; updated API and tier-1 export snapshots.
+- Evidence: verifier-lite `019f44b6-e188-7bb0-97f6-1ced57ed2667` import-cost command
+  importing the P0-03 symbols from `ser.api` → exit 0 with `torch` absent; targeted API
+  + boundary tests → `52 passed`; `rtk make lint` → passed. Parent reran `rtk make
+  type` with a long window → mypy `Success: no issues found in 390 source files`;
+  pyright `0 errors, 0 warnings, 0 informations`.
+- Deviations / follow-ups: verifier-lite again used too-short `make type` wait; parent
+  long-window rerun completed successfully.
+
+### 2026-07-08 23:31 — P0-03 started
+- What: Make `ser.api` runtime-export every type used by its own public signatures.
+- Evidence: `ser.api` currently imports `InferenceRequest`, `InferenceExecution`,
+  `SubtitleFormat`, and `DiagnosticReport` only under `TYPE_CHECKING`; `AppConfig` and
+  `ProfileName` are imported but absent from `__all__`.
+- Deviations / follow-ups: `from ser.runtime.contracts ...` and diagnostics domain
+  imports kept `torch` absent in a subprocess, so no contract relocation needed.
 
 ### 2026-07-08 23:13 — P0-02 done
 - What: Added `ser.__version__` via `importlib.metadata.version("ser")` with
