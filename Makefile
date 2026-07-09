@@ -41,7 +41,8 @@ fmt:
 	uv run --frozen --extra dev black ser tests
 
 lint:
-	uv run --frozen --extra dev ruff check ser tests
+	uv run --frozen --extra dev ruff check --ignore TID251 ser tests
+	bash ./scripts/run_import_lint.sh
 	uv run --frozen --extra dev black --check ser tests
 	uv run --frozen --extra dev isort --check-only ser tests
 

@@ -147,7 +147,7 @@ all callers (CLI, tests).
 | P1-01 | Public-API snapshot + drift contract test | DONE | P0-03, P0-04, P0-05 |
 | P1-02 | pyright `--verifytypes` ratchet gate | DONE | P0-01 |
 | P1-03 | Import-cost contract test | DONE | P0-03 |
-| P1-04 | ruff TID251 boundary lint | TODO | — |
+| P1-04 | ruff TID251 boundary lint | DONE | — |
 | P1-05 | CI wiring for the new gates | TODO | P1-01..04 |
 
 **P1-01** — Add `griffe` to the dev extra (`uv lock` refresh; `make lock-check` must
@@ -308,6 +308,28 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-09 20:40 — P1-04 done
+- What: Broadened Ruff TID251 to ban `ser._internal` for public source files,
+  changed the TID251 lane to scan public `ser` files only, and made per-file
+  ignores mirror `boundary_policy.toml` exactly.
+- Evidence: `bash scripts/run_import_lint.sh` → Ruff TID251 passed and boundary
+  contract tests `16 passed`; synthetic `from ser._internal.config.schema import
+  AppConfig` in non-allowlisted `ser/domain.py` made `make lint` fail with
+  `TID251 ser._internal is banned`, then the synthetic edit was reverted;
+  `uv run --frozen --extra dev black tests/suites/integration/architecture/test_import_lint_policy.py`
+  → reformatted policy test; `make lint` → Ruff/black/isort all pass.
+- Deviations / follow-ups: TID251 scans public source files only; tests and internal
+  implementation modules remain free to import internal helpers directly.
+
+### 2026-07-09 20:37 — P1-04 started
+- What: Broaden Ruff TID251 from API-owner imports to all public imports of
+  `ser._internal`, with exceptions generated from `boundary_policy.toml`.
+- Evidence: Existing `make lint` passes before broadening, but TID251 only bans
+  `ser._internal.api*`; synthetic whole-internal boundary coverage is not present yet.
+- Deviations / follow-ups: The TID251 lane will target public `ser` files only so
+  internal implementation modules and internal-focused tests can keep importing
+  `_internal` directly.
 
 ### 2026-07-09 20:36 — P1-03 done
 - What: Added `tests/suites/integration/architecture/test_public_import_cost.py`
