@@ -29,3 +29,7 @@ ser/models/*.json
 .coverage
 .coverage.*
 coverage.xml
+htmlcov/
+reports/
+
+docs/ci/ci-cd-quality-implementation-journal.md
