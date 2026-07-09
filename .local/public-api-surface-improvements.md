@@ -146,7 +146,7 @@ all callers (CLI, tests).
 |----|------|--------|------------|
 | P1-01 | Public-API snapshot + drift contract test | DONE | P0-03, P0-04, P0-05 |
 | P1-02 | pyright `--verifytypes` ratchet gate | DONE | P0-01 |
-| P1-03 | Import-cost contract test | TODO | P0-03 |
+| P1-03 | Import-cost contract test | DONE | P0-03 |
 | P1-04 | ruff TID251 boundary lint | TODO | — |
 | P1-05 | CI wiring for the new gates | TODO | P1-01..04 |
 
@@ -308,6 +308,21 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-09 20:36 — P1-03 done
+- What: Added `tests/suites/integration/architecture/test_public_import_cost.py`
+  to assert tier-1 public imports leave `torch` absent from `sys.modules` in a
+  subprocess.
+- Evidence: `uv run --frozen --extra dev pytest -q tests/suites/integration/architecture/test_public_import_cost.py`
+  → `1 passed`; `make check` → lint/type/test all pass, `1027 passed in 70.27s`.
+- Deviations / follow-ups: none.
+
+### 2026-07-09 20:32 — P1-03 started
+- What: Add an architecture subprocess test proving tier-1 public imports do not
+  import `torch`.
+- Evidence: P0 import-cost one-liner already passed before this task; adding a
+  collected contract test makes that invariant permanent.
+- Deviations / follow-ups: none.
 
 ### 2026-07-09 20:32 — P1-02 done
 - What: Added `make type-completeness`, backed by
