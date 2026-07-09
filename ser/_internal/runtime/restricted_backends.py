@@ -41,20 +41,20 @@ class RestrictedBackendOptInState:
 
 def _profile_resolution_requested(
     *,
-    use_profile_pipeline: bool,
+    profile_routing_enabled: bool,
     file_path: str | None,
 ) -> bool:
     """Returns whether profile resolution should run for this invocation."""
-    return bool(use_profile_pipeline or file_path)
+    return bool(profile_routing_enabled or file_path)
 
 
 def required_restricted_backends_for_current_profile(
     settings: AppConfig,
     *,
-    use_profile_pipeline: bool,
+    profile_resolution_enabled: bool,
 ) -> tuple[str, ...]:
     """Returns restricted backend ids required by the active runtime profile."""
-    if not use_profile_pipeline:
+    if not profile_resolution_enabled:
         return ()
     profile_name = resolve_profile_name(settings)
     backend_id = get_profile_catalog()[profile_name].backend_id
@@ -67,13 +67,13 @@ def required_restricted_backends_for_current_profile(
 def persist_required_restricted_backends(
     settings: AppConfig,
     *,
-    use_profile_pipeline: bool,
+    profile_resolution_enabled: bool,
     consent_source: str,
 ) -> tuple[str, ...]:
     """Persists consent for restricted backends required by the active profile."""
     required_backends = required_restricted_backends_for_current_profile(
         settings,
-        use_profile_pipeline=use_profile_pipeline,
+        profile_resolution_enabled=profile_resolution_enabled,
     )
     persisted: list[str] = []
     for backend_id in required_backends:
@@ -102,7 +102,7 @@ def persist_all_restricted_backend_consents(
 def prepare_restricted_backend_opt_in_state(
     *,
     settings: AppConfig,
-    use_profile_pipeline: bool,
+    profile_routing_enabled: bool,
     train_requested: bool,
     file_path: str | None,
     accept_restricted_backends: bool,
@@ -112,12 +112,12 @@ def prepare_restricted_backend_opt_in_state(
 ) -> RestrictedBackendOptInState:
     """Prepares restricted-backend state transitions for one CLI invocation."""
     profile_resolution_enabled = _profile_resolution_requested(
-        use_profile_pipeline=use_profile_pipeline,
+        profile_routing_enabled=profile_routing_enabled,
         file_path=file_path,
     )
     required_backend_ids = required_restricted_backends_for_current_profile(
         settings,
-        use_profile_pipeline=profile_resolution_enabled,
+        profile_resolution_enabled=profile_resolution_enabled,
     )
     persisted_all_count = 0
     persisted_profile_backend_ids: tuple[str, ...] = ()
@@ -129,7 +129,7 @@ def prepare_restricted_backend_opt_in_state(
     if accept_restricted_backends:
         persisted_profile_backend_ids = persist_required_restricted_backends(
             settings,
-            use_profile_pipeline=profile_resolution_enabled,
+            profile_resolution_enabled=profile_resolution_enabled,
             consent_source=profile_consent_source,
         )
     should_exit_zero = (accept_restricted_backends or accept_all_restricted_backends) and (
@@ -170,7 +170,7 @@ def enforce_restricted_backends_for_cli(
 def run_restricted_backend_cli_gate(
     *,
     settings: AppConfig,
-    use_profile_pipeline: bool,
+    profile_resolution_enabled: bool,
     train_requested: bool,
     file_path: str | None,
     accept_restricted_backends: bool,
@@ -182,7 +182,7 @@ def run_restricted_backend_cli_gate(
     """Evaluates restricted-backend CLI gate and returns logs plus optional exit code."""
     opt_in_state = prepare_opt_in_state(
         settings=settings,
-        use_profile_pipeline=use_profile_pipeline,
+        profile_routing_enabled=profile_resolution_enabled,
         train_requested=train_requested,
         file_path=file_path,
         accept_restricted_backends=accept_restricted_backends,

@@ -120,7 +120,6 @@ def classify_inference_exception(err: Exception) -> WorkflowErrorDisposition:
 def run_training_command(
     *,
     settings: AppConfig,
-    use_profile_pipeline: bool,
     pipeline_builder: object | None,
     run_training_workflow: _TrainingWorkflow,
     classify_training_error: _TrainingErrorClassifier,
@@ -129,7 +128,6 @@ def run_training_command(
     try:
         run_training_workflow(
             settings=settings,
-            use_profile_pipeline=use_profile_pipeline,
             pipeline_builder=pipeline_builder,
         )
     except Exception as err:

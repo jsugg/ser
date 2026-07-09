@@ -141,14 +141,12 @@ def train(
     *,
     profile: ProfileName | None = None,
     settings: AppConfig | None = None,
-    use_profile_pipeline: bool = True,
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> None:
     """Runs training using the active settings snapshot via the runtime pipeline."""
     return _runtime_api.train(
         profile=profile,
         settings=_resolve_boundary_settings(settings),
-        use_profile_pipeline=use_profile_pipeline,
         pipeline_builder=pipeline_builder,
     )
 

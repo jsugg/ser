@@ -1034,7 +1034,7 @@ def test_cli_accept_restricted_backends_delegates_to_api_runtime_helpers(
 
     assert exc_info.value.code == 0
     kwargs = cast(dict[str, object], captured["kwargs"])
-    assert kwargs["use_profile_pipeline"] is True
+    assert kwargs["profile_resolution_enabled"] is True
     assert kwargs["train_requested"] is False
     assert kwargs["file_path"] is None
     assert kwargs["accept_restricted_backends"] is True
