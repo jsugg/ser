@@ -144,7 +144,7 @@ all callers (CLI, tests).
 
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
-| P1-01 | Public-API snapshot + drift contract test | TODO | P0-03, P0-04, P0-05 |
+| P1-01 | Public-API snapshot + drift contract test | DONE | P0-03, P0-04, P0-05 |
 | P1-02 | pyright `--verifytypes` ratchet gate | TODO | P0-01 |
 | P1-03 | Import-cost contract test | TODO | P0-03 |
 | P1-04 | ruff TID251 boundary lint | TODO | — |
@@ -308,6 +308,31 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-09 20:29 — P1-01 done
+- What: Added `griffe` to the dev extra, `scripts/dump_public_api.py`, the tier-1
+  JSON snapshot, and a contract test that diffs current griffe output against the
+  checked-in snapshot.
+- Evidence: `uv run --frozen --extra dev python scripts/dump_public_api.py --write`
+  → generated `tests/suites/integration/architecture/public_api_snapshot.json`;
+  `uv run --frozen --extra dev pytest -q tests/suites/integration/architecture/test_public_api_snapshot.py`
+  → `1 passed`; synthetic `"SyntheticExport"` in `ser.api.__all__` made that test
+  fail with `ValueError: ser.api.__all__ exports missing member 'SyntheticExport'`,
+  then the synthetic edit was reverted; `make lock-check && make check` → lock
+  fresh, lint/type/test all pass, `1026 passed in 119.60s`; `uv run --frozen --extra
+  dev black --check scripts/dump_public_api.py` → unchanged; scoped
+  `git diff` searches for `torch`, `torchaudio`, and `resolution-markers` in
+  `uv.lock`/`pyproject.toml` → no matches.
+- Deviations / follow-ups: Baseline snapshot includes `ser.profiles` public
+  definitions because that tier-1 module has no `__all__`; explicit exports can be
+  added in a later public-surface cleanup if desired.
+
+### 2026-07-09 20:17 — P1-01 started
+- What: Add the griffe-backed tier-1 public API snapshot script, checked-in JSON
+  snapshot, and architecture drift contract test.
+- Evidence: Current branch rebuilt from `main` plus P0 commits; `git status` clean
+  before this task.
+- Deviations / follow-ups: none.
 
 ### 2026-07-09 03:10 — P0-05 done
 - What: Removed `use_profile_pipeline` from `ser.api.train`, the internal train/
