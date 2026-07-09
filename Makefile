@@ -36,7 +36,7 @@ setup-runtime:
 
 fmt:
 	uv run --frozen --extra dev pyupgrade --py312-plus --exit-zero-even-if-changed $$(rg --files ser tests -g '*.py')
-	uv run --frozen --extra dev ruff check --fix ser tests
+	uv run --frozen --extra dev ruff check --fix --ignore TID251 ser tests
 	uv run --frozen --extra dev isort ser tests
 	uv run --frozen --extra dev black ser tests
 

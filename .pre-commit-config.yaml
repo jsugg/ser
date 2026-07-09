@@ -10,9 +10,10 @@ repos:
     rev: v0.15.1
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [--fix, --ignore, TID251]
         stages: [pre-commit]
       - id: ruff
+        args: [--ignore, TID251]
         stages: [pre-push]
 
   - repo: https://github.com/psf/black
@@ -44,6 +45,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: import-lint
+        name: import-lint
+        entry: bash scripts/run_import_lint.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
       - id: pyright
         name: pyright
         entry: uv run --frozen --extra dev pyright --pythonversion 3.12 ser tests
