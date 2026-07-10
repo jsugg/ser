@@ -6,10 +6,10 @@ from typing import cast
 import numpy as np
 import pytest
 
+import ser._internal.features.feature_extractor as fe
+import ser._internal.utils.dsp as dsp
+from ser._internal.repr import EncodedSequence
 from ser.config import AppConfig
-from ser.features import feature_extractor as fe
-from ser.repr import EncodedSequence
-from ser.utils import dsp
 
 
 @pytest.mark.filterwarnings(

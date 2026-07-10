@@ -11,6 +11,7 @@ import pytest
 from numpy.typing import NDArray
 
 import ser.config as config
+from ser._internal.repr import EncodedSequence, FeatureBackend, PoolingWindow
 from ser._internal.runtime.accurate_execution_flow import (
     execute_accurate_inference_with_retry,
     run_accurate_retryable_operation,
@@ -19,7 +20,6 @@ from ser._internal.runtime.accurate_worker_operation import (
     AccurateRetryOperationState,
     PreparedAccurateOperation,
 )
-from ser.repr import EncodedSequence, FeatureBackend, PoolingWindow
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
 pytestmark = pytest.mark.unit

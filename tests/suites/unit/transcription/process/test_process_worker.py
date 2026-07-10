@@ -16,7 +16,7 @@ from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 else:
     BackendRuntimeRequest = object
 

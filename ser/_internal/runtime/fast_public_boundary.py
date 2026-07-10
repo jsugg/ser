@@ -10,6 +10,13 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Literal
 
+from ser._internal.models.emotion_model import LoadedModel, load_model, predict_emotions_detailed
+from ser._internal.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
+from ser._internal.runtime.phase_timing import (
+    log_phase_completed,
+    log_phase_failed,
+    log_phase_started,
+)
 from ser._internal.runtime.policy import run_with_retry_policy
 from ser._internal.runtime.process_timeout import (
     run_with_process_timeout as _run_with_process_timeout_impl,
@@ -45,14 +52,7 @@ from ser._internal.runtime.worker_lifecycle import (
     terminate_worker_process as _terminate_worker_process_impl,
 )
 from ser.config import AppConfig
-from ser.models.emotion_model import LoadedModel, load_model, predict_emotions_detailed
 from ser.runtime.contracts import InferenceRequest
-from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
-from ser.runtime.phase_timing import (
-    log_phase_completed,
-    log_phase_failed,
-    log_phase_started,
-)
 from ser.runtime.schema import InferenceResult
 
 type WorkerPhaseMessage = tuple[Literal["phase"], Literal["setup_complete"]]

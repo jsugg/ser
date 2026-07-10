@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ser.models import dataset_controls
+from ser._internal.models import dataset_controls
 
 
 @dataclass(frozen=True)
@@ -78,7 +78,7 @@ def test_resolve_registry_manifest_paths_returns_sorted_unique_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Registry resolver should emit deterministic sorted unique manifest paths."""
-    import ser.data.dataset_registry as dataset_registry
+    import ser._internal.data.dataset_registry as dataset_registry
 
     monkeypatch.setattr(
         dataset_registry,
@@ -107,7 +107,7 @@ def test_resolve_registry_manifest_paths_fails_closed_on_lookup_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Registry resolver should return empty tuple when lookup raises."""
-    import ser.data.dataset_registry as dataset_registry
+    import ser._internal.data.dataset_registry as dataset_registry
 
     def _raise_lookup_error(*, settings: object) -> object:
         raise RuntimeError("registry unavailable")

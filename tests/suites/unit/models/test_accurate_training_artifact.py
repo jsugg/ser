@@ -12,18 +12,18 @@ from sklearn.dummy import DummyClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-import ser.models.accurate_feature_dataset as accurate_feature_dataset
-import ser.models.accurate_training_execution as accurate_training_execution
-import ser.models.profile_runtime as profile_runtime
-import ser.models.training_entrypoints as training_entrypoints
-import ser.models.training_support as training_support
+import ser._internal.models.accurate_feature_dataset as accurate_feature_dataset
+import ser._internal.models.accurate_training_execution as accurate_training_execution
+import ser._internal.models.profile_runtime as profile_runtime
+import ser._internal.models.training_entrypoints as training_entrypoints
+import ser._internal.models.training_support as training_support
+from ser._internal.data import EmbeddingCache
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser._internal.models import emotion_model as em
+from ser._internal.models.dataset_splitting import MediumSplitMetadata
+from ser._internal.models.profile_runtime import resolve_accurate_research_model_id
+from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.config import AppConfig
-from ser.data import EmbeddingCache
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
-from ser.models import emotion_model as em
-from ser.models.dataset_splitting import MediumSplitMetadata
-from ser.models.profile_runtime import resolve_accurate_research_model_id
-from ser.repr.runtime_policy import resolve_feature_runtime_policy
 
 
 def _settings_stub(tmp_path: Path) -> SimpleNamespace:

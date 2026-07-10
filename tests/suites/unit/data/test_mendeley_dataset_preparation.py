@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ser.data import mendeley_dataset_preparation as preparation
+import ser._internal.data.mendeley_dataset_preparation as preparation
 
 
 @dataclass(frozen=True, slots=True)

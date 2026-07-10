@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.models import medium_feature_dataset
-from ser.repr import EncodedSequence
-from ser.runtime import medium_execution
+from ser._internal.models import medium_feature_dataset
+from ser._internal.repr import EncodedSequence
+from ser._internal.runtime import medium_execution
 
 
 @pytest.fixture(autouse=True)

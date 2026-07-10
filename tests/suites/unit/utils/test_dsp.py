@@ -7,8 +7,8 @@ import warnings
 import numpy as np
 import pytest
 
+import ser._internal.utils.dsp as dsp
 from ser.config import FeatureFlags
-from ser.utils import dsp
 
 pytestmark = [
     pytest.mark.unit,

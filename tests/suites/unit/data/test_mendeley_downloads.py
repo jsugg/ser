@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ser.data.mendeley_downloads import (
+from ser._internal.data.mendeley_downloads import (
     build_mendeley_folder_paths,
     download_mendeley_dataset_tree,
     download_mendeley_dataset_tree_from_api,

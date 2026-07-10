@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ser._internal.utils.subtitles import resolve_subtitle_export_request
 from ser.config import AppConfig
-from ser.utils.subtitles import resolve_subtitle_export_request
 
 if TYPE_CHECKING:
+    from ser._internal.transcript.profiling import RuntimeCalibrationResult
     from ser.runtime.contracts import InferenceExecution, SubtitleFormat
-    from ser.transcript.profiling import RuntimeCalibrationResult
 
 type _TrainingWorkflow = Callable[..., None]
 type _InferenceWorkflow = Callable[..., InferenceExecution]
@@ -44,29 +44,29 @@ def classify_training_exception(err: Exception) -> WorkflowErrorDisposition:
 
 def classify_inference_exception(err: Exception) -> WorkflowErrorDisposition:
     """Classifies one inference exception into CLI logging/exit behavior."""
-    from ser.license_check import BackendLicensePolicyError
-    from ser.runtime import UnsupportedProfileError
-    from ser.runtime.accurate_inference import (
+    from ser._internal.license_check import BackendLicensePolicyError
+    from ser._internal.runtime.accurate_inference import (
         AccurateInferenceExecutionError,
         AccurateInferenceTimeoutError,
         AccurateModelLoadError,
         AccurateModelUnavailableError,
         AccurateRuntimeDependencyError,
     )
-    from ser.runtime.fast_inference import (
+    from ser._internal.runtime.fast_inference import (
         FastInferenceExecutionError,
         FastInferenceTimeoutError,
         FastModelLoadError,
         FastModelUnavailableError,
     )
-    from ser.runtime.medium_inference import (
+    from ser._internal.runtime.medium_inference import (
         MediumInferenceExecutionError,
         MediumInferenceTimeoutError,
         MediumModelLoadError,
         MediumModelUnavailableError,
         MediumRuntimeDependencyError,
     )
-    from ser.transcript import TranscriptionError
+    from ser._internal.runtime.registry import UnsupportedProfileError
+    from ser._internal.transcript.transcript_extractor import TranscriptionError
 
     if isinstance(err, UnsupportedProfileError):
         return WorkflowErrorDisposition(exit_code=2, message=str(err))
@@ -203,7 +203,7 @@ def run_transcription_runtime_calibration_workflow(
     calibration_profiles: str,
 ) -> RuntimeCalibrationResult:
     """Runs runtime calibration workflow with CLI-equivalent argument handling."""
-    from ser.transcript.profiling import (
+    from ser._internal.transcript.profiling import (
         parse_calibration_profiles,
         run_transcription_runtime_calibration,
     )

@@ -1,7 +1,7 @@
 """Behavior tests for timeline merging utilities."""
 
+from ser._internal.utils.timeline_utils import build_timeline
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
-from ser.utils.timeline_utils import build_timeline
 
 
 def test_build_timeline_aligns_words_to_emotion_intervals() -> None:

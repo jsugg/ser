@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 from ser._internal.transcription import default_profiling as default_helpers
 from ser.domain import TranscriptWord
-from ser.transcript.transcript_extractor import TranscriptionProfile
 
 
 def _profile() -> TranscriptionProfile:

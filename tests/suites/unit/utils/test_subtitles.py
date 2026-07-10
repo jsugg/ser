@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from ser.config import TimelineConfig
-from ser.domain import TimelineEntry
-from ser.utils.subtitles import (
+from ser._internal.utils.subtitles import (
     infer_subtitle_format,
     resolve_subtitle_export_request,
     save_timeline_to_subtitles,
     timeline_to_subtitle_cues,
 )
+from ser.config import TimelineConfig
+from ser.domain import TimelineEntry
 
 
 def test_resolve_subtitle_export_request_infers_format_from_output_path() -> None:

@@ -7,9 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-import ser.license_check as license_check
-from ser.config import AppConfig
-from ser.license_check import (
+import ser._internal.license_check as license_check
+from ser._internal.license_check import (
     BackendLicensePolicy,
     BackendLicensePolicyError,
     LicenseDecision,
@@ -19,6 +18,7 @@ from ser.license_check import (
     parse_allowed_restricted_backends_env,
     persist_backend_consent,
 )
+from ser.config import AppConfig
 from ser.profiles import get_profile_catalog, resolve_profile_name
 
 type RestrictedBackendPrompt = Callable[[BackendLicensePolicy], bool]

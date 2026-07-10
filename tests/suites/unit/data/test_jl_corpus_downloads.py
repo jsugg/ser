@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import ser.data.jl_corpus_downloads as jl_downloads
-from ser.data.jl_corpus_downloads import (
+import ser._internal.data.jl_corpus_downloads as jl_downloads
+from ser._internal.data.jl_corpus_downloads import (
     download_jl_corpus_via_hf_rows,
     extract_jl_corpus_audio_src,
     prepare_jl_corpus_from_hf_rows,

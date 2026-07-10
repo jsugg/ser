@@ -14,6 +14,7 @@ import pytest
 from numpy.typing import NDArray
 
 import ser.config as config
+from ser._internal.repr import EncodedSequence, XLSRBackend
 from ser._internal.runtime.medium_runtime_support import (
     build_cpu_medium_backend_for_settings,
     build_cpu_settings_snapshot,
@@ -23,7 +24,6 @@ from ser._internal.runtime.medium_runtime_support import (
     validate_medium_loaded_model_runtime_contract,
 )
 from ser.config import AppConfig
-from ser.repr import EncodedSequence, XLSRBackend
 
 pytestmark = pytest.mark.unit
 

@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.repr import EncodedSequence
-from ser.runtime import accurate_execution
-from ser.runtime.accurate_prediction import (
+from ser._internal.repr import EncodedSequence
+from ser._internal.runtime import accurate_execution
+from ser._internal.runtime.accurate_prediction import (
     confidence_and_probabilities as _confidence_and_probabilities_impl,
 )
-from ser.runtime.accurate_prediction import predict_labels as _predict_labels_impl
+from ser._internal.runtime.accurate_prediction import predict_labels as _predict_labels_impl
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("reset_ambient_settings")]
 

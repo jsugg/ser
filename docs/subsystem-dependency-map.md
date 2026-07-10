@@ -179,7 +179,7 @@ Shared primitives, schemas, utils, external libraries
 
 Obsolete references:
 
-- `ser/models/training_orchestration.py` is not present in this workspace
+- The removed training-orchestration module is not present in this workspace
 - `ser/_internal/apt/runtime.py` is not present in this workspace
 
 ## Diagnostics subsystem

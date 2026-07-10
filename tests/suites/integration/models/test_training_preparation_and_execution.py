@@ -8,17 +8,17 @@ from pathlib import Path
 
 import numpy as np
 
-from ser.models.training_execution import (
+from ser._internal.models.training_execution import (
     execute_default_profile_training,
     finalize_profile_training_report,
     run_accurate_profile_training,
     run_medium_profile_training,
 )
-from ser.models.training_preparation import (
+from ser._internal.models.training_preparation import (
     prepare_accurate_training_payload,
     prepare_medium_training_payload,
 )
-from ser.models.training_types import (
+from ser._internal.models.training_types import (
     AccurateTrainingPreparation,
     MediumTrainingPreparation,
     TrainingEvaluation,

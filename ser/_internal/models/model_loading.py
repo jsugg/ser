@@ -8,10 +8,10 @@ from contextlib import AbstractContextManager
 from functools import partial
 from typing import Protocol, cast
 
+from ser._internal.models.artifact_envelope import LoadedModel
+from ser._internal.models.training_support import ModelCandidate
 from ser._internal.runtime.environment_plan import ProcessEnvDelta
 from ser.config import AppConfig
-from ser.models.artifact_envelope import LoadedModel
-from ser.models.training_support import ModelCandidate
 
 type ResolveModelFn = Callable[..., tuple[object, LoadedModel]]
 type ResolveModelFromSettingsFn = Callable[..., tuple[ModelCandidate, LoadedModel]]

@@ -23,6 +23,10 @@ import ser.domain
 import ser.profiles
 import ser.utils
 
+api_exports = __import__("ser.api", fromlist=ser.api.__all__)
+for api_export_name in ser.api.__all__:
+    getattr(api_exports, api_export_name)
+
 if "torch" in sys.modules:
     raise SystemExit("torch imported during tier-1 public imports")
 """

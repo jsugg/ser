@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ser.data import openslr_dataset_preparation
+from ser._internal.data import openslr_dataset_preparation
 
 
 @dataclass(frozen=True)

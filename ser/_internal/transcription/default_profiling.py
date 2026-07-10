@@ -9,8 +9,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 from ser.domain import TranscriptWord
-from ser.transcript.transcript_extractor import TranscriptionProfile
 
 type LoadModelFn = Callable[[TranscriptionProfile | None], object]
 type TranscribeFn = Callable[

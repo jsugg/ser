@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ser.transcript.profiling import ProfilingResult, RuntimeCalibrationResult
+    from ser._internal.transcript.profiling import ProfilingResult, RuntimeCalibrationResult
 
 
 def persist_profile_report(path: Path, payload: dict[str, object]) -> Path:

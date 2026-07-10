@@ -10,7 +10,7 @@ from typing import Literal
 
 import pytest
 
-from ser.models.artifact_loading import (
+from ser._internal.models.artifact_loading import (
     load_model_with_resolution,
     load_pickle_model_artifact,
     load_secure_model_artifact,

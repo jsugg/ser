@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ser.data.adapters.public_csv_datasets import (
+from ser._internal.data.adapters.public_csv_datasets import (
     ATT_HACK_CORPUS_ID,
     ATT_HACK_DATASET_LICENSE_ID,
     ATT_HACK_DATASET_POLICY_ID,
@@ -34,7 +34,7 @@ from ser.data.adapters.public_csv_datasets import (
     build_pavoque_manifest_jsonl,
     build_spanish_meacorpus_2023_manifest_jsonl,
 )
-from ser.data.ontology import LabelOntology
+from ser._internal.data.ontology import LabelOntology
 
 
 def _ontology() -> LabelOntology:

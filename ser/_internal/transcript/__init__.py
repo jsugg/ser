@@ -1,0 +1,1 @@
+"""Internal transcription implementation helpers."""

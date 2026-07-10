@@ -17,14 +17,14 @@ from tests.utils.helpers import process_spawn_support
 
 from ser._internal.runtime import process_timeout as runtime_process_timeout
 from ser._internal.runtime import worker_lifecycle as runtime_worker_lifecycle
+from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 from ser._internal.transcription import process_isolation as transcription_process_isolation
 from ser._internal.transcription import public_boundary_support as transcription_boundary_support
 from ser.config import AppConfig, reload_settings
 from ser.domain import TranscriptWord
-from ser.transcript.transcript_extractor import TranscriptionProfile
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 else:
     BackendRuntimeRequest = object
 

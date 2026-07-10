@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ser.data.dataset_prepare import DatasetDescriptor
+from ser._internal.data.dataset_prepare import DatasetDescriptor
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,16 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
 from ser.domain import DatasetConsents
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 type ComplianceMode = Literal["advisory", "strict"]
 
 if TYPE_CHECKING:
-    from ser.data.msp_podcast_mirror import MspPodcastMirrorArtifacts
+    from ser._internal.data.msp_podcast_mirror import MspPodcastMirrorArtifacts
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,21 +54,21 @@ class DatasetRegistryHealthIssueRecord:
 
 def run_configure_command(argv: list[str], *, settings: AppConfig) -> int:
     """Runs `ser configure ...` command argv via the public API boundary."""
-    from ser.data.cli import run_configure_command as _run_configure_command
+    from ser._internal.data.cli import run_configure_command as _run_configure_command
 
     return _run_configure_command(argv, settings=settings)
 
 
 def run_data_command(argv: list[str], *, settings: AppConfig) -> int:
     """Runs `ser data ...` command argv via the public API boundary."""
-    from ser.data.cli import run_data_command as _run_data_command
+    from ser._internal.data.cli import run_data_command as _run_data_command
 
     return _run_data_command(argv, settings=settings)
 
 
 def list_datasets() -> tuple[str, ...]:
     """Returns sorted supported dataset identifiers."""
-    from ser.data.dataset_prepare import SUPPORTED_DATASETS
+    from ser._internal.data.dataset_prepare import SUPPORTED_DATASETS
 
     return tuple(sorted(SUPPORTED_DATASETS))
 
@@ -78,7 +78,7 @@ def list_registered_datasets(
     settings: AppConfig,
 ) -> tuple[DatasetRegistryRecord, ...]:
     """Returns persisted dataset registry records ordered by dataset id."""
-    from ser.data.application import collect_dataset_registry_snapshot
+    from ser._internal.data.application.registry_snapshot import collect_dataset_registry_snapshot
 
     snapshot = collect_dataset_registry_snapshot(settings=settings)
     records: list[DatasetRegistryRecord] = []
@@ -102,7 +102,7 @@ def list_dataset_registry_health_issues(
     settings: AppConfig,
 ) -> tuple[DatasetRegistryHealthIssueRecord, ...]:
     """Returns deterministic dataset registry health issues."""
-    from ser.data.application import collect_dataset_registry_snapshot
+    from ser._internal.data.application.registry_snapshot import collect_dataset_registry_snapshot
 
     snapshot = collect_dataset_registry_snapshot(settings=settings)
     return tuple(
@@ -120,7 +120,7 @@ def show_dataset_consents(
     settings: AppConfig,
 ) -> DatasetConsents:
     """Returns persisted dataset consent IDs as `(policy_ids, license_ids)`."""
-    from ser.data.dataset_consents import load_persisted_dataset_consents
+    from ser._internal.data.dataset_consents import load_persisted_dataset_consents
 
     consents = load_persisted_dataset_consents(settings=settings)
     return DatasetConsents(
@@ -137,7 +137,7 @@ def configure_dataset_consents(
     source: str = "ser.api.configure_dataset_consents",
 ) -> DatasetConsents:
     """Persists dataset consents and returns updated `(policy_ids, license_ids)`."""
-    from ser.data.dataset_consents import (
+    from ser._internal.data.dataset_consents import (
         load_persisted_dataset_consents,
         persist_dataset_consents,
     )
@@ -171,12 +171,12 @@ def prepare_dataset(
     settings: AppConfig,
 ) -> DatasetPrepareResult:
     """Programmatic dataset acquisition + manifest preparation."""
-    from ser.data.application import (
+    from ser._internal.data.application.consents import (
         compute_dataset_descriptor_missing_consents,
         persist_missing_dataset_descriptor_consents,
-        run_dataset_prepare_workflow,
     )
-    from ser.data.dataset_consents import DatasetConsentError
+    from ser._internal.data.application.prepare import run_dataset_prepare_workflow
+    from ser._internal.data.dataset_consents import DatasetConsentError
 
     if compliance_mode not in {"advisory", "strict"}:
         raise ValueError(
@@ -253,7 +253,7 @@ def prepare_msp_podcast_mirror(
     token: str | None = None,
 ) -> MspPodcastMirrorArtifacts:
     """Prepares MSP-Podcast artifacts from the configured Hugging Face mirror."""
-    from ser.data.msp_podcast_mirror import prepare_msp_podcast_from_hf_mirror
+    from ser._internal.data.msp_podcast_mirror import prepare_msp_podcast_from_hf_mirror
 
     return prepare_msp_podcast_from_hf_mirror(
         dataset_root=dataset_root,

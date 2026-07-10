@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from ser.runtime import mps_oom
+from ser._internal.runtime import mps_oom
 
 
 def test_is_mps_out_of_memory_error_detects_signature() -> None:

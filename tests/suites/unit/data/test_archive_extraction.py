@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ser.data import archive_extraction
+from ser._internal.data import archive_extraction
 
 
 def test_extract_archive_supports_tar_gz(tmp_path: Path) -> None:

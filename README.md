@@ -95,25 +95,31 @@ Profile selection during predict is strict: use an artifact trained for the same
 When running from a source checkout without activating an environment, prefix commands with `uv run`.
 
 ## Python API
-`ser.api` is the sole supported Python entry point. Everything else — including
-modules under public-looking paths that are not exported from `ser`, `ser.api`,
-`ser.domain`, `ser.config`, or `ser.utils` — is implementation detail and may
-change without notice.
+`ser.api` is the sole supported Python workflow entry point. Import package
+metadata from `ser`, but call inference, training, dataset, profile, and
+diagnostics operations through `ser.api`. Everything else — including modules
+under public-looking paths that are not exported from `ser`, `ser.api`,
+`ser.config`, `ser.domain`, `ser.profiles`, or `ser.utils` — is implementation
+detail and may change without notice.
 
 Minimal inference example:
 
 ```python
+import ser
 import ser.api
+
+print(ser.__version__)
 
 execution = ser.api.infer("sample.wav", profile="fast")
 for segment in execution.emotions:
     print(segment.emotion, segment.start_seconds, segment.end_seconds)
 ```
 
-Stability promise: symbols exported from `ser.api` (see `ser.api.__all__`),
-the domain types re-exported from `ser`/`ser.domain`, the trimmed `ser.config`
-surface, and the helpers in `ser.utils` follow semantic versioning from `1.0.0`
-onward. Anything not exported there carries no compatibility guarantee.
+Stability promise: after the first published distribution, symbols exported
+from `ser.api` (see `ser.api.__all__`), the domain types re-exported from
+`ser`/`ser.domain`, the curated `ser.config`, `ser.profiles`, and `ser.utils`
+surfaces follow semantic versioning. Anything not exported there carries no
+compatibility guarantee. See [docs/api-stability.md](docs/api-stability.md).
 
 ## Boundary Checks (Contributors)
 If your change touches `ser/api.py`, `ser/_internal/api/*`, or `ser/__main__.py`, run:
@@ -136,6 +142,7 @@ uv run pytest -q \
 - Architecture guide: [docs/architecture.md](https://github.com/jsugg/ser/blob/main/docs/architecture.md)
 - Contributor guide: [CONTRIBUTING.md](https://github.com/jsugg/ser/blob/main/CONTRIBUTING.md)
 - Compatibility details: [docs/compatibility-matrix.md](https://github.com/jsugg/ser/blob/main/docs/compatibility-matrix.md)
+- Public API stability: [docs/api-stability.md](docs/api-stability.md)
 - Hardware validation workflows: [docs/ci/hardware-validation.md](https://github.com/jsugg/ser/blob/main/docs/ci/hardware-validation.md)
 - Release and rollback runbook: [docs/release-and-rollback.md](https://github.com/jsugg/ser/blob/main/docs/release-and-rollback.md)
 - Security policy: [SECURITY.md](https://github.com/jsugg/ser/blob/main/SECURITY.md)

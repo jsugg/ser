@@ -7,6 +7,7 @@ mapfile -t IMPORT_LINT_PATHS < <(
 )
 
 uv run --frozen --extra dev ruff check --select TID251 "${IMPORT_LINT_PATHS[@]}"
+uv run --frozen --extra dev python scripts/check_public_internal_imports.py
 uv run --frozen --extra dev pytest -q \
   tests/suites/integration/architecture/test_api_import_boundary.py \
   tests/suites/integration/architecture/test_import_lint_policy.py

@@ -7,14 +7,14 @@ from typing import cast
 
 import pytest
 
-import ser.transcript.backends.stable_whisper as stable_whisper
-import ser.transcript.backends.stable_whisper_transcribe_runtime as runtime_helpers
-from ser.config import AppConfig
-from ser.transcript.backends.base import BackendRuntimeRequest
-from ser.transcript.runtime_failures import (
+import ser._internal.transcript.backends.stable_whisper as stable_whisper
+import ser._internal.transcript.backends.stable_whisper_transcribe_runtime as runtime_helpers
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
+from ser._internal.transcript.runtime_failures import (
     FailureDisposition,
     TranscriptionFailureClassification,
 )
+from ser.config import AppConfig
 
 
 def test_classify_transcription_failure_for_runtime_downgrades_when_shortcut_disabled(

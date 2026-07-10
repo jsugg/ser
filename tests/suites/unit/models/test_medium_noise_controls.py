@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ser.models.medium_noise_controls import (
+from ser._internal.models.medium_noise_controls import (
     MediumNoiseControlStats,
     apply_medium_noise_controls,
     merge_medium_noise_stats,
