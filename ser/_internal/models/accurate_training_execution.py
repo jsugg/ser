@@ -9,24 +9,24 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
-from ser.config import AppConfig
-from ser.data import Utterance
-from ser.license_check import build_provenance_metadata
-from ser.models import training_support as _training_support
-from ser.models.artifact_envelope import build_model_artifact as _build_model_artifact
-from ser.models.artifact_persistence import (
+from ser._internal.data import Utterance
+from ser._internal.models import training_support as _training_support
+from ser._internal.models.artifact_envelope import build_model_artifact as _build_model_artifact
+from ser._internal.models.artifact_persistence import (
     persist_pickle_artifact,
     persist_secure_artifact,
     persist_training_report,
 )
-from ser.models.dataset_splitting import MediumSplitMetadata
-from ser.models.training_execution import run_accurate_profile_training
-from ser.models.training_reporting import build_grouped_evaluation_controls
-from ser.models.training_types import (
+from ser._internal.models.dataset_splitting import MediumSplitMetadata
+from ser._internal.models.training_execution import run_accurate_profile_training
+from ser._internal.models.training_reporting import build_grouped_evaluation_controls
+from ser._internal.models.training_types import (
     AccurateTrainingPreparation,
     PersistedArtifactsLike,
     TrainingEvaluation,
 )
+from ser.config import AppConfig
+from ser.license_check import build_provenance_metadata
 
 _ModelT = TypeVar("_ModelT")
 

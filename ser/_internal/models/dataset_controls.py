@@ -35,7 +35,7 @@ class _SettingsLike(Protocol):
 def resolve_registry_manifest_paths(*, settings: object) -> tuple[Path, ...]:
     """Resolves registry manifest paths when optional registry data is available."""
     try:
-        from ser.data.dataset_registry import (
+        from ser._internal.data.dataset_registry import (
             load_dataset_registry,
             registered_manifest_paths,
         )

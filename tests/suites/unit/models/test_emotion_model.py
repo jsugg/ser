@@ -10,14 +10,14 @@ import numpy as np
 import pytest
 from sklearn.neural_network import MLPClassifier
 
-import ser.models.artifact_persistence as artifact_persistence
-import ser.models.training_reporting as training_reporting
-import ser.models.training_support as training_support
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
-from ser.features import FeatureFrame
-from ser.models import emotion_model as em
-from ser.models.dataset_splitting import MediumSplitMetadata
-from ser.models.medium_noise_controls import MediumNoiseControlStats
+import ser._internal.models.artifact_persistence as artifact_persistence
+import ser._internal.models.training_reporting as training_reporting
+import ser._internal.models.training_support as training_support
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser._internal.features import FeatureFrame
+from ser._internal.models import emotion_model as em
+from ser._internal.models.dataset_splitting import MediumSplitMetadata
+from ser._internal.models.medium_noise_controls import MediumNoiseControlStats
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, SegmentPrediction
 
 
@@ -672,11 +672,11 @@ def test_build_dataset_controls_reports_registry_mode(
         lambda: (_ for _ in ()).throw(AssertionError("helper must use explicit settings")),
     )
     monkeypatch.setattr(
-        "ser.data.dataset_registry.load_dataset_registry",
+        "ser._internal.data.dataset_registry.load_dataset_registry",
         lambda settings: {"ravdess": object()},
     )
     monkeypatch.setattr(
-        "ser.data.dataset_registry.registered_manifest_paths",
+        "ser._internal.data.dataset_registry.registered_manifest_paths",
         lambda settings: (Path("manifests/ravdess.jsonl"),),
     )
 

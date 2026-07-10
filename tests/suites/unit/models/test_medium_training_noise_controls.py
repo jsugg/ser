@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.models.medium_noise_controls import (
+from ser._internal.models.medium_noise_controls import (
     MediumNoiseControlStats,
     apply_medium_noise_controls,
 )

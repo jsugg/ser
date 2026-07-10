@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 import ser.__main__ as cli
+import ser._internal.models.emotion_model as emotion_model
+import ser._internal.runtime.fast_inference as fast_inference
+import ser._internal.utils.timeline_utils as timeline_utils
 import ser.config as config_module
-import ser.models.emotion_model as emotion_model
-import ser.runtime.fast_inference as fast_inference
-import ser.utils.timeline_utils as timeline_utils
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult, SegmentPrediction
 
 pytestmark = [pytest.mark.smoke, pytest.mark.usefixtures("reset_ambient_settings")]
@@ -71,7 +71,7 @@ def test_cli_fast_inference_smoke_uses_real_pipeline_builder(
         _fake_run_fast_inference,
     )
     monkeypatch.setattr(
-        "ser.transcript.extract_transcript",
+        "ser._internal.transcript.transcript_extractor.extract_transcript",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("Transcription should not run for --no-transcript.")
         ),

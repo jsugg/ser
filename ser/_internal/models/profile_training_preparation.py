@@ -8,7 +8,7 @@ from typing import Protocol, TypeVar
 
 import numpy as np
 
-from ser.repr import EncodedSequence, PoolingWindow
+from ser._internal.repr import EncodedSequence, PoolingWindow
 
 _MetaT = TypeVar("_MetaT")
 _StatsT = TypeVar("_StatsT")

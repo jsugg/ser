@@ -7,11 +7,11 @@ from typing import NamedTuple, cast
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
-from ser.models.artifact_loading import (
+from ser._internal.models.artifact_loading import (
     build_model_artifact_envelope,
     deserialize_model_artifact_envelope,
 )
-from ser.models.artifact_metadata import (
+from ser._internal.models.artifact_metadata import (
     build_v2_artifact_metadata,
     normalize_v2_artifact_metadata,
     read_positive_int,

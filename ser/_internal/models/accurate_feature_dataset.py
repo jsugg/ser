@@ -9,26 +9,26 @@ from typing import TypeVar
 
 import numpy as np
 
-from ser.config import AppConfig
-from ser.data import EmbeddingCache
-from ser.models.feature_runtime_encoding import (
+from ser._internal.data import EmbeddingCache
+from ser._internal.models.feature_runtime_encoding import (
     encode_sequence_with_cache,
     resolve_accurate_runtime_config,
     resolve_effective_model_id,
 )
-from ser.models.profile_runtime import (
+from ser._internal.models.profile_runtime import (
     resolve_accurate_model_id,
     resolve_accurate_research_model_id,
 )
-from ser.models.profile_training_preparation import (
+from ser._internal.models.profile_training_preparation import (
     UtteranceLike,
 )
-from ser.models.profile_training_preparation import (
+from ser._internal.models.profile_training_preparation import (
     build_accurate_feature_dataset as _build_prepared_accurate_feature_dataset,
 )
+from ser._internal.repr import EncodedSequence, FeatureBackend, PoolingWindow
+from ser._internal.utils.audio_utils import read_audio_file
+from ser.config import AppConfig
 from ser.pool import mean_std_pool, temporal_pooling_windows
-from ser.repr import EncodedSequence, FeatureBackend, PoolingWindow
-from ser.utils.audio_utils import read_audio_file
 
 _UtteranceT = TypeVar("_UtteranceT", bound=UtteranceLike)
 _MetaT = TypeVar("_MetaT")

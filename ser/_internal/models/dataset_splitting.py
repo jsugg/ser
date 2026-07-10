@@ -10,9 +10,9 @@ from hashlib import sha1
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+from ser._internal.data import LabeledAudioSample, Utterance
+from ser._internal.data.data_loader import extract_ravdess_speaker_id_from_path
 from ser.config import AppConfig
-from ser.data import LabeledAudioSample, Utterance
-from ser.data.data_loader import extract_ravdess_speaker_id_from_path
 from ser.train.eval import grouped_train_test_split
 
 

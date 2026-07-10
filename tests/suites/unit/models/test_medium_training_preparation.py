@@ -9,10 +9,10 @@ from typing import cast
 import numpy as np
 import pytest
 
-import ser.models.medium_training_preparation as mtp
+import ser._internal.models.medium_training_preparation as mtp
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser._internal.models.dataset_splitting import MediumSplitMetadata
 from ser.config import AppConfig
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
-from ser.models.dataset_splitting import MediumSplitMetadata
 
 
 def _settings_stub(tmp_path: Path) -> AppConfig:

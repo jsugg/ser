@@ -13,45 +13,47 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from ser.config import AppConfig
-from ser.data import Utterance
-from ser.models.artifact_envelope import (
+from ser._internal.data import Utterance
+from ser._internal.models.artifact_envelope import (
     MODEL_ARTIFACT_VERSION,
     LoadedModel,
 )
-from ser.models.artifact_envelope import deserialize_model_artifact as _deserialize_model_artifact
-from ser.models.artifact_envelope import (
+from ser._internal.models.artifact_envelope import (
+    deserialize_model_artifact as _deserialize_model_artifact,
+)
+from ser._internal.models.artifact_envelope import (
     normalize_model_artifact_metadata as _normalize_v2_artifact_metadata,
 )
-from ser.models.artifact_loading import (
+from ser._internal.models.artifact_loading import (
     load_pickle_model_artifact,
     load_secure_model_artifact,
 )
-from ser.models.artifact_persistence import (
+from ser._internal.models.artifact_persistence import (
     persist_model_artifacts_for_settings,
     read_training_report_feature_size,
 )
-from ser.models.dataset_controls import (
+from ser._internal.models.dataset_controls import (
     build_dataset_controls_for_settings,
 )
-from ser.models.dataset_controls import (
+from ser._internal.models.dataset_controls import (
     resolve_registry_manifest_paths as _resolve_registry_manifest_paths_impl,
 )
-from ser.models.dataset_splitting import (
+from ser._internal.models.dataset_splitting import (
     MediumSplitMetadata,
 )
-from ser.models.dataset_splitting import split_utterances as _split_utterances_impl
-from ser.models.dataset_training_consents import (
+from ser._internal.models.dataset_splitting import split_utterances as _split_utterances_impl
+from ser._internal.models.dataset_training_consents import (
     ensure_dataset_training_consents as _ensure_dataset_training_consents_impl,
 )
-from ser.models.training_preparation import (
+from ser._internal.models.training_preparation import (
     attach_grouped_metrics,
     evaluate_training_predictions,
     extract_normalized_artifact_metadata,
 )
-from ser.models.training_reporting import (
+from ser._internal.models.training_reporting import (
     build_training_report_for_settings,
 )
+from ser.config import AppConfig
 from ser.runtime.schema import ARTIFACT_SCHEMA_VERSION
 
 type EmotionClassifier = MLPClassifier | Pipeline

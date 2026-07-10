@@ -11,10 +11,10 @@ from typing import cast
 import numpy as np
 import pytest
 
-import ser.models.accurate_feature_dataset as afd
+import ser._internal.models.accurate_feature_dataset as afd
+from ser._internal.data import EmbeddingCache
+from ser._internal.repr import EncodedSequence, FeatureBackend
 from ser.config import AppConfig, AudioReadConfig
-from ser.data import EmbeddingCache
-from ser.repr import EncodedSequence, FeatureBackend
 
 
 @dataclass(frozen=True)

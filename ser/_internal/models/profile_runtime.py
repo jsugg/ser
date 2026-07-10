@@ -7,10 +7,10 @@ from collections.abc import Callable
 from typing import Final, Literal
 
 from ser._internal.config.schema import default_profile_model_id
+from ser._internal.models.feature_runtime_encoding import resolve_profile_runtime_selectors
+from ser._internal.repr import Emotion2VecBackend, WhisperBackend, XLSRBackend
+from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.config import AppConfig, reload_settings
-from ser.models.feature_runtime_encoding import resolve_profile_runtime_selectors
-from ser.repr import Emotion2VecBackend, WhisperBackend, XLSRBackend
-from ser.repr.runtime_policy import resolve_feature_runtime_policy
 
 MEDIUM_BACKEND_ID: Final[str] = "hf_xlsr"
 MEDIUM_PROFILE_ID: Final[Literal["medium"]] = "medium"

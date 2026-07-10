@@ -9,12 +9,12 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.data import EmbeddingCache
+from ser._internal.data.embedding_cache import EmbeddingCacheEntry
+from ser._internal.repr import EncodedSequence, FeatureBackend
+from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
+from ser._internal.utils.audio_utils import read_audio_file
 from ser.config import AppConfig, ProfileRuntimeConfig
-from ser.data import EmbeddingCache
-from ser.data.embedding_cache import EmbeddingCacheEntry
-from ser.repr import EncodedSequence, FeatureBackend
-from ser.repr.runtime_policy import resolve_feature_runtime_policy
-from ser.utils.audio_utils import read_audio_file
 
 
 class ReadAudioFile(Protocol):
