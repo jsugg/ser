@@ -11,8 +11,8 @@ from ser._internal.repr import HandcraftedBackend
 from ser._internal.repr.backend import EncodedSequence
 from ser._internal.utils.audio_utils import read_audio_file
 from ser._internal.utils.dsp import extract_feature_from_signal as _extract_feature_from_signal
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
-from ser.utils.logger import get_logger
 
 type FeatureVector = NDArray[np.float64]
 logger = get_logger(__name__)

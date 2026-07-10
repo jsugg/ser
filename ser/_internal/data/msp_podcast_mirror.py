@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from ser.utils.logger import get_logger
+from ser._internal.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

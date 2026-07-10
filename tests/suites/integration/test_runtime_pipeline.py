@@ -12,11 +12,11 @@ import pytest
 import ser._internal.runtime.pipeline as runtime_pipeline_module
 import ser.config as config
 from ser._internal.runtime.pipeline import RuntimePipeline, create_runtime_pipeline
+from ser._internal.runtime.registry import RuntimeCapability, UnsupportedProfileError
 from ser.config import AppConfig, TimelineConfig
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile
 from ser.runtime.contracts import InferenceRequest
-from ser.runtime.registry import RuntimeCapability, UnsupportedProfileError
 from ser.runtime.schema import (
     OUTPUT_SCHEMA_VERSION,
     FramePrediction,
@@ -518,7 +518,7 @@ def test_create_runtime_pipeline_marks_medium_available_when_hook_registry_is_re
     """Factory should treat medium as available when hook registry is populated."""
     monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -548,7 +548,7 @@ def test_create_runtime_pipeline_marks_accurate_available_when_hook_registry_is_
     """Factory should treat accurate as available when hook registry is populated."""
     monkeypatch.setenv("SER_ENABLE_ACCURATE_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -579,7 +579,7 @@ def test_create_runtime_pipeline_marks_accurate_research_available_when_hook_reg
     monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
     monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -658,7 +658,7 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
     monkeypatch.setattr(
@@ -784,7 +784,7 @@ def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
     monkeypatch.delenv("WHISPER_BACKEND", raising=False)
     monkeypatch.delenv("WHISPER_MODEL", raising=False)
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
     monkeypatch.setattr(
@@ -842,7 +842,7 @@ def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
         lambda: True,
     )
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
     monkeypatch.setattr(
@@ -893,7 +893,7 @@ def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selec
     """Medium profile should route training through medium training entrypoint."""
     monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -942,7 +942,7 @@ def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
     """Accurate profile should route training through accurate training entrypoint."""
     monkeypatch.setenv("SER_ENABLE_ACCURATE_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -999,7 +999,7 @@ def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_s
     monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
     monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 

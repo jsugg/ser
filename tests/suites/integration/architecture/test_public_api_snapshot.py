@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -46,3 +47,20 @@ def test_public_api_snapshot_matches_current_surface(repo_root: Path) -> None:
             "and review the JSON diff.\n"
             f"{diff[:12000]}"
         )
+
+
+def test_public_api_snapshot_records_reexported_type_contracts(repo_root: Path) -> None:
+    """Re-exported API classes must include fields, not only owner-module paths."""
+    completed = subprocess.run(
+        [sys.executable, "scripts/dump_public_api.py"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    snapshot = json.loads(completed.stdout)
+    inference_request = snapshot["modules"]["ser.api"]["exports"]["InferenceRequest"]
+    assert inference_request["kind"] == "alias"
+    contract = inference_request["contract"]
+    assert contract["kind"] == "class"
+    assert "file_path" in contract["members"]

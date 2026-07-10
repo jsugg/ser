@@ -10,7 +10,7 @@ from ser._internal.data.catalog.public_datasets import CsvManifestSpec
 from ser._internal.data.manifest import SplitName, Utterance
 from ser._internal.data.manifest_jsonl import write_manifest_jsonl
 from ser._internal.data.ontology import LabelOntology, remap_label
-from ser.utils.logger import get_logger
+from ser._internal.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

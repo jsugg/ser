@@ -14,7 +14,7 @@ from ser._internal.models.training_types import (
     MediumTrainingPreparation,
     TrainingEvaluation,
 )
-from ser.train.metrics import compute_grouped_ser_metrics_by_sample, compute_ser_metrics
+from ser._internal.train.metrics import compute_grouped_ser_metrics_by_sample, compute_ser_metrics
 
 _UtteranceT = TypeVar("_UtteranceT")
 _SplitMetaT = TypeVar("_SplitMetaT")

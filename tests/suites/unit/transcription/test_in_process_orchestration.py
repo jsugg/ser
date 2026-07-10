@@ -8,9 +8,9 @@ from typing import cast
 
 import pytest
 
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
 from ser._internal.transcription import in_process_orchestration as ipo
 from ser.config import AppConfig
-from ser.transcript.backends.base import BackendRuntimeRequest
 
 pytestmark = pytest.mark.unit
 

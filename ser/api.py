@@ -9,11 +9,36 @@ from typing import Protocol
 import ser._internal.api.data as _data_api
 import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
-from ser.config import AppConfig, reload_settings
+from ser._internal.config.schema import FeatureRuntimeBackendOverride
+from ser.config import (
+    AccurateResearchRuntimeConfig,
+    AccurateRuntimeConfig,
+    AppConfig,
+    AudioReadConfig,
+    DataLoaderConfig,
+    DatasetConfig,
+    FastRuntimeConfig,
+    FeatureFlags,
+    FeatureRuntimePolicyConfig,
+    MediumRuntimeConfig,
+    MediumTrainingConfig,
+    ModelsConfig,
+    NeuralNetConfig,
+    QualityGateConfig,
+    RuntimeFlags,
+    SchemaConfig,
+    TimelineConfig,
+    TorchRuntimeConfig,
+    TrainingConfig,
+    TranscriptionConfig,
+    WhisperModelConfig,
+    reload_settings,
+)
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport, DiagnosticSeverity
-from ser.domain import DatasetConsents
+from ser.domain import DatasetConsents, EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import ProfileName
 from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
+from ser.runtime.schema import FramePrediction, InferenceResult, SegmentPrediction
 
 ComplianceMode = _data_api.ComplianceMode
 DatasetPrepareResult = _data_api.DatasetPrepareResult
@@ -190,8 +215,13 @@ def run_startup_preflight(
 
 
 __all__ = [
+    "AccurateResearchRuntimeConfig",
+    "AccurateRuntimeConfig",
     "AppConfig",
+    "AudioReadConfig",
     "ComplianceMode",
+    "DataLoaderConfig",
+    "DatasetConfig",
     "DatasetConsents",
     "DatasetPrepareResult",
     "DatasetRegistryHealthIssueRecord",
@@ -199,12 +229,34 @@ __all__ = [
     "DiagnosticFinding",
     "DiagnosticReport",
     "DiagnosticSeverity",
+    "EmotionSegment",
+    "FastRuntimeConfig",
+    "FeatureFlags",
+    "FeatureRuntimeBackendOverride",
+    "FeatureRuntimePolicyConfig",
+    "FramePrediction",
     "InferenceExecution",
     "InferenceRequest",
+    "InferenceResult",
+    "MediumRuntimeConfig",
+    "MediumTrainingConfig",
+    "ModelsConfig",
+    "NeuralNetConfig",
     "ProfileName",
+    "QualityGateConfig",
+    "RuntimeFlags",
     "RuntimePipeline",
     "RuntimePipelineBuilder",
+    "SchemaConfig",
+    "SegmentPrediction",
     "SubtitleFormat",
+    "TimelineConfig",
+    "TimelineEntry",
+    "TorchRuntimeConfig",
+    "TrainingConfig",
+    "TranscriptWord",
+    "TranscriptionConfig",
+    "WhisperModelConfig",
     "configure_dataset_consents",
     "infer",
     "list_dataset_registry_health_issues",

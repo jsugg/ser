@@ -37,6 +37,7 @@ from ser._internal.transcription.public_boundary_profiling import (
 from ser._internal.transcription.public_boundary_profiling import (
     run_runtime_calibration_from_public_boundary as _run_runtime_calibration_boundary_impl,
 )
+from ser._internal.utils.logger import get_logger
 from ser.config import (
     AppConfig,
     ArtifactProfileName,
@@ -45,7 +46,6 @@ from ser.config import (
 )
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
-from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 _PROFILING_OWNER_MODULES = (

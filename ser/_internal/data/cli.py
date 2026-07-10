@@ -7,6 +7,20 @@ import json
 import sys
 from pathlib import Path
 
+from ser._internal.data.application.capability_snapshot import (
+    build_dataset_capability_snapshot_json_payload,
+    collect_dataset_capability_snapshot,
+)
+from ser._internal.data.application.consents import (
+    compute_dataset_descriptor_missing_consents,
+    persist_missing_dataset_descriptor_consents,
+)
+from ser._internal.data.application.prepare import run_dataset_prepare_workflow
+from ser._internal.data.application.registry_snapshot import (
+    build_dataset_registry_snapshot_json_payload,
+    collect_dataset_registry_snapshot,
+)
+from ser._internal.data.application.uninstall import run_dataset_uninstall_workflow
 from ser._internal.data.dataset_consents import (
     DatasetConsentError,
     load_persisted_dataset_consents,
@@ -14,16 +28,6 @@ from ser._internal.data.dataset_consents import (
 )
 from ser._internal.data.dataset_prepare import SUPPORTED_DATASETS
 from ser.config import AppConfig
-from ser.data.application import (
-    build_dataset_capability_snapshot_json_payload,
-    build_dataset_registry_snapshot_json_payload,
-    collect_dataset_capability_snapshot,
-    collect_dataset_registry_snapshot,
-    compute_dataset_descriptor_missing_consents,
-    persist_missing_dataset_descriptor_consents,
-    run_dataset_prepare_workflow,
-    run_dataset_uninstall_workflow,
-)
 
 
 def _is_interactive() -> bool:

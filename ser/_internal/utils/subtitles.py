@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+from ser._internal.utils.logger import get_logger
 from ser.config import TimelineConfig
 from ser.domain import TimelineEntry
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

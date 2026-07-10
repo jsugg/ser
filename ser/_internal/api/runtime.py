@@ -42,8 +42,8 @@ from ser._internal.runtime.restricted_backends import (
 from ser._internal.runtime.restricted_backends import (
     run_restricted_backend_cli_gate as _run_restricted_backend_cli_gate,
 )
+from ser._internal.utils.logger import get_logger
 from ser.profiles import ProfileName, get_profile_catalog, resolve_profile_name
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -243,7 +243,7 @@ def load_profile(
 ) -> None:
     """Validates profile availability and dependency capability for execution."""
     from ser._internal.runtime.backend_hooks import build_backend_hooks
-    from ser.runtime.registry import (
+    from ser._internal.runtime.registry import (
         ensure_profile_supported,
         resolve_runtime_capability,
     )
@@ -294,7 +294,7 @@ def run_inference_workflow(
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> InferenceExecution:
     """Runs CLI-equivalent inference workflow through one API boundary."""
-    from ser.runtime import InferenceRequest
+    from ser.runtime.contracts import InferenceRequest
 
     builder = pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
     request = InferenceRequest(

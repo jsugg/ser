@@ -10,8 +10,8 @@ import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
+from ser._internal.utils.logger import get_logger
 from ser.config import AudioReadConfig
-from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 

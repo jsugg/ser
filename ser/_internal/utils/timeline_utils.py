@@ -6,11 +6,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Protocol
 
+from ser._internal.utils.common_utils import display_elapsed_time
+from ser._internal.utils.logger import get_logger
 from ser._internal.utils.segment_canonicalization import canonicalize_segments
 from ser.config import TimelineConfig
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
-from ser.utils.common_utils import display_elapsed_time
-from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 

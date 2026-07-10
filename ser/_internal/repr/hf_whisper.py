@@ -19,6 +19,7 @@ from ser._internal.repr.backend import (
     PoolingWindow,
     overlap_frame_mask,
 )
+from ser._internal.utils.logger import get_logger
 from ser._internal.utils.torch_inference import (
     TorchRuntime,
     inference_context,
@@ -27,7 +28,6 @@ from ser._internal.utils.torch_inference import (
     move_model_to_runtime,
     runtime_with_dtype,
 )
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

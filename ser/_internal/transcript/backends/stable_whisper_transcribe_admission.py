@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from ser._internal.transcript.mps_admission import MpsAdmissionDecision
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
 
 def resolve_transcribe_runtime_device(

@@ -19,9 +19,9 @@ from ser._internal.diagnostics.service import (
     run_doctor_diagnostics,
     should_fail_preflight,
 )
+from ser._internal.transcript.backends import CompatibilityIssue, CompatibilityReport
 from ser._internal.utils.transcription_compat import FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
-from ser.transcript.backends import CompatibilityIssue, CompatibilityReport
 
 
 def test_parse_preflight_mode_falls_back_to_warn_for_invalid_values() -> None:

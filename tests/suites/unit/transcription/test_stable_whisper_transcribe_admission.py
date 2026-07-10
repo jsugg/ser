@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
 from ser._internal.transcript.backends.stable_whisper_transcribe_admission import (
     resolve_transcribe_runtime_device,
 )
 from ser._internal.transcript.mps_admission import MpsAdmissionDecision
-from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 def _runtime_request(*, device_type: str = "mps") -> BackendRuntimeRequest:

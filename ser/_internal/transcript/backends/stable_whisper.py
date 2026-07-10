@@ -19,6 +19,12 @@ from ser._internal.runtime.phase_contract import (
 )
 from ser._internal.runtime.process_env import temporary_process_env
 from ser._internal.transcript.backends import stable_whisper_torio_probe
+from ser._internal.transcript.backends.base import (
+    BackendRuntimeRequest,
+    CompatibilityIssue,
+    CompatibilityReport,
+    TranscriptionBackendAdapter,
+)
 from ser._internal.transcript.backends.stable_whisper_admission_runtime import (
     is_compatibility_activation_error,
     is_retryable_precision_failure,
@@ -59,23 +65,17 @@ from ser._internal.transcript.mps_admission import (
 from ser._internal.transcript.runtime_failures import (
     TranscriptionFailureClassification,
 )
-from ser._internal.utils.transcription_compat import (
-    has_known_stable_whisper_sparse_mps_incompatibility,
-)
-from ser.domain import TranscriptWord
-from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends.base import (
-    BackendRuntimeRequest,
-    CompatibilityIssue,
-    CompatibilityReport,
-    TranscriptionBackendAdapter,
-)
-from ser.utils.logger import (
+from ser._internal.utils.logger import (
     DependencyLogPolicy,
     DependencyPolicyContext,
     WarningPolicy,
     scoped_dependency_log_policy,
 )
+from ser._internal.utils.transcription_compat import (
+    has_known_stable_whisper_sparse_mps_incompatibility,
+)
+from ser.domain import TranscriptWord
+from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
     from ser.config import AppConfig

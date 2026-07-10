@@ -14,6 +14,7 @@ import pytest
 from sklearn.neural_network import MLPClassifier
 
 import ser._internal.data.data_loader as data_loader
+import ser._internal.license_check as license_check
 import ser._internal.models.accurate_training_execution as accurate_training_execution
 import ser._internal.models.accurate_training_preparation as accurate_training_preparation
 import ser._internal.models.artifact_envelope as artifact_envelope
@@ -25,7 +26,6 @@ import ser._internal.models.profile_runtime as profile_runtime
 import ser._internal.models.training_entrypoints as training_entrypoints
 import ser._internal.models.training_reporting as training_reporting
 import ser._internal.models.training_support as training_support
-import ser.license_check as license_check
 from ser._internal.features import FeatureFrame
 from ser._internal.models.fast_training import FastTrainingHooks
 from ser.runtime.schema import InferenceResult

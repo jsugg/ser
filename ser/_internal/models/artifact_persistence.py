@@ -13,7 +13,7 @@ from typing import Any, Protocol, TypeVar
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
-from ser.utils.logger import get_logger
+from ser._internal.utils.logger import get_logger
 
 type EmotionClassifier = MLPClassifier | Pipeline
 _PersistedArtifactsT = TypeVar("_PersistedArtifactsT")

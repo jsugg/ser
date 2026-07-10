@@ -2,9 +2,9 @@
 
 import pytest
 
+import ser._internal.runtime.registry as registry
 import ser.config as config
-import ser.runtime.registry as registry
-from ser.runtime.registry import (
+from ser._internal.runtime.registry import (
     UnsupportedProfileError,
     ensure_profile_supported,
     resolve_runtime_capability,

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from ser.train.eval import (
+from ser._internal.train.eval import (
     extract_ravdess_speaker_id,
     grouped_train_test_split,
     speaker_independent_cv,

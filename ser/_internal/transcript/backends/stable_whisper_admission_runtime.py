@@ -13,8 +13,8 @@ from ser._internal.transcript.mps_admission import (
 )
 
 if TYPE_CHECKING:
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
     from ser.config import AppConfig
-    from ser.transcript.backends.base import BackendRuntimeRequest
 
 type StableWhisperTranscriptionPhase = Literal["model_load", "transcribe"]
 type ExceptionPredicate = Callable[[Exception], bool]

@@ -13,6 +13,11 @@ from typing import cast
 import pytest
 
 from ser._internal.transcript.backends import stable_whisper_torio_probe
+from ser._internal.transcript.backends.base import (
+    BackendRuntimeRequest,
+    CompatibilityIssue,
+    CompatibilityReport,
+)
 from ser._internal.transcript.backends.faster_whisper import FasterWhisperAdapter
 from ser._internal.transcript.backends.stable_whisper import StableWhisperAdapter
 from ser._internal.transcript.backends.stable_whisper_torio_probe import (
@@ -21,11 +26,6 @@ from ser._internal.transcript.backends.stable_whisper_torio_probe import (
 )
 from ser._internal.utils.transcription_compat import FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE
 from ser.config import AppConfig
-from ser.transcript.backends.base import (
-    BackendRuntimeRequest,
-    CompatibilityIssue,
-    CompatibilityReport,
-)
 
 
 @pytest.fixture(autouse=True)

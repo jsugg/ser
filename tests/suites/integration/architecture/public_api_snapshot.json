@@ -3,16 +3,82 @@
     "ser": {
       "exports": {
         "EmotionSegment": {
-          "kind": "class",
-          "target_path": "ser.domain.EmotionSegment"
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "emotion": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "end_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "start_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "TimelineEntry": {
-          "kind": "class",
-          "target_path": "ser.domain.TimelineEntry"
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "emotion": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "speech": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "timestamp_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "TranscriptWord": {
-          "kind": "class",
-          "target_path": "ser.domain.TranscriptWord"
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "end_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "start_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "word": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "__version__": {
           "annotation": "str",
@@ -24,18 +90,354 @@
     },
     "ser.api": {
       "exports": {
+        "AccurateResearchRuntimeConfig": {
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate-research')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate-research')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate-research')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate-research')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate-research')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate-research')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate-research')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate-research')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate-research')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate-research')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate-research')))"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "AccurateRuntimeConfig": {
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate')))"
+              }
+            }
+          },
+          "kind": "alias"
+        },
         "AppConfig": {
-          "kind": "class",
-          "target_path": "ser.config.AppConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "accurate_research_runtime": {
+                "annotation": "AccurateResearchRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=AccurateResearchRuntimeConfig)"
+              },
+              "accurate_runtime": {
+                "annotation": "AccurateRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=AccurateRuntimeConfig)"
+              },
+              "audio_read": {
+                "annotation": "AudioReadConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=AudioReadConfig)"
+              },
+              "data_loader": {
+                "annotation": "DataLoaderConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=DataLoaderConfig)"
+              },
+              "dataset": {
+                "annotation": "DatasetConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: DatasetConfig(folder=(Path('ser/dataset/ravdess')))))"
+              },
+              "default_language": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'en'"
+              },
+              "emotions": {
+                "annotation": "Mapping[str, str]",
+                "kind": "attribute",
+                "value": null
+              },
+              "fast_runtime": {
+                "annotation": "FastRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=FastRuntimeConfig)"
+              },
+              "feature_flags": {
+                "annotation": "FeatureFlags",
+                "kind": "attribute",
+                "value": "field(default_factory=FeatureFlags)"
+              },
+              "feature_runtime_policy": {
+                "annotation": "FeatureRuntimePolicyConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=FeatureRuntimePolicyConfig)"
+              },
+              "medium_runtime": {
+                "annotation": "MediumRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=MediumRuntimeConfig)"
+              },
+              "medium_training": {
+                "annotation": "MediumTrainingConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=MediumTrainingConfig)"
+              },
+              "models": {
+                "annotation": "ModelsConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=ModelsConfig)"
+              },
+              "nn": {
+                "annotation": "NeuralNetConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=NeuralNetConfig)"
+              },
+              "quality_gate": {
+                "annotation": "QualityGateConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=QualityGateConfig)"
+              },
+              "runtime_flags": {
+                "annotation": "RuntimeFlags",
+                "kind": "attribute",
+                "value": "field(default_factory=RuntimeFlags)"
+              },
+              "schema": {
+                "annotation": "SchemaConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=SchemaConfig)"
+              },
+              "timeline": {
+                "annotation": "TimelineConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TimelineConfig)"
+              },
+              "tmp_folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_tmp_folder)"
+              },
+              "torch_runtime": {
+                "annotation": "TorchRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TorchRuntimeConfig)"
+              },
+              "training": {
+                "annotation": "TrainingConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TrainingConfig)"
+              },
+              "transcription": {
+                "annotation": "TranscriptionConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TranscriptionConfig)"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "AudioReadConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "3"
+              },
+              "retry_delay_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "1.0"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "ComplianceMode": {
           "annotation": null,
           "kind": "attribute",
           "value": "_data_api.ComplianceMode"
         },
+        "DataLoaderConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_failed_file_ratio": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "max_workers": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "8"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "DatasetConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "extension": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'*.wav'"
+              },
+              "folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "glob_pattern": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "manifest_paths": {
+                "annotation": "tuple[Path, ...]",
+                "kind": "attribute",
+                "value": "()"
+              },
+              "subfolder_prefix": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'Actor_*'"
+              }
+            }
+          },
+          "kind": "alias"
+        },
         "DatasetConsents": {
-          "kind": "class",
-          "target_path": "ser.domain.DatasetConsents"
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "license_ids": {
+                "annotation": "tuple[str, ...]",
+                "kind": "attribute",
+                "value": null
+              },
+              "policy_ids": {
+                "annotation": "tuple[str, ...]",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "DatasetPrepareResult": {
           "annotation": null,
@@ -53,28 +455,739 @@
           "value": "_data_api.DatasetRegistryRecord"
         },
         "DiagnosticFinding": {
-          "kind": "class",
-          "target_path": "ser.diagnostics.domain.DiagnosticFinding"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "blocking": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "code": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "message": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "remediation": {
+                "annotation": "tuple[str, ...]",
+                "kind": "attribute",
+                "value": "()"
+              },
+              "severity": {
+                "annotation": "DiagnosticSeverity",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "DiagnosticReport": {
-          "kind": "class",
-          "target_path": "ser.diagnostics.domain.DiagnosticReport"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "counts_by_severity": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "self"
+                  }
+                ],
+                "returns": "dict[DiagnosticSeverity, int]",
+                "signature": "(self) -> dict[DiagnosticSeverity, int]"
+              },
+              "findings": {
+                "annotation": "tuple[DiagnosticFinding, ...]",
+                "kind": "attribute",
+                "value": null
+              },
+              "has_blocking_findings": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": null
+              },
+              "has_error": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": null
+              },
+              "has_warning_or_higher": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": null
+              },
+              "to_dict": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "self"
+                  }
+                ],
+                "returns": "dict[str, object]",
+                "signature": "(self) -> dict[str, object]"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "DiagnosticSeverity": {
-          "kind": "type alias",
-          "target_path": "ser.diagnostics.domain.DiagnosticSeverity"
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['info', 'warning', 'error']"
+          },
+          "kind": "alias"
+        },
+        "EmotionSegment": {
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "emotion": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "end_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "start_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "FastRuntimeConfig": {
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('fast')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('fast')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('fast')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('fast')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('fast')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('fast')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('fast')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('fast')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('fast')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('fast')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('fast')))"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "FeatureFlags": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "chroma": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "contrast": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mel": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mfcc": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "tonnetz": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "FeatureRuntimeBackendOverride": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "device": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "dtype": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "FeatureRuntimePolicyConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "backend_overrides": {
+                "annotation": "tuple[tuple[str, FeatureRuntimeBackendOverride], ...]",
+                "kind": "attribute",
+                "value": "()"
+              },
+              "for_backend": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "self"
+                  },
+                  {
+                    "annotation": "str",
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "backend_id"
+                  }
+                ],
+                "returns": "FeatureRuntimeBackendOverride | None",
+                "signature": "(self, backend_id: str) -> FeatureRuntimeBackendOverride | None"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "FramePrediction": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "emotion": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "end_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "probabilities": {
+                "annotation": "dict[str, float] | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "start_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "InferenceExecution": {
-          "kind": "class",
-          "target_path": "ser.runtime.contracts.InferenceExecution"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "backend_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "detailed_result": {
+                "annotation": "InferenceResult | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "emotions": {
+                "annotation": "list[EmotionSegment]",
+                "kind": "attribute",
+                "value": null
+              },
+              "output_schema_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "phase_timings_seconds": {
+                "annotation": "dict[str, float]",
+                "kind": "attribute",
+                "value": "field(default_factory=dict)"
+              },
+              "profile": {
+                "annotation": "ProfileName",
+                "kind": "attribute",
+                "value": null
+              },
+              "subtitle_path": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "timeline": {
+                "annotation": "list[TimelineEntry]",
+                "kind": "attribute",
+                "value": null
+              },
+              "timeline_csv_path": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "transcript": {
+                "annotation": "list[TranscriptWord]",
+                "kind": "attribute",
+                "value": null
+              },
+              "used_backend_path": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "InferenceRequest": {
-          "kind": "class",
-          "target_path": "ser.runtime.contracts.InferenceRequest"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "file_path": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "include_transcript": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "language": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "save_transcript": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "subtitle_format": {
+                "annotation": "SubtitleFormat | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "subtitle_output_path": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "InferenceResult": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "frames": {
+                "annotation": "list[FramePrediction]",
+                "kind": "attribute",
+                "value": null
+              },
+              "schema_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "segments": {
+                "annotation": "list[SegmentPrediction]",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "MediumRuntimeConfig": {
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('medium')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('medium')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('medium')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('medium')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('medium')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('medium')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('medium')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('medium')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('medium')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('medium')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('medium')))"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "MediumTrainingConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_windows_per_clip": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "0"
+              },
+              "min_window_std": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.0"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "ModelsConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "accurate_model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: default_profile_model_id('accurate')))"
+              },
+              "accurate_research_model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: default_profile_model_id('accurate-research')))"
+              },
+              "folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_models_folder)"
+              },
+              "huggingface_cache_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "medium_model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: default_profile_model_id('medium')))"
+              },
+              "model_cache_dir": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_model_cache_root)"
+              },
+              "model_file": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "model_file_name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'ser_model.pkl'"
+              },
+              "modelscope_cache_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "num_cores": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "1"
+              },
+              "secure_model_file": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "secure_model_file_name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'ser_model.skops'"
+              },
+              "torch_cache_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "training_report_file": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "training_report_file_name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'training_report.json'"
+              },
+              "whisper_download_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "whisper_model": {
+                "annotation": "WhisperModelConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=WhisperModelConfig)"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "NeuralNetConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "alpha": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "batch_size": {
+                "annotation": "int | Literal['auto']",
+                "kind": "attribute",
+                "value": "256"
+              },
+              "epsilon": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "1e-08"
+              },
+              "hidden_layer_sizes": {
+                "annotation": "tuple[int, ...]",
+                "kind": "attribute",
+                "value": "(300,)"
+              },
+              "learning_rate": {
+                "annotation": "Literal['constant', 'invscaling', 'adaptive']",
+                "kind": "attribute",
+                "value": "'adaptive'"
+              },
+              "max_iter": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "500"
+              },
+              "random_state": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "42"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "ProfileName": {
-          "kind": "type alias",
-          "target_path": "ser.profiles.ProfileName"
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['fast', 'medium', 'accurate', 'accurate-research']"
+          },
+          "kind": "alias"
+        },
+        "QualityGateConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_medium_segments_per_minute": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "25.0"
+              },
+              "min_macro_f1_delta": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.0025"
+              },
+              "min_medium_median_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "2.5"
+              },
+              "min_uar_delta": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.0025"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "RuntimeFlags": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "accurate_profile": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "accurate_research_profile": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "medium_profile": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "new_output_schema": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "profile_pipeline": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "restricted_backends": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "RuntimePipeline": {
           "bases": [
@@ -121,9 +1234,268 @@
           "kind": "type alias",
           "value": "Callable[[AppConfig], RuntimePipeline]"
         },
+        "SchemaConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "artifact_schema_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'v2'"
+              },
+              "output_schema_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'v1'"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "SegmentPrediction": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "emotion": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "end_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "probabilities": {
+                "annotation": "dict[str, float] | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "start_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
         "SubtitleFormat": {
-          "kind": "type alias",
-          "target_path": "ser.runtime.contracts.SubtitleFormat"
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['ass', 'srt', 'vtt']"
+          },
+          "kind": "alias"
+        },
+        "TimelineConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_transcripts_folder)"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "TimelineEntry": {
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "emotion": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "speech": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "timestamp_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "TorchRuntimeConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "device": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'auto'"
+              },
+              "dtype": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'auto'"
+              },
+              "enable_mps_fallback": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "TrainingConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "random_state": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "42"
+              },
+              "stratify_split": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "test_size": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.25"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "TranscriptWord": {
+          "contract": {
+            "bases": [
+              "NamedTuple"
+            ],
+            "kind": "class",
+            "members": {
+              "end_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "start_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "word": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "TranscriptionConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "backend_id": {
+                "annotation": "TranscriptionBackendId",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_transcription_backend_id)"
+              },
+              "mps_admission_calibration_min_confidence": {
+                "annotation": "Literal['high', 'medium', 'low']",
+                "kind": "attribute",
+                "value": "'high'"
+              },
+              "mps_admission_calibration_overrides_enabled": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mps_admission_calibration_report_max_age_hours": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "168.0"
+              },
+              "mps_admission_calibration_report_path": {
+                "annotation": "Path | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "mps_admission_control_enabled": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mps_admission_min_headroom_mb": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "64.0"
+              },
+              "mps_admission_safety_margin_mb": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "64.0"
+              },
+              "mps_hard_oom_shortcut_enabled": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mps_low_memory_threshold_gb": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "16.0"
+              },
+              "use_demucs": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_transcription_use_demucs)"
+              },
+              "use_vad": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_transcription_use_vad)"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "WhisperModelConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_whisper_model_name)"
+              },
+              "relative_path": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "Path('OpenAI/whisper')"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "configure_dataset_consents": {
           "kind": "function",
@@ -416,112 +1788,1034 @@
     "ser.config": {
       "exports": {
         "APP_NAME": {
-          "kind": "attribute",
-          "target_path": "ser._internal.config.schema.APP_NAME"
+          "contract": {
+            "annotation": null,
+            "kind": "attribute",
+            "value": "'ser'"
+          },
+          "kind": "alias"
         },
         "AccurateResearchRuntimeConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.AccurateResearchRuntimeConfig"
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate-research')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate-research')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate-research')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate-research')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate-research')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate-research')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate-research')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate-research')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate-research')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate-research')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate-research')))"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "AccurateRuntimeConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.AccurateRuntimeConfig"
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate')))"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "AppConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.AppConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "accurate_research_runtime": {
+                "annotation": "AccurateResearchRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=AccurateResearchRuntimeConfig)"
+              },
+              "accurate_runtime": {
+                "annotation": "AccurateRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=AccurateRuntimeConfig)"
+              },
+              "audio_read": {
+                "annotation": "AudioReadConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=AudioReadConfig)"
+              },
+              "data_loader": {
+                "annotation": "DataLoaderConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=DataLoaderConfig)"
+              },
+              "dataset": {
+                "annotation": "DatasetConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: DatasetConfig(folder=(Path('ser/dataset/ravdess')))))"
+              },
+              "default_language": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'en'"
+              },
+              "emotions": {
+                "annotation": "Mapping[str, str]",
+                "kind": "attribute",
+                "value": null
+              },
+              "fast_runtime": {
+                "annotation": "FastRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=FastRuntimeConfig)"
+              },
+              "feature_flags": {
+                "annotation": "FeatureFlags",
+                "kind": "attribute",
+                "value": "field(default_factory=FeatureFlags)"
+              },
+              "feature_runtime_policy": {
+                "annotation": "FeatureRuntimePolicyConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=FeatureRuntimePolicyConfig)"
+              },
+              "medium_runtime": {
+                "annotation": "MediumRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=MediumRuntimeConfig)"
+              },
+              "medium_training": {
+                "annotation": "MediumTrainingConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=MediumTrainingConfig)"
+              },
+              "models": {
+                "annotation": "ModelsConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=ModelsConfig)"
+              },
+              "nn": {
+                "annotation": "NeuralNetConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=NeuralNetConfig)"
+              },
+              "quality_gate": {
+                "annotation": "QualityGateConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=QualityGateConfig)"
+              },
+              "runtime_flags": {
+                "annotation": "RuntimeFlags",
+                "kind": "attribute",
+                "value": "field(default_factory=RuntimeFlags)"
+              },
+              "schema": {
+                "annotation": "SchemaConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=SchemaConfig)"
+              },
+              "timeline": {
+                "annotation": "TimelineConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TimelineConfig)"
+              },
+              "tmp_folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_tmp_folder)"
+              },
+              "torch_runtime": {
+                "annotation": "TorchRuntimeConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TorchRuntimeConfig)"
+              },
+              "training": {
+                "annotation": "TrainingConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TrainingConfig)"
+              },
+              "transcription": {
+                "annotation": "TranscriptionConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=TranscriptionConfig)"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "ArtifactProfileName": {
-          "kind": "type alias",
-          "target_path": "ser._internal.config.schema.ArtifactProfileName"
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['fast', 'medium', 'accurate', 'accurate-research']"
+          },
+          "kind": "alias"
         },
         "AudioReadConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.AudioReadConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "3"
+              },
+              "retry_delay_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "1.0"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "DataLoaderConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.DataLoaderConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_failed_file_ratio": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "max_workers": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "8"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "DatasetConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.DatasetConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "extension": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'*.wav'"
+              },
+              "folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "glob_pattern": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "manifest_paths": {
+                "annotation": "tuple[Path, ...]",
+                "kind": "attribute",
+                "value": "()"
+              },
+              "subfolder_prefix": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'Actor_*'"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "FastRuntimeConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.FastRuntimeConfig"
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('fast')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('fast')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('fast')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('fast')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('fast')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('fast')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('fast')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('fast')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('fast')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('fast')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('fast')))"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "FeatureFlags": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.FeatureFlags"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "chroma": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "contrast": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mel": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mfcc": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "tonnetz": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "FeatureRuntimePolicyConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.FeatureRuntimePolicyConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "backend_overrides": {
+                "annotation": "tuple[tuple[str, FeatureRuntimeBackendOverride], ...]",
+                "kind": "attribute",
+                "value": "()"
+              },
+              "for_backend": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "self"
+                  },
+                  {
+                    "annotation": "str",
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "backend_id"
+                  }
+                ],
+                "returns": "FeatureRuntimeBackendOverride | None",
+                "signature": "(self, backend_id: str) -> FeatureRuntimeBackendOverride | None"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "MediumRuntimeConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.MediumRuntimeConfig"
+          "contract": {
+            "bases": [
+              "ProfileRuntimeConfig"
+            ],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('medium')))"
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('medium')))"
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('medium')))"
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('medium')))"
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('medium')))"
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('medium')))"
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('medium')))"
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('medium')))"
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('medium')))"
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('medium')))"
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('medium')))"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "MediumTrainingConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.MediumTrainingConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_windows_per_clip": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "0"
+              },
+              "min_window_std": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.0"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "ModelsConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.ModelsConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "accurate_model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: default_profile_model_id('accurate')))"
+              },
+              "accurate_research_model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: default_profile_model_id('accurate-research')))"
+              },
+              "folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_models_folder)"
+              },
+              "huggingface_cache_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "medium_model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=(lambda: default_profile_model_id('medium')))"
+              },
+              "model_cache_dir": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_model_cache_root)"
+              },
+              "model_file": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "model_file_name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'ser_model.pkl'"
+              },
+              "modelscope_cache_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "num_cores": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "1"
+              },
+              "secure_model_file": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "secure_model_file_name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'ser_model.skops'"
+              },
+              "torch_cache_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "training_report_file": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "training_report_file_name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'training_report.json'"
+              },
+              "whisper_download_root": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": null
+              },
+              "whisper_model": {
+                "annotation": "WhisperModelConfig",
+                "kind": "attribute",
+                "value": "field(default_factory=WhisperModelConfig)"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "NeuralNetConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.NeuralNetConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "alpha": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "batch_size": {
+                "annotation": "int | Literal['auto']",
+                "kind": "attribute",
+                "value": "256"
+              },
+              "epsilon": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "1e-08"
+              },
+              "hidden_layer_sizes": {
+                "annotation": "tuple[int, ...]",
+                "kind": "attribute",
+                "value": "(300,)"
+              },
+              "learning_rate": {
+                "annotation": "Literal['constant', 'invscaling', 'adaptive']",
+                "kind": "attribute",
+                "value": "'adaptive'"
+              },
+              "max_iter": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "500"
+              },
+              "random_state": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "42"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "ProfileRuntimeConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.ProfileRuntimeConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_timeout_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
+              },
+              "max_transient_retries": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
+              },
+              "pool_window_size_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "pool_window_stride_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "post_hysteresis_enter_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "post_hysteresis_exit_confidence": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "post_min_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "post_smoothing_window_frames": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
+              },
+              "process_isolation": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": null
+              },
+              "retry_backoff_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "timeout_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
         },
         "QualityGateConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.QualityGateConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "max_medium_segments_per_minute": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "25.0"
+              },
+              "min_macro_f1_delta": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.0025"
+              },
+              "min_medium_median_segment_duration_seconds": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "2.5"
+              },
+              "min_uar_delta": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.0025"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "RuntimeFlags": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.RuntimeFlags"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "accurate_profile": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "accurate_research_profile": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "medium_profile": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "new_output_schema": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "profile_pipeline": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              },
+              "restricted_backends": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "SchemaConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.SchemaConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "artifact_schema_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'v2'"
+              },
+              "output_schema_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'v1'"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "TimelineConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.TimelineConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "folder": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_transcripts_folder)"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "TorchRuntimeConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.TorchRuntimeConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "device": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'auto'"
+              },
+              "dtype": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "'auto'"
+              },
+              "enable_mps_fallback": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "TrainingConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.TrainingConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "random_state": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "42"
+              },
+              "stratify_split": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "test_size": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.25"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "TranscriptionConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.TranscriptionConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "backend_id": {
+                "annotation": "TranscriptionBackendId",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_transcription_backend_id)"
+              },
+              "mps_admission_calibration_min_confidence": {
+                "annotation": "Literal['high', 'medium', 'low']",
+                "kind": "attribute",
+                "value": "'high'"
+              },
+              "mps_admission_calibration_overrides_enabled": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mps_admission_calibration_report_max_age_hours": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "168.0"
+              },
+              "mps_admission_calibration_report_path": {
+                "annotation": "Path | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "mps_admission_control_enabled": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mps_admission_min_headroom_mb": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "64.0"
+              },
+              "mps_admission_safety_margin_mb": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "64.0"
+              },
+              "mps_hard_oom_shortcut_enabled": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "True"
+              },
+              "mps_low_memory_threshold_gb": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "16.0"
+              },
+              "use_demucs": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_transcription_use_demucs)"
+              },
+              "use_vad": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_transcription_use_vad)"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "WhisperModelConfig": {
-          "kind": "class",
-          "target_path": "ser._internal.config.schema.WhisperModelConfig"
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": "field(default_factory=_default_fast_whisper_model_name)"
+              },
+              "relative_path": {
+                "annotation": "Path",
+                "kind": "attribute",
+                "value": "Path('OpenAI/whisper')"
+              }
+            }
+          },
+          "kind": "alias"
         },
         "get_settings": {
-          "kind": "function",
-          "target_path": "ser._internal.config.bootstrap.get_settings"
+          "contract": {
+            "kind": "function",
+            "parameters": [],
+            "returns": "AppConfig",
+            "signature": "() -> AppConfig"
+          },
+          "kind": "alias"
         },
         "reload_settings": {
-          "kind": "function",
-          "target_path": "ser._internal.config.bootstrap.reload_settings"
+          "contract": {
+            "kind": "function",
+            "parameters": [],
+            "returns": "AppConfig",
+            "signature": "() -> AppConfig"
+          },
+          "kind": "alias"
         },
         "settings_override": {
-          "kind": "function",
-          "target_path": "ser._internal.config.bootstrap.settings_override"
+          "contract": {
+            "kind": "function",
+            "parameters": [
+              {
+                "annotation": "AppConfig",
+                "default": null,
+                "kind": "positional or keyword",
+                "name": "settings"
+              }
+            ],
+            "returns": "Iterator[AppConfig]",
+            "signature": "(settings: AppConfig) -> Iterator[AppConfig]"
+          },
+          "kind": "alias"
         }
       },
       "source": "explicit __all__"
@@ -962,7 +3256,7 @@
           "signature": "(settings: AppConfig) -> ProfileName"
         }
       },
-      "source": "public definitions"
+      "source": "explicit __all__"
     },
     "ser.utils": {
       "exports": {
@@ -986,12 +3280,48 @@
           "signature": "(text_with_timestamps: list[TranscriptWord], emotion_with_timestamps: list[EmotionSegment]) -> list[TimelineEntry]"
         },
         "display_elapsed_time": {
-          "kind": "function",
-          "target_path": "ser.utils.common_utils.display_elapsed_time"
+          "contract": {
+            "kind": "function",
+            "parameters": [
+              {
+                "annotation": "float",
+                "default": null,
+                "kind": "positional or keyword",
+                "name": "elapsed_time"
+              },
+              {
+                "annotation": "str",
+                "default": "'long'",
+                "kind": "positional or keyword",
+                "name": "_format"
+              }
+            ],
+            "returns": "str",
+            "signature": "(elapsed_time: float, _format: str = 'long') -> str"
+          },
+          "kind": "alias"
         },
         "get_logger": {
-          "kind": "function",
-          "target_path": "ser.utils.logger.get_logger"
+          "contract": {
+            "kind": "function",
+            "parameters": [
+              {
+                "annotation": "str",
+                "default": null,
+                "kind": "positional or keyword",
+                "name": "name"
+              },
+              {
+                "annotation": "str | int | None",
+                "default": "None",
+                "kind": "positional or keyword",
+                "name": "level"
+              }
+            ],
+            "returns": "logging.Logger",
+            "signature": "(name: str, level: str | int | None = None) -> logging.Logger"
+          },
+          "kind": "alias"
         },
         "print_timeline": {
           "kind": "function",
@@ -1028,8 +3358,8 @@
               "name": "duration_seconds"
             }
           ],
-          "returns": "tuple[np.ndarray, int]",
-          "signature": "(file_path: str, *, start_seconds: float | None = None, duration_seconds: float | None = None) -> tuple[np.ndarray, int]"
+          "returns": "tuple[NDArray[np.float32], int]",
+          "signature": "(file_path: str, *, start_seconds: float | None = None, duration_seconds: float | None = None) -> tuple[NDArray[np.float32], int]"
         },
         "save_timeline_to_csv": {
           "kind": "function",

@@ -10,8 +10,8 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
     from ser.config import AppConfig
-    from ser.transcript.backends.base import BackendRuntimeRequest
 
 DEFAULT_MPS_ADMISSION_MIN_HEADROOM_MB: float = 64.0
 DEFAULT_MPS_ADMISSION_SAFETY_MARGIN_MB: float = 64.0

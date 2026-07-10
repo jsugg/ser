@@ -8,6 +8,7 @@ from typing import cast
 
 import pytest
 
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
 from ser._internal.transcript.backends.stable_whisper_transcribe_execution import (
     run_stable_whisper_transcribe_with_retry,
 )
@@ -16,7 +17,6 @@ from ser._internal.transcript.runtime_failures import (
     TranscriptionFailureClassification,
 )
 from ser.config import AppConfig
-from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 def _runtime_request(*, device_type: str, precision: tuple[str, ...]) -> BackendRuntimeRequest:

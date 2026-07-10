@@ -67,11 +67,11 @@ from ser._internal.runtime.quality_gate_reporting import (
 from ser._internal.runtime.quality_gate_reporting import (
     write_serialized_report as _gate_write_serialized_report,
 )
+from ser._internal.train.eval import grouped_train_test_split, speaker_independent_cv
+from ser._internal.train.metrics import compute_ser_metrics
 from ser._internal.utils.segment_canonicalization import canonicalize_segments
 from ser.config import AppConfig, reload_settings
 from ser.runtime.contracts import InferenceRequest
-from ser.train.eval import grouped_train_test_split, speaker_independent_cv
-from ser.train.metrics import compute_ser_metrics
 
 type IndexArray = NDArray[np.int64]
 type FoldIndices = tuple[IndexArray, IndexArray]

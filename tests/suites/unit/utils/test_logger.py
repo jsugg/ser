@@ -5,7 +5,7 @@ import warnings
 
 import pytest
 
-import ser.utils.logger as logger_utils
+import ser._internal.utils.logger as logger_utils
 
 
 def test_configure_logging_defaults_to_info(

@@ -11,11 +11,11 @@ import ser.__main__ as cli
 import ser._internal.models.emotion_model as emotion_model
 import ser.config as config_module
 from ser._internal.config.schema import profile_artifact_file_names
+from ser._internal.license_check import load_persisted_backend_consents
 from ser._internal.runtime.accurate_inference import AccurateRuntimeDependencyError
 from ser._internal.runtime.medium_inference import MediumRuntimeDependencyError
-from ser.license_check import load_persisted_backend_consents
-from ser.runtime import InferenceRequest
-from ser.runtime.registry import UnsupportedProfileError
+from ser._internal.runtime.registry import UnsupportedProfileError
+from ser.runtime.contracts import InferenceRequest
 
 
 def _patch_common_cli_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 from ser._internal.data import Utterance
+from ser._internal.license_check import build_provenance_metadata
 from ser._internal.models import training_support as _training_support
 from ser._internal.models.artifact_envelope import build_model_artifact as _build_model_artifact
 from ser._internal.models.artifact_persistence import (
@@ -26,7 +27,6 @@ from ser._internal.models.training_types import (
     TrainingEvaluation,
 )
 from ser.config import AppConfig
-from ser.license_check import build_provenance_metadata
 
 _ModelT = TypeVar("_ModelT")
 

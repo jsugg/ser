@@ -65,6 +65,7 @@ def test_import_lint_lane_runs_boundary_contract_tests(repo_root: Path) -> None:
 
     assert "find ser -path 'ser/_internal' -prune -o -name '*.py' -print | sort" in script
     assert "ruff check --select TID251" in script
+    assert "python scripts/check_public_internal_imports.py" in script
     assert "tests/suites/integration/architecture/test_api_import_boundary.py" in script
     assert "tests/suites/integration/architecture/test_import_lint_policy.py" in script
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -19,6 +20,24 @@ type ProfileEnableFlag = Literal[
     "SER_ENABLE_ACCURATE_RESEARCH_PROFILE",
 ]
 type TranscriptionBackendId = Literal["stable_whisper", "faster_whisper"]
+
+__all__ = [
+    "ProfileCatalogEntry",
+    "ProfileEnableFlag",
+    "ProfileFeatureRuntimeDefaults",
+    "ProfileModelDefinition",
+    "ProfileName",
+    "ProfileRuntimeDefaults",
+    "ProfileRuntimeEnvDefinition",
+    "ProfileTranscriptionDefaults",
+    "ProfileTranscriptionEnvDefinition",
+    "RuntimeProfile",
+    "TranscriptionBackendId",
+    "available_profiles",
+    "get_profile_catalog",
+    "resolve_profile",
+    "resolve_profile_name",
+]
 
 
 @dataclass(frozen=True)
@@ -140,6 +159,8 @@ _ALLOWED_TRANSCRIPTION_BACKENDS: frozenset[str] = frozenset({"stable_whisper", "
 _ALLOWED_TORCH_DTYPE_SELECTORS: frozenset[str] = frozenset(
     {"auto", "float16", "float32", "bfloat16"}
 )
+_SUPPORTED_TORCH_DEVICE_SELECTORS: frozenset[str] = frozenset({"auto", "cpu", "mps", "cuda", "xpu"})
+_INDEXED_TORCH_DEVICE_SELECTOR_PATTERN = re.compile(r"(cuda|xpu):\d+")
 
 
 _PROFILE_DEFS_SCHEMA_VERSION = 1
@@ -228,13 +249,12 @@ def _read_required_int(
 
 def _normalize_torch_device_selector(value: str) -> str | None:
     """Normalizes one torch device selector or returns None when invalid."""
-    normalizer = cast(
-        Callable[[str], str | None],
-        importlib.import_module(
-            "ser._internal.utils.torch_inference"
-        ).normalize_torch_device_selector,
-    )
-    return normalizer(value)
+    normalized = value.strip().lower()
+    if normalized in _SUPPORTED_TORCH_DEVICE_SELECTORS:
+        return normalized
+    if _INDEXED_TORCH_DEVICE_SELECTOR_PATTERN.fullmatch(normalized):
+        return normalized
+    return None
 
 
 def _normalize_torch_dtype_selector(value: str) -> str | None:

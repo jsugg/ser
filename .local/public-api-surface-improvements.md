@@ -718,3 +718,51 @@ Template:
 | `ser/utils/timeline_utils.py` | move-internal | `ser/_internal/utils/timeline_utils.py` | Implementation/helper module; first-party callers will use the internal owner path. |
 | `ser/utils/torch_inference.py` | move-internal | `ser/_internal/utils/torch_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
 | `ser/utils/transcription_compat.py` | move-internal | `ser/_internal/utils/transcription_compat.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+
+### 2026-07-10 audit correction — authoritative final classification
+
+The preceding table preserves the original planning record. A fresh baseline-tree
+inventory found the seven omitted modules below and rejected the listed facade
+exceptions as public implementation residue. This addendum supersedes every
+conflicting earlier row; all non-tier-1 paths not retained here were removed from the
+public tree or moved to their internal owner.
+
+| Baseline path | Final classification | Destination / final state | Reason |
+|---|---|---|---|
+| `ser/license_check.py` | move-internal | `ser/_internal/license_check.py` | License enforcement implementation is not a supported workflow API. |
+| `ser/pool/__init__.py` | move-internal | `ser/_internal/pool/__init__.py` | Pool implementation package is internal. |
+| `ser/pool/stats_pool.py` | move-internal | `ser/_internal/pool/stats_pool.py` | Pool implementation is internal. |
+| `ser/pool/windowing.py` | move-internal | `ser/_internal/pool/windowing.py` | Pool implementation is internal. |
+| `ser/train/__init__.py` | move-internal | `ser/_internal/train/__init__.py` | Training implementation package is internal. |
+| `ser/train/eval.py` | move-internal | `ser/_internal/train/eval.py` | Training evaluation implementation is internal. |
+| `ser/train/metrics.py` | move-internal | `ser/_internal/train/metrics.py` | Training metrics implementation is internal. |
+| `ser/data/__init__.py` | remove-public | Removed | No genuine facade or annotation contract remained. |
+| `ser/data/application.py` | move-internal | `ser/_internal/data/application/consents.py` | Dataset consent workflow implementation is internal. |
+| `ser/models/__init__.py` | remove-public | Removed | Package facade advertised unsupported implementation paths. |
+| `ser/models/emotion_model.py` | remove-public | Internal model owners retained | Public convenience facade was not a supported workflow entry point. |
+| `ser/models/profile_runtime.py` | remove-public | Internal runtime owners retained | Public convenience facade was not a supported workflow entry point. |
+| `ser/models/training_entrypoints.py` | remove-public | Internal training owners retained | Public convenience facade was not a supported workflow entry point. |
+| `ser/runtime/__init__.py` | keep-package-marker | Docstring-only package marker | Required only to own the retained contract leaves. |
+| `ser/runtime/contracts.py` | keep-contract-leaf | Re-exported by `ser.api` | Lightweight annotation vocabulary, not a workflow entry point. |
+| `ser/runtime/pipeline.py` | remove-public | `ser/_internal/runtime/pipeline.py` | Pipeline orchestration is internal. |
+| `ser/runtime/registry.py` | move-internal | `ser/_internal/runtime/registry.py` | Runtime registry implementation is internal. |
+| `ser/runtime/schema.py` | keep-contract-leaf | Re-exported by `ser.api` | Lightweight annotation vocabulary, not a workflow entry point. |
+| `ser/transcript/__init__.py` | remove-public | Removed | Package facade advertised unsupported implementation paths. |
+| `ser/transcript/backends/__init__.py` | remove-public | Removed | Package facade advertised unsupported implementation paths. |
+| `ser/transcript/backends/base.py` | move-internal | `ser/_internal/transcript/backends/base.py` | Backend adapter contract is internal implementation detail. |
+| `ser/transcript/backends/stable_whisper.py` | remove-public | Internal backend owner retained | Backend implementation is not a supported workflow entry point. |
+| `ser/transcript/profiling.py` | remove-public | Internal profiling owner retained | Profiling implementation is not a supported workflow entry point. |
+| `ser/transcript/transcript_extractor.py` | remove-public | Internal transcript owner retained | Transcript implementation is not a supported workflow entry point. |
+| `ser/features/__init__.py` | remove-public | Removed | Facade exposed implementation-only feature helpers. |
+| `ser/heads/__init__.py` | remove-public | Removed | Facade exposed implementation-only torch helpers. |
+| `ser/repr/__init__.py` | remove-public | Removed | Facade exposed implementation-only representation helpers. |
+| `ser/diagnostics/__init__.py` | keep-package-marker | Docstring-only package marker | Required only to own the retained diagnostic contract leaf. |
+| `ser/diagnostics/domain.py` | keep-contract-leaf | Re-exported by `ser.api` | Lightweight annotation vocabulary, not a workflow entry point. |
+| `ser/utils/common_utils.py` | move-internal | `ser/_internal/utils/common_utils.py` | Tier-1 facade delegates directly to the internal helper. |
+| `ser/utils/logger.py` | move-internal | `ser/_internal/utils/logger.py` | Tier-1 facade delegates directly to the internal helper. |
+
+The final public tree is enforced by
+`tests/suites/integration/architecture/test_api_import_boundary.py`: six tier-1
+modules, `ser.__main__`, two docstring-only package markers, and the three contract
+leaves listed above. The four entries in `boundary_policy.toml` are the only public
+modules allowed to delegate into `ser._internal`.

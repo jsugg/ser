@@ -12,23 +12,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from ser._internal.runtime.phase_contract import PHASE_TRANSCRIPTION
+from ser._internal.transcript.backends.base import (
+    BackendRuntimeRequest,
+    CompatibilityIssue,
+    CompatibilityReport,
+    TranscriptionBackendAdapter,
+)
+from ser._internal.utils.logger import (
+    DependencyLogPolicy,
+    DependencyPolicyContext,
+    scoped_dependency_log_policy,
+)
 from ser._internal.utils.transcription_compat import (
     FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE,
     has_known_faster_whisper_openmp_runtime_conflict,
 )
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends.base import (
-    BackendRuntimeRequest,
-    CompatibilityIssue,
-    CompatibilityReport,
-    TranscriptionBackendAdapter,
-)
-from ser.utils.logger import (
-    DependencyLogPolicy,
-    DependencyPolicyContext,
-    scoped_dependency_log_policy,
-)
 
 if TYPE_CHECKING:
     from ser.config import AppConfig

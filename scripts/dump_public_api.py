@@ -13,6 +13,7 @@ import griffe
 
 SCHEMA_VERSION = 1
 SNAPSHOT_PATH = Path("tests/suites/integration/architecture/public_api_snapshot.json")
+REPO_ROOT = Path(__file__).resolve().parent.parent
 TIER_ONE_MODULES = (
     "ser",
     "ser.api",
@@ -146,12 +147,25 @@ def _class_snapshot(member: Any) -> JsonObject:
     return snapshot
 
 
+def _resolved_alias_target(member: Any) -> Any:
+    """Resolves one Griffe alias chain without exposing implementation paths."""
+    target = member
+    seen_aliases: set[int] = set()
+    while bool(getattr(target, "is_alias", False)):
+        target_id = id(target)
+        if target_id in seen_aliases:
+            raise ValueError(f"Cyclic public alias resolution for {member.path}.")
+        seen_aliases.add(target_id)
+        target = target.target
+    return target
+
+
 def _alias_snapshot(member: Any) -> JsonObject:
-    """Returns a stable alias snapshot without forcing target resolution."""
-    target_path = getattr(member, "target_path", None)
+    """Returns one alias snapshot with its resolved public contract shape."""
+    target = _resolved_alias_target(member)
     return {
-        "kind": _kind(member),
-        "target_path": str(target_path) if target_path is not None else None,
+        "kind": "alias",
+        "contract": _member_snapshot(target),
     }
 
 
@@ -176,7 +190,7 @@ def dump_public_api(repo_root: Path) -> JsonObject:
     modules: dict[str, JsonValue] = {}
     search_paths = [str(repo_root)]
     for module_name in TIER_ONE_MODULES:
-        module = griffe.load(module_name, search_paths=search_paths)
+        module = griffe.load(module_name, search_paths=search_paths, resolve_aliases=True)
         exports: dict[str, JsonValue] = {}
         for export_name in _exported_names(module, module_name):
             member = module.members.get(export_name)
@@ -210,7 +224,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = Path.cwd()
+    repo_root = REPO_ROOT
     snapshot_text = _json_text(dump_public_api(repo_root))
     if args.write:
         output_path = repo_root / SNAPSHOT_PATH

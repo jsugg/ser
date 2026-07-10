@@ -2,7 +2,7 @@
 
 import pytest
 
-from ser.train.metrics import (
+from ser._internal.train.metrics import (
     compute_grouped_ser_metrics_by_sample,
     compute_ser_metrics,
 )

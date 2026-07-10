@@ -22,6 +22,12 @@ from ser._internal.runtime.phase_timing import (
     log_phase_started,
 )
 from ser._internal.runtime.process_env import temporary_process_env
+from ser._internal.runtime.registry import (
+    RuntimeCapability,
+    ensure_profile_supported,
+    resolve_runtime_capability,
+)
+from ser._internal.utils.logger import get_logger
 from ser._internal.utils.subtitles import resolve_subtitle_export_request
 from ser._internal.utils.transcription_compat import (
     has_known_faster_whisper_openmp_runtime_conflict,
@@ -35,13 +41,7 @@ from ser.runtime.contracts import (
     InferenceRequest,
     SubtitleFormat,
 )
-from ser.runtime.registry import (
-    RuntimeCapability,
-    ensure_profile_supported,
-    resolve_runtime_capability,
-)
 from ser.runtime.schema import InferenceResult, to_legacy_emotion_segments
-from ser.utils.logger import get_logger
 
 type TrainModelCallable = Callable[[], None]
 type PredictEmotionsCallable = Callable[[str], list[EmotionSegment]]
