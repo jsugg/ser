@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from ser._internal.repr import HandcraftedBackend, PoolingWindow
 from ser.config import FeatureFlags
-from ser.repr import HandcraftedBackend, PoolingWindow
 
 
 def test_handcrafted_backend_feature_dim_reflects_feature_flags() -> None:
@@ -29,7 +29,7 @@ def test_handcrafted_backend_encode_sequence_uses_frame_boundaries(
 ) -> None:
     """Encoding should preserve deterministic frame start/end semantics."""
     monkeypatch.setattr(
-        "ser.utils.dsp.extract_feature_from_signal",
+        "ser._internal.utils.dsp.extract_feature_from_signal",
         lambda audio, _sample_rate, *, feature_flags=None: np.asarray(
             [float(audio[0]), float(audio[-1])],
             dtype=np.float64,
@@ -68,7 +68,7 @@ def test_handcrafted_backend_pool_mean_aggregates_overlapping_frames(
 ) -> None:
     """Pooling should average all frames overlapping each window."""
     monkeypatch.setattr(
-        "ser.utils.dsp.extract_feature_from_signal",
+        "ser._internal.utils.dsp.extract_feature_from_signal",
         lambda audio, _sample_rate, *, feature_flags=None: np.asarray(
             [float(audio[0]), float(audio[-1])],
             dtype=np.float64,
@@ -96,7 +96,7 @@ def test_handcrafted_backend_extract_vector_uses_signal_extractor(
 ) -> None:
     """extract_vector should preserve legacy whole-signal feature semantics."""
     monkeypatch.setattr(
-        "ser.utils.dsp.extract_feature_from_signal",
+        "ser._internal.utils.dsp.extract_feature_from_signal",
         lambda audio, sample_rate, *, feature_flags=None: np.asarray(
             [float(audio.size), float(sample_rate)],
             dtype=np.float64,

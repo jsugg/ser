@@ -10,9 +10,9 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from ser.data.embedding_cache import EmbeddingCacheEntry
-from ser.models import feature_runtime_encoding as helpers
-from ser.repr import EncodedSequence, PoolingWindow
+import ser._internal.models.feature_runtime_encoding as helpers
+from ser._internal.data.embedding_cache import EmbeddingCacheEntry
+from ser._internal.repr import EncodedSequence, PoolingWindow
 
 
 class _RuntimePolicyStub:

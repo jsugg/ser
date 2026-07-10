@@ -7,11 +7,11 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.repr import HandcraftedBackend
+from ser._internal.repr.backend import EncodedSequence
+from ser._internal.utils.audio_utils import read_audio_file
+from ser._internal.utils.dsp import extract_feature_from_signal as _extract_feature_from_signal
 from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
-from ser.repr import HandcraftedBackend
-from ser.repr.backend import EncodedSequence
-from ser.utils.audio_utils import read_audio_file
-from ser.utils.dsp import extract_feature_from_signal as _extract_feature_from_signal
 from ser.utils.logger import get_logger
 
 type FeatureVector = NDArray[np.float64]

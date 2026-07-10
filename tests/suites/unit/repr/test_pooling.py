@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from ser._internal.repr import EncodedSequence, PoolingWindow
 from ser.pool import mean_std_pool, temporal_pooling_windows
-from ser.repr import EncodedSequence, PoolingWindow
 
 
 def test_mean_std_pool_returns_expected_stats_per_window() -> None:

@@ -25,12 +25,12 @@ from ser._internal.config.settings_inputs import (
 from ser._internal.config.settings_inputs import (
     resolve_settings_inputs as _resolve_settings_inputs_from_internal,
 )
+from ser._internal.utils.torch_inference import normalize_torch_device_selector
 from ser.profiles import (
     ProfileCatalogEntry,
     TranscriptionBackendId,
     get_profile_catalog,
 )
-from ser.utils.torch_inference import normalize_torch_device_selector
 
 _SER_TORCH_ENABLE_MPS_FALLBACK_ENV = "SER_TORCH_ENABLE_MPS_FALLBACK"
 _PYTORCH_ENABLE_MPS_FALLBACK_ENV = "PYTORCH_ENABLE_MPS_FALLBACK"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from ser.utils.torch_inference import (
+from ser._internal.utils.torch_inference import (
     TorchRuntime,
     maybe_resolve_torch_runtime,
     normalize_torch_device_selector,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 import ser.config as config_module
-from ser.diagnostics.command import run_doctor_command
+from ser._internal.diagnostics.command import run_doctor_command
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
 
 
@@ -25,7 +25,7 @@ def test_run_doctor_command_strict_returns_one_for_warnings(
     )
 
     monkeypatch.setattr(
-        "ser.diagnostics.command.run_doctor_diagnostics",
+        "ser._internal.diagnostics.command.run_doctor_diagnostics",
         lambda **_kwargs: report,
     )
 
@@ -49,7 +49,7 @@ def test_run_doctor_command_strict_returns_zero_for_info(
     )
 
     monkeypatch.setattr(
-        "ser.diagnostics.command.run_doctor_diagnostics",
+        "ser._internal.diagnostics.command.run_doctor_diagnostics",
         lambda **_kwargs: report,
     )
 
@@ -74,7 +74,7 @@ def test_run_doctor_command_returns_two_for_blocking_findings(
     )
 
     monkeypatch.setattr(
-        "ser.diagnostics.command.run_doctor_diagnostics",
+        "ser._internal.diagnostics.command.run_doctor_diagnostics",
         lambda **_kwargs: report,
     )
 
@@ -91,7 +91,7 @@ def test_run_doctor_command_json_output(
     report = DiagnosticReport(findings=())
 
     monkeypatch.setattr(
-        "ser.diagnostics.command.run_doctor_diagnostics",
+        "ser._internal.diagnostics.command.run_doctor_diagnostics",
         lambda **_kwargs: report,
     )
 

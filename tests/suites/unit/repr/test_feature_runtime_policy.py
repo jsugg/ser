@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-import ser.repr.runtime_policy as runtime_policy
-from ser.repr.runtime_policy import resolve_feature_runtime_policy
-from ser.utils.torch_inference import TorchRuntime
+import ser._internal.repr.runtime_policy as runtime_policy
+from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
+from ser._internal.utils.torch_inference import TorchRuntime
 
 
 def _runtime(*, device_spec: str, device_type: str) -> TorchRuntime:
