@@ -227,7 +227,7 @@ modules not re-exported move internal.
 
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
-| P3-01 | `docs/api-stability.md` | TODO | P2-07 |
+| P3-01 | `docs/api-stability.md` | DONE | P2-07 |
 | P3-02 | README Python API section refresh | TODO | P2-07 |
 | P3-03 | README examples executed by a contract test | TODO | P3-02 |
 | P3-04 | `CHANGELOG.md` bootstrap | TODO | — |
@@ -308,6 +308,16 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-10 00:16 — P3-01 done
+- What: Added `docs/api-stability.md` with the tier-1 list, first-publish SemVer promise, `_internal` policy, snapshot governance, and a README link.
+- Evidence: `make lint` → Ruff/import-lint/Black/isort passed; `rg -n "docs/api-stability\\.md|SemVer|first published|ser\\.api|boundary_policy\\.toml" README.md docs/api-stability.md` → found the README link plus the required policy statements.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:15 — P3-01 started
+- What: Add the tier-1 API stability policy and link it from README.
+- Evidence: P2 ledger is done; `docs/api-stability.md` is absent before this task.
+- Deviations / follow-ups: none.
 
 ### 2026-07-09 22:27 — P2-02..P2-08 done
 - What: Moved Phase 2 implementation modules under `ser/_internal/`, kept only classified public facades/contracts, rewired first-party imports/tests/scripts/docs, and trimmed `boundary_policy.toml` to 10 genuine facade entries.
