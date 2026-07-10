@@ -229,7 +229,7 @@ modules not re-exported move internal.
 |----|------|--------|------------|
 | P3-01 | `docs/api-stability.md` | DONE | P2-07 |
 | P3-02 | README Python API section refresh | DONE | P2-07 |
-| P3-03 | README examples executed by a contract test | TODO | P3-02 |
+| P3-03 | README examples executed by a contract test | DONE | P3-02 |
 | P3-04 | `CHANGELOG.md` bootstrap | TODO | — |
 
 **P3-01** — Document: tier-1 list (DD-02), the SemVer promise that activates at first
@@ -308,6 +308,16 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-10 00:22 — P3-03 done
+- What: Added a subprocess contract test that extracts README fenced `python` blocks and executes them with a lightweight `ser.api.infer` stub.
+- Evidence: verifier-lite `019f4a08-3dad-72c1-8e9b-0234161b08bb` ran `rtk uv run --frozen --extra dev pytest -q tests/suites/integration/architecture/test_readme_examples.py` → `1 passed`; parent run of the same command → `1 passed`; synthetic README break from `ser.api.infer` to `ser.api.infer_broken` made the test fail with `AttributeError: module 'ser.api' has no attribute 'infer_broken'`, then the edit was reverted and the same test → `1 passed`.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:19 — P3-03 started
+- What: Add a README fenced-Python contract test that executes examples in subprocess isolation with a lightweight inference stub.
+- Evidence: P3-02 updated the example; no README example contract test exists yet.
+- Deviations / follow-ups: none.
 
 ### 2026-07-10 00:18 — P3-02 done
 - What: Updated the README Python API section to make `ser.api` the sole supported workflow entry point, show `ser.__version__`, keep a minimal `infer` example, and link the stability policy.
