@@ -16,7 +16,7 @@ from .process_isolation import WorkerMessage
 from .process_worker import TranscriptionProcessPayload
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
 
 class _ProcessIsolatedProfile(Protocol):

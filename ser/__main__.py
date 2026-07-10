@@ -30,12 +30,12 @@ from ser._internal.cli.runtime import (
     run_transcription_runtime_calibration_command,
 )
 from ser._internal.runtime.phase_timing import format_duration
+from ser._internal.utils.logger import configure_logging, get_logger
 from ser._internal.utils.subtitles import SUPPORTED_SUBTITLE_FORMATS
 from ser.config import AppConfig, reload_settings, settings_override
 from ser.diagnostics.domain import PreflightMode
 from ser.profiles import ProfileName
 from ser.runtime.contracts import SubtitleFormat
-from ser.utils.logger import configure_logging, get_logger
 
 logger: logging.Logger = get_logger("ser")
 type CliProfileName = ProfileName

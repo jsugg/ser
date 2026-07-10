@@ -8,6 +8,7 @@ from functools import partial
 import ser._internal.models.artifact_envelope as _artifact_envelope
 import ser._internal.models.model_loading as _model_loading_entrypoints
 import ser._internal.models.profile_runtime as _profile_runtime
+import ser._internal.models.training_entrypoints as _training_entrypoints
 import ser._internal.models.training_support as _training_support
 from ser._internal.features import extract_feature_frames
 from ser._internal.models.artifact_envelope import LoadedModel
@@ -22,11 +23,10 @@ from ser._internal.models.model_loading import ResolveModelFn
 from ser._internal.models.model_loading import load_model as _load_model_entrypoint
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig, reload_settings
 from ser.domain import EmotionSegment
-from ser.models import training_entrypoints as _training_entrypoints
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult, to_legacy_emotion_segments
-from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 

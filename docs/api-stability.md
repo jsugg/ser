@@ -31,6 +31,11 @@ Modules below `ser._internal` are private implementation details. Public-looking
 subpackage paths that are not tier-1 exports are also implementation details unless
 they are declared as facade exceptions in [`boundary_policy.toml`](../boundary_policy.toml).
 
+`ser.runtime.contracts`, `ser.runtime.schema`, and `ser.diagnostics.domain` are
+implementation-owned contract leaves whose types are re-exported by `ser.api`.
+They exist to preserve lightweight type ownership, not as additional workflow entry
+points; consumers should import their vocabulary from `ser.api`.
+
 Facade exceptions may import private owners only when the policy file records a
 specific reason. Contributors should move implementation code under `ser._internal`
 and keep public facades thin.

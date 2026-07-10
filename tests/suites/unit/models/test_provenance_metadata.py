@@ -12,7 +12,7 @@ from sklearn.neural_network import MLPClassifier
 import ser._internal.models.artifact_envelope as artifact_envelope
 import ser._internal.models.training_support as training_support
 from ser import config
-from ser.license_check import build_provenance_metadata, persist_backend_consent
+from ser._internal.license_check import build_provenance_metadata, persist_backend_consent
 
 
 def _classifier() -> MLPClassifier:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ser.repr import EncodedSequence, PoolingWindow
+from ser._internal.repr import EncodedSequence, PoolingWindow
 
 
 def temporal_pooling_windows(

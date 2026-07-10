@@ -10,8 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
+from ser._internal.transcript.backends.base import CompatibilityIssue
 from ser._internal.utils.transcription_compat import format_torio_ffmpeg_remediation
-from ser.transcript.backends.base import CompatibilityIssue
 
 
 class ModuleAvailabilityProbe(Protocol):

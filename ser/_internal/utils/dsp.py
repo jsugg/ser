@@ -11,8 +11,8 @@ import librosa
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.utils.logger import get_logger
 from ser.config import FeatureFlags
-from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 

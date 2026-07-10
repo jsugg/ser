@@ -23,7 +23,7 @@ from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
 type _WorkerPhase = Literal["setup_complete", "model_loaded"]
 type WorkerPhaseMessage = tuple[Literal["phase"], _WorkerPhase]
@@ -329,7 +329,7 @@ def runtime_request_for_isolated_faster_whisper(
     logger: logging.Logger,
 ) -> BackendRuntimeRequest:
     """Builds one faster-whisper runtime request without importing torch in worker."""
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
     if profile.backend_id != "faster_whisper":
         raise error_factory(

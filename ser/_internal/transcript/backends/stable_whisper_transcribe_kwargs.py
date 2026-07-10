@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
 
 def build_stable_whisper_transcribe_kwargs(

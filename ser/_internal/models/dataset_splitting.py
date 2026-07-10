@@ -12,8 +12,8 @@ from sklearn.model_selection import train_test_split
 
 from ser._internal.data import LabeledAudioSample, Utterance
 from ser._internal.data.data_loader import extract_ravdess_speaker_id_from_path
+from ser._internal.train.eval import grouped_train_test_split
 from ser.config import AppConfig
-from ser.train.eval import grouped_train_test_split
 
 
 @dataclass(frozen=True)

@@ -16,19 +16,19 @@ import ser._internal.runtime.commands as runtime_commands_module
 import ser._internal.runtime.restricted_backends as restricted_backends_module
 import ser.api as api
 import ser.config as config_module
-from ser._internal.data.dataset_consents import DatasetConsentError
-from ser._internal.data.dataset_registry import upsert_dataset_registry_entry
-from ser.config import AppConfig
-from ser.data.application import (
+from ser._internal.data.application.models import (
     DatasetRegistrySnapshot,
     DatasetRegistrySnapshotEntry,
     DatasetRegistrySnapshotIssue,
 )
+from ser._internal.data.dataset_consents import DatasetConsentError
+from ser._internal.data.dataset_registry import upsert_dataset_registry_entry
+from ser._internal.license_check import BackendLicensePolicyError
+from ser._internal.runtime.registry import UnsupportedProfileError
+from ser._internal.transcript.transcript_extractor import TranscriptionError
+from ser.config import AppConfig
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
-from ser.license_check import BackendLicensePolicyError
-from ser.runtime import InferenceExecution, InferenceRequest
-from ser.runtime.registry import UnsupportedProfileError
-from ser.transcript import TranscriptionError
+from ser.runtime.contracts import InferenceExecution, InferenceRequest
 
 
 def _settings(tmp_path: Path) -> AppConfig:
@@ -423,7 +423,7 @@ def test_prepare_dataset_strict_mode_requires_explicit_consents(
     settings = _settings(tmp_path)
     manifest_path = tmp_path / "manifests" / "msp-podcast.jsonl"
     monkeypatch.setattr(
-        "ser.data.application.run_dataset_prepare_workflow",
+        "ser._internal.data.application.prepare.run_dataset_prepare_workflow",
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unreachable")),
     )
 
@@ -460,7 +460,7 @@ def test_prepare_dataset_accept_license_persists_missing_consents(
         )
 
     monkeypatch.setattr(
-        "ser.data.application.run_dataset_prepare_workflow",
+        "ser._internal.data.application.prepare.run_dataset_prepare_workflow",
         _run_dataset_prepare_workflow,
     )
 
@@ -550,7 +550,7 @@ def test_prepare_dataset_passes_source_overrides_to_download(
         )
 
     monkeypatch.setattr(
-        "ser.data.application.run_dataset_prepare_workflow",
+        "ser._internal.data.application.prepare.run_dataset_prepare_workflow",
         _capture_workflow_kwargs,
     )
 
@@ -627,7 +627,7 @@ def test_list_dataset_registry_health_issues_exposes_issue_records(
     """Health issue API should surface typed registry issue records."""
     settings = _settings(tmp_path)
     monkeypatch.setattr(
-        "ser.data.application.collect_dataset_registry_snapshot",
+        "ser._internal.data.application.registry_snapshot.collect_dataset_registry_snapshot",
         lambda **kwargs: DatasetRegistrySnapshot(
             entries=(
                 DatasetRegistrySnapshotEntry(
@@ -1116,8 +1116,13 @@ def test_api_public_surface_includes_user_oriented_entrypoints() -> None:
 def test_api_public_surface_snapshot_matches_expected_contract() -> None:
     """Public API export snapshot should only change via explicit contract updates."""
     assert api.__all__ == [
+        "AccurateResearchRuntimeConfig",
+        "AccurateRuntimeConfig",
         "AppConfig",
+        "AudioReadConfig",
         "ComplianceMode",
+        "DataLoaderConfig",
+        "DatasetConfig",
         "DatasetConsents",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
@@ -1125,12 +1130,34 @@ def test_api_public_surface_snapshot_matches_expected_contract() -> None:
         "DiagnosticFinding",
         "DiagnosticReport",
         "DiagnosticSeverity",
+        "EmotionSegment",
+        "FastRuntimeConfig",
+        "FeatureFlags",
+        "FeatureRuntimeBackendOverride",
+        "FeatureRuntimePolicyConfig",
+        "FramePrediction",
         "InferenceExecution",
         "InferenceRequest",
+        "InferenceResult",
+        "MediumRuntimeConfig",
+        "MediumTrainingConfig",
+        "ModelsConfig",
+        "NeuralNetConfig",
         "ProfileName",
+        "QualityGateConfig",
+        "RuntimeFlags",
         "RuntimePipeline",
         "RuntimePipelineBuilder",
+        "SchemaConfig",
+        "SegmentPrediction",
         "SubtitleFormat",
+        "TimelineConfig",
+        "TimelineEntry",
+        "TorchRuntimeConfig",
+        "TrainingConfig",
+        "TranscriptWord",
+        "TranscriptionConfig",
+        "WhisperModelConfig",
         "configure_dataset_consents",
         "infer",
         "list_dataset_registry_health_issues",

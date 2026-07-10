@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from ser.repr import EncodedSequence, PoolingWindow, overlap_frame_mask
+from ser._internal.repr import EncodedSequence, PoolingWindow, overlap_frame_mask
 
 type PooledFeatureMatrix = NDArray[np.float64]
 

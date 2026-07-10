@@ -20,8 +20,8 @@ from ser._internal.data.label_ontology import resolve_label_ontology
 from ser._internal.data.manifest import Utterance
 from ser._internal.data.manifest_jsonl import load_manifest_jsonl
 from ser._internal.features.feature_extractor import _extract_feature_for_settings
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
-from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)
 

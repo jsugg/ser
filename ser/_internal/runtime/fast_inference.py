@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from ser._internal.models.emotion_model import LoadedModel
 from ser._internal.runtime import fast_public_boundary as _boundary_support
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import InferenceResult
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

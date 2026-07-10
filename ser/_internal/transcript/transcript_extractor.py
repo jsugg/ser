@@ -15,6 +15,7 @@ from ser._internal.transcription import public_boundary_support as _boundary_sup
 from ser._internal.transcription.process_worker import (
     release_transcription_runtime_memory as _release_transcription_runtime_memory_impl,
 )
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig, reload_settings
 from ser.domain import TranscriptWord
 from ser.profiles import (
@@ -22,7 +23,6 @@ from ser.profiles import (
     TranscriptionBackendId,
     get_profile_catalog,
 )
-from ser.utils.logger import get_logger
 
 if TYPE_CHECKING:
     from stable_whisper.result import WhisperResult

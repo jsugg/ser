@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from ser._internal.transcript.backends.base import TranscriptionBackendAdapter
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.backends.base import TranscriptionBackendAdapter
 
 
 @lru_cache(maxsize=2)

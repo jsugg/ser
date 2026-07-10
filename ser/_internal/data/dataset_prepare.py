@@ -30,8 +30,8 @@ from ser._internal.data.strategies import (
     DatasetStrategyRegistry,
     build_default_dataset_strategies,
 )
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

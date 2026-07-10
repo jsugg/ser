@@ -7,13 +7,13 @@ import importlib.util
 from collections.abc import Callable, Mapping
 from typing import cast
 
-from ser.config import AppConfig
-from ser.license_check import (
+from ser._internal.license_check import (
     BackendConsentRecord,
     ensure_backend_access,
     load_persisted_backend_consents,
     parse_allowed_restricted_backends_env,
 )
+from ser.config import AppConfig
 from ser.profiles import get_profile_catalog
 from ser.runtime.contracts import BackendInferenceCallable, InferenceRequest
 from ser.runtime.schema import InferenceResult

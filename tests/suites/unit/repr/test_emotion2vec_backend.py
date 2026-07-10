@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from ser._internal.repr import Emotion2VecBackend
 from ser._internal.runtime.process_env import temporary_process_env
-from ser.utils.logger import (
+from ser._internal.utils.logger import (
     DependencyLogFilter,
     DependencyLogPolicy,
     is_dependency_log_record,

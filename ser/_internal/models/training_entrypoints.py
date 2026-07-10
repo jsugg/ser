@@ -6,6 +6,7 @@ import glob
 from functools import partial
 
 import ser._internal.data.data_loader as _data_loader
+import ser._internal.license_check as _license_check
 import ser._internal.models.accurate_feature_dataset as _accurate_feature_dataset
 import ser._internal.models.accurate_training_execution as _accurate_training_execution
 import ser._internal.models.accurate_training_preparation as _accurate_training_preparation
@@ -19,11 +20,10 @@ import ser._internal.models.medium_training_preparation as _medium_training_prep
 import ser._internal.models.profile_runtime as _profile_runtime
 import ser._internal.models.training_reporting as _training_reporting
 import ser._internal.models.training_support as _training_support
-import ser.license_check as _license_check
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

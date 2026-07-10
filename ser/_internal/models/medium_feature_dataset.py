@@ -22,10 +22,10 @@ from ser._internal.models.profile_training_preparation import (
 from ser._internal.models.profile_training_preparation import (
     build_medium_feature_dataset as _build_prepared_medium_feature_dataset,
 )
+from ser._internal.pool import mean_std_pool, temporal_pooling_windows
 from ser._internal.repr import EncodedSequence, PoolingWindow, XLSRBackend
 from ser._internal.utils.audio_utils import read_audio_file
 from ser.config import AppConfig
-from ser.pool import mean_std_pool, temporal_pooling_windows
 
 _UtteranceT = TypeVar("_UtteranceT", bound=UtteranceLike)
 _MetaT = TypeVar("_MetaT")

@@ -11,10 +11,10 @@ from typing import cast
 import pytest
 
 import ser._internal.transcript.backends.faster_whisper as faster_whisper_backend
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
 from ser._internal.transcript.backends.faster_whisper import FasterWhisperAdapter
 from ser.config import AppConfig
 from ser.domain import TranscriptWord
-from ser.transcript.backends.base import BackendRuntimeRequest
 
 pytestmark = pytest.mark.unit
 

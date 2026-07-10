@@ -9,7 +9,7 @@ from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
 
 class _RuntimeProfile(Protocol):
@@ -121,7 +121,7 @@ def runtime_request_from_profile(
     default_mps_low_memory_threshold_gb: float,
 ) -> BackendRuntimeRequest:
     """Builds one backend runtime request from transcription profile settings."""
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 
     torch_runtime = getattr(settings, "torch_runtime", None)
     transcription_settings = getattr(settings, "transcription", None)

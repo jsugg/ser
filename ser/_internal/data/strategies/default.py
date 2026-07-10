@@ -22,8 +22,8 @@ from ser._internal.data.ontology import LabelOntology
 from ser._internal.data.public_dataset_downloads import (
     prepare_ravdess_from_zenodo,
 )
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
-from ser.utils.logger import get_logger
 
 from .auto_csv import (
     AsvpEsdDatasetStrategy,

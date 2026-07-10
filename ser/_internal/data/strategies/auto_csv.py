@@ -37,8 +37,8 @@ from ser._internal.data.public_dataset_downloads import (
     prepare_pavoque_from_github_release,
     prepare_spanish_meacorpus_2023_from_zenodo,
 )
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
-from ser.utils.logger import get_logger
 
 from .base import PreparedManifestResult
 

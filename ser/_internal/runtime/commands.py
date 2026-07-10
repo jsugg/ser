@@ -44,6 +44,7 @@ def classify_training_exception(err: Exception) -> WorkflowErrorDisposition:
 
 def classify_inference_exception(err: Exception) -> WorkflowErrorDisposition:
     """Classifies one inference exception into CLI logging/exit behavior."""
+    from ser._internal.license_check import BackendLicensePolicyError
     from ser._internal.runtime.accurate_inference import (
         AccurateInferenceExecutionError,
         AccurateInferenceTimeoutError,
@@ -64,9 +65,8 @@ def classify_inference_exception(err: Exception) -> WorkflowErrorDisposition:
         MediumModelUnavailableError,
         MediumRuntimeDependencyError,
     )
-    from ser.license_check import BackendLicensePolicyError
-    from ser.runtime import UnsupportedProfileError
-    from ser.transcript import TranscriptionError
+    from ser._internal.runtime.registry import UnsupportedProfileError
+    from ser._internal.transcript.transcript_extractor import TranscriptionError
 
     if isinstance(err, UnsupportedProfileError):
         return WorkflowErrorDisposition(exit_code=2, message=str(err))

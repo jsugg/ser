@@ -8,12 +8,12 @@ import sys
 from types import ModuleType
 from typing import TYPE_CHECKING
 
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
 from ser._internal.transcript.runtime_failures import (
     FailureDisposition,
     TranscriptionFailureClassification,
     classify_stable_whisper_transcription_failure,
 )
-from ser.transcript.backends.base import BackendRuntimeRequest
 
 if TYPE_CHECKING:
     from ser.config import AppConfig

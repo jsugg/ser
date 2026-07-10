@@ -9,6 +9,12 @@ from typing import Literal, cast
 
 from ser._internal.config.bootstrap import resolve_profile_transcription_config
 from ser._internal.data.dataset_prepare import collect_dataset_registry_health_issues
+from ser._internal.runtime.registry import resolve_runtime_capability
+from ser._internal.transcript.backends import (
+    BackendRuntimeRequest,
+    CompatibilityIssueImpact,
+    resolve_transcription_backend_adapter,
+)
 from ser._internal.transcript.runtime_policy import (
     DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
     resolve_transcription_runtime_policy,
@@ -24,12 +30,6 @@ from ser.diagnostics.domain import (
     PreflightMode,
 )
 from ser.profiles import ProfileName, get_profile_catalog, resolve_profile_name
-from ser.runtime.registry import resolve_runtime_capability
-from ser.transcript.backends import (
-    BackendRuntimeRequest,
-    CompatibilityIssueImpact,
-    resolve_transcription_backend_adapter,
-)
 
 _SUPPORTED_PREFLIGHT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
 

@@ -8,12 +8,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+from ser._internal.transcript.backends.base import BackendRuntimeRequest
 from ser._internal.transcript.mps_admission import MpsAdmissionDecision
 from ser._internal.transcript.mps_admission_overrides import (
     apply_calibrated_mps_admission_override,
 )
 from ser.config import AppConfig
-from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 def _settings(

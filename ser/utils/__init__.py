@@ -6,11 +6,12 @@ import importlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from .common_utils import display_elapsed_time
-from .logger import get_logger
+from ser._internal.utils.common_utils import display_elapsed_time
+from ser._internal.utils.logger import get_logger
 
 if TYPE_CHECKING:
     import numpy as np
+    from numpy.typing import NDArray
 
     from ser.config import AppConfig
     from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
@@ -28,10 +29,10 @@ def read_audio_file(
     *,
     start_seconds: float | None = None,
     duration_seconds: float | None = None,
-) -> tuple[np.ndarray, int]:
+) -> tuple[NDArray[np.float32], int]:
     """Reads and normalizes an audio file."""
     reader = cast(
-        Callable[..., tuple[np.ndarray, int]],
+        Callable[..., tuple[NDArray[np.float32], int]],
         importlib.import_module("ser._internal.utils.audio_utils").read_audio_file,
     )
     return reader(

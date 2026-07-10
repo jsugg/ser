@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig
 from ser.domain import DatasetConsents
-from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -78,7 +78,7 @@ def list_registered_datasets(
     settings: AppConfig,
 ) -> tuple[DatasetRegistryRecord, ...]:
     """Returns persisted dataset registry records ordered by dataset id."""
-    from ser.data.application import collect_dataset_registry_snapshot
+    from ser._internal.data.application.registry_snapshot import collect_dataset_registry_snapshot
 
     snapshot = collect_dataset_registry_snapshot(settings=settings)
     records: list[DatasetRegistryRecord] = []
@@ -102,7 +102,7 @@ def list_dataset_registry_health_issues(
     settings: AppConfig,
 ) -> tuple[DatasetRegistryHealthIssueRecord, ...]:
     """Returns deterministic dataset registry health issues."""
-    from ser.data.application import collect_dataset_registry_snapshot
+    from ser._internal.data.application.registry_snapshot import collect_dataset_registry_snapshot
 
     snapshot = collect_dataset_registry_snapshot(settings=settings)
     return tuple(
@@ -171,12 +171,12 @@ def prepare_dataset(
     settings: AppConfig,
 ) -> DatasetPrepareResult:
     """Programmatic dataset acquisition + manifest preparation."""
-    from ser._internal.data.dataset_consents import DatasetConsentError
-    from ser.data.application import (
+    from ser._internal.data.application.consents import (
         compute_dataset_descriptor_missing_consents,
         persist_missing_dataset_descriptor_consents,
-        run_dataset_prepare_workflow,
     )
+    from ser._internal.data.application.prepare import run_dataset_prepare_workflow
+    from ser._internal.data.dataset_consents import DatasetConsentError
 
     if compliance_mode not in {"advisory", "strict"}:
         raise ValueError(

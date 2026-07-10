@@ -17,30 +17,5 @@ path = "ser/config.py"
 reason = "Public facade over internal config/bootstrap owners."
 
 [[public_internal_import]]
-path = "ser/data/application.py"
-reason = "Public data application facade over internal dataset workflow owners."
-
-[[public_internal_import]]
-path = "ser/models/emotion_model.py"
-reason = "Public model facade over internal loading/training/prediction owners."
-
-[[public_internal_import]]
-path = "ser/models/training_entrypoints.py"
-reason = "Public training facade over internal model workflow owners."
-
-[[public_internal_import]]
-path = "ser/runtime/pipeline.py"
-reason = "Public runtime pipeline facade over internal orchestration owners."
-
-[[public_internal_import]]
-path = "ser/transcript/backends/stable_whisper.py"
-reason = "Public stable-whisper backend facade over internal transcription owners."
-
-[[public_internal_import]]
-path = "ser/transcript/profiling.py"
-reason = "Public transcription profiling facade over internal profiling owners."
-
-[[public_internal_import]]
-path = "ser/transcript/transcript_extractor.py"
-reason = "Public transcription extraction facade over internal transcription owners."
-
+path = "ser/utils/__init__.py"
+reason = "Tier-1 utility facade delegates curated helpers to internal owners."

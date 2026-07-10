@@ -99,8 +99,8 @@ When running from a source checkout without activating an environment, prefix co
 metadata from `ser`, but call inference, training, dataset, profile, and
 diagnostics operations through `ser.api`. Everything else — including modules
 under public-looking paths that are not exported from `ser`, `ser.api`,
-`ser.domain`, `ser.config`, or `ser.utils` — is implementation detail and may
-change without notice.
+`ser.config`, `ser.domain`, `ser.profiles`, or `ser.utils` — is implementation
+detail and may change without notice.
 
 Minimal inference example:
 
@@ -117,8 +117,8 @@ for segment in execution.emotions:
 
 Stability promise: after the first published distribution, symbols exported
 from `ser.api` (see `ser.api.__all__`), the domain types re-exported from
-`ser`/`ser.domain`, the trimmed `ser.config` surface, and the helpers in
-`ser.utils` follow semantic versioning. Anything not exported there carries no
+`ser`/`ser.domain`, the curated `ser.config`, `ser.profiles`, and `ser.utils`
+surfaces follow semantic versioning. Anything not exported there carries no
 compatibility guarantee. See [docs/api-stability.md](docs/api-stability.md).
 
 ## Boundary Checks (Contributors)

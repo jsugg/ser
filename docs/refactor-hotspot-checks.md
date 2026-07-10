@@ -8,25 +8,25 @@ only as a maintenance heuristic and architecture-reference aid.
 
 ## Current hotspot inventory
 
-### Public runtime and model seams
+### Internal runtime and model seams
 
 - `ser/api.py`
 - `ser/__main__.py`
-- `ser/models/emotion_model.py`
-- `ser/models/artifact_metadata.py`
-- `ser/models/artifact_persistence.py`
-- `ser/models/artifact_loading.py`
-- `ser/models/training_types.py`
-- `ser/models/accurate_training_execution.py`
-- `ser/models/training_preparation.py`
-- `ser/models/training_support.py`
-- `ser/models/training_execution.py`
-- `ser/models/training_reporting.py`
-- `ser/runtime/profile_quality_gate.py`
-- `ser/runtime/quality_gate_policy.py`
-- `ser/runtime/quality_gate_evaluation.py`
-- `ser/runtime/quality_gate_reporting.py`
-- `ser/runtime/quality_gate_cli.py`
+- `ser/_internal/models/emotion_model.py`
+- `ser/_internal/models/artifact_metadata.py`
+- `ser/_internal/models/artifact_persistence.py`
+- `ser/_internal/models/artifact_loading.py`
+- `ser/_internal/models/training_types.py`
+- `ser/_internal/models/accurate_training_execution.py`
+- `ser/_internal/models/training_preparation.py`
+- `ser/_internal/models/training_support.py`
+- `ser/_internal/models/training_execution.py`
+- `ser/_internal/models/training_reporting.py`
+- `ser/_internal/runtime/profile_quality_gate.py`
+- `ser/_internal/runtime/quality_gate_policy.py`
+- `ser/_internal/runtime/quality_gate_evaluation.py`
+- `ser/_internal/runtime/quality_gate_reporting.py`
+- `ser/_internal/runtime/quality_gate_cli.py`
 - `ser/_internal/runtime/medium_execution_context.py`
 - `ser/_internal/runtime/medium_execution_flow.py`
 - `ser/_internal/runtime/medium_process_operation.py`
@@ -35,28 +35,28 @@ only as a maintenance heuristic and architecture-reference aid.
 - `ser/_internal/runtime/medium_runtime_support.py`
 - `ser/_internal/runtime/medium_worker_lifecycle.py`
 - `ser/_internal/runtime/medium_worker_operation.py`
-- `ser/runtime/medium_inference.py`
-- `ser/runtime/medium_execution.py`
-- `ser/runtime/accurate_execution.py`
+- `ser/_internal/runtime/medium_inference.py`
+- `ser/_internal/runtime/medium_execution.py`
+- `ser/_internal/runtime/accurate_execution.py`
 - `ser/_internal/runtime/accurate_execution_flow.py`
 - `ser/_internal/runtime/accurate_operation_setup.py`
 - `ser/_internal/runtime/accurate_runtime_support.py`
 - `ser/_internal/runtime/accurate_worker_lifecycle.py`
 - `ser/_internal/runtime/accurate_worker_operation.py`
-- `ser/runtime/accurate_inference.py`
-- `ser/transcript/transcript_extractor.py`
+- `ser/_internal/runtime/accurate_inference.py`
+- `ser/_internal/transcript/transcript_extractor.py`
 
 ### Data and representation seams
 
-- `ser/utils/dsp.py`
-- `ser/features/feature_extractor.py`
-- `ser/repr/handcrafted.py`
-- `ser/data/application.py`
-- `ser/data/catalog/__init__.py`
-- `ser/data/catalog/public_datasets.py`
-- `ser/data/adapters/csv_manifest_builder.py`
-- `ser/data/adapters/public_csv_datasets.py`
-- `ser/data/strategies/auto_csv.py`
+- `ser/_internal/utils/dsp.py`
+- `ser/_internal/features/feature_extractor.py`
+- `ser/_internal/repr/handcrafted.py`
+- `ser/_internal/data/application/consents.py`
+- `ser/_internal/data/catalog/__init__.py`
+- `ser/_internal/data/catalog/public_datasets.py`
+- `ser/_internal/data/adapters/csv_manifest_builder.py`
+- `ser/_internal/data/adapters/public_csv_datasets.py`
+- `ser/_internal/data/strategies/auto_csv.py`
 
 ### Internal helper seams tied to public boundaries
 
@@ -80,15 +80,15 @@ only as a maintenance heuristic and architecture-reference aid.
 - `ser/_internal/transcription/ravdess_references.py`
 - `ser/_internal/transcription/text_metrics.py`
 - `ser/_internal/transcription/runtime_calibration_workflow.py`
-- `ser/transcript/profiling.py`
+- `ser/_internal/transcript/profiling.py`
 
 ## Recently cleared or obsolete hotspot claims
 
 - `ser/config.py` is now a narrow public facade and is no longer a current
   hotspot.
-- `ser/models/emotion_model.py` is now a thin public boundary and is no longer
-  a primary extraction target.
-- `ser/models/training_orchestration.py` is not present in this workspace, so
+- Model owners are internal; public workflows should remain on `ser.api` rather
+  than restoring a public model boundary.
+- The removed training-orchestration module is not present in this workspace, so
   it should not be discussed as a live hotspot here.
 - `ser/_internal/apt/runtime.py` is not present in this workspace, so it is not
   a valid current migration target.

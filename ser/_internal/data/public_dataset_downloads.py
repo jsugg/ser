@@ -42,7 +42,7 @@ from ser._internal.data.public_dataset_label_inference import (
     infer_label_from_path_tokens as _infer_label_from_path_tokens,
 )
 from ser._internal.data.public_dataset_label_inference import infer_mesd_label as _infer_mesd_label
-from ser.utils.logger import get_logger
+from ser._internal.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -24,7 +24,7 @@ from ser.config import AppConfig, reload_settings
 from ser.domain import TranscriptWord
 
 if TYPE_CHECKING:
-    from ser.transcript.backends.base import BackendRuntimeRequest
+    from ser._internal.transcript.backends.base import BackendRuntimeRequest
 else:
     BackendRuntimeRequest = object
 
