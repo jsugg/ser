@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ser.data.embedding_cache import EmbeddingCache
-from ser.repr import EncodedSequence
+from ser._internal.data.embedding_cache import EmbeddingCache
+from ser._internal.repr import EncodedSequence
 
 
 def _encoded_sequence(scale: float = 1.0) -> EncodedSequence:

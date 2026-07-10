@@ -6,13 +6,13 @@ import shutil
 from pathlib import Path
 
 from ser._internal.data.application.models import DatasetUninstallWorkflowResult
-from ser.config import AppConfig
-from ser.data.dataset_prepare import (
+from ser._internal.data.dataset_prepare import (
     default_dataset_root,
     default_manifest_path,
     resolve_dataset_descriptor,
 )
-from ser.data.dataset_registry import remove_dataset_registry_entry
+from ser._internal.data.dataset_registry import remove_dataset_registry_entry
+from ser.config import AppConfig
 
 
 def run_dataset_uninstall_workflow(

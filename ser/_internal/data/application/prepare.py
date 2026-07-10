@@ -5,19 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from ser._internal.data.application.models import DatasetPrepareWorkflowResult
-from ser.config import AppConfig
-from ser.data.dataset_prepare import (
+from ser._internal.data.dataset_prepare import (
     default_dataset_root,
     default_manifest_path,
     download_dataset,
     prepare_dataset_manifest,
     resolve_dataset_descriptor,
 )
-from ser.data.dataset_registry import (
+from ser._internal.data.dataset_registry import (
     load_dataset_registry,
     parse_dataset_registry_options,
 )
-from ser.data.label_ontology import resolve_label_ontology
+from ser._internal.data.label_ontology import resolve_label_ontology
+from ser.config import AppConfig
 
 
 def run_dataset_prepare_workflow(

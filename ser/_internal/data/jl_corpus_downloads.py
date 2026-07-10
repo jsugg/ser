@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib import parse
 
-from ser.data.provider_dataset_preparation import (
+from ser._internal.data.provider_dataset_preparation import (
     AutoDownloadArtifacts,
     GeneratedLabelsStats,
     GeneratedLabelsStatsLike,

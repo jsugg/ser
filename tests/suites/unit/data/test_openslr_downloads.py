@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from ser.data.openslr_downloads import (
+from ser._internal.data.openslr_downloads import (
     download_openslr_archives,
     download_openslr_pinned_artifacts,
     read_openslr_archive_urls,
     read_openslr_archive_urls_from_hf_script,
 )
-from ser.data.openslr_resolution import OpenSlrPinnedArtifact
+from ser._internal.data.openslr_resolution import OpenSlrPinnedArtifact
 
 
 def test_download_openslr_pinned_artifacts_retries_mirrors(

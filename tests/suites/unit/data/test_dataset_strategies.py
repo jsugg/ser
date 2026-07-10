@@ -8,8 +8,8 @@ from typing import cast
 
 import pytest
 
-from ser.data import dataset_prepare
-from ser.data.strategies import (
+import ser._internal.data.dataset_prepare as dataset_prepare
+from ser._internal.data.strategies import (
     DatasetStrategyRegistry,
     Emodb2DatasetStrategy,
     PreparedManifestResult,

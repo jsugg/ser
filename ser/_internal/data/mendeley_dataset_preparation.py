@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from ser.data.provider_dataset_preparation import (
+from ser._internal.data.provider_dataset_preparation import (
     AutoDownloadArtifacts,
     GeneratedLabelsStatsLike,
 )

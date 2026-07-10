@@ -16,14 +16,14 @@ import ser._internal.runtime.commands as runtime_commands_module
 import ser._internal.runtime.restricted_backends as restricted_backends_module
 import ser.api as api
 import ser.config as config_module
+from ser._internal.data.dataset_consents import DatasetConsentError
+from ser._internal.data.dataset_registry import upsert_dataset_registry_entry
 from ser.config import AppConfig
 from ser.data.application import (
     DatasetRegistrySnapshot,
     DatasetRegistrySnapshotEntry,
     DatasetRegistrySnapshotIssue,
 )
-from ser.data.dataset_consents import DatasetConsentError
-from ser.data.dataset_registry import upsert_dataset_registry_entry
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport
 from ser.license_check import BackendLicensePolicyError
 from ser.runtime import InferenceExecution, InferenceRequest
@@ -57,7 +57,7 @@ def test_run_data_command_delegates_to_data_cli(
         captured["settings"] = settings
         return 7
 
-    monkeypatch.setattr("ser.data.cli.run_data_command", _run_data_command)
+    monkeypatch.setattr("ser._internal.data.cli.run_data_command", _run_data_command)
 
     exit_code = api_data_module.run_data_command(
         ["download", "--dataset", "ravdess"],
@@ -82,7 +82,7 @@ def test_run_doctor_command_delegates_to_diagnostics_command(
         captured["settings"] = settings
         return 3
 
-    monkeypatch.setattr("ser.diagnostics.command.run_doctor_command", _run_doctor_command)
+    monkeypatch.setattr("ser._internal.diagnostics.command.run_doctor_command", _run_doctor_command)
 
     exit_code = api_diagnostics_module.run_doctor_command(["--strict"], settings=settings)
 
@@ -100,14 +100,14 @@ def test_run_transcription_runtime_calibration_workflow_delegates_to_profiling(
     sentinel = object()
 
     monkeypatch.setattr(
-        "ser.transcript.profiling.parse_calibration_profiles",
+        "ser._internal.transcript.profiling.parse_calibration_profiles",
         lambda raw: (
             captured.setdefault("profiles_raw", raw),
             ("medium", "accurate"),
         )[1],
     )
     monkeypatch.setattr(
-        "ser.transcript.profiling.run_transcription_runtime_calibration",
+        "ser._internal.transcript.profiling.run_transcription_runtime_calibration",
         lambda **kwargs: (
             captured.setdefault("kwargs", kwargs),
             sentinel,
@@ -502,7 +502,7 @@ def test_prepare_msp_podcast_mirror_delegates_to_data_layer(
         return sentinel
 
     monkeypatch.setattr(
-        "ser.data.msp_podcast_mirror.prepare_msp_podcast_from_hf_mirror",
+        "ser._internal.data.msp_podcast_mirror.prepare_msp_podcast_from_hf_mirror",
         _prepare_msp_podcast_from_hf_mirror,
     )
 
@@ -945,7 +945,7 @@ def test_suppress_preflight_transcription_operational_relogs_marks_emitted(
         lambda _profile: ("faster_whisper", "distil-large-v3", False, True),
     )
     monkeypatch.setattr(
-        "ser.transcript.transcript_extractor.mark_compatibility_issues_as_emitted",
+        "ser._internal.transcript.transcript_extractor.mark_compatibility_issues_as_emitted",
         lambda **kwargs: captured.update(kwargs),
     )
 

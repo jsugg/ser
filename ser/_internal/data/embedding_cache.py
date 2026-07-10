@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ser.repr import EncodedSequence
+from ser._internal.repr import EncodedSequence
 from ser.utils.logger import get_logger
 
 logger: Logger = get_logger(__name__)

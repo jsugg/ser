@@ -7,22 +7,22 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ser.config import AppConfig
-from ser.data.adapters.biic_podcast import build_biic_podcast_manifest_jsonl
-from ser.data.adapters.crema_d import build_crema_d_manifest_jsonl
-from ser.data.adapters.msp_podcast import build_msp_podcast_manifest_jsonl
-from ser.data.adapters.ravdess import build_ravdess_manifest_jsonl
-from ser.data.msp_podcast_mirror import (
+from ser._internal.data.adapters.biic_podcast import build_biic_podcast_manifest_jsonl
+from ser._internal.data.adapters.crema_d import build_crema_d_manifest_jsonl
+from ser._internal.data.adapters.msp_podcast import build_msp_podcast_manifest_jsonl
+from ser._internal.data.adapters.ravdess import build_ravdess_manifest_jsonl
+from ser._internal.data.msp_podcast_mirror import (
     DEFAULT_MSP_MIRROR_AUDIO_SUBDIR,
     DEFAULT_MSP_MIRROR_LABELS_FILE,
     DEFAULT_MSP_MIRROR_REPO_ID,
     DEFAULT_MSP_MIRROR_REVISION,
     prepare_msp_podcast_from_hf_mirror,
 )
-from ser.data.ontology import LabelOntology
-from ser.data.public_dataset_downloads import (
+from ser._internal.data.ontology import LabelOntology
+from ser._internal.data.public_dataset_downloads import (
     prepare_ravdess_from_zenodo,
 )
+from ser.config import AppConfig
 from ser.utils.logger import get_logger
 
 from .auto_csv import (
@@ -42,7 +42,7 @@ from .auto_csv import (
 from .base import DatasetStrategy, PreparedManifestResult
 
 if TYPE_CHECKING:
-    from ser.data.dataset_prepare import DatasetDescriptor
+    from ser._internal.data.dataset_prepare import DatasetDescriptor
 
 logger = get_logger(__name__)
 

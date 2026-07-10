@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ser.data.adapters.biic_podcast import (
+from ser._internal.data.adapters.biic_podcast import (
     BIIC_PODCAST_CORPUS_ID,
     BIIC_PODCAST_DATASET_LICENSE_ID,
     BIIC_PODCAST_DATASET_POLICY_ID,
     build_biic_podcast_utterances,
 )
-from ser.data.ontology import LabelOntology
+from ser._internal.data.ontology import LabelOntology
 
 
 def _ontology() -> LabelOntology:

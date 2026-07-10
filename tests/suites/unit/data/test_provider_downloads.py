@@ -10,7 +10,7 @@ from urllib import error
 
 import pytest
 
-from ser.data import provider_downloads
+from ser._internal.data import provider_downloads
 
 
 class _DiskUsage(NamedTuple):

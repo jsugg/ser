@@ -1,4 +1,4 @@
-"""Shared manifest builder for declarative CSV-labeled datasets."""
+"""BIIC-Podcast adapter for building manifest-compatible utterances."""
 
 from __future__ import annotations
 
@@ -6,13 +6,29 @@ import csv
 from pathlib import Path
 from typing import Any
 
-from ser.data.catalog.public_datasets import CsvManifestSpec
-from ser.data.manifest import SplitName, Utterance
-from ser.data.manifest_jsonl import write_manifest_jsonl
-from ser.data.ontology import LabelOntology, remap_label
+from ser._internal.data.manifest import SplitName, Utterance
+from ser._internal.data.manifest_jsonl import write_manifest_jsonl
+from ser._internal.data.ontology import LabelOntology, remap_label
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+BIIC_PODCAST_CORPUS_ID = "biic-podcast"
+BIIC_PODCAST_DATASET_POLICY_ID = "academic_only"
+BIIC_PODCAST_DATASET_LICENSE_ID = "biic-academic-license"
+BIIC_PODCAST_SOURCE_URL = "https://biic.ee.nthu.edu.tw/"
+
+
+_EMO_CLASS_MAP: dict[str, str] = {
+    "0": "angry",
+    "1": "sad",
+    "2": "happy",
+    "3": "surprised",
+    "4": "fearful",
+    "5": "disgust",
+    "6": "contempt",
+    "7": "neutral",
+}
 
 
 def _normalize_split(value: str | None) -> SplitName | None:
@@ -46,19 +62,18 @@ def _read_optional_float(row: dict[str, Any], *keys: str) -> float | None:
 
 def _build_sample_id(
     *,
-    corpus_id: str,
     file_name: str,
     start_seconds: float | None,
     duration_seconds: float | None,
 ) -> str:
     normalized = file_name.replace("\\", "/")
-    base = f"{corpus_id}:{normalized}"
+    base = f"{BIIC_PODCAST_CORPUS_ID}:{normalized}"
     if start_seconds is None or duration_seconds is None:
         return base
     return f"{base}@{start_seconds:.3f}+{duration_seconds:.3f}"
 
 
-def _build_csv_labeled_utterances(
+def build_biic_podcast_utterances(
     *,
     dataset_root: Path,
     labels_csv_path: Path,
@@ -66,51 +81,52 @@ def _build_csv_labeled_utterances(
     ontology: LabelOntology,
     default_language: str,
     max_failed_file_ratio: float,
-    spec: CsvManifestSpec,
 ) -> list[Utterance] | None:
-    if not labels_csv_path.is_file():
-        logger.warning("%s labels CSV not found: %s", spec.corpus_id, labels_csv_path)
-        return None
+    """Builds utterances from BIIC-Podcast label CSV.
 
+    The corpus is often distributed under access-controlled terms. This adapter
+    expects a CSV/TSV with at least FileName and EmoClass.
+    """
+
+    if not labels_csv_path.is_file():
+        logger.warning("BIIC-Podcast labels CSV not found: %s", labels_csv_path)
+        return None
     base_dir = audio_base_dir if audio_base_dir is not None else dataset_root
     utterances: list[Utterance] = []
     parse_errors: list[str] = []
-
     with labels_csv_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for index, row in enumerate(reader):
-            file_name = (
-                row.get("FileName")
-                or row.get("filename")
-                or row.get("file")
-                or row.get("path")
-                or ""
-            ).strip()
+            file_name = (row.get("FileName") or row.get("filename") or "").strip()
             if not file_name:
                 parse_errors.append(f"Row {index}: missing FileName")
                 continue
-            raw_label = (
-                row.get("emotion")
-                or row.get("EmoClass")
-                or row.get("label")
-                or row.get("class")
-                or ""
-            ).strip()
-            if not raw_label:
-                parse_errors.append(f"Row {index}: missing emotion for {file_name}")
+            raw_class = (row.get("EmoClass") or row.get("emotion") or "").strip()
+            if not raw_class:
+                parse_errors.append(f"Row {index}: missing EmoClass for {file_name}")
                 continue
-            normalized_raw = raw_label.lower()
-            mapped_raw = spec.label_mapping.get(normalized_raw, normalized_raw)
-            mapped_label = remap_label(raw_label=mapped_raw, mapping=None, ontology=ontology)
+            mapped_raw = _EMO_CLASS_MAP.get(raw_class, raw_class)
+            mapped_label = remap_label(
+                raw_label=mapped_raw,
+                mapping={
+                    "anger": "angry",
+                    "angry": "angry",
+                    "sad": "sad",
+                    "happy": "happy",
+                    "surprise": "surprised",
+                    "surprised": "surprised",
+                    "fear": "fearful",
+                    "fearful": "fearful",
+                    "disgust": "disgust",
+                    "neutral": "neutral",
+                    "contempt": "contempt",
+                },
+                ontology=ontology,
+            )
             if mapped_label is None:
                 continue
 
-            split = _normalize_split(
-                row.get("Split_Set")
-                or row.get("split")
-                or row.get("subset")
-                or row.get("partition")
-            )
+            split = _normalize_split(row.get("Split_Set") or row.get("split"))
             start_seconds = _read_optional_float(
                 row,
                 "start_seconds",
@@ -138,18 +154,14 @@ def _build_csv_labeled_utterances(
                 duration_seconds = duration if duration > 0.0 else None
 
             language = (
-                row.get("Language") or row.get("language") or row.get("lang") or ""
+                row.get("Language") or row.get("language") or ""
             ).strip() or default_language
             speaker_raw = (
-                row.get("Speaker")
-                or row.get("Speaker_ID")
-                or row.get("speaker")
-                or row.get("actor")
-                or ""
+                row.get("Speaker") or row.get("Speaker_ID") or row.get("speaker") or ""
             ).strip()
-            speaker_id = f"{spec.corpus_id}:{speaker_raw}" if speaker_raw else None
+            speaker_id = f"{BIIC_PODCAST_CORPUS_ID}:{speaker_raw}" if speaker_raw else None
+            audio_path = (base_dir / file_name).expanduser()
             sample_id = _build_sample_id(
-                corpus_id=spec.corpus_id,
                 file_name=file_name,
                 start_seconds=start_seconds,
                 duration_seconds=duration_seconds,
@@ -158,26 +170,25 @@ def _build_csv_labeled_utterances(
                 Utterance(
                     schema_version=1,
                     sample_id=sample_id,
-                    corpus=spec.corpus_id,
-                    audio_path=(base_dir / file_name).expanduser(),
+                    corpus=BIIC_PODCAST_CORPUS_ID,
+                    audio_path=audio_path,
                     label=mapped_label,
-                    raw_label=raw_label,
+                    raw_label=mapped_raw,
                     speaker_id=speaker_id,
                     language=language,
                     split=split,
                     start_seconds=start_seconds,
                     duration_seconds=duration_seconds,
-                    dataset_policy_id=spec.dataset_policy_id,
-                    dataset_license_id=spec.dataset_license_id,
-                    source_url=spec.source_url,
+                    dataset_policy_id=BIIC_PODCAST_DATASET_POLICY_ID,
+                    dataset_license_id=BIIC_PODCAST_DATASET_LICENSE_ID,
+                    source_url=BIIC_PODCAST_SOURCE_URL,
                 )
             )
 
     if parse_errors:
         logger.warning(
-            "Skipped %s rows while parsing %s labels.",
+            "Skipped %s rows while parsing BIIC-Podcast labels.",
             len(parse_errors),
-            spec.corpus_id,
         )
         for error in parse_errors[:5]:
             logger.warning("%s", error)
@@ -192,6 +203,7 @@ def _build_csv_labeled_utterances(
                 "limit "
                 f"{max_failed_file_ratio * 100.0:.1f}%."
             )
+
     if not utterances:
         logger.warning("No labeled audio samples matched configured emotions.")
         return None
@@ -202,7 +214,7 @@ def _build_csv_labeled_utterances(
     return utterances
 
 
-def build_csv_labeled_manifest_jsonl(
+def build_biic_podcast_manifest_jsonl(
     *,
     dataset_root: Path,
     labels_csv_path: Path,
@@ -211,18 +223,16 @@ def build_csv_labeled_manifest_jsonl(
     default_language: str,
     max_failed_file_ratio: float,
     output_path: Path,
-    spec: CsvManifestSpec,
 ) -> list[Utterance] | None:
-    """Build utterances and persist a JSONL manifest for a CSV-labeled dataset."""
+    """Builds utterances and persists a BIIC-Podcast JSONL manifest."""
 
-    utterances = _build_csv_labeled_utterances(
+    utterances = build_biic_podcast_utterances(
         dataset_root=dataset_root,
         labels_csv_path=labels_csv_path,
         audio_base_dir=audio_base_dir,
         ontology=ontology,
         default_language=default_language,
         max_failed_file_ratio=max_failed_file_ratio,
-        spec=spec,
     )
     if utterances is None:
         return None

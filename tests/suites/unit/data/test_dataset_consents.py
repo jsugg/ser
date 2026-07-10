@@ -8,8 +8,7 @@ from typing import cast
 
 import pytest
 
-from ser.config import AppConfig
-from ser.data.dataset_consents import (
+from ser._internal.data.dataset_consents import (
     DatasetConsentError,
     compute_missing_dataset_consents,
     ensure_dataset_consents,
@@ -17,7 +16,8 @@ from ser.data.dataset_consents import (
     load_persisted_dataset_consents,
     persist_dataset_consents,
 )
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser.config import AppConfig
 
 
 def _settings(tmp_path: Path) -> AppConfig:

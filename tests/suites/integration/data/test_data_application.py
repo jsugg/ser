@@ -8,12 +8,12 @@ from typing import cast
 
 import pytest
 
+from ser._internal.data.dataset_capabilities import list_dataset_capability_profiles
+from ser._internal.data.dataset_consents import load_persisted_dataset_consents
+from ser._internal.data.dataset_prepare import SUPPORTED_DATASETS, default_dataset_root
+from ser._internal.data.dataset_registry import upsert_dataset_registry_entry
 from ser.config import AppConfig
 from ser.data import application as data_application
-from ser.data.dataset_capabilities import list_dataset_capability_profiles
-from ser.data.dataset_consents import load_persisted_dataset_consents
-from ser.data.dataset_prepare import SUPPORTED_DATASETS, default_dataset_root
-from ser.data.dataset_registry import upsert_dataset_registry_entry
 
 
 def _settings(tmp_path: Path) -> AppConfig:

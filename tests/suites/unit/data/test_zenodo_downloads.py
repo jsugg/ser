@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from ser.data import zenodo_downloads
+from ser._internal.data import zenodo_downloads
 
 
 @dataclass(frozen=True)

@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-from ser.data.manifest import Utterance
-from ser.data.ontology import LabelOntology
+from ser._internal.data.manifest import Utterance
+from ser._internal.data.ontology import LabelOntology
 
 
 def load_manifest_jsonl(

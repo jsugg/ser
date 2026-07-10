@@ -9,12 +9,12 @@ from typing import cast
 
 import pytest
 
+import ser._internal.data.dataset_prepare as dp
+from ser._internal.data.dataset_registry import DatasetRegistryEntry
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser._internal.data.ontology import LabelOntology
+from ser._internal.data.strategies.base import DatasetStrategyRegistry, PreparedManifestResult
 from ser.config import AppConfig
-from ser.data import dataset_prepare as dp
-from ser.data.dataset_registry import DatasetRegistryEntry
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
-from ser.data.ontology import LabelOntology
-from ser.data.strategies.base import DatasetStrategyRegistry, PreparedManifestResult
 
 
 def _settings(tmp_path: Path) -> AppConfig:
@@ -335,7 +335,7 @@ def test_prepare_dataset_manifest_for_ravdess_updates_registry(
         ]
 
     monkeypatch.setattr(
-        "ser.data.strategies.default.build_ravdess_manifest_jsonl",
+        "ser._internal.data.strategies.default.build_ravdess_manifest_jsonl",
         _build_manifest,
     )
 
@@ -466,7 +466,7 @@ def test_download_dataset_msp_podcast_uses_hf_mirror(
         )
 
     monkeypatch.setattr(
-        "ser.data.strategies.default.prepare_msp_podcast_from_hf_mirror",
+        "ser._internal.data.strategies.default.prepare_msp_podcast_from_hf_mirror",
         _prepare_msp_podcast_from_hf_mirror,
     )
 
@@ -501,7 +501,7 @@ def test_download_dataset_ravdess_uses_zenodo_source(
         )
 
     monkeypatch.setattr(
-        "ser.data.strategies.default.prepare_ravdess_from_zenodo",
+        "ser._internal.data.strategies.default.prepare_ravdess_from_zenodo",
         _prepare_ravdess_from_zenodo,
     )
 
@@ -823,7 +823,7 @@ def test_prepare_dataset_manifest_msp_uses_generated_defaults(
         captured["registry_kwargs"] = kwargs
 
     monkeypatch.setattr(
-        "ser.data.strategies.default.build_msp_podcast_manifest_jsonl",
+        "ser._internal.data.strategies.default.build_msp_podcast_manifest_jsonl",
         _build_manifest,
     )
     monkeypatch.setattr(dp, "upsert_dataset_registry_entry", _capture_registry_kwargs)
@@ -890,7 +890,7 @@ def test_prepare_dataset_manifest_msp_persists_source_commit_from_manifest(
         captured["registry_kwargs"] = kwargs
 
     monkeypatch.setattr(
-        "ser.data.strategies.default.build_msp_podcast_manifest_jsonl",
+        "ser._internal.data.strategies.default.build_msp_podcast_manifest_jsonl",
         _build_manifest,
     )
     monkeypatch.setattr(dp, "upsert_dataset_registry_entry", _capture_registry_kwargs)
