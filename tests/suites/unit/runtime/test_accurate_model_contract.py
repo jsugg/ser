@@ -9,12 +9,12 @@ from typing import cast
 
 import pytest
 
-from ser.config import AppConfig
-from ser.runtime.accurate_model_contract import (
+from ser._internal.runtime.accurate_model_contract import (
     ensure_accurate_compatible_model,
     validate_accurate_loaded_model_runtime_contract,
     warn_on_runtime_selector_mismatch,
 )
+from ser.config import AppConfig
 
 
 @dataclass(frozen=True)

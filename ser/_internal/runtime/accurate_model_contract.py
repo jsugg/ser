@@ -6,8 +6,8 @@ import logging
 from collections.abc import Callable
 from typing import Protocol
 
+from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.config import AppConfig
-from ser.repr.runtime_policy import resolve_feature_runtime_policy
 
 
 class ArtifactMetadataCarrier(Protocol):

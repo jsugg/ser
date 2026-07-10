@@ -7,9 +7,9 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Protocol
 
+from ser._internal.repr import XLSRBackend
+from ser._internal.repr.runtime_policy import FeatureRuntimePolicy, resolve_feature_runtime_policy
 from ser.config import AppConfig
-from ser.repr import XLSRBackend
-from ser.repr.runtime_policy import FeatureRuntimePolicy, resolve_feature_runtime_policy
 
 
 class LoadedModelLike(Protocol):

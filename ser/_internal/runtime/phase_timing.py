@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from time import perf_counter
 
-from ser.runtime.phase_contract import phase_label
+from ser._internal.runtime.phase_contract import phase_label
 
 
 def format_duration(duration_seconds: float) -> str:

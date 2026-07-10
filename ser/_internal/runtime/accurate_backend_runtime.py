@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Protocol
 
+from ser._internal.repr import FeatureBackend
 from ser.config import AppConfig, ProfileRuntimeConfig
-from ser.repr import FeatureBackend
 
 
 class RuntimePolicyLike(Protocol):

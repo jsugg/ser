@@ -14,56 +14,64 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.data.data_loader import extract_ravdess_speaker_id_from_path
+from ser._internal.models.emotion_model import load_model, predict_emotions
+from ser._internal.repr import XLSRBackend
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
+from ser._internal.runtime.medium_inference import run_medium_inference
 from ser._internal.runtime.process_env import temporary_process_env
-from ser.config import AppConfig, reload_settings
-from ser.data.data_loader import extract_ravdess_speaker_id_from_path
-from ser.models.emotion_model import load_model, predict_emotions
-from ser.repr import XLSRBackend
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_inference import run_medium_inference
-from ser.runtime.quality_gate_cli import (
+from ser._internal.runtime.quality_gate_cli import (
     QualityGateCliDefaults,
 )
-from ser.runtime.quality_gate_cli import (
+from ser._internal.runtime.quality_gate_cli import (
     configure_cli_noise_controls as _gate_configure_cli_noise_controls,
 )
-from ser.runtime.quality_gate_cli import normalize_progress_every as _gate_normalize_progress_every
-from ser.runtime.quality_gate_cli import parse_args as _gate_parse_args
-from ser.runtime.quality_gate_evaluation import (
+from ser._internal.runtime.quality_gate_cli import (
+    normalize_progress_every as _gate_normalize_progress_every,
+)
+from ser._internal.runtime.quality_gate_cli import parse_args as _gate_parse_args
+from ser._internal.runtime.quality_gate_evaluation import (
     NormalizedSegment,
     ProfileEvaluationResult,
 )
-from ser.runtime.quality_gate_evaluation import (
+from ser._internal.runtime.quality_gate_evaluation import (
     clip_label_from_segments as _gate_clip_label_from_segments,
 )
-from ser.runtime.quality_gate_evaluation import (
+from ser._internal.runtime.quality_gate_evaluation import (
     clip_stability_metrics as _gate_clip_stability_metrics,
 )
-from ser.runtime.quality_gate_evaluation import evaluate_profile as _gate_evaluate_profile
-from ser.runtime.quality_gate_evaluation import normalize_segments as _gate_normalize_segments
-from ser.runtime.quality_gate_evaluation import percentile as _gate_percentile
-from ser.runtime.quality_gate_evaluation import segment_duration as _gate_segment_duration
-from ser.runtime.quality_gate_policy import (
+from ser._internal.runtime.quality_gate_evaluation import evaluate_profile as _gate_evaluate_profile
+from ser._internal.runtime.quality_gate_evaluation import (
+    normalize_segments as _gate_normalize_segments,
+)
+from ser._internal.runtime.quality_gate_evaluation import percentile as _gate_percentile
+from ser._internal.runtime.quality_gate_evaluation import segment_duration as _gate_segment_duration
+from ser._internal.runtime.quality_gate_policy import (
     ProfileComparisonResult,
     compare_profiles,
     metric_as_float,
     validate_thresholds,
 )
-from ser.runtime.quality_gate_reporting import build_report_payload as _gate_build_report_payload
-from ser.runtime.quality_gate_reporting import enforce_quality_gate as _gate_enforce_quality_gate
-from ser.runtime.quality_gate_reporting import (
+from ser._internal.runtime.quality_gate_reporting import (
+    build_report_payload as _gate_build_report_payload,
+)
+from ser._internal.runtime.quality_gate_reporting import (
+    enforce_quality_gate as _gate_enforce_quality_gate,
+)
+from ser._internal.runtime.quality_gate_reporting import (
     resolve_report_output_path as _gate_resolve_report_output_path,
 )
-from ser.runtime.quality_gate_reporting import (
+from ser._internal.runtime.quality_gate_reporting import (
     serialize_report_payload as _gate_serialize_report_payload,
 )
-from ser.runtime.quality_gate_reporting import (
+from ser._internal.runtime.quality_gate_reporting import (
     write_serialized_report as _gate_write_serialized_report,
 )
+from ser._internal.utils.segment_canonicalization import canonicalize_segments
+from ser.config import AppConfig, reload_settings
+from ser.runtime.contracts import InferenceRequest
 from ser.train.eval import grouped_train_test_split, speaker_independent_cv
 from ser.train.metrics import compute_ser_metrics
-from ser.utils.segment_canonicalization import canonicalize_segments
 
 type IndexArray = NDArray[np.int64]
 type FoldIndices = tuple[IndexArray, IndexArray]

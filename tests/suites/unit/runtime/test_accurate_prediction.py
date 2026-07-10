@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from ser.runtime.accurate_prediction import (
+from ser._internal.runtime.accurate_prediction import (
     confidence_and_probabilities,
     predict_labels,
 )

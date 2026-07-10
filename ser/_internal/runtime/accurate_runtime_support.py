@@ -7,6 +7,7 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.repr import EncodedSequence, FeatureBackend
 from ser._internal.runtime.accurate_backend_runtime import (
     prepare_accurate_backend_runtime as _prepare_accurate_backend_runtime_impl,
 )
@@ -17,7 +18,6 @@ from ser._internal.runtime.retry_primitives import (
     is_optional_dependency_runtime_error as _is_optional_dependency_runtime_error_impl,
 )
 from ser.config import AppConfig
-from ser.repr import EncodedSequence, FeatureBackend
 
 
 def build_process_settings_snapshot(settings: AppConfig) -> AppConfig:

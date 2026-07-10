@@ -8,13 +8,13 @@ from typing import cast
 import pytest
 
 import ser.__main__ as cli
+import ser._internal.models.emotion_model as emotion_model
 import ser.config as config_module
-import ser.models.emotion_model as emotion_model
 from ser._internal.config.schema import profile_artifact_file_names
+from ser._internal.runtime.accurate_inference import AccurateRuntimeDependencyError
+from ser._internal.runtime.medium_inference import MediumRuntimeDependencyError
 from ser.license_check import load_persisted_backend_consents
 from ser.runtime import InferenceRequest
-from ser.runtime.accurate_inference import AccurateRuntimeDependencyError
-from ser.runtime.medium_inference import MediumRuntimeDependencyError
 from ser.runtime.registry import UnsupportedProfileError
 
 
@@ -1129,7 +1129,7 @@ def test_cli_dispatches_configure_subcommand_with_global_log_level(
         return 0
 
     monkeypatch.setattr(
-        "ser.data.cli.run_configure_command",
+        "ser._internal.data.cli.run_configure_command",
         _run_configure_command,
     )
 
@@ -1159,7 +1159,7 @@ def test_cli_dispatches_data_subcommand_after_global_log_level(
         return 0
 
     monkeypatch.setattr(
-        "ser.data.cli.run_data_command",
+        "ser._internal.data.cli.run_data_command",
         _run_data_command,
     )
 
@@ -1189,7 +1189,7 @@ def test_cli_dispatches_doctor_subcommand_after_global_log_level(
         return 0
 
     monkeypatch.setattr(
-        "ser.diagnostics.command.run_doctor_command",
+        "ser._internal.diagnostics.command.run_doctor_command",
         _run_doctor_command,
     )
 
@@ -1317,9 +1317,9 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     tmp_path: Path,
 ) -> None:
     """End-to-end dataset workflow should persist consent and load registry manifests."""
-    import ser.data.data_loader as data_loader_module
-    from ser.data.dataset_consents import load_persisted_dataset_consents
-    from ser.data.dataset_registry import load_dataset_registry
+    import ser._internal.data.data_loader as data_loader_module
+    from ser._internal.data.dataset_consents import load_persisted_dataset_consents
+    from ser._internal.data.dataset_registry import load_dataset_registry
 
     dataset_root = tmp_path / "datasets" / "ravdess"
     (dataset_root / "Actor_01").mkdir(parents=True, exist_ok=True)

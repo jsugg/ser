@@ -8,13 +8,13 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from ser.config import MediumRuntimeConfig
-from ser.pool import mean_std_pool, temporal_pooling_windows
-from ser.repr import EncodedSequence, PoolingWindow
-from ser.runtime.postprocessing import (
+from ser._internal.repr import EncodedSequence, PoolingWindow
+from ser._internal.runtime.postprocessing import (
     build_segment_postprocessing_config,
     postprocess_frame_predictions,
 )
+from ser.config import MediumRuntimeConfig
+from ser.pool import mean_std_pool, temporal_pooling_windows
 from ser.runtime.schema import (
     OUTPUT_SCHEMA_VERSION,
     FramePrediction,

@@ -14,6 +14,12 @@ from typing import Any, Literal, Protocol, TypeVar, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from ser._internal.models.emotion_model import LoadedModel as EmotionLoadedModel
+from ser._internal.models.emotion_model import load_model
+from ser._internal.models.profile_runtime import resolve_medium_model_id
+from ser._internal.repr import XLSRBackend
+from ser._internal.repr.runtime_policy import FeatureRuntimePolicy
+from ser._internal.runtime import medium_execution as medium_execution_helpers
 from ser._internal.runtime import medium_retry_policy as medium_retry_policy_helpers
 from ser._internal.runtime import medium_worker_operation as medium_worker_operation_helpers
 from ser._internal.runtime.medium_backend_runtime import (
@@ -21,6 +27,9 @@ from ser._internal.runtime.medium_backend_runtime import (
 )
 from ser._internal.runtime.medium_backend_runtime import (
     resolve_medium_feature_runtime_policy as _resolve_medium_feature_runtime_policy_impl,
+)
+from ser._internal.runtime.medium_execution import (
+    LoadedModelLike as _MediumExecutionLoadedModelLike,
 )
 from ser._internal.runtime.medium_execution_context import (
     MediumExecutionContext,
@@ -31,6 +40,10 @@ from ser._internal.runtime.medium_execution_context import (
 from ser._internal.runtime.medium_execution_flow import (
     execute_medium_inference_with_retry as _execute_medium_inference_with_retry_impl,
 )
+from ser._internal.runtime.medium_prediction import (
+    confidence_and_probabilities as _confidence_and_probabilities_impl,
+)
+from ser._internal.runtime.medium_prediction import predict_labels as _predict_labels_impl
 from ser._internal.runtime.medium_process_operation import _PayloadLike as _MediumPayloadLike
 from ser._internal.runtime.medium_process_operation import (
     prepare_process_operation as _prepare_process_operation_impl,
@@ -61,6 +74,12 @@ from ser._internal.runtime.medium_runtime_support import (
 )
 from ser._internal.runtime.medium_runtime_support import (
     warn_on_medium_runtime_selector_mismatch as _warn_on_medium_runtime_selector_mismatch_impl,
+)
+from ser._internal.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
+from ser._internal.runtime.phase_timing import (
+    log_phase_completed,
+    log_phase_failed,
+    log_phase_started,
 )
 from ser._internal.runtime.policy import run_with_retry_policy
 from ser._internal.runtime.process_timeout import (
@@ -96,27 +115,10 @@ from ser._internal.runtime.worker_lifecycle import run_with_timeout as _run_with
 from ser._internal.runtime.worker_lifecycle import (
     terminate_worker_process as _terminate_worker_process_impl,
 )
+from ser._internal.utils.audio_utils import read_audio_file
 from ser.config import AppConfig, MediumRuntimeConfig
-from ser.models.emotion_model import LoadedModel as EmotionLoadedModel
-from ser.models.emotion_model import load_model
-from ser.models.profile_runtime import resolve_medium_model_id
-from ser.repr import XLSRBackend
-from ser.repr.runtime_policy import FeatureRuntimePolicy
-from ser.runtime import medium_execution as medium_execution_helpers
 from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_execution import LoadedModelLike as _MediumExecutionLoadedModelLike
-from ser.runtime.medium_prediction import (
-    confidence_and_probabilities as _confidence_and_probabilities_impl,
-)
-from ser.runtime.medium_prediction import predict_labels as _predict_labels_impl
-from ser.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
-from ser.runtime.phase_timing import (
-    log_phase_completed,
-    log_phase_failed,
-    log_phase_started,
-)
 from ser.runtime.schema import InferenceResult
-from ser.utils.audio_utils import read_audio_file
 
 
 class _MediumLoadedModel(_MediumExecutionLoadedModelLike, _MediumRuntimeLoadedModelLike, Protocol):
@@ -134,7 +136,7 @@ type WorkerMessage = WorkerPhaseMessage | WorkerSuccessMessage | WorkerErrorMess
 _TERMINATE_GRACE_SECONDS = 0.5
 _KILL_GRACE_SECONDS = 0.5
 _SINGLE_FLIGHT_REGISTRY = SingleFlightRegistry()
-_WORKER_LOGGER = logging.getLogger("ser.runtime.medium_inference")
+_WORKER_LOGGER = logging.getLogger("ser._internal.runtime.medium_inference")
 
 
 @dataclass(frozen=True)
