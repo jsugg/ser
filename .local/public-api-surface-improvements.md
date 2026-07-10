@@ -228,7 +228,7 @@ modules not re-exported move internal.
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
 | P3-01 | `docs/api-stability.md` | DONE | P2-07 |
-| P3-02 | README Python API section refresh | TODO | P2-07 |
+| P3-02 | README Python API section refresh | DONE | P2-07 |
 | P3-03 | README examples executed by a contract test | TODO | P3-02 |
 | P3-04 | `CHANGELOG.md` bootstrap | TODO | — |
 
@@ -308,6 +308,16 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-10 00:18 — P3-02 done
+- What: Updated the README Python API section to make `ser.api` the sole supported workflow entry point, show `ser.__version__`, keep a minimal `infer` example, and link the stability policy.
+- Evidence: `rg -n "sole supported Python workflow entry point|__version__|docs/api-stability\\.md|first published" README.md` → found all required README statements; guarded README scan for moved/removed module references → `no moved or removed README references`.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:17 — P3-02 started
+- What: Refresh the README Python API guidance around `ser.api`, `ser.__version__`, and the stability policy link.
+- Evidence: P3-01 added the policy document; README still needs explicit package-version usage and first-publish wording.
+- Deviations / follow-ups: none.
 
 ### 2026-07-10 00:16 — P3-01 done
 - What: Added `docs/api-stability.md` with the tier-1 list, first-publish SemVer promise, `_internal` policy, snapshot governance, and a README link.
