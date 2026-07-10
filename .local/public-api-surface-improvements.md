@@ -230,7 +230,7 @@ modules not re-exported move internal.
 | P3-01 | `docs/api-stability.md` | DONE | P2-07 |
 | P3-02 | README Python API section refresh | DONE | P2-07 |
 | P3-03 | README examples executed by a contract test | DONE | P3-02 |
-| P3-04 | `CHANGELOG.md` bootstrap | TODO | — |
+| P3-04 | `CHANGELOG.md` bootstrap | DONE | — |
 
 **P3-01** — Document: tier-1 list (DD-02), the SemVer promise that activates at first
 publish, what `_internal` means, how the snapshot test governs API change, pointer to
@@ -308,6 +308,16 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-10 00:25 — P3-04 done
+- What: Added `CHANGELOG.md` in Keep a Changelog style with an `[Unreleased]` section covering the Phase 3 governance changes.
+- Evidence: initial `make lint` exposed a Black formatting miss in the new README example test; `uv run --frozen --extra dev black tests/suites/integration/architecture/test_readme_examples.py` reformatted it; rerun `make lint` → Ruff/import-lint/Black/isort passed; `rg -n "^# Changelog|^## \\[Unreleased\\]|Keep a Changelog|Semantic Versioning" CHANGELOG.md` → found the expected headings/format notes; changelog branding scan → `no branding strings in changelog`.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:23 — P3-04 started
+- What: Bootstrap `CHANGELOG.md` in Keep a Changelog style with an `[Unreleased]` section.
+- Evidence: `CHANGELOG.md` is absent before this task.
+- Deviations / follow-ups: none.
 
 ### 2026-07-10 00:22 — P3-03 done
 - What: Added a subprocess contract test that extracts README fenced `python` blocks and executes them with a lightweight `ser.api.infer` stub.
