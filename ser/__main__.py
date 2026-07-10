@@ -252,7 +252,7 @@ def _run_restricted_backend_gate(
     """Runs restricted-backend CLI gating and returns an optional exit code."""
     restricted_logs, restricted_exit_code = run_restricted_backend_cli_gate(
         settings=cast(AppConfig, active_settings),
-        use_profile_pipeline=profile_pipeline_enabled(cast(AppConfig, active_settings)),
+        profile_resolution_enabled=profile_pipeline_enabled(cast(AppConfig, active_settings)),
         train_requested=bool(args.train),
         file_path=_command_file_path(args.file),
         accept_restricted_backends=bool(args.accept_restricted_backends),
@@ -320,13 +320,12 @@ def _run_calibration_or_exit(args: argparse.Namespace) -> None:
     sys.exit(0)
 
 
-def _run_training_or_exit(*, active_settings: object, use_profile_pipeline: bool) -> None:
+def _run_training_or_exit(*, active_settings: object) -> None:
     """Runs training flow and exits with the appropriate status code."""
     logger.info("Starting model training...")
     start_time = time.perf_counter()
     disposition = run_training_command(
         settings=cast(AppConfig, active_settings),
-        use_profile_pipeline=use_profile_pipeline,
         pipeline_builder=build_runtime_pipeline,
     )
     if disposition is not None:
@@ -423,12 +422,8 @@ def main() -> None:
         if args.calibrate_transcription_runtime:
             _run_calibration_or_exit(args)
 
-        use_profile_pipeline = profile_pipeline_enabled(active_settings)
         if args.train:
-            _run_training_or_exit(
-                active_settings=active_settings,
-                use_profile_pipeline=use_profile_pipeline,
-            )
+            _run_training_or_exit(active_settings=active_settings)
 
         _run_inference_or_exit(args, active_settings=active_settings)
 

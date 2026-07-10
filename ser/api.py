@@ -4,17 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import ser._internal.api.data as _data_api
 import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
 from ser.config import AppConfig, reload_settings
+from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport, DiagnosticSeverity
+from ser.domain import DatasetConsents
 from ser.profiles import ProfileName
-
-if TYPE_CHECKING:
-    from ser.diagnostics.domain import DiagnosticReport
-    from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
+from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
 
 ComplianceMode = _data_api.ComplianceMode
 DatasetPrepareResult = _data_api.DatasetPrepareResult
@@ -68,7 +67,7 @@ def list_dataset_registry_health_issues(
 def show_dataset_consents(
     *,
     settings: AppConfig | None = None,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> DatasetConsents:
     """Returns persisted dataset consents using the active settings snapshot."""
     return _data_api.show_dataset_consents(settings=_resolve_boundary_settings(settings))
 
@@ -79,7 +78,7 @@ def configure_dataset_consents(
     accept_license_ids: tuple[str, ...] = (),
     settings: AppConfig | None = None,
     source: str = "ser.api.configure_dataset_consents",
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> DatasetConsents:
     """Persists dataset consents using the active settings snapshot."""
     return _data_api.configure_dataset_consents(
         accept_policy_ids=accept_policy_ids,
@@ -142,14 +141,12 @@ def train(
     *,
     profile: ProfileName | None = None,
     settings: AppConfig | None = None,
-    use_profile_pipeline: bool = True,
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> None:
     """Runs training using the active settings snapshot via the runtime pipeline."""
     return _runtime_api.train(
         profile=profile,
         settings=_resolve_boundary_settings(settings),
-        use_profile_pipeline=use_profile_pipeline,
         pipeline_builder=pipeline_builder,
     )
 
@@ -193,12 +190,21 @@ def run_startup_preflight(
 
 
 __all__ = [
+    "AppConfig",
     "ComplianceMode",
+    "DatasetConsents",
     "DatasetPrepareResult",
     "DatasetRegistryHealthIssueRecord",
     "DatasetRegistryRecord",
+    "DiagnosticFinding",
+    "DiagnosticReport",
+    "DiagnosticSeverity",
+    "InferenceExecution",
+    "InferenceRequest",
+    "ProfileName",
     "RuntimePipeline",
     "RuntimePipelineBuilder",
+    "SubtitleFormat",
     "configure_dataset_consents",
     "infer",
     "list_dataset_registry_health_issues",

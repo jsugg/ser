@@ -19,46 +19,61 @@ def _load_ruff_lint_config(repo_root: Path) -> dict[str, Any]:
     return cast(dict[str, Any], ruff_config["lint"])
 
 
-def test_import_lint_policy_covers_internal_api_modules(repo_root: Path) -> None:
-    """Ruff banned-api policy should cover all internal API implementation modules."""
+def _load_boundary_policy_paths(repo_root: Path) -> set[str]:
+    """Loads public facade paths from the authoritative boundary policy."""
+    policy_data = tomllib.loads((repo_root / "boundary_policy.toml").read_text(encoding="utf-8"))
+    entries = policy_data["public_internal_import"]
+    if not isinstance(entries, list):
+        raise AssertionError("boundary_policy.toml must define public_internal_import entries.")
+    paths: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise AssertionError("boundary_policy.toml entries must be tables.")
+        path = entry.get("path")
+        if not isinstance(path, str):
+            raise AssertionError("boundary_policy.toml entries must define string paths.")
+        paths.add(path)
+    return paths
+
+
+def test_import_lint_policy_covers_all_internal_modules(repo_root: Path) -> None:
+    """Ruff banned-api policy should cover every public import of `ser._internal`."""
     lint_config = _load_ruff_lint_config(repo_root)
     tidy_imports_config = cast(dict[str, Any], lint_config["flake8-tidy-imports"])
     banned_api = cast(dict[str, dict[str, str]], tidy_imports_config["banned-api"])
 
-    required_modules = {
-        "ser._internal.api",
-        "ser._internal.api.data",
-        "ser._internal.api.diagnostics",
-        "ser._internal.api.runtime",
-    }
-    assert required_modules.issubset(set(banned_api))
-    for module_name in required_modules:
-        assert "ser.api" in banned_api[module_name]["msg"]
+    assert set(banned_api) == {"ser._internal"}
+    assert "boundary_policy.toml" in banned_api["ser._internal"]["msg"]
 
 
 def test_import_lint_policy_limits_tid251_exceptions_to_boundary_files(repo_root: Path) -> None:
-    """Only facade + API contract test files should bypass TID251 for internal imports."""
+    """Only boundary-policy facade files should bypass TID251."""
     lint_config = _load_ruff_lint_config(repo_root)
     per_file_ignores = cast(dict[str, list[str]], lint_config["per-file-ignores"])
 
-    allowed_tid251_files = {
-        "ser/api.py",
-        "ser/_internal/cli/data.py",
-        "ser/_internal/cli/diagnostics.py",
-        "ser/_internal/cli/runtime.py",
-        "tests/suites/integration/api/test_api.py",
+    tid251_ignored_files = {
+        file_path
+        for file_path, ignored_rules in per_file_ignores.items()
+        if "TID251" in ignored_rules
     }
-    for file_path, ignored_rules in per_file_ignores.items():
-        if "TID251" in ignored_rules:
-            assert file_path in allowed_tid251_files
-    for allowed_file in allowed_tid251_files:
-        assert "TID251" in per_file_ignores[allowed_file]
+    assert tid251_ignored_files == _load_boundary_policy_paths(repo_root)
 
 
 def test_import_lint_lane_runs_boundary_contract_tests(repo_root: Path) -> None:
     """The import-lint lane should enforce both lint rules and boundary contracts."""
     script = (repo_root / "scripts" / "run_import_lint.sh").read_text(encoding="utf-8")
 
+    assert "find ser -path 'ser/_internal' -prune -o -name '*.py' -print | sort" in script
     assert "ruff check --select TID251" in script
     assert "tests/suites/integration/architecture/test_api_import_boundary.py" in script
     assert "tests/suites/integration/architecture/test_import_lint_policy.py" in script
+
+
+def test_prepush_lint_routes_tid251_through_import_lint(repo_root: Path) -> None:
+    """Pre-push Ruff should avoid broad TID251 and use the public-boundary lane."""
+    config = (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    assert "args: [--fix, --ignore, TID251]" in config
+    assert "args: [--ignore, TID251]" in config
+    assert "id: import-lint" in config
+    assert "entry: bash scripts/run_import_lint.sh" in config
