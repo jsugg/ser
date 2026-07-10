@@ -172,7 +172,7 @@ def resolve_mps_admission_decision(
         safety_margin_mb=float(safety_margin_mb),
     )
     # Local import avoids cyclic dependency with mps_admission_overrides.
-    from ser.transcript.mps_admission_overrides import (
+    from ser._internal.transcript.mps_admission_overrides import (
         apply_calibrated_mps_admission_override,
     )
 

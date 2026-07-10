@@ -6,6 +6,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
+from ser._internal.runtime.phase_timing import (
+    log_phase_completed,
+    log_phase_failed,
+    log_phase_started,
+)
 from ser._internal.transcription import public_boundary_support as _boundary_support
 from ser._internal.transcription.process_worker import (
     release_transcription_runtime_memory as _release_transcription_runtime_memory_impl,
@@ -16,11 +21,6 @@ from ser.profiles import (
     ProfileTranscriptionDefaults,
     TranscriptionBackendId,
     get_profile_catalog,
-)
-from ser.runtime.phase_timing import (
-    log_phase_completed,
-    log_phase_failed,
-    log_phase_started,
 )
 from ser.utils.logger import get_logger
 

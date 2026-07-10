@@ -10,9 +10,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
+from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 from ser.config import AppConfig, ArtifactProfileName
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.transcript_extractor import TranscriptionProfile
 
 type RecommendationConfidence = Literal["high", "medium", "low"]
 type RuntimeRecommendation = Literal["prefer_cpu", "prefer_mps", "mps_with_failover"]
@@ -114,7 +114,7 @@ def resolve_runtime_device_for_loaded_model(
 ) -> str:
     """Resolves active runtime device for one loaded model object."""
     if backend_id == "stable_whisper":
-        from ser.transcript.backends.stable_whisper_mps_compat import (
+        from ser._internal.transcript.backends.stable_whisper_mps_compat import (
             get_stable_whisper_runtime_device,
         )
 

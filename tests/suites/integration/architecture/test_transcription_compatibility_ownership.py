@@ -6,7 +6,7 @@ import importlib
 
 _COMPATIBILITY_BOUNDARY_SYMBOLS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
-        "ser.transcript.backends.stable_whisper",
+        "ser._internal.transcript.backends.stable_whisper",
         (
             "StableWhisperAdapter.load_model",
             "StableWhisperAdapter.transcribe",
@@ -17,7 +17,7 @@ _COMPATIBILITY_BOUNDARY_SYMBOLS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "ser.transcript.backends.stable_whisper_torio_probe",
+        "ser._internal.transcript.backends.stable_whisper_torio_probe",
         (
             "is_module_available",
             "detect_torio_ffmpeg_operational_issue",
@@ -27,7 +27,7 @@ _COMPATIBILITY_BOUNDARY_SYMBOLS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "ser.transcript.backends.stable_whisper_mps_compat",
+        "ser._internal.transcript.backends.stable_whisper_mps_compat",
         (
             "enable_stable_whisper_mps_compatibility",
             "move_model_to_mps_with_alignment_placeholder",
@@ -39,14 +39,14 @@ _COMPATIBILITY_BOUNDARY_SYMBOLS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "ser.transcript.mps_admission",
+        "ser._internal.transcript.mps_admission",
         (
             "decide_mps_admission_for_transcription",
             "capture_mps_pressure_snapshot",
         ),
     ),
     (
-        "ser.transcript.mps_admission_overrides",
+        "ser._internal.transcript.mps_admission_overrides",
         ("apply_calibrated_mps_admission_override",),
     ),
 )

@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
-from ser.transcript.mps_admission import (
+from ser._internal.transcript.mps_admission import (
     MpsAdmissionDecision,
     resolve_mps_admission_decision,
     should_enforce_transcribe_admission,

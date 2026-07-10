@@ -12,11 +12,11 @@ from ser.transcript.backends.base import TranscriptionBackendAdapter
 def _build_adapter(backend_id: TranscriptionBackendId) -> TranscriptionBackendAdapter:
     """Builds one backend adapter lazily to avoid importing unused heavy stacks."""
     if backend_id == "stable_whisper":
-        from ser.transcript.backends.stable_whisper import StableWhisperAdapter
+        from ser._internal.transcript.backends.stable_whisper import StableWhisperAdapter
 
         return StableWhisperAdapter()
     if backend_id == "faster_whisper":
-        from ser.transcript.backends.faster_whisper import FasterWhisperAdapter
+        from ser._internal.transcript.backends.faster_whisper import FasterWhisperAdapter
 
         return FasterWhisperAdapter()
     raise KeyError(backend_id)

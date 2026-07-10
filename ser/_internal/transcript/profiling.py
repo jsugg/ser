@@ -8,6 +8,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final, Literal
 
+from ser._internal.transcript.transcript_extractor import (
+    TranscriptionProfile,
+    load_whisper_model,
+    transcribe_with_model,
+)
 from ser._internal.transcription import default_benchmark as default_benchmark_helpers
 from ser._internal.transcription import default_profiling as default_profiling_helpers
 from ser._internal.transcription import default_recommendation as default_recommendation_helpers
@@ -40,11 +45,6 @@ from ser.config import (
 )
 from ser.domain import TranscriptWord
 from ser.profiles import TranscriptionBackendId
-from ser.transcript.transcript_extractor import (
-    TranscriptionProfile,
-    load_whisper_model,
-    transcribe_with_model,
-)
 from ser.utils.logger import get_logger
 
 logger: logging.Logger = get_logger(__name__)

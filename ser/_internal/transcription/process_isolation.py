@@ -9,18 +9,18 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Literal, Never, Protocol, TypeVar, cast
 
-from ser.config import AppConfig
-from ser.profiles import TranscriptionBackendId
-from ser.runtime.phase_contract import (
+from ser._internal.runtime.phase_contract import (
     PHASE_TRANSCRIPTION,
     PHASE_TRANSCRIPTION_MODEL_LOAD,
     PHASE_TRANSCRIPTION_SETUP,
 )
-from ser.runtime.phase_timing import (
+from ser._internal.runtime.phase_timing import (
     log_phase_completed,
     log_phase_failed,
     log_phase_started,
 )
+from ser.config import AppConfig
+from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
     from ser.transcript.backends.base import BackendRuntimeRequest
