@@ -34,5 +34,6 @@ def test_full_dataset_quality_gate_uses_frozen_uv_commands(repo_root: Path) -> N
     assert "uv run --frozen ser --train" in script_text
     assert "uv run --frozen --extra medium ser --train" in script_text
     assert (
-        "uv run --frozen --extra medium python -m ser.runtime.profile_quality_gate" in script_text
+        "uv run --frozen --extra medium python -m ser._internal.runtime.profile_quality_gate"
+        in script_text
     )

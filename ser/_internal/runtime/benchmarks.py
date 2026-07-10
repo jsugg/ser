@@ -13,7 +13,7 @@ type BenchmarkSummary = dict[str, float | int]
 
 def _predict_emotions(audio_path: str) -> object:
     """Resolves the public predictor lazily to keep benchmark startup lightweight."""
-    from ser.models.emotion_model import predict_emotions
+    from ser._internal.models.emotion_model import predict_emotions
 
     return predict_emotions(audio_path)
 

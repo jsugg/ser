@@ -7,7 +7,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ser.utils.dsp import configure_feature_extraction_warning_filters
+from ser._internal.utils.dsp import configure_feature_extraction_warning_filters
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,9 +31,9 @@ class QualityGateCliDefaults:
 def configure_cli_noise_controls() -> None:
     """Suppresses non-actionable warning/log noise for long gate executions."""
     configure_feature_extraction_warning_filters()
-    logging.getLogger("ser.models.emotion_model").setLevel(logging.WARNING)
-    logging.getLogger("ser.features.feature_extractor").setLevel(logging.ERROR)
-    logging.getLogger("ser.runtime.medium_inference").setLevel(logging.WARNING)
+    logging.getLogger("ser._internal.models.emotion_model").setLevel(logging.WARNING)
+    logging.getLogger("ser._internal.features.feature_extractor").setLevel(logging.ERROR)
+    logging.getLogger("ser._internal.runtime.medium_inference").setLevel(logging.WARNING)
 
 
 def build_arg_parser(defaults: QualityGateCliDefaults) -> argparse.ArgumentParser:

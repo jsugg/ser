@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from ser.runtime.postprocessing import (
+from ser._internal.runtime.postprocessing import (
     SegmentPostprocessingConfig,
     build_segment_postprocessing_config,
     postprocess_frame_predictions,

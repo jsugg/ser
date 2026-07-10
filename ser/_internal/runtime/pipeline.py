@@ -12,7 +12,20 @@ from types import ModuleType
 from ser._internal.config.bootstrap import resolve_profile_transcription_config
 from ser._internal.runtime.backend_hooks import build_backend_hooks
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
+from ser._internal.runtime.phase_contract import (
+    PHASE_TIMELINE_BUILD,
+    PHASE_TIMELINE_OUTPUT,
+)
+from ser._internal.runtime.phase_timing import (
+    log_phase_completed,
+    log_phase_failed,
+    log_phase_started,
+)
 from ser._internal.runtime.process_env import temporary_process_env
+from ser._internal.utils.subtitles import resolve_subtitle_export_request
+from ser._internal.utils.transcription_compat import (
+    has_known_faster_whisper_openmp_runtime_conflict,
+)
 from ser.config import AppConfig, settings_override
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile, TranscriptionBackendId, resolve_profile
@@ -22,15 +35,6 @@ from ser.runtime.contracts import (
     InferenceRequest,
     SubtitleFormat,
 )
-from ser.runtime.phase_contract import (
-    PHASE_TIMELINE_BUILD,
-    PHASE_TIMELINE_OUTPUT,
-)
-from ser.runtime.phase_timing import (
-    log_phase_completed,
-    log_phase_failed,
-    log_phase_started,
-)
 from ser.runtime.registry import (
     RuntimeCapability,
     ensure_profile_supported,
@@ -38,10 +42,6 @@ from ser.runtime.registry import (
 )
 from ser.runtime.schema import InferenceResult, to_legacy_emotion_segments
 from ser.utils.logger import get_logger
-from ser.utils.subtitles import resolve_subtitle_export_request
-from ser.utils.transcription_compat import (
-    has_known_faster_whisper_openmp_runtime_conflict,
-)
 
 type TrainModelCallable = Callable[[], None]
 type PredictEmotionsCallable = Callable[[str], list[EmotionSegment]]
@@ -275,7 +275,7 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         settings,
         available_backend_hooks=implemented_backends,
     )
-    from ser.models.emotion_model import (
+    from ser._internal.models.emotion_model import (
         predict_emotions,
         predict_emotions_detailed,
         train_accurate_model,
@@ -283,9 +283,12 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         train_medium_model,
         train_model,
     )
-    from ser.transcript import TranscriptionProfile, extract_transcript
-    from ser.utils.subtitles import save_timeline_to_subtitles
-    from ser.utils.timeline_utils import (
+    from ser._internal.transcript.transcript_extractor import (
+        TranscriptionProfile,
+        extract_transcript,
+    )
+    from ser._internal.utils.subtitles import save_timeline_to_subtitles
+    from ser._internal.utils.timeline_utils import (
         build_timeline,
         print_timeline,
         save_timeline_to_csv,

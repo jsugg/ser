@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from ser._internal.models.emotion_model import LoadedModel
+from ser._internal.models.profile_runtime import resolve_accurate_research_model_id
+from ser._internal.repr import Emotion2VecBackend, FeatureBackend
+from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
+from ser._internal.runtime.accurate_inference import run_accurate_inference
 from ser.config import AppConfig
-from ser.models.emotion_model import LoadedModel
-from ser.models.profile_runtime import resolve_accurate_research_model_id
-from ser.repr import Emotion2VecBackend, FeatureBackend
-from ser.repr.runtime_policy import resolve_feature_runtime_policy
-from ser.runtime.accurate_inference import run_accurate_inference
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import InferenceResult
 

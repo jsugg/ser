@@ -43,7 +43,7 @@ def _missing_optional_modules(required_modules: tuple[str, ...]) -> tuple[str, .
 def _load_medium_inference_runner() -> MediumInferenceRunner | None:
     """Loads the concrete medium inference runner when implementation exists."""
     try:
-        module = importlib.import_module("ser.runtime.medium_inference")
+        module = importlib.import_module("ser._internal.runtime.medium_inference")
     except ModuleNotFoundError:
         return None
 
@@ -56,7 +56,7 @@ def _load_medium_inference_runner() -> MediumInferenceRunner | None:
 def _load_fast_inference_runner() -> FastInferenceRunner | None:
     """Loads the concrete fast inference runner when implementation exists."""
     try:
-        module = importlib.import_module("ser.runtime.fast_inference")
+        module = importlib.import_module("ser._internal.runtime.fast_inference")
     except ModuleNotFoundError:
         return None
 
@@ -69,7 +69,7 @@ def _load_fast_inference_runner() -> FastInferenceRunner | None:
 def _load_accurate_inference_runner() -> AccurateInferenceRunner | None:
     """Loads the concrete accurate inference runner when implementation exists."""
     try:
-        module = importlib.import_module("ser.runtime.accurate_inference")
+        module = importlib.import_module("ser._internal.runtime.accurate_inference")
     except ModuleNotFoundError:
         return None
 
@@ -82,7 +82,7 @@ def _load_accurate_inference_runner() -> AccurateInferenceRunner | None:
 def _load_accurate_research_inference_runner() -> AccurateResearchInferenceRunner | None:
     """Loads the concrete accurate-research inference runner when available."""
     try:
-        module = importlib.import_module("ser.runtime.accurate_research_inference")
+        module = importlib.import_module("ser._internal.runtime.accurate_research_inference")
     except ModuleNotFoundError:
         return None
 

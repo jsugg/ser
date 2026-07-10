@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from ser.runtime import benchmarks
+from ser._internal.runtime import benchmarks
 
 pytestmark = pytest.mark.unit
 

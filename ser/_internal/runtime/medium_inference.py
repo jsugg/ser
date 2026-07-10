@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from ser._internal.models.emotion_model import LoadedModel
+from ser._internal.repr import XLSRBackend
 from ser._internal.runtime import medium_public_boundary as _boundary_support
 from ser.config import AppConfig
-from ser.models.emotion_model import LoadedModel
-from ser.repr import XLSRBackend
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import InferenceResult
 from ser.utils.logger import get_logger

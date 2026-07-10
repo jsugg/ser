@@ -48,8 +48,8 @@ from ser.utils.logger import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
+    from ser._internal.transcript.profiling import RuntimeCalibrationResult
     from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
-    from ser.transcript.profiling import RuntimeCalibrationResult
 
 
 class _RuntimePipeline(Protocol):
@@ -201,7 +201,7 @@ def resolve_cli_workflow_profile(settings: AppConfig) -> ProfileName:
 
 def _build_runtime_pipeline(settings: AppConfig) -> _RuntimePipeline:
     """Builds one runtime pipeline for API-managed train/inference workflows."""
-    from ser.runtime.pipeline import create_runtime_pipeline
+    from ser._internal.runtime.pipeline import create_runtime_pipeline
 
     return create_runtime_pipeline(settings)
 
