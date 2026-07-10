@@ -210,14 +210,19 @@ def test_ci_required_aggregate_covers_all_critical_gates(repo_root: Path) -> Non
 def test_ci_visibility_and_lock_controls_are_wired(repo_root: Path) -> None:
     """Default CI should run lock, workflow, report, and artifact visibility controls."""
     workflow = _workflow(repo_root, "ci.yml")
+    assert "workflow_dispatch" in _event_names(workflow)
 
     code_quality_commands = _run_commands(_job(workflow, "code-quality"))
     assert "make lock-check" in code_quality_commands
+    assert "make type-completeness" in code_quality_commands
     assert "make ci-contracts" in code_quality_commands
     assert "make workflow-lint" in code_quality_commands
 
     test_commands = _run_commands(_job(workflow, "tests"))
     assert "--junitxml=reports/pytest/pytest-${{ matrix.python-version }}.xml" in test_commands
+    assert (
+        repo_root / "tests/suites/integration/architecture/test_public_api_snapshot.py"
+    ).exists()
 
     coverage_job = _job(workflow, "coverage")
     assert "make test-cov" in _run_commands(coverage_job)

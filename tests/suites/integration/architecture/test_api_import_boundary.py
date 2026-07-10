@@ -172,14 +172,24 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "EmotionSegment",
         "TimelineEntry",
         "TranscriptWord",
+        "__version__",
     ),
     "ser.api": (
+        "AppConfig",
         "ComplianceMode",
+        "DatasetConsents",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
         "DatasetRegistryRecord",
+        "DiagnosticFinding",
+        "DiagnosticReport",
+        "DiagnosticSeverity",
+        "InferenceExecution",
+        "InferenceRequest",
+        "ProfileName",
         "RuntimePipeline",
         "RuntimePipelineBuilder",
+        "SubtitleFormat",
         "configure_dataset_consents",
         "infer",
         "list_dataset_registry_health_issues",
@@ -222,6 +232,7 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "settings_override",
     ),
     "ser.domain": (
+        "DatasetConsents",
         "EmotionSegment",
         "TimelineEntry",
         "TranscriptWord",
@@ -253,3 +264,10 @@ def test_tier_one_public_exports_do_not_grow_without_contract_review(
         "Shrinking or renaming requires updating this snapshot; growth requires "
         "explicit API review."
     )
+
+
+def test_root_package_exposes_metadata_version() -> None:
+    """Root package should expose the installed package version."""
+    import ser
+
+    assert ser.__version__ == "1.0.0"

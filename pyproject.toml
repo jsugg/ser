@@ -54,6 +54,7 @@ dev = [
   "pre-commit>=4.0.0,<5.0.0",
   "pytest>=9.1.1,<10.0.0",
   "coverage[toml]>=7.6.0,<8.0.0",
+  "griffe>=1.14.0,<2.0.0",
   "hypothesis>=6.130.0,<7.0.0",
   "ruff>=0.9.0,<1.0.0",
   "black>=26.3.1,<27.0.0",
@@ -102,7 +103,7 @@ exclude = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["ser"]
-include = ["ser/profile_defs.yaml"]
+include = ["ser/profile_defs.yaml", "ser/py.typed"]
 exclude = [
   "ser/.gitignore",
   "ser/configure",
@@ -141,17 +142,27 @@ select = ["E", "F", "B", "TID251"]
 ignore = ["E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"ser._internal.api".msg = "Internal API modules are private; import from `ser.api`."
-"ser._internal.api.data".msg = "Internal API modules are private; import from `ser.api`."
-"ser._internal.api.diagnostics".msg = "Internal API modules are private; import from `ser.api`."
-"ser._internal.api.runtime".msg = "Internal API modules are private; import from `ser.api`."
+"ser._internal".msg = "Internal modules are private; public facades importing them must be declared in boundary_policy.toml."
 
 [tool.ruff.lint.per-file-ignores]
+# TID251 exceptions mirror boundary_policy.toml; keep the policy file authoritative.
+"ser/__main__.py" = ["TID251"]
 "ser/api.py" = ["TID251"]
-"ser/_internal/cli/data.py" = ["TID251"]
-"ser/_internal/cli/diagnostics.py" = ["TID251"]
-"ser/_internal/cli/runtime.py" = ["TID251"]
-"tests/suites/integration/api/test_api.py" = ["TID251"]
+"ser/config.py" = ["TID251"]
+"ser/data/application.py" = ["TID251"]
+"ser/diagnostics/service.py" = ["TID251"]
+"ser/models/emotion_model.py" = ["TID251"]
+"ser/models/profile_runtime.py" = ["TID251"]
+"ser/models/training_entrypoints.py" = ["TID251"]
+"ser/repr/emotion2vec.py" = ["TID251"]
+"ser/runtime/accurate_inference.py" = ["TID251"]
+"ser/runtime/fast_inference.py" = ["TID251"]
+"ser/runtime/medium_inference.py" = ["TID251"]
+"ser/runtime/pipeline.py" = ["TID251"]
+"ser/runtime/profile_quality_gate.py" = ["TID251"]
+"ser/transcript/backends/stable_whisper.py" = ["TID251"]
+"ser/transcript/profiling.py" = ["TID251"]
+"ser/transcript/transcript_extractor.py" = ["TID251"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -181,6 +192,9 @@ include = ["ser", "tests"]
 exclude = ["**/__pycache__", "dist", "build", ".venv", ".*"]
 reportMissingImports = "warning"
 reportMissingTypeStubs = "none"
+
+[tool.ser.type_completeness]
+threshold = 0.9788235294117648
 
 [tool.coverage.run]
 branch = true

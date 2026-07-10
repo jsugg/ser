@@ -187,11 +187,11 @@ def profile_pipeline_enabled(settings: AppConfig) -> bool:
 
 def profile_resolution_requested(
     *,
-    use_profile_pipeline: bool,
+    profile_routing_enabled: bool,
     file_path: str | None,
 ) -> bool:
     """Returns whether profile resolution should run for this invocation."""
-    return bool(use_profile_pipeline or file_path)
+    return bool(profile_routing_enabled or file_path)
 
 
 def resolve_cli_workflow_profile(settings: AppConfig) -> ProfileName:
@@ -261,15 +261,9 @@ def load_profile(
 def run_training_workflow(
     *,
     settings: AppConfig,
-    use_profile_pipeline: bool,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> None:
-    """Runs CLI-equivalent training workflow through the runtime pipeline.
-
-    The ``use_profile_pipeline`` parameter is retained for compatibility with older
-    callers, but training now uses the pipeline for every profile so orchestration
-    remains single-owned.
-    """
+    """Runs CLI-equivalent training workflow through the runtime pipeline."""
     builder = pipeline_builder if pipeline_builder is not None else _build_runtime_pipeline
     builder(settings).run_training()
 
@@ -278,14 +272,12 @@ def train(
     *,
     profile: ProfileName | None = None,
     settings: AppConfig,
-    use_profile_pipeline: bool = True,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> None:
     """Runs training for the selected profile through the runtime pipeline."""
     scoped_settings = _settings_for_profile(settings, profile=profile)
     run_training_workflow(
         settings=scoped_settings,
-        use_profile_pipeline=use_profile_pipeline,
         pipeline_builder=pipeline_builder,
     )
 
@@ -350,7 +342,7 @@ def infer(
 def run_restricted_backend_cli_gate(
     *,
     settings: AppConfig,
-    use_profile_pipeline: bool,
+    profile_resolution_enabled: bool,
     train_requested: bool,
     file_path: str | None,
     accept_restricted_backends: bool,
@@ -360,7 +352,7 @@ def run_restricted_backend_cli_gate(
     """Evaluates restricted-backend CLI gate and returns logs plus optional exit code."""
     return _run_restricted_backend_cli_gate(
         settings=settings,
-        use_profile_pipeline=use_profile_pipeline,
+        profile_resolution_enabled=profile_resolution_enabled,
         train_requested=train_requested,
         file_path=file_path,
         accept_restricted_backends=accept_restricted_backends,
@@ -374,13 +366,11 @@ def run_restricted_backend_cli_gate(
 def run_training_command(
     *,
     settings: AppConfig,
-    use_profile_pipeline: bool,
     pipeline_builder: _RuntimePipelineBuilder | None = None,
 ) -> WorkflowErrorDisposition | None:
     """Runs training command and returns one exit disposition on failure."""
     return _run_training_command(
         settings=settings,
-        use_profile_pipeline=use_profile_pipeline,
         pipeline_builder=pipeline_builder,
         run_training_workflow=run_training_workflow,
         classify_training_error=classify_training_exception,

@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # Import-layer contract lane for public API boundary enforcement.
-readonly IMPORT_LINT_PATHS=(
-  ser
-  tests
+mapfile -t IMPORT_LINT_PATHS < <(
+  find ser -path 'ser/_internal' -prune -o -name '*.py' -print | sort
 )
 
 uv run --frozen --extra dev ruff check --select TID251 "${IMPORT_LINT_PATHS[@]}"
