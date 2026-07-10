@@ -14,8 +14,8 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from ser._internal.repr import Emotion2VecBackend
 from ser._internal.runtime.process_env import temporary_process_env
-from ser.repr import Emotion2VecBackend
 from ser.utils.logger import (
     DependencyLogFilter,
     DependencyLogPolicy,
@@ -372,7 +372,7 @@ def test_emotion2vec_backend_suppresses_dependency_noise_outside_debug(
 ) -> None:
     """Known dependency INFO lines should be demoted at INFO-level runs."""
     backend = Emotion2VecBackend(model_id="iic/emotion2vec_plus_large")
-    module_logger = logging.getLogger("ser.repr.emotion2vec")
+    module_logger = logging.getLogger("ser._internal.repr.emotion2vec")
     original_level = module_logger.level
     module_logger.setLevel(logging.INFO)
     try:
@@ -401,7 +401,7 @@ def test_emotion2vec_backend_keeps_dependency_noise_in_debug(
 ) -> None:
     """DEBUG-level runs should keep third-party diagnostics visible."""
     backend = Emotion2VecBackend(model_id="iic/emotion2vec_plus_large")
-    module_logger = logging.getLogger("ser.repr.emotion2vec")
+    module_logger = logging.getLogger("ser._internal.repr.emotion2vec")
     original_level = module_logger.level
     module_logger.setLevel(logging.DEBUG)
     try:

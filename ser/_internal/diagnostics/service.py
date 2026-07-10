@@ -8,8 +8,16 @@ from dataclasses import replace
 from typing import Literal, cast
 
 from ser._internal.config.bootstrap import resolve_profile_transcription_config
+from ser._internal.data.dataset_prepare import collect_dataset_registry_health_issues
+from ser._internal.transcript.runtime_policy import (
+    DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
+    resolve_transcription_runtime_policy,
+)
+from ser._internal.utils.transcription_compat import (
+    FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE,
+    resolve_transcription_compatibility_lane,
+)
 from ser.config import AppConfig
-from ser.data.dataset_prepare import collect_dataset_registry_health_issues
 from ser.diagnostics.domain import (
     DiagnosticFinding,
     DiagnosticReport,
@@ -21,14 +29,6 @@ from ser.transcript.backends import (
     BackendRuntimeRequest,
     CompatibilityIssueImpact,
     resolve_transcription_backend_adapter,
-)
-from ser.transcript.runtime_policy import (
-    DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
-    resolve_transcription_runtime_policy,
-)
-from ser.utils.transcription_compat import (
-    FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE,
-    resolve_transcription_compatibility_lane,
 )
 
 _SUPPORTED_PREFLIGHT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})

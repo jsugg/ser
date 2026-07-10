@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import ser._internal.utils.audio_utils as au
 from ser.config import AudioReadConfig
-from ser.utils import audio_utils as au
 
 pytestmark = pytest.mark.filterwarnings("ignore:path is deprecated.*:DeprecationWarning")
 

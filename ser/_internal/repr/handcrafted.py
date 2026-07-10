@@ -7,9 +7,8 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-import ser.utils.dsp as dsp
-from ser.config import FeatureFlags
-from ser.repr.backend import (
+import ser._internal.utils.dsp as dsp
+from ser._internal.repr.backend import (
     EncodedSequence,
     FeatureBackend,
     FeatureMatrix,
@@ -17,6 +16,7 @@ from ser.repr.backend import (
     PoolingWindow,
     overlap_frame_mask,
 )
+from ser.config import FeatureFlags
 
 
 class HandcraftedBackend(FeatureBackend):

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import ser.utils.transcription_compat as compat
+import ser._internal.utils.transcription_compat as compat
 
 
 def test_resolve_stable_whisper_fallback_model_name_maps_distil_to_turbo() -> None:

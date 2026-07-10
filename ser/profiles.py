@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
-
-from ser.utils.torch_inference import normalize_torch_device_selector
 
 if TYPE_CHECKING:
     from ser.config import AppConfig
@@ -230,7 +228,13 @@ def _read_required_int(
 
 def _normalize_torch_device_selector(value: str) -> str | None:
     """Normalizes one torch device selector or returns None when invalid."""
-    return normalize_torch_device_selector(value)
+    normalizer = cast(
+        Callable[[str], str | None],
+        importlib.import_module(
+            "ser._internal.utils.torch_inference"
+        ).normalize_torch_device_selector,
+    )
+    return normalizer(value)
 
 
 def _normalize_torch_dtype_selector(value: str) -> str | None:

@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 from typing import cast
 
-from ser.config import AppConfig, reload_settings
-from ser.diagnostics.service import (
+from ser._internal.diagnostics.service import (
     apply_profile_override_for_diagnostics,
     format_report_json,
     format_report_text,
     run_doctor_diagnostics,
 )
+from ser.config import AppConfig, reload_settings
 from ser.profiles import ProfileName
 
 _PROFILE_CHOICES: tuple[ProfileName, ...] = (

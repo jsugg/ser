@@ -13,21 +13,21 @@ from typing import Final, Literal, Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from ser._internal.runtime.environment_plan import ProcessEnvDelta
-from ser._internal.runtime.process_env import temporary_process_env
-from ser.repr.backend import (
+from ser._internal.repr.backend import (
     EncodedSequence,
     FeatureMatrix,
     FeatureVector,
     PoolingWindow,
     overlap_frame_mask,
 )
+from ser._internal.runtime.environment_plan import ProcessEnvDelta
+from ser._internal.runtime.process_env import temporary_process_env
+from ser._internal.utils.torch_inference import normalize_torch_device_selector
 from ser.utils.logger import (
     DependencyLogPolicy,
     get_logger,
     scoped_dependency_log_policy,
 )
-from ser.utils.torch_inference import normalize_torch_device_selector
 
 logger = get_logger(__name__)
 _NOISY_DEPENDENCY_POLICY: Final[DependencyLogPolicy] = DependencyLogPolicy(

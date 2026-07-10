@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import importlib
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 
 from .common_utils import display_elapsed_time
 from .logger import get_logger
@@ -27,17 +29,12 @@ def read_audio_file(
     start_seconds: float | None = None,
     duration_seconds: float | None = None,
 ) -> tuple[np.ndarray, int]:
-    """Reads and normalizes an audio file.
-
-    Args:
-        file_path: Path to the audio file.
-
-    Returns:
-        A tuple of `(audio_samples, sample_rate)`.
-    """
-    from .audio_utils import read_audio_file as _read_audio_file
-
-    return _read_audio_file(
+    """Reads and normalizes an audio file."""
+    reader = cast(
+        Callable[..., tuple[np.ndarray, int]],
+        importlib.import_module("ser._internal.utils.audio_utils").read_audio_file,
+    )
+    return reader(
         file_path,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
@@ -50,23 +47,26 @@ def build_timeline(
     emotion_with_timestamps: list[EmotionSegment],
 ) -> list[TimelineEntry]:
     """Merges transcript and emotion segments into timeline rows."""
-    from .timeline_utils import build_timeline as _build_timeline
-
-    return _build_timeline(text_with_timestamps, emotion_with_timestamps)
+    builder = cast(
+        Callable[[list[TranscriptWord], list[EmotionSegment]], list[TimelineEntry]],
+        importlib.import_module("ser._internal.utils.timeline_utils").build_timeline,
+    )
+    return builder(text_with_timestamps, emotion_with_timestamps)
 
 
 def print_timeline(timeline: list[TimelineEntry]) -> None:
     """Prints timeline rows in a terminal-friendly format."""
-    from .timeline_utils import print_timeline as _print_timeline
-
-    _print_timeline(timeline)
+    printer = importlib.import_module("ser._internal.utils.timeline_utils").print_timeline
+    printer(timeline)
 
 
 def save_timeline_to_csv(timeline: list[TimelineEntry], file_name: str) -> str:
     """Writes timeline rows to CSV and returns the output path."""
-    from .timeline_utils import save_timeline_to_csv as _save_timeline_to_csv
-
-    return _save_timeline_to_csv(
+    writer = cast(
+        Callable[..., str],
+        importlib.import_module("ser._internal.utils.timeline_utils").save_timeline_to_csv,
+    )
+    return writer(
         timeline,
         file_name,
         timeline_config=_resolve_boundary_settings().timeline,
