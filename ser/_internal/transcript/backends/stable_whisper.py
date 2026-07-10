@@ -13,28 +13,20 @@ from typing import TYPE_CHECKING, Literal, cast
 from urllib.parse import urlparse
 
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
-from ser._internal.runtime.process_env import temporary_process_env
-from ser.domain import TranscriptWord
-from ser.profiles import TranscriptionBackendId
-from ser.runtime.phase_contract import (
+from ser._internal.runtime.phase_contract import (
     PHASE_TRANSCRIPTION,
     PHASE_TRANSCRIPTION_MODEL_LOAD,
 )
-from ser.transcript.backends import stable_whisper_torio_probe
-from ser.transcript.backends.base import (
-    BackendRuntimeRequest,
-    CompatibilityIssue,
-    CompatibilityReport,
-    TranscriptionBackendAdapter,
-)
-from ser.transcript.backends.stable_whisper_admission_runtime import (
+from ser._internal.runtime.process_env import temporary_process_env
+from ser._internal.transcript.backends import stable_whisper_torio_probe
+from ser._internal.transcript.backends.stable_whisper_admission_runtime import (
     is_compatibility_activation_error,
     is_retryable_precision_failure,
     mps_compatibility_fallback_reason,
     resolve_stable_whisper_mps_admission_decision,
     should_enforce_stable_whisper_transcribe_admission,
 )
-from ser.transcript.backends.stable_whisper_mps_compat import (
+from ser._internal.transcript.backends.stable_whisper_mps_compat import (
     enable_stable_whisper_mps_compatibility,
     get_stable_whisper_runtime_device,
     is_stable_whisper_mps_compatibility_enabled,
@@ -42,39 +34,47 @@ from ser.transcript.backends.stable_whisper_mps_compat import (
     set_stable_whisper_runtime_device,
     stable_whisper_mps_timing_compatibility_context,
 )
-from ser.transcript.backends.stable_whisper_transcribe_admission import (
+from ser._internal.transcript.backends.stable_whisper_transcribe_admission import (
     resolve_transcribe_runtime_device as resolve_stable_whisper_transcribe_runtime_device,
 )
-from ser.transcript.backends.stable_whisper_transcribe_execution import (
+from ser._internal.transcript.backends.stable_whisper_transcribe_execution import (
     run_stable_whisper_transcribe_with_retry,
 )
-from ser.transcript.backends.stable_whisper_transcribe_kwargs import (
+from ser._internal.transcript.backends.stable_whisper_transcribe_kwargs import (
     build_stable_whisper_transcribe_kwargs,
 )
-from ser.transcript.backends.stable_whisper_transcribe_runtime import (
+from ser._internal.transcript.backends.stable_whisper_transcribe_runtime import (
     classify_transcription_failure_for_runtime,
     effective_precision_candidates,
     release_torch_runtime_memory_for_retry,
     summarize_runtime_error,
 )
-from ser.transcript.mps_admission import (
+from ser._internal.transcript.mps_admission import (
     MpsAdmissionDecision,
     decide_mps_admission_for_transcription,
     log_mps_admission_control_fallback,
     mps_admission_control_enabled,
     mps_hard_oom_shortcut_enabled,
 )
-from ser.transcript.runtime_failures import (
+from ser._internal.transcript.runtime_failures import (
     TranscriptionFailureClassification,
+)
+from ser._internal.utils.transcription_compat import (
+    has_known_stable_whisper_sparse_mps_incompatibility,
+)
+from ser.domain import TranscriptWord
+from ser.profiles import TranscriptionBackendId
+from ser.transcript.backends.base import (
+    BackendRuntimeRequest,
+    CompatibilityIssue,
+    CompatibilityReport,
+    TranscriptionBackendAdapter,
 )
 from ser.utils.logger import (
     DependencyLogPolicy,
     DependencyPolicyContext,
     WarningPolicy,
     scoped_dependency_log_policy,
-)
-from ser.utils.transcription_compat import (
-    has_known_stable_whisper_sparse_mps_incompatibility,
 )
 
 if TYPE_CHECKING:

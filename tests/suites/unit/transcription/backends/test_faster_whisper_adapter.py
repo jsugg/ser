@@ -10,11 +10,11 @@ from typing import cast
 
 import pytest
 
+import ser._internal.transcript.backends.faster_whisper as faster_whisper_backend
+from ser._internal.transcript.backends.faster_whisper import FasterWhisperAdapter
 from ser.config import AppConfig
 from ser.domain import TranscriptWord
-from ser.transcript.backends import faster_whisper as faster_whisper_backend
 from ser.transcript.backends.base import BackendRuntimeRequest
-from ser.transcript.backends.faster_whisper import FasterWhisperAdapter
 
 pytestmark = pytest.mark.unit
 
@@ -114,7 +114,7 @@ def test_setup_required_returns_true_when_local_only_probe_raises(
         raise RuntimeError("cache miss")
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (
             SimpleNamespace(download_model=_download_model)
             if name == "faster_whisper.utils"
@@ -212,7 +212,7 @@ def test_prepare_assets_downloads_missing_model_into_cache(
         return cache_dir
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (
             SimpleNamespace(download_model=_download_model)
             if name == "faster_whisper.utils"
@@ -240,7 +240,7 @@ def test_prepare_assets_ignores_missing_dependency(
 ) -> None:
     """Missing faster-whisper utilities should become a no-op."""
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)),
     )
 
@@ -259,7 +259,7 @@ def test_load_model_raises_clear_error_when_dependency_is_missing(
 ) -> None:
     """Model loading should surface actionable dependency remediation."""
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (_ for _ in ()).throw(ModuleNotFoundError(name)),
     )
 
@@ -278,7 +278,7 @@ def test_load_model_requires_whisper_model_symbol(
 ) -> None:
     """The adapter should reject packages that do not expose WhisperModel."""
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (
             SimpleNamespace()
             if name == "faster_whisper"
@@ -317,7 +317,7 @@ def test_load_model_uses_cpu_int8_for_mps_requests(
             captured["download_root"] = download_root
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (
             SimpleNamespace(WhisperModel=_FakeWhisperModel)
             if name == "faster_whisper"
@@ -366,7 +366,7 @@ def test_load_model_uses_cuda_float16_when_requested(
             captured["download_root"] = download_root
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.import_module",
+        "ser._internal.transcript.backends.faster_whisper.importlib.import_module",
         lambda name: (
             SimpleNamespace(WhisperModel=_FakeWhisperModel)
             if name == "faster_whisper"
@@ -526,7 +526,7 @@ def test_is_module_available_handles_sys_modules_and_find_spec_errors(
             sys.modules[module_name] = original
 
     monkeypatch.setattr(
-        "ser.transcript.backends.faster_whisper.importlib.util.find_spec",
+        "ser._internal.transcript.backends.faster_whisper.importlib.util.find_spec",
         lambda name: (_ for _ in ()).throw(ValueError(name)),
     )
     assert adapter._is_module_available("missing_dependency") is False

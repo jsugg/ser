@@ -6,12 +6,12 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from ser.domain import TranscriptWord
-from ser.transcript.backends.base import BackendRuntimeRequest
-from ser.transcript.runtime_failures import (
+from ser._internal.transcript.runtime_failures import (
     FailureDisposition,
     TranscriptionFailureClassification,
 )
+from ser.domain import TranscriptWord
+from ser.transcript.backends.base import BackendRuntimeRequest
 
 if TYPE_CHECKING:
     from ser.config import AppConfig

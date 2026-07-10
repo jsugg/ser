@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from ser._internal.utils.torch_inference import maybe_resolve_torch_runtime
 from ser.profiles import TranscriptionBackendId
-from ser.utils.torch_inference import maybe_resolve_torch_runtime
 
 _SUPPORTED_DTYPE_SELECTORS: frozenset[str] = frozenset({"auto", "float16", "float32", "bfloat16"})
 DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB: float = 16.0

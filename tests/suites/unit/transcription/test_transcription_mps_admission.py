@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from ser.transcript import mps_admission
+from ser._internal.transcript import mps_admission
 
 
 def test_mps_admission_allows_when_pressure_snapshot_unavailable(
@@ -221,7 +221,7 @@ def test_resolve_mps_admission_decision_applies_override_and_logs(
         lambda **_kwargs: heuristic,
     )
     monkeypatch.setattr(
-        "ser.transcript.mps_admission_overrides.apply_calibrated_mps_admission_override",
+        "ser._internal.transcript.mps_admission_overrides.apply_calibrated_mps_admission_override",
         lambda **_kwargs: overridden,
     )
 

@@ -6,11 +6,11 @@ from collections.abc import Callable
 
 import pytest
 
-import ser.transcript.backends.stable_whisper as stable_whisper
-from ser.transcript.backends.base import BackendRuntimeRequest
-from ser.transcript.backends.stable_whisper_transcribe_kwargs import (
+import ser._internal.transcript.backends.stable_whisper as stable_whisper
+from ser._internal.transcript.backends.stable_whisper_transcribe_kwargs import (
     build_stable_whisper_transcribe_kwargs,
 )
+from ser.transcript.backends.base import BackendRuntimeRequest
 
 
 def _runtime_request(*, use_demucs: bool) -> BackendRuntimeRequest:

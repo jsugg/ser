@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from ser.transcript.mps_admission import MpsAdmissionDecision
+from ser._internal.transcript.mps_admission import MpsAdmissionDecision
 
 if TYPE_CHECKING:
     from ser.transcript.backends.base import BackendRuntimeRequest

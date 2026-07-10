@@ -10,8 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
+from ser._internal.transcript.mps_admission import MpsAdmissionDecision
 from ser.transcript.backends.base import BackendRuntimeRequest
-from ser.transcript.mps_admission import MpsAdmissionDecision
 
 if TYPE_CHECKING:
     from ser.config import AppConfig

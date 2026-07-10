@@ -6,9 +6,9 @@ import logging
 from types import SimpleNamespace
 from typing import Any, cast
 
-import ser.transcript.backends.stable_whisper_admission_runtime as admission_runtime
+import ser._internal.transcript.backends.stable_whisper_admission_runtime as admission_runtime
+from ser._internal.transcript.mps_admission import MpsAdmissionDecision
 from ser.transcript.backends.base import BackendRuntimeRequest
-from ser.transcript.mps_admission import MpsAdmissionDecision
 
 
 def test_is_retryable_precision_failure_detects_sparsemps_notimplemented() -> None:

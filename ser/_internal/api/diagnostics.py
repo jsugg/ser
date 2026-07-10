@@ -56,7 +56,7 @@ def suppress_preflight_transcription_operational_relogs(
     backend_id, _model_name, _use_demucs, _use_vad = resolve_profile_transcription_config(
         profile_name
     )
-    from ser.transcript.transcript_extractor import mark_compatibility_issues_as_emitted
+    from ser._internal.transcript.transcript_extractor import mark_compatibility_issues_as_emitted
 
     mark_compatibility_issues_as_emitted(
         backend_id=backend_id,
@@ -67,14 +67,14 @@ def suppress_preflight_transcription_operational_relogs(
 
 def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) -> int:
     """Runs `ser doctor ...` command argv via the public API boundary."""
-    from ser.diagnostics.command import run_doctor_command as _run_doctor_command
+    from ser._internal.diagnostics.command import run_doctor_command as _run_doctor_command
 
     return _run_doctor_command(argv, settings=settings)
 
 
 def parse_preflight_mode(raw_mode: str) -> PreflightMode:
     """Parses one startup preflight mode string."""
-    from ser.diagnostics.service import parse_preflight_mode as _parse_preflight_mode
+    from ser._internal.diagnostics.service import parse_preflight_mode as _parse_preflight_mode
 
     return _parse_preflight_mode(raw_mode)
 
@@ -85,7 +85,7 @@ def run_startup_preflight(
     include_transcription_checks: bool,
 ) -> DiagnosticReport:
     """Runs one startup preflight diagnostics check suite."""
-    from ser.diagnostics.service import _run_startup_preflight
+    from ser._internal.diagnostics.service import _run_startup_preflight
 
     return _run_startup_preflight(
         settings=settings,
@@ -95,7 +95,7 @@ def run_startup_preflight(
 
 def should_fail_preflight(*, report: DiagnosticReport, mode: PreflightMode) -> bool:
     """Returns whether one preflight report should block execution."""
-    from ser.diagnostics.service import should_fail_preflight as _should_fail_preflight
+    from ser._internal.diagnostics.service import should_fail_preflight as _should_fail_preflight
 
     return _should_fail_preflight(report=report, mode=mode)
 
@@ -106,7 +106,7 @@ def format_startup_preflight_one_liner(
     doctor_command: str,
 ) -> str:
     """Formats one concise one-line startup preflight summary."""
-    from ser.diagnostics.service import (
+    from ser._internal.diagnostics.service import (
         format_startup_preflight_one_liner as _format_startup_preflight_one_liner,
     )
 

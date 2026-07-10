@@ -7,8 +7,8 @@ from typing import cast
 
 import pytest
 
+import ser._internal.transcript.profiling as tp
 from ser._internal.transcription import public_boundary_profiling as public_boundary_helpers
-from ser.transcript import profiling as tp
 
 
 def _summary(
