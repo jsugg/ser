@@ -5,26 +5,26 @@ from __future__ import annotations
 import logging
 from functools import partial
 
+import ser._internal.models.artifact_envelope as _artifact_envelope
 import ser._internal.models.model_loading as _model_loading_entrypoints
-import ser.models.artifact_envelope as _artifact_envelope
-import ser.models.profile_runtime as _profile_runtime
-import ser.models.training_support as _training_support
+import ser._internal.models.profile_runtime as _profile_runtime
+import ser._internal.models.training_support as _training_support
+from ser._internal.features import extract_feature_frames
+from ser._internal.models.artifact_envelope import LoadedModel
+from ser._internal.models.artifact_loading import (
+    load_model_with_resolution,
+    resolve_model_for_loading_from_settings,
+)
+from ser._internal.models.fast_path import (
+    predict_emotions_detailed_with_model as _fast_predict_emotions_detailed_with_model,
+)
 from ser._internal.models.model_loading import ResolveModelFn
 from ser._internal.models.model_loading import load_model as _load_model_entrypoint
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
 from ser._internal.runtime.process_env import temporary_process_env
 from ser.config import AppConfig, reload_settings
 from ser.domain import EmotionSegment
-from ser.features import extract_feature_frames
 from ser.models import training_entrypoints as _training_entrypoints
-from ser.models.artifact_envelope import LoadedModel
-from ser.models.artifact_loading import (
-    load_model_with_resolution,
-    resolve_model_for_loading_from_settings,
-)
-from ser.models.fast_path import (
-    predict_emotions_detailed_with_model as _fast_predict_emotions_detailed_with_model,
-)
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult, to_legacy_emotion_segments
 from ser.utils.logger import get_logger
 

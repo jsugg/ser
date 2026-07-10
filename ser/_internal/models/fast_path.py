@@ -10,7 +10,7 @@ import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
-from ser.features import FeatureFrame
+from ser._internal.features import FeatureFrame
 from ser.runtime.schema import FramePrediction, InferenceResult, SegmentPrediction
 
 type EmotionClassifier = MLPClassifier | Pipeline

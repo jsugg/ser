@@ -9,7 +9,7 @@ from typing import TypeVar
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
 
-from ser.models.training_types import (
+from ser._internal.models.training_types import (
     AccurateTrainingPreparation,
     MediumTrainingPreparation,
     TrainingEvaluation,

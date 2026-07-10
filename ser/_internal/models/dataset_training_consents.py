@@ -6,14 +6,14 @@ import os
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from ser.config import AppConfig
-from ser.data import Utterance
-from ser.data.dataset_consents import (
+from ser._internal.data import Utterance
+from ser._internal.data.dataset_consents import (
     DatasetConsentError,
     compute_missing_dataset_consents,
     ensure_dataset_consents,
     persist_dataset_consents,
 )
+from ser.config import AppConfig
 
 
 def ensure_dataset_training_consents(

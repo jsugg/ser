@@ -9,20 +9,20 @@ from typing import Any, Protocol, TypeVar
 
 import numpy as np
 
-from ser.config import AppConfig
-from ser.data import EmbeddingCache, Utterance
-from ser.models.accurate_training_execution import (
+from ser._internal.data import EmbeddingCache, Utterance
+from ser._internal.models.accurate_training_execution import (
     PreparedAccurateTrainingRunner,
 )
-from ser.models.dataset_splitting import MediumSplitMetadata
-from ser.models.training_preparation import (
+from ser._internal.models.dataset_splitting import MediumSplitMetadata
+from ser._internal.models.training_preparation import (
     prepare_accurate_training_features,
     prepare_accurate_training_payload,
 )
-from ser.models.training_types import (
+from ser._internal.models.training_types import (
     AccurateTrainingPreparation,
 )
-from ser.repr import Emotion2VecBackend, WhisperBackend
+from ser._internal.repr import Emotion2VecBackend, WhisperBackend
+from ser.config import AppConfig
 
 _MetaT = TypeVar("_MetaT")
 

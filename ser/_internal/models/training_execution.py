@@ -9,7 +9,7 @@ from typing import Any, Protocol, TypeVar, cast
 
 import numpy as np
 
-from ser.models.training_types import (
+from ser._internal.models.training_types import (
     AccurateTrainingPreparation,
     MediumTrainingPreparation,
     MediumTrainingSettingsLike,

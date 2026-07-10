@@ -9,9 +9,9 @@ from typing import Literal, cast
 
 import pytest
 
-import ser.models.training_support as training_support
+import ser._internal.models.training_support as training_support
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.config import AppConfig
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 
 
 def _sample_utterance(

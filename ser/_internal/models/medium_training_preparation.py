@@ -9,20 +9,20 @@ from typing import Protocol, TypeVar
 
 import numpy as np
 
-from ser.config import AppConfig
-from ser.data import EmbeddingCache, Utterance
-from ser.models.dataset_splitting import MediumSplitMetadata
-from ser.models.training_execution import run_medium_profile_training
-from ser.models.training_preparation import (
+from ser._internal.data import EmbeddingCache, Utterance
+from ser._internal.models.dataset_splitting import MediumSplitMetadata
+from ser._internal.models.training_execution import run_medium_profile_training
+from ser._internal.models.training_preparation import (
     prepare_medium_training_features,
     prepare_medium_training_payload,
 )
-from ser.models.training_types import (
+from ser._internal.models.training_types import (
     MediumTrainingPreparation,
     PersistedArtifactsLike,
     TrainingEvaluation,
 )
-from ser.repr import XLSRBackend
+from ser._internal.repr import XLSRBackend
+from ser.config import AppConfig
 
 _MetaT = TypeVar("_MetaT")
 _NoiseStatsT = TypeVar("_NoiseStatsT")

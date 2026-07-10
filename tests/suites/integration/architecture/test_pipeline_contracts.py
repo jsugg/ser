@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 import ser.__main__ as cli
+import ser._internal.models.emotion_model as emotion_model
+import ser._internal.models.training_support as training_support
 import ser.config as config_module
-import ser.models.emotion_model as emotion_model
-import ser.models.training_support as training_support
 from ser import domain
-from ser.models.artifact_loading import model_load_candidates
+from ser._internal.models.artifact_loading import model_load_candidates
 
 
 def _patch_cli_prerequisites(monkeypatch: pytest.MonkeyPatch) -> None:

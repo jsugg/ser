@@ -12,7 +12,7 @@ import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
-from ser.data import Utterance
+from ser._internal.data import Utterance
 
 type EmotionClassifier = MLPClassifier | Pipeline
 type DatasetSplit = tuple[np.ndarray, np.ndarray, list[str], list[str]]

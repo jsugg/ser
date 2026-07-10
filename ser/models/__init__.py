@@ -1,3 +1,4 @@
+# pyright: reportUnsupportedDunderAll=false
 """Model facades for artifact loading, profile runtimes, and training entrypoints.
 
 Only the modules listed in ``__all__`` are intended facades; every other module
@@ -9,10 +10,6 @@ from __future__ import annotations
 
 import importlib
 from types import ModuleType
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ser.models import emotion_model, profile_runtime, training_entrypoints
 
 __all__ = [
     "emotion_model",
