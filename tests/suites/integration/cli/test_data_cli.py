@@ -8,8 +8,10 @@ from typing import cast
 
 import pytest
 
+import ser._internal.data.cli as data_cli
+from ser._internal.data.dataset_consents import PersistedDatasetConsents
+from ser._internal.data.dataset_prepare import DatasetDescriptor
 from ser.config import AppConfig
-from ser.data import cli as data_cli
 from ser.data.application import (
     DatasetCapabilitySnapshotEntry,
     DatasetPrepareWorkflowResult,
@@ -18,8 +20,6 @@ from ser.data.application import (
     DatasetRegistrySnapshotIssue,
     DatasetUninstallWorkflowResult,
 )
-from ser.data.dataset_consents import PersistedDatasetConsents
-from ser.data.dataset_prepare import DatasetDescriptor
 
 
 def _settings(tmp_path: Path) -> AppConfig:

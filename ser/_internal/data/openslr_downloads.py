@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib import parse, request
 
-from ser.data.openslr_resolution import OpenSlrPinnedArtifact
+from ser._internal.data.openslr_resolution import OpenSlrPinnedArtifact
 
 
 class _DownloadFile(Protocol):

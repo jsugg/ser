@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import cast
 
+from ser._internal.data.ontology import LabelOntology, UnknownLabelPolicy, normalize_label
 from ser.config import AppConfig
-from ser.data.ontology import LabelOntology, UnknownLabelPolicy, normalize_label
 
 
 def _read_unknown_label_policy_env() -> UnknownLabelPolicy:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from ser.data.ontology import LabelOntology, ensure_label_allowed, normalize_label
+from ser._internal.data.ontology import LabelOntology, ensure_label_allowed, normalize_label
 
 MANIFEST_SCHEMA_VERSION = 1
 

@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ser.data import msp_podcast_mirror
-from ser.data.msp_podcast_mirror import generate_msp_labels_csv_from_metadata_jsonl
+from ser._internal.data import msp_podcast_mirror
+from ser._internal.data.msp_podcast_mirror import generate_msp_labels_csv_from_metadata_jsonl
 
 
 def test_generate_msp_labels_csv_from_metadata_jsonl(tmp_path: Path) -> None:

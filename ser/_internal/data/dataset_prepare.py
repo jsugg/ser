@@ -15,22 +15,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 
-from ser.config import AppConfig
-from ser.data.dataset_registry import (
+from ser._internal.data.dataset_registry import (
     DatasetRegistryEntry,
     load_dataset_registry,
     parse_dataset_registry_options,
     upsert_dataset_registry_entry,
 )
-from ser.data.msp_podcast_mirror import (
+from ser._internal.data.msp_podcast_mirror import (
     DEFAULT_MSP_MIRROR_MANIFEST_FILE,
 )
-from ser.data.ontology import LabelOntology
-from ser.data.strategies import (
+from ser._internal.data.ontology import LabelOntology
+from ser._internal.data.strategies import (
     DatasetStrategy,
     DatasetStrategyRegistry,
     build_default_dataset_strategies,
 )
+from ser.config import AppConfig
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)

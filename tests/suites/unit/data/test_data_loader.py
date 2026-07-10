@@ -9,10 +9,10 @@ from typing import cast
 import numpy as np
 import pytest
 
+import ser._internal.data.data_loader as dl
 import ser.config as config
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION
 from ser.config import AppConfig
-from ser.data import data_loader as dl
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION
 
 
 def _build_settings(max_failed_file_ratio: float = 0.5) -> SimpleNamespace:

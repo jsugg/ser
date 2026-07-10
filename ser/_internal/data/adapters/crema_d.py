@@ -6,9 +6,9 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from ser.data.manifest import Utterance
-from ser.data.manifest_jsonl import write_manifest_jsonl
-from ser.data.ontology import LabelOntology, remap_label
+from ser._internal.data.manifest import Utterance
+from ser._internal.data.manifest_jsonl import write_manifest_jsonl
+from ser._internal.data.ontology import LabelOntology, remap_label
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)

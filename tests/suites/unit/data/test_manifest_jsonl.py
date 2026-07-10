@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
-from ser.data.manifest_jsonl import load_manifest_jsonl, write_manifest_jsonl
-from ser.data.ontology import LabelOntology, remap_label
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
+from ser._internal.data.manifest_jsonl import load_manifest_jsonl, write_manifest_jsonl
+from ser._internal.data.ontology import LabelOntology, remap_label
 
 
 def _ontology() -> LabelOntology:

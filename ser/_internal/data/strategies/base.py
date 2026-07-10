@@ -8,11 +8,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
 
+from ser._internal.data.ontology import LabelOntology
 from ser.config import AppConfig
-from ser.data.ontology import LabelOntology
 
 if TYPE_CHECKING:
-    from ser.data.dataset_prepare import DatasetDescriptor
+    from ser._internal.data.dataset_prepare import DatasetDescriptor
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,29 +15,33 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from ser.data import archive_extraction as archive_extraction_helpers
-from ser.data import jl_corpus_downloads as jl_corpus_download_helpers
-from ser.data import mendeley_dataset_preparation as mendeley_dataset_preparation_helpers
-from ser.data import mendeley_downloads as mendeley_download_helpers
-from ser.data import openslr_dataset_preparation as openslr_dataset_preparation_helpers
-from ser.data import openslr_downloads as openslr_download_helpers
-from ser.data import openslr_resolution as openslr_resolution_helpers
-from ser.data import provider_dataset_preparation as provider_dataset_preparation_helpers
-from ser.data import provider_downloads as provider_download_helpers
-from ser.data import zenodo_downloads as zenodo_download_helpers
-from ser.data.provider_dataset_preparation import (
+from ser._internal.data import archive_extraction as archive_extraction_helpers
+from ser._internal.data import jl_corpus_downloads as jl_corpus_download_helpers
+from ser._internal.data import mendeley_dataset_preparation as mendeley_dataset_preparation_helpers
+from ser._internal.data import mendeley_downloads as mendeley_download_helpers
+from ser._internal.data import openslr_dataset_preparation as openslr_dataset_preparation_helpers
+from ser._internal.data import openslr_downloads as openslr_download_helpers
+from ser._internal.data import openslr_resolution as openslr_resolution_helpers
+from ser._internal.data import provider_dataset_preparation as provider_dataset_preparation_helpers
+from ser._internal.data import provider_downloads as provider_download_helpers
+from ser._internal.data import zenodo_downloads as zenodo_download_helpers
+from ser._internal.data.provider_dataset_preparation import (
     AutoDownloadArtifacts,
     GeneratedLabelsStats,
 )
-from ser.data.public_dataset_label_inference import infer_att_hack_label as _infer_att_hack_label
-from ser.data.public_dataset_label_inference import infer_coraa_ser_label as _infer_coraa_ser_label
-from ser.data.public_dataset_label_inference import (
+from ser._internal.data.public_dataset_label_inference import (
+    infer_att_hack_label as _infer_att_hack_label,
+)
+from ser._internal.data.public_dataset_label_inference import (
+    infer_coraa_ser_label as _infer_coraa_ser_label,
+)
+from ser._internal.data.public_dataset_label_inference import (
     infer_escorpus_pe_label as _infer_escorpus_pe_label,
 )
-from ser.data.public_dataset_label_inference import (
+from ser._internal.data.public_dataset_label_inference import (
     infer_label_from_path_tokens as _infer_label_from_path_tokens,
 )
-from ser.data.public_dataset_label_inference import infer_mesd_label as _infer_mesd_label
+from ser._internal.data.public_dataset_label_inference import infer_mesd_label as _infer_mesd_label
 from ser.utils.logger import get_logger
 
 logger = get_logger(__name__)

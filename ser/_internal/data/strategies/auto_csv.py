@@ -6,8 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ser.config import AppConfig
-from ser.data.adapters.public_csv_datasets import (
+from ser._internal.data.adapters.public_csv_datasets import (
     build_asvp_esd_manifest_jsonl,
     build_att_hack_manifest_jsonl,
     build_cafe_manifest_jsonl,
@@ -21,8 +20,8 @@ from ser.data.adapters.public_csv_datasets import (
     build_pavoque_manifest_jsonl,
     build_spanish_meacorpus_2023_manifest_jsonl,
 )
-from ser.data.ontology import LabelOntology
-from ser.data.public_dataset_downloads import (
+from ser._internal.data.ontology import LabelOntology
+from ser._internal.data.public_dataset_downloads import (
     DEFAULT_LABELS_FILE_NAME,
     AutoDownloadArtifacts,
     prepare_asvp_esd_from_zenodo,
@@ -38,13 +37,14 @@ from ser.data.public_dataset_downloads import (
     prepare_pavoque_from_github_release,
     prepare_spanish_meacorpus_2023_from_zenodo,
 )
+from ser.config import AppConfig
 from ser.utils.logger import get_logger
 
 from .base import PreparedManifestResult
 
 if TYPE_CHECKING:
-    from ser.data.dataset_prepare import DatasetDescriptor
-    from ser.data.manifest import Utterance
+    from ser._internal.data.dataset_prepare import DatasetDescriptor
+    from ser._internal.data.manifest import Utterance
 
 logger = get_logger(__name__)
 

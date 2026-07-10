@@ -17,8 +17,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ser._internal.data.manifest import Utterance
 from ser.config import AppConfig
-from ser.data.manifest import Utterance
 
 _CONSENT_STORE_ENV = "SER_DATASET_CONSENTS_FILE"
 _CONSENT_SCHEMA_VERSION = 1

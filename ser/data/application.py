@@ -21,13 +21,13 @@ from ser._internal.data.application.registry_snapshot import (
     collect_dataset_registry_snapshot,
 )
 from ser._internal.data.application.uninstall import run_dataset_uninstall_workflow
-from ser.config import AppConfig
-from ser.data.dataset_consents import (
+from ser._internal.data.dataset_consents import (
     is_policy_restricted,
     load_persisted_dataset_consents,
     persist_dataset_consents,
 )
-from ser.data.dataset_prepare import resolve_dataset_descriptor
+from ser._internal.data.dataset_prepare import resolve_dataset_descriptor
+from ser.config import AppConfig
 
 __all__ = [
     "DatasetCapabilitySnapshotEntry",

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ser.data.adapters.csv_manifest_builder import build_csv_labeled_manifest_jsonl
-from ser.data.catalog.public_datasets import (
+from ser._internal.data.adapters.csv_manifest_builder import build_csv_labeled_manifest_jsonl
+from ser._internal.data.catalog.public_datasets import (
     ASVP_ESD_CORPUS_ID,
     ASVP_ESD_DATASET_LICENSE_ID,
     ASVP_ESD_DATASET_POLICY_ID,
@@ -56,8 +56,8 @@ from ser.data.catalog.public_datasets import (
     SPANISH_MEACORPUS_2023_MANIFEST_SPEC,
     CsvManifestSpec,
 )
-from ser.data.manifest import Utterance
-from ser.data.ontology import LabelOntology
+from ser._internal.data.manifest import Utterance
+from ser._internal.data.ontology import LabelOntology
 
 __all__ = [
     "ASVP_ESD_CORPUS_ID",

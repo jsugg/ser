@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ser.data.catalog.public_datasets import (
+from ser._internal.data.catalog.public_datasets import (
     EMODB_2_CORPUS_ID,
     EMODB_2_DATASET_LICENSE_ID,
     EMODB_2_DATASET_POLICY_ID,

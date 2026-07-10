@@ -7,12 +7,12 @@ from ser._internal.data.application.models import (
     DatasetRegistrySnapshotEntry,
     DatasetRegistrySnapshotIssue,
 )
-from ser.config import AppConfig
-from ser.data.dataset_prepare import collect_dataset_registry_health_issues
-from ser.data.dataset_registry import (
+from ser._internal.data.dataset_prepare import collect_dataset_registry_health_issues
+from ser._internal.data.dataset_registry import (
     load_dataset_registry,
     parse_dataset_registry_options,
 )
+from ser.config import AppConfig
 
 
 def collect_dataset_registry_snapshot(

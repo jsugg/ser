@@ -7,6 +7,12 @@ import json
 import sys
 from pathlib import Path
 
+from ser._internal.data.dataset_consents import (
+    DatasetConsentError,
+    load_persisted_dataset_consents,
+    persist_dataset_consents,
+)
+from ser._internal.data.dataset_prepare import SUPPORTED_DATASETS
 from ser.config import AppConfig
 from ser.data.application import (
     build_dataset_capability_snapshot_json_payload,
@@ -18,12 +24,6 @@ from ser.data.application import (
     run_dataset_prepare_workflow,
     run_dataset_uninstall_workflow,
 )
-from ser.data.dataset_consents import (
-    DatasetConsentError,
-    load_persisted_dataset_consents,
-    persist_dataset_consents,
-)
-from ser.data.dataset_prepare import SUPPORTED_DATASETS
 
 
 def _is_interactive() -> bool:
