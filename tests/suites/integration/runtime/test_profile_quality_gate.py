@@ -10,11 +10,8 @@ from typing import cast
 
 import pytest
 
-import ser.runtime.profile_quality_gate as gate_module
-from ser.config import AppConfig, reload_settings
-from ser.domain import EmotionSegment
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.profile_quality_gate import (
+import ser._internal.runtime.profile_quality_gate as gate_module
+from ser._internal.runtime.profile_quality_gate import (
     QualityGateThresholds,
     _build_fast_predictor,
     _build_medium_predictor,
@@ -23,11 +20,14 @@ from ser.runtime.profile_quality_gate import (
     enforce_quality_gate,
     evaluate_profile_quality_gate,
 )
-from ser.runtime.quality_gate_reporting import (
+from ser._internal.runtime.quality_gate_reporting import (
     resolve_report_output_path,
     serialize_report_payload,
     write_serialized_report,
 )
+from ser.config import AppConfig, reload_settings
+from ser.domain import EmotionSegment
+from ser.runtime.contracts import InferenceRequest
 
 type LabeledAudioSample = tuple[str, str]
 
@@ -321,9 +321,9 @@ def test_build_fast_predictor_loads_model_once(monkeypatch: pytest.MonkeyPatch) 
         predict_calls.append((audio_path, loaded_model))
         return _segments("happy")
 
-    monkeypatch.setattr("ser.runtime.profile_quality_gate.load_model", _fake_load_model)
+    monkeypatch.setattr("ser._internal.runtime.profile_quality_gate.load_model", _fake_load_model)
     monkeypatch.setattr(
-        "ser.runtime.profile_quality_gate.predict_emotions",
+        "ser._internal.runtime.profile_quality_gate.predict_emotions",
         _fake_predict_emotions,
     )
 
@@ -386,13 +386,13 @@ def test_build_medium_predictor_reuses_loaded_resources(
         )
         return SimpleNamespace(segments=_segments("happy"))
 
-    monkeypatch.setattr("ser.runtime.profile_quality_gate.load_model", _fake_load_model)
+    monkeypatch.setattr("ser._internal.runtime.profile_quality_gate.load_model", _fake_load_model)
     monkeypatch.setattr(
-        "ser.runtime.profile_quality_gate.XLSRBackend",
+        "ser._internal.runtime.profile_quality_gate.XLSRBackend",
         _fake_backend_factory,
     )
     monkeypatch.setattr(
-        "ser.runtime.profile_quality_gate.run_medium_inference",
+        "ser._internal.runtime.profile_quality_gate.run_medium_inference",
         _fake_run_medium_inference,
     )
     base_settings = reload_settings()

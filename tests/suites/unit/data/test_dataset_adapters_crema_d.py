@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ser.data.adapters.crema_d import (
+from ser._internal.data.adapters.crema_d import (
     CREMA_D_CORPUS_ID,
     CREMA_D_DATASET_LICENSE_ID,
     CREMA_D_DATASET_POLICY_ID,
     build_crema_d_utterances,
 )
-from ser.data.ontology import LabelOntology
+from ser._internal.data.ontology import LabelOntology
 
 
 def _ontology() -> LabelOntology:

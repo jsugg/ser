@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-import ser.repr.hf_whisper as hf_whisper_module
-from ser.repr import EncodedSequence, PoolingWindow, WhisperBackend
-from ser.utils.torch_inference import TorchRuntime
+import ser._internal.repr.hf_whisper as hf_whisper_module
+from ser._internal.repr import EncodedSequence, PoolingWindow, WhisperBackend
+from ser._internal.utils.torch_inference import TorchRuntime
 
 
 @dataclass(frozen=True)

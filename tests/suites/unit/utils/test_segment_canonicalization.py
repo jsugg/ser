@@ -8,9 +8,9 @@ from hypothesis import given
 from hypothesis import settings as hypothesis_settings
 from hypothesis import strategies as st
 
+from ser._internal.utils.segment_canonicalization import CanonicalSegment, canonicalize_segments
 from ser.domain import EmotionSegment
 from ser.runtime.schema import SegmentPrediction
-from ser.utils.segment_canonicalization import CanonicalSegment, canonicalize_segments
 
 _PROPERTY_TEST_SETTINGS = hypothesis_settings(
     max_examples=100,

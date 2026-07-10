@@ -2,8 +2,8 @@
 
 import pytest
 
+from ser._internal.models import emotion_model as em
 from ser.domain import EmotionSegment
-from ser.models import emotion_model as em
 from ser.runtime.schema import (
     OUTPUT_SCHEMA_VERSION,
     InferenceResult,

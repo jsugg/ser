@@ -191,14 +191,14 @@ and observed green via `verifier-ci`.
 
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
-| P2-01 | Inventory & classification appendix | TODO | P1-01 |
-| P2-02 | `ser/models` → internal (keep facades) | TODO | P2-01 |
-| P2-03 | `ser/runtime` → internal (keep contracts/pipeline/registry facades) | TODO | P2-01 |
-| P2-04 | `ser/data` → internal (keep `application.py` + curated `__init__`) | TODO | P2-01 |
-| P2-05 | `ser/transcript` → internal (keep policy-listed facades) | TODO | P2-01 |
-| P2-06 | `ser/features`, `ser/heads`, `ser/repr`, `ser/diagnostics` residue | TODO | P2-01 |
-| P2-07 | Shrink `boundary_policy.toml` to genuine facades; strengthen contract test | TODO | P2-02..06 |
-| P2-08 | `ser/utils` trim to curated `__all__` | TODO | P2-01 |
+| P2-01 | Inventory & classification appendix | DONE | P1-01 |
+| P2-02 | `ser/models` → internal (keep facades) | DONE | P2-01 |
+| P2-03 | `ser/runtime` → internal (keep contracts/pipeline/registry facades) | DONE | P2-01 |
+| P2-04 | `ser/data` → internal (keep `application.py` + curated `__init__`) | DONE | P2-01 |
+| P2-05 | `ser/transcript` → internal (keep policy-listed facades) | DONE | P2-01 |
+| P2-06 | `ser/features`, `ser/heads`, `ser/repr`, `ser/diagnostics` residue | DONE | P2-01 |
+| P2-07 | Shrink `boundary_policy.toml` to genuine facades; strengthen contract test | DONE | P2-02..06 |
+| P2-08 | `ser/utils` trim to curated `__all__` | DONE | P2-01 |
 
 **P2-01** — Generate the full classification: for every `.py` under public non-tier-1
 paths, record `keep-as-facade` (with reason) or `move-internal` (with destination).
@@ -227,10 +227,10 @@ modules not re-exported move internal.
 
 | ID | Task | Status | Depends on |
 |----|------|--------|------------|
-| P3-01 | `docs/api-stability.md` | TODO | P2-07 |
-| P3-02 | README Python API section refresh | TODO | P2-07 |
-| P3-03 | README examples executed by a contract test | TODO | P3-02 |
-| P3-04 | `CHANGELOG.md` bootstrap | TODO | — |
+| P3-01 | `docs/api-stability.md` | DONE | P2-07 |
+| P3-02 | README Python API section refresh | DONE | P2-07 |
+| P3-03 | README examples executed by a contract test | DONE | P3-02 |
+| P3-04 | `CHANGELOG.md` bootstrap | DONE | — |
 
 **P3-01** — Document: tier-1 list (DD-02), the SemVer promise that activates at first
 publish, what `_internal` means, how the snapshot test governs API change, pointer to
@@ -308,6 +308,66 @@ Template:
 - Evidence: `<command>` → <result summary>
 - Deviations / follow-ups: …
 ```
+
+### 2026-07-10 00:25 — P3-04 done
+- What: Added `CHANGELOG.md` in Keep a Changelog style with an `[Unreleased]` section covering the Phase 3 governance changes.
+- Evidence: initial `make lint` exposed a Black formatting miss in the new README example test; `uv run --frozen --extra dev black tests/suites/integration/architecture/test_readme_examples.py` reformatted it; rerun `make lint` → Ruff/import-lint/Black/isort passed; `rg -n "^# Changelog|^## \\[Unreleased\\]|Keep a Changelog|Semantic Versioning" CHANGELOG.md` → found the expected headings/format notes; changelog branding scan → `no branding strings in changelog`.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:23 — P3-04 started
+- What: Bootstrap `CHANGELOG.md` in Keep a Changelog style with an `[Unreleased]` section.
+- Evidence: `CHANGELOG.md` is absent before this task.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:22 — P3-03 done
+- What: Added a subprocess contract test that extracts README fenced `python` blocks and executes them with a lightweight `ser.api.infer` stub.
+- Evidence: verifier-lite `019f4a08-3dad-72c1-8e9b-0234161b08bb` ran `rtk uv run --frozen --extra dev pytest -q tests/suites/integration/architecture/test_readme_examples.py` → `1 passed`; parent run of the same command → `1 passed`; synthetic README break from `ser.api.infer` to `ser.api.infer_broken` made the test fail with `AttributeError: module 'ser.api' has no attribute 'infer_broken'`, then the edit was reverted and the same test → `1 passed`.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:19 — P3-03 started
+- What: Add a README fenced-Python contract test that executes examples in subprocess isolation with a lightweight inference stub.
+- Evidence: P3-02 updated the example; no README example contract test exists yet.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:18 — P3-02 done
+- What: Updated the README Python API section to make `ser.api` the sole supported workflow entry point, show `ser.__version__`, keep a minimal `infer` example, and link the stability policy.
+- Evidence: `rg -n "sole supported Python workflow entry point|__version__|docs/api-stability\\.md|first published" README.md` → found all required README statements; guarded README scan for moved/removed module references → `no moved or removed README references`.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:17 — P3-02 started
+- What: Refresh the README Python API guidance around `ser.api`, `ser.__version__`, and the stability policy link.
+- Evidence: P3-01 added the policy document; README still needs explicit package-version usage and first-publish wording.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:16 — P3-01 done
+- What: Added `docs/api-stability.md` with the tier-1 list, first-publish SemVer promise, `_internal` policy, snapshot governance, and a README link.
+- Evidence: `make lint` → Ruff/import-lint/Black/isort passed; `rg -n "docs/api-stability\\.md|SemVer|first published|ser\\.api|boundary_policy\\.toml" README.md docs/api-stability.md` → found the README link plus the required policy statements.
+- Deviations / follow-ups: none.
+
+### 2026-07-10 00:15 — P3-01 started
+- What: Add the tier-1 API stability policy and link it from README.
+- Evidence: P2 ledger is done; `docs/api-stability.md` is absent before this task.
+- Deviations / follow-ups: none.
+
+### 2026-07-09 22:27 — P2-02..P2-08 done
+- What: Moved Phase 2 implementation modules under `ser/_internal/`, kept only classified public facades/contracts, rewired first-party imports/tests/scripts/docs, and trimmed `boundary_policy.toml` to 10 genuine facade entries.
+- Evidence: `rg --files ser/data ser/models ser/runtime ser/transcript ser/features ser/heads ser/repr | sort` → only Appendix-A keep-as-facade files remain public; `uv run --frozen --extra dev pytest -q tests/suites/integration/architecture/test_public_api_snapshot.py tests/suites/integration/architecture/test_public_import_cost.py` → `2 passed`; synthetic unlisted `from ser._internal.config.schema import AppConfig` in `ser/domain.py` made `uv run --frozen --extra dev pytest -q tests/suites/integration/architecture/test_api_import_boundary.py` fail in `test_public_to_internal_imports_match_explicit_allowlist`, then the synthetic edit was removed and the same boundary test → `13 passed`; `bash scripts/run_import_lint.sh` → `17 passed`; `make lint` → Ruff/import-lint/Black/isort passed; `make type` → mypy success and pyright `0 errors, 0 warnings`; `make test` → `1028 passed`; `make test-cov` → `1028 passed`, coverage gate held; `make lock-check` → lock verified.
+- Deviations / follow-ups: `ser.runtime.schema`, `ser.transcript.backends.base`, `ser.utils.common_utils`, and `ser.utils.logger` remain public contract/helper leaves to preserve tier-1 snapshot targets and public annotation self-sufficiency; no runtime behavior changes, publish workflows, dependency additions, or torch/torchaudio lock/spec edits.
+
+### 2026-07-09 21:35 — P2-02..P2-08 started
+- What: Execute the classified moves in dependency order, keeping public facades thin and routing implementation imports to internal owners.
+- Evidence: P2-01 Appendix A classified all move targets before the first move.
+- Deviations / follow-ups: none.
+
+### 2026-07-09 21:34 — P2-01 done
+- What: Classified every Python file under the public non-tier-1 Phase 2 package set as `keep-as-facade` or `move-internal`, including destinations for all moved modules.
+- Evidence: `python` classification generator covered 133 files; `rg -n '\| `[^`]+` \| unclassified' .local/public-api-surface-improvements.md` → no matches; Appendix A now contains no empty placeholder.
+- Deviations / follow-ups: `ser.diagnostics.domain` remains a public contract facade because the P1 tier-1 snapshot points `ser.api` diagnostic signature types at that module.
+
+### 2026-07-09 21:32 — P2-01 started
+- What: Build the Phase 2 inventory/review artifact before any moves, preserving P1 snapshot targets for tier-1 signatures.
+- Evidence: `rg --files ser/data ser/models ser/runtime ser/transcript ser/features ser/heads ser/repr ser/diagnostics ser/utils` listed the current public non-tier-1 candidates.
+- Deviations / follow-ups: none.
 
 ### 2026-07-09 21:00 — P1-05 done
 - What: Wired `make type-completeness` into CI code-quality, added
@@ -523,4 +583,186 @@ Template:
 
 ## Appendix A — Phase 2 classification (populated by P2-01)
 
-*(empty until P2-01)*
+| Path | Classification | Destination | Reason |
+|---|---|---|---|
+| `ser/data/__init__.py` | keep-as-facade | — | Public data package facade; curated training data exports only. |
+| `ser/data/adapters/__init__.py` | move-internal | `ser/_internal/data/adapters/__init__.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/adapters/biic_podcast.py` | move-internal | `ser/_internal/data/adapters/biic_podcast.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/adapters/crema_d.py` | move-internal | `ser/_internal/data/adapters/crema_d.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/adapters/csv_manifest_builder.py` | move-internal | `ser/_internal/data/adapters/csv_manifest_builder.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/adapters/msp_podcast.py` | move-internal | `ser/_internal/data/adapters/msp_podcast.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/adapters/public_csv_datasets.py` | move-internal | `ser/_internal/data/adapters/public_csv_datasets.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/adapters/ravdess.py` | move-internal | `ser/_internal/data/adapters/ravdess.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/application.py` | keep-as-facade | — | Public data application facade over internal dataset workflows. |
+| `ser/data/archive_extraction.py` | move-internal | `ser/_internal/data/archive_extraction.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/catalog/__init__.py` | move-internal | `ser/_internal/data/catalog/__init__.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/catalog/public_datasets.py` | move-internal | `ser/_internal/data/catalog/public_datasets.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/cli.py` | move-internal | `ser/_internal/data/cli.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/data_loader.py` | move-internal | `ser/_internal/data/data_loader.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/dataset_capabilities.py` | move-internal | `ser/_internal/data/dataset_capabilities.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/dataset_consents.py` | move-internal | `ser/_internal/data/dataset_consents.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/dataset_prepare.py` | move-internal | `ser/_internal/data/dataset_prepare.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/dataset_registry.py` | move-internal | `ser/_internal/data/dataset_registry.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/embedding_cache.py` | move-internal | `ser/_internal/data/embedding_cache.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/jl_corpus_downloads.py` | move-internal | `ser/_internal/data/jl_corpus_downloads.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/label_ontology.py` | move-internal | `ser/_internal/data/label_ontology.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/manifest.py` | move-internal | `ser/_internal/data/manifest.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/manifest_jsonl.py` | move-internal | `ser/_internal/data/manifest_jsonl.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/mendeley_dataset_preparation.py` | move-internal | `ser/_internal/data/mendeley_dataset_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/mendeley_downloads.py` | move-internal | `ser/_internal/data/mendeley_downloads.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/msp_podcast_mirror.py` | move-internal | `ser/_internal/data/msp_podcast_mirror.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/ontology.py` | move-internal | `ser/_internal/data/ontology.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/openslr_dataset_preparation.py` | move-internal | `ser/_internal/data/openslr_dataset_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/openslr_downloads.py` | move-internal | `ser/_internal/data/openslr_downloads.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/openslr_resolution.py` | move-internal | `ser/_internal/data/openslr_resolution.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/provider_dataset_preparation.py` | move-internal | `ser/_internal/data/provider_dataset_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/provider_downloads.py` | move-internal | `ser/_internal/data/provider_downloads.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/public_dataset_downloads.py` | move-internal | `ser/_internal/data/public_dataset_downloads.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/public_dataset_label_inference.py` | move-internal | `ser/_internal/data/public_dataset_label_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/strategies/__init__.py` | move-internal | `ser/_internal/data/strategies/__init__.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/strategies/auto_csv.py` | move-internal | `ser/_internal/data/strategies/auto_csv.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/strategies/base.py` | move-internal | `ser/_internal/data/strategies/base.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/strategies/default.py` | move-internal | `ser/_internal/data/strategies/default.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/data/zenodo_downloads.py` | move-internal | `ser/_internal/data/zenodo_downloads.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/__init__.py` | keep-as-facade | — | Lazy package facade exposing intended model facade modules. |
+| `ser/models/accurate_feature_dataset.py` | move-internal | `ser/_internal/models/accurate_feature_dataset.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/accurate_training_execution.py` | move-internal | `ser/_internal/models/accurate_training_execution.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/accurate_training_preparation.py` | move-internal | `ser/_internal/models/accurate_training_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/artifact_envelope.py` | move-internal | `ser/_internal/models/artifact_envelope.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/artifact_loading.py` | move-internal | `ser/_internal/models/artifact_loading.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/artifact_metadata.py` | move-internal | `ser/_internal/models/artifact_metadata.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/artifact_persistence.py` | move-internal | `ser/_internal/models/artifact_persistence.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/dataset_controls.py` | move-internal | `ser/_internal/models/dataset_controls.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/dataset_splitting.py` | move-internal | `ser/_internal/models/dataset_splitting.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/dataset_training_consents.py` | move-internal | `ser/_internal/models/dataset_training_consents.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/emotion_model.py` | keep-as-facade | — | Public model convenience facade over internal loading/training/prediction owners. |
+| `ser/models/fast_path.py` | move-internal | `ser/_internal/models/fast_path.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/fast_training.py` | move-internal | `ser/_internal/models/fast_training.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/feature_runtime_encoding.py` | move-internal | `ser/_internal/models/feature_runtime_encoding.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/medium_feature_dataset.py` | move-internal | `ser/_internal/models/medium_feature_dataset.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/medium_noise_controls.py` | move-internal | `ser/_internal/models/medium_noise_controls.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/medium_training_preparation.py` | move-internal | `ser/_internal/models/medium_training_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/profile_runtime.py` | keep-as-facade | — | Public profile-runtime selector facade over internal backend resolution. |
+| `ser/models/profile_training_preparation.py` | move-internal | `ser/_internal/models/profile_training_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/training_entrypoints.py` | keep-as-facade | — | Public training entrypoint facade over internal training workflow owners. |
+| `ser/models/training_execution.py` | move-internal | `ser/_internal/models/training_execution.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/training_preparation.py` | move-internal | `ser/_internal/models/training_preparation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/training_reporting.py` | move-internal | `ser/_internal/models/training_reporting.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/training_support.py` | move-internal | `ser/_internal/models/training_support.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/models/training_types.py` | move-internal | `ser/_internal/models/training_types.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/__init__.py` | keep-as-facade | — | Runtime package facade exporting public contracts, pipeline, and registry symbols. |
+| `ser/runtime/accurate_execution.py` | move-internal | `ser/_internal/runtime/accurate_execution.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/accurate_inference.py` | move-internal | `ser/_internal/runtime/accurate_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/accurate_model_contract.py` | move-internal | `ser/_internal/runtime/accurate_model_contract.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/accurate_prediction.py` | move-internal | `ser/_internal/runtime/accurate_prediction.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/accurate_research_inference.py` | move-internal | `ser/_internal/runtime/accurate_research_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/benchmarks.py` | move-internal | `ser/_internal/runtime/benchmarks.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/contracts.py` | keep-as-facade | — | Public runtime contract dataclasses used by tier-1 signatures. |
+| `ser/runtime/fast_inference.py` | move-internal | `ser/_internal/runtime/fast_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/medium_execution.py` | move-internal | `ser/_internal/runtime/medium_execution.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/medium_inference.py` | move-internal | `ser/_internal/runtime/medium_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/medium_prediction.py` | move-internal | `ser/_internal/runtime/medium_prediction.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/mps_oom.py` | move-internal | `ser/_internal/runtime/mps_oom.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/phase_contract.py` | move-internal | `ser/_internal/runtime/phase_contract.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/phase_timing.py` | move-internal | `ser/_internal/runtime/phase_timing.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/pipeline.py` | keep-as-facade | — | Public runtime pipeline factory facade over internal orchestration. |
+| `ser/runtime/postprocessing.py` | move-internal | `ser/_internal/runtime/postprocessing.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/profile_quality_gate.py` | move-internal | `ser/_internal/runtime/profile_quality_gate.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/quality_gate_cli.py` | move-internal | `ser/_internal/runtime/quality_gate_cli.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/quality_gate_evaluation.py` | move-internal | `ser/_internal/runtime/quality_gate_evaluation.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/quality_gate_policy.py` | move-internal | `ser/_internal/runtime/quality_gate_policy.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/quality_gate_reporting.py` | move-internal | `ser/_internal/runtime/quality_gate_reporting.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/runtime/registry.py` | keep-as-facade | — | Public runtime capability registry contract facade. |
+| `ser/runtime/schema.py` | keep-as-facade | — | Public runtime result schema contract referenced by runtime contracts and downstream tests. |
+| `ser/transcript/__init__.py` | keep-as-facade | — | Transcript package facade exporting supported transcript boundary APIs. |
+| `ser/transcript/backends/__init__.py` | keep-as-facade | — | Backend package marker for the supported stable-whisper facade path. |
+| `ser/transcript/backends/base.py` | keep-as-facade | — | Public backend adapter contract leaf shared by transcript facade consumers. |
+| `ser/transcript/backends/factory.py` | move-internal | `ser/_internal/transcript/backends/factory.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/faster_whisper.py` | move-internal | `ser/_internal/transcript/backends/faster_whisper.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper.py` | keep-as-facade | — | Public stable-whisper adapter facade over internal transcript backend owners. |
+| `ser/transcript/backends/stable_whisper_admission_runtime.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_admission_runtime.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper_mps_compat.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_mps_compat.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper_torio_probe.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_torio_probe.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper_transcribe_admission.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_transcribe_admission.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper_transcribe_execution.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_transcribe_execution.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper_transcribe_kwargs.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_transcribe_kwargs.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/backends/stable_whisper_transcribe_runtime.py` | move-internal | `ser/_internal/transcript/backends/stable_whisper_transcribe_runtime.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/mps_admission.py` | move-internal | `ser/_internal/transcript/mps_admission.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/mps_admission_overrides.py` | move-internal | `ser/_internal/transcript/mps_admission_overrides.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/profiling.py` | keep-as-facade | — | Public transcription profiling facade over internal profiling/calibration workflows. |
+| `ser/transcript/runtime_failures.py` | move-internal | `ser/_internal/transcript/runtime_failures.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/runtime_policy.py` | move-internal | `ser/_internal/transcript/runtime_policy.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/transcript/transcript_extractor.py` | keep-as-facade | — | Public transcript extraction facade used by transcript package exports. |
+| `ser/features/__init__.py` | keep-as-facade | — | Feature package facade exposing curated extraction helpers. |
+| `ser/features/feature_extractor.py` | move-internal | `ser/_internal/features/feature_extractor.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/heads/__init__.py` | keep-as-facade | — | Classifier-head package facade exposing curated torch-head helpers. |
+| `ser/heads/torch_head.py` | move-internal | `ser/_internal/heads/torch_head.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/repr/__init__.py` | keep-as-facade | — | Representation package facade exposing curated backend contracts/classes. |
+| `ser/repr/backend.py` | move-internal | `ser/_internal/repr/backend.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/repr/emotion2vec.py` | move-internal | `ser/_internal/repr/emotion2vec.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/repr/handcrafted.py` | move-internal | `ser/_internal/repr/handcrafted.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/repr/hf_whisper.py` | move-internal | `ser/_internal/repr/hf_whisper.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/repr/hf_xlsr.py` | move-internal | `ser/_internal/repr/hf_xlsr.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/repr/runtime_policy.py` | move-internal | `ser/_internal/repr/runtime_policy.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/diagnostics/__init__.py` | keep-as-facade | — | Diagnostics package facade for diagnostic contracts only. |
+| `ser/diagnostics/command.py` | move-internal | `ser/_internal/diagnostics/command.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/diagnostics/domain.py` | keep-as-facade | — | Diagnostic domain contracts remain public because tier-1 `ser.api` signatures target this module. |
+| `ser/diagnostics/service.py` | move-internal | `ser/_internal/diagnostics/service.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/__init__.py` | keep-as-facade | — | Tier-1 curated utility facade; helper modules move internal. |
+| `ser/utils/audio_utils.py` | move-internal | `ser/_internal/utils/audio_utils.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/common_utils.py` | keep-as-facade | — | Public utility helper backing the tier-1 `display_elapsed_time` export target. |
+| `ser/utils/dsp.py` | move-internal | `ser/_internal/utils/dsp.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/logger.py` | keep-as-facade | — | Public logger helper backing the tier-1 `get_logger` export target. |
+| `ser/utils/segment_canonicalization.py` | move-internal | `ser/_internal/utils/segment_canonicalization.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/subtitles.py` | move-internal | `ser/_internal/utils/subtitles.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/timeline_utils.py` | move-internal | `ser/_internal/utils/timeline_utils.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/torch_inference.py` | move-internal | `ser/_internal/utils/torch_inference.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+| `ser/utils/transcription_compat.py` | move-internal | `ser/_internal/utils/transcription_compat.py` | Implementation/helper module; first-party callers will use the internal owner path. |
+
+### 2026-07-10 audit correction — authoritative final classification
+
+The preceding table preserves the original planning record. A fresh baseline-tree
+inventory found the seven omitted modules below and rejected the listed facade
+exceptions as public implementation residue. This addendum supersedes every
+conflicting earlier row; all non-tier-1 paths not retained here were removed from the
+public tree or moved to their internal owner.
+
+| Baseline path | Final classification | Destination / final state | Reason |
+|---|---|---|---|
+| `ser/license_check.py` | move-internal | `ser/_internal/license_check.py` | License enforcement implementation is not a supported workflow API. |
+| `ser/pool/__init__.py` | move-internal | `ser/_internal/pool/__init__.py` | Pool implementation package is internal. |
+| `ser/pool/stats_pool.py` | move-internal | `ser/_internal/pool/stats_pool.py` | Pool implementation is internal. |
+| `ser/pool/windowing.py` | move-internal | `ser/_internal/pool/windowing.py` | Pool implementation is internal. |
+| `ser/train/__init__.py` | move-internal | `ser/_internal/train/__init__.py` | Training implementation package is internal. |
+| `ser/train/eval.py` | move-internal | `ser/_internal/train/eval.py` | Training evaluation implementation is internal. |
+| `ser/train/metrics.py` | move-internal | `ser/_internal/train/metrics.py` | Training metrics implementation is internal. |
+| `ser/data/__init__.py` | remove-public | Removed | No genuine facade or annotation contract remained. |
+| `ser/data/application.py` | move-internal | `ser/_internal/data/application/consents.py` | Dataset consent workflow implementation is internal. |
+| `ser/models/__init__.py` | remove-public | Removed | Package facade advertised unsupported implementation paths. |
+| `ser/models/emotion_model.py` | remove-public | Internal model owners retained | Public convenience facade was not a supported workflow entry point. |
+| `ser/models/profile_runtime.py` | remove-public | Internal runtime owners retained | Public convenience facade was not a supported workflow entry point. |
+| `ser/models/training_entrypoints.py` | remove-public | Internal training owners retained | Public convenience facade was not a supported workflow entry point. |
+| `ser/runtime/__init__.py` | keep-package-marker | Docstring-only package marker | Required only to own the retained contract leaves. |
+| `ser/runtime/contracts.py` | keep-contract-leaf | Re-exported by `ser.api` | Lightweight annotation vocabulary, not a workflow entry point. |
+| `ser/runtime/pipeline.py` | remove-public | `ser/_internal/runtime/pipeline.py` | Pipeline orchestration is internal. |
+| `ser/runtime/registry.py` | move-internal | `ser/_internal/runtime/registry.py` | Runtime registry implementation is internal. |
+| `ser/runtime/schema.py` | keep-contract-leaf | Re-exported by `ser.api` | Lightweight annotation vocabulary, not a workflow entry point. |
+| `ser/transcript/__init__.py` | remove-public | Removed | Package facade advertised unsupported implementation paths. |
+| `ser/transcript/backends/__init__.py` | remove-public | Removed | Package facade advertised unsupported implementation paths. |
+| `ser/transcript/backends/base.py` | move-internal | `ser/_internal/transcript/backends/base.py` | Backend adapter contract is internal implementation detail. |
+| `ser/transcript/backends/stable_whisper.py` | remove-public | Internal backend owner retained | Backend implementation is not a supported workflow entry point. |
+| `ser/transcript/profiling.py` | remove-public | Internal profiling owner retained | Profiling implementation is not a supported workflow entry point. |
+| `ser/transcript/transcript_extractor.py` | remove-public | Internal transcript owner retained | Transcript implementation is not a supported workflow entry point. |
+| `ser/features/__init__.py` | remove-public | Removed | Facade exposed implementation-only feature helpers. |
+| `ser/heads/__init__.py` | remove-public | Removed | Facade exposed implementation-only torch helpers. |
+| `ser/repr/__init__.py` | remove-public | Removed | Facade exposed implementation-only representation helpers. |
+| `ser/diagnostics/__init__.py` | keep-package-marker | Docstring-only package marker | Required only to own the retained diagnostic contract leaf. |
+| `ser/diagnostics/domain.py` | keep-contract-leaf | Re-exported by `ser.api` | Lightweight annotation vocabulary, not a workflow entry point. |
+| `ser/utils/common_utils.py` | move-internal | `ser/_internal/utils/common_utils.py` | Tier-1 facade delegates directly to the internal helper. |
+| `ser/utils/logger.py` | move-internal | `ser/_internal/utils/logger.py` | Tier-1 facade delegates directly to the internal helper. |
+
+The final public tree is enforced by
+`tests/suites/integration/architecture/test_api_import_boundary.py`: six tier-1
+modules, `ser.__main__`, two docstring-only package markers, and the three contract
+leaves listed above. The four entries in `boundary_policy.toml` are the only public
+modules allowed to delegate into `ser._internal`.

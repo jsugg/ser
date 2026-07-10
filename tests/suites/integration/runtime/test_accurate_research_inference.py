@@ -8,9 +8,9 @@ from typing import cast
 
 import pytest
 
+from ser._internal.repr import FeatureBackend
+from ser._internal.runtime.accurate_research_inference import run_accurate_research_inference
 from ser.config import AppConfig
-from ser.repr import FeatureBackend
-from ser.runtime.accurate_research_inference import run_accurate_research_inference
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
@@ -45,11 +45,11 @@ def test_run_accurate_research_inference_uses_configured_model_id(
             captured["huggingface_cache_root"] = huggingface_cache_root
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_research_inference.Emotion2VecBackend",
+        "ser._internal.runtime.accurate_research_inference.Emotion2VecBackend",
         _BackendStub,
     )
     monkeypatch.setattr(
-        "ser.runtime.accurate_research_inference.resolve_feature_runtime_policy",
+        "ser._internal.runtime.accurate_research_inference.resolve_feature_runtime_policy",
         lambda **_kwargs: SimpleNamespace(
             device="cpu",
             dtype="float32",
@@ -77,7 +77,7 @@ def test_run_accurate_research_inference_uses_configured_model_id(
         return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_research_inference.run_accurate_inference",
+        "ser._internal.runtime.accurate_research_inference.run_accurate_inference",
         _fake_run,
     )
 
@@ -128,7 +128,7 @@ def test_run_accurate_research_inference_uses_injected_backend(
         return InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
 
     monkeypatch.setattr(
-        "ser.runtime.accurate_research_inference.run_accurate_inference",
+        "ser._internal.runtime.accurate_research_inference.run_accurate_inference",
         _fake_run,
     )
 

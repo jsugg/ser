@@ -12,11 +12,10 @@ from numpy.typing import NDArray
 from sklearn.neural_network import MLPClassifier
 
 import ser.config as config
+from ser._internal.models import emotion_model
+from ser._internal.repr import EncodedSequence
 from ser._internal.runtime import medium_public_boundary as medium_boundary
-from ser.models import emotion_model
-from ser.repr import EncodedSequence
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.medium_inference import (
+from ser._internal.runtime.medium_inference import (
     MediumInferenceExecutionError,
     MediumInferenceTimeoutError,
     MediumModelUnavailableError,
@@ -24,6 +23,7 @@ from ser.runtime.medium_inference import (
     MediumTransientBackendError,
     run_medium_inference,
 )
+from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("reset_ambient_settings")]

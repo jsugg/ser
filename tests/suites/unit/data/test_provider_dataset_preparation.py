@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ser.data import provider_dataset_preparation as preparation
+import ser._internal.data.provider_dataset_preparation as preparation
 
 
 @dataclass(frozen=True, slots=True)

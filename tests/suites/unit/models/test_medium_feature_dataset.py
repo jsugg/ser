@@ -10,14 +10,14 @@ from typing import cast
 import numpy as np
 import pytest
 
-import ser.models.emotion_model as emotion_model
-import ser.models.medium_feature_dataset as mfd
-from ser.config import AppConfig, AudioReadConfig
-from ser.data import EmbeddingCache
-from ser.models.medium_noise_controls import (
+import ser._internal.models.emotion_model as emotion_model
+import ser._internal.models.medium_feature_dataset as mfd
+from ser._internal.data import EmbeddingCache
+from ser._internal.models.medium_noise_controls import (
     MediumNoiseControlStats,
 )
-from ser.repr import EncodedSequence, XLSRBackend
+from ser._internal.repr import EncodedSequence, XLSRBackend
+from ser.config import AppConfig, AudioReadConfig
 
 
 @dataclass(frozen=True)

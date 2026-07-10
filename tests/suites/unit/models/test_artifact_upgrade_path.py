@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sklearn.neural_network import MLPClassifier
 
-import ser.models.artifact_envelope as artifact_envelope
+import ser._internal.models.artifact_envelope as artifact_envelope
 
 
 def _build_classifier() -> MLPClassifier:

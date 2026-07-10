@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from sklearn.neural_network import MLPClassifier
 
+from ser._internal.features import FeatureFrame
+from ser._internal.models import emotion_model as em
 from ser.domain import EmotionSegment
-from ser.features import FeatureFrame
-from ser.models import emotion_model as em
 
 
 class StaticModel(MLPClassifier):

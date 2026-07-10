@@ -6,9 +6,9 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import Protocol
 
+from ser._internal.models.fast_training import FastTrainingHooks, train_fast_model
 from ser._internal.runtime.environment_plan import ProcessEnvDelta
 from ser.config import AppConfig
-from ser.models.fast_training import FastTrainingHooks, train_fast_model
 
 
 class RuntimeEnvironmentPlanLike(Protocol):

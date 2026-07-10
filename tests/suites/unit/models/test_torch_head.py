@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ser.heads.torch_head import build_torch_mlp_head, forward_torch_head
+from ser._internal.heads.torch_head import build_torch_mlp_head, forward_torch_head
 
 
 def test_build_torch_mlp_head_rejects_invalid_dimensions() -> None:

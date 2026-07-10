@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sklearn.neural_network import MLPClassifier
 
-from ser.models import artifact_persistence
+from ser._internal.models import artifact_persistence
 
 
 @dataclass(frozen=True)

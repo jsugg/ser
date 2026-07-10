@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ser.transcript.runtime_failures import (
+from ser._internal.transcript.runtime_failures import (
     FailureDisposition,
     classify_stable_whisper_transcription_failure,
 )

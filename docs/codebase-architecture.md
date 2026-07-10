@@ -8,13 +8,13 @@ formal artifacts in [`docs/architecture-diagram.md`](architecture-diagram.md),
 
 ## Scope and current state
 
-These counts are a current working-tree snapshot taken on March 27, 2026.
+These counts are a current working-tree snapshot taken on July 10, 2026.
 
 - Source modules under `ser/`: `228`
-- Test modules under `tests/`: `150`
-- Public modules outside `_internal/`: `167`
-- Internal owner/helper modules under `_internal/`: `61`
-- Public modules importing `_internal` directly: `24`
+- Test modules under `tests/`: `169`
+- Public modules outside `_internal/`: `12`
+- Internal owner/helper modules under `_internal/`: `216`
+- Public modules importing `_internal` directly: `4`
 
 This is a modular monolith with explicit subsystem seams. It is not a textbook
 hexagonal architecture, but it is clearly designed: configuration is typed and
@@ -22,15 +22,14 @@ immutable, runtime behavior is profile-driven, and operationally sensitive code
 paths use extracted owner modules for retries, process isolation, environment
 application, and diagnostics.
 
-Older roadmap references to `ser/models/training_orchestration.py` and
-`ser/_internal/apt/runtime.py` do not match the current tree; neither module is
-present in this workspace.
+Older roadmap references to a training-orchestration module and an APT runtime
+module do not match the current tree; neither module is present in this workspace.
 
 ## Architectural style
 
 The dominant architectural pattern is:
 
-1. thin public facades for stable entrypoints
+1. six tier-1 public modules for stable entrypoints
 2. `_internal` owner modules for orchestration or shared primitives
 3. profile- and backend-specific execution modules for heavy runtime behavior
 4. typed configuration and schema models as the shared contract layer
@@ -41,7 +40,7 @@ Representative boundaries:
 - Public API: [`ser/api.py`](../ser/api.py)
 - Public config: [`ser/config.py`](../ser/config.py)
 - CLI entrypoint: [`ser/__main__.py`](../ser/__main__.py)
-- Runtime pipeline seam: [`ser/runtime/pipeline.py`](../ser/runtime/pipeline.py)
+- Runtime pipeline owner: [`ser/_internal/runtime/pipeline.py`](../ser/_internal/runtime/pipeline.py)
 - Internal API owners: [`ser/_internal/api/runtime.py`](../ser/_internal/api/runtime.py), [`ser/_internal/api/data.py`](../ser/_internal/api/data.py), [`ser/_internal/api/diagnostics.py`](../ser/_internal/api/diagnostics.py)
 
 ## Top-level subsystem map
@@ -72,11 +71,16 @@ Tradeoff:
 
 ## 2. Public API and CLI architecture
 
-The public library surface is intentionally small:
+The public library surface is intentionally small: `ser`, `ser.api`, `ser.config`,
+`ser.domain`, `ser.profiles`, and `ser.utils`. `ser.api` is the only supported
+workflow entry point:
 
+- [`ser/__init__.py`](../ser/__init__.py)
 - [`ser/api.py`](../ser/api.py)
 - [`ser/config.py`](../ser/config.py)
-- [`ser/__init__.py`](../ser/__init__.py)
+- [`ser/domain.py`](../ser/domain.py)
+- [`ser/profiles.py`](../ser/profiles.py)
+- [`ser/utils/__init__.py`](../ser/utils/__init__.py)
 
 The CLI delegates through internal CLI support modules instead of talking
 directly to the library facade:
@@ -98,7 +102,8 @@ library facade.
 
 ## 3. Runtime inference architecture
 
-The central orchestration seam is [`ser/runtime/pipeline.py`](../ser/runtime/pipeline.py).
+The central orchestration owner is
+[`ser/_internal/runtime/pipeline.py`](../ser/_internal/runtime/pipeline.py).
 It coordinates:
 
 - profile resolution
@@ -111,7 +116,7 @@ It coordinates:
 Supporting runtime ownership is split between:
 
 - backend hook construction: [`ser/_internal/runtime/backend_hooks.py`](../ser/_internal/runtime/backend_hooks.py)
-- capability resolution: [`ser/runtime/registry.py`](../ser/runtime/registry.py)
+- capability resolution: [`ser/_internal/runtime/registry.py`](../ser/_internal/runtime/registry.py)
 - retry policy: [`ser/_internal/runtime/policy.py`](../ser/_internal/runtime/policy.py)
 - shared retry/error primitives: [`ser/_internal/runtime/retry_primitives.py`](../ser/_internal/runtime/retry_primitives.py)
 - process env planning: [`ser/_internal/runtime/environment_plan.py`](../ser/_internal/runtime/environment_plan.py)
@@ -120,16 +125,16 @@ Supporting runtime ownership is split between:
 The runtime design is profile-aware, not fully generic. Each profile still has
 its own execution path:
 
-- fast: [`ser/runtime/fast_inference.py`](../ser/runtime/fast_inference.py)
-- medium: [`ser/runtime/medium_inference.py`](../ser/runtime/medium_inference.py)
-- accurate: [`ser/runtime/accurate_inference.py`](../ser/runtime/accurate_inference.py)
-- accurate-research: [`ser/runtime/accurate_research_inference.py`](../ser/runtime/accurate_research_inference.py)
+- fast: [`ser/_internal/runtime/fast_inference.py`](../ser/_internal/runtime/fast_inference.py)
+- medium: [`ser/_internal/runtime/medium_inference.py`](../ser/_internal/runtime/medium_inference.py)
+- accurate: [`ser/_internal/runtime/accurate_inference.py`](../ser/_internal/runtime/accurate_inference.py)
+- accurate-research: [`ser/_internal/runtime/accurate_research_inference.py`](../ser/_internal/runtime/accurate_research_inference.py)
 
 The important architectural improvement is that medium and accurate are no
 longer monolithic runtime modules. They now delegate heavily into owner modules:
 
 - public-boundary orchestration: [`ser/_internal/runtime/accurate_public_boundary.py`](../ser/_internal/runtime/accurate_public_boundary.py), [`ser/_internal/runtime/medium_public_boundary.py`](../ser/_internal/runtime/medium_public_boundary.py)
-- execution: [`ser/runtime/medium_execution.py`](../ser/runtime/medium_execution.py), [`ser/runtime/accurate_execution.py`](../ser/runtime/accurate_execution.py)
+- execution: [`ser/_internal/runtime/medium_execution.py`](../ser/_internal/runtime/medium_execution.py), [`ser/_internal/runtime/accurate_execution.py`](../ser/_internal/runtime/accurate_execution.py)
 - setup/context: [`ser/_internal/runtime/medium_execution_context.py`](../ser/_internal/runtime/medium_execution_context.py), [`ser/_internal/runtime/accurate_operation_setup.py`](../ser/_internal/runtime/accurate_operation_setup.py)
 - retry/execution flow: [`ser/_internal/runtime/medium_execution_flow.py`](../ser/_internal/runtime/medium_execution_flow.py), [`ser/_internal/runtime/accurate_execution_flow.py`](../ser/_internal/runtime/accurate_execution_flow.py)
 - worker lifecycle: [`ser/_internal/runtime/medium_worker_lifecycle.py`](../ser/_internal/runtime/medium_worker_lifecycle.py), [`ser/_internal/runtime/accurate_worker_lifecycle.py`](../ser/_internal/runtime/accurate_worker_lifecycle.py)
@@ -146,8 +151,10 @@ remain, but the complex reusable mechanics are extracted and tested separately.
 
 ## 4. Model and training architecture
 
-The model subsystem is centered on [`ser/models/emotion_model.py`](../ser/models/emotion_model.py),
-which is now a thin public boundary rather than a primary hotspot. It owns:
+The model subsystem is centered on
+[`ser/_internal/models/emotion_model.py`](../ser/_internal/models/emotion_model.py).
+It is reached through `ser.api.train` and `ser.api.infer`, rather than a public
+model package. It owns:
 
 - fast, medium, accurate, and accurate-research training entrypoints
 - model loading and compatibility filtering
@@ -155,26 +162,26 @@ which is now a thin public boundary rather than a primary hotspot. It owns:
 
 There has been meaningful decomposition:
 
-- fast training workflow owner: [`ser/models/fast_training.py`](../ser/models/fast_training.py)
-- public training-entrypoint wiring: [`ser/models/training_entrypoints.py`](../ser/models/training_entrypoints.py)
-- accurate-profile preparation and entrypoint helpers: [`ser/models/accurate_training_preparation.py`](../ser/models/accurate_training_preparation.py)
-- accurate-profile prepared-training execution assembly: [`ser/models/accurate_training_execution.py`](../ser/models/accurate_training_execution.py)
-- shared training preparation/evaluation: [`ser/models/training_preparation.py`](../ser/models/training_preparation.py)
-- shared training execution/reporting: [`ser/models/training_execution.py`](../ser/models/training_execution.py)
-- shared boundary helpers: [`ser/models/training_support.py`](../ser/models/training_support.py)
-- shared training contracts: [`ser/models/training_types.py`](../ser/models/training_types.py)
+- fast training workflow owner: [`ser/_internal/models/fast_training.py`](../ser/_internal/models/fast_training.py)
+- training-entrypoint wiring: [`ser/_internal/models/training_entrypoints.py`](../ser/_internal/models/training_entrypoints.py)
+- accurate-profile preparation and entrypoint helpers: [`ser/_internal/models/accurate_training_preparation.py`](../ser/_internal/models/accurate_training_preparation.py)
+- accurate-profile prepared-training execution assembly: [`ser/_internal/models/accurate_training_execution.py`](../ser/_internal/models/accurate_training_execution.py)
+- shared training preparation/evaluation: [`ser/_internal/models/training_preparation.py`](../ser/_internal/models/training_preparation.py)
+- shared training execution/reporting: [`ser/_internal/models/training_execution.py`](../ser/_internal/models/training_execution.py)
+- shared boundary helpers: [`ser/_internal/models/training_support.py`](../ser/_internal/models/training_support.py)
+- shared training contracts: [`ser/_internal/models/training_types.py`](../ser/_internal/models/training_types.py)
 - fast training entrypoint seam: [`ser/_internal/models/fast_training_entrypoints.py`](../ser/_internal/models/fast_training_entrypoints.py)
 - shared model loading entrypoint: [`ser/_internal/models/model_loading.py`](../ser/_internal/models/model_loading.py)
 
 This subsystem is now materially closer to the runtime/data architecture shape:
-[`ser/models/emotion_model.py`](../ser/models/emotion_model.py) stays
-boundary-only, while profile-specific entrypoint wiring and shared
+[`ser/_internal/models/emotion_model.py`](../ser/_internal/models/emotion_model.py)
+is internal, while profile-specific entrypoint wiring and shared
 cross-profile logic live in dedicated `training_*` owner modules, and
 accurate-profile preparation is now separated from accurate-profile
 prepared-training execution between
-[`ser/models/accurate_training_preparation.py`](../ser/models/accurate_training_preparation.py)
+[`ser/_internal/models/accurate_training_preparation.py`](../ser/_internal/models/accurate_training_preparation.py)
 and
-[`ser/models/accurate_training_execution.py`](../ser/models/accurate_training_execution.py)
+[`ser/_internal/models/accurate_training_execution.py`](../ser/_internal/models/accurate_training_execution.py)
 instead of reconcentrating inside one mixed-responsibility owner. Internal
 callers and tests now use canonical owner modules directly instead of routing
 through a compatibility namespace on `emotion_model.py`. The remaining risk is
@@ -182,11 +189,12 @@ boundary drift or reconcentration, not alias sprawl.
 
 ## 5. Transcription architecture
 
-Transcription is one of the most mature architectural subsystems.
+Transcription is one of the most mature architectural subsystems. Its owners are
+internal and are reached through `ser.api.infer`.
 
-Public orchestration lives in:
+Core orchestration lives in:
 
-- [`ser/transcript/transcript_extractor.py`](../ser/transcript/transcript_extractor.py)
+- [`ser/_internal/transcript/transcript_extractor.py`](../ser/_internal/transcript/transcript_extractor.py)
 
 Public-boundary wrapper orchestration now also lives in:
 
@@ -204,11 +212,11 @@ Execution strategy is split between:
 
 Backend abstraction lives behind:
 
-- [`ser/transcript/backends/__init__.py`](../ser/transcript/backends/__init__.py)
+- [`ser/_internal/transcript/backends/__init__.py`](../ser/_internal/transcript/backends/__init__.py)
 
 Profiling and recommendation are also decomposed:
 
-- public profiling orchestrator: [`ser/transcript/profiling.py`](../ser/transcript/profiling.py)
+- profiling orchestrator: [`ser/_internal/transcript/profiling.py`](../ser/_internal/transcript/profiling.py)
 - public-boundary profiling wiring and CLI dispatch: [`ser/_internal/transcription/public_boundary_profiling.py`](../ser/_internal/transcription/public_boundary_profiling.py)
 - benchmark owner: [`ser/_internal/transcription/default_benchmark.py`](../ser/_internal/transcription/default_benchmark.py)
 - recommendation owner: [`ser/_internal/transcription/default_recommendation.py`](../ser/_internal/transcription/default_recommendation.py)
@@ -221,30 +229,31 @@ calibration rather than burying those concerns in one function.
 
 ## 6. Data architecture
 
-The data subsystem is organized around a useful combination of facades,
-application workflows, catalog data, strategy objects, and file-format adapters.
+The data subsystem is organized around internal application workflows, catalog data,
+strategy objects, and file-format adapters. Consumers use the dataset operations on
+`ser.api` rather than a public data package.
 
-Public/application layer:
+Application layer:
 
-- [`ser/data/application.py`](../ser/data/application.py)
+- [`ser/_internal/data/application/consents.py`](../ser/_internal/data/application/consents.py)
 - [`ser/_internal/data/application/prepare.py`](../ser/_internal/data/application/prepare.py)
 - [`ser/_internal/data/application/registry_snapshot.py`](../ser/_internal/data/application/registry_snapshot.py)
 
 Preparation and registry orchestration:
 
-- [`ser/data/dataset_prepare.py`](../ser/data/dataset_prepare.py)
-- [`ser/data/dataset_registry.py`](../ser/data/dataset_registry.py)
+- [`ser/_internal/data/dataset_prepare.py`](../ser/_internal/data/dataset_prepare.py)
+- [`ser/_internal/data/dataset_registry.py`](../ser/_internal/data/dataset_registry.py)
 
 Catalog and strategies:
 
-- declarative catalog: [`ser/data/catalog/public_datasets.py`](../ser/data/catalog/public_datasets.py)
-- strategy registry: [`ser/data/strategies/default.py`](../ser/data/strategies/default.py)
-- extracted homogeneous CSV strategies: [`ser/data/strategies/auto_csv.py`](../ser/data/strategies/auto_csv.py)
+- declarative catalog: [`ser/_internal/data/catalog/public_datasets.py`](../ser/_internal/data/catalog/public_datasets.py)
+- strategy registry: [`ser/_internal/data/strategies/default.py`](../ser/_internal/data/strategies/default.py)
+- extracted homogeneous CSV strategies: [`ser/_internal/data/strategies/auto_csv.py`](../ser/_internal/data/strategies/auto_csv.py)
 
 Adapters:
 
-- [`ser/data/adapters/public_csv_datasets.py`](../ser/data/adapters/public_csv_datasets.py)
-- [`ser/data/adapters/csv_manifest_builder.py`](../ser/data/adapters/csv_manifest_builder.py)
+- [`ser/_internal/data/adapters/public_csv_datasets.py`](../ser/_internal/data/adapters/public_csv_datasets.py)
+- [`ser/_internal/data/adapters/csv_manifest_builder.py`](../ser/_internal/data/adapters/csv_manifest_builder.py)
 
 This subsystem is architecturally strong. Metadata is declarative, behavior is
 attached to strategies, and application workflows are separated from low-level
@@ -254,7 +263,7 @@ registry and manifest concerns.
 
 Diagnostics are treated as a first-class subsystem:
 
-- diagnostics service: [`ser/diagnostics/service.py`](../ser/diagnostics/service.py)
+- diagnostics service: [`ser/diagnostics/service.py`](../ser/_internal/diagnostics/service.py)
 - diagnostics API owner: [`ser/_internal/api/diagnostics.py`](../ser/_internal/api/diagnostics.py)
 - CLI doctor/preflight support: [`ser/_internal/cli/diagnostics.py`](../ser/_internal/cli/diagnostics.py)
 
@@ -277,17 +286,17 @@ Strengths:
 
 Limits:
 
-- the `_internal` boundary is not universally enforced
-- some public modules still import `_internal` directly by design
+- policy-listed public facades may import `_internal` owners only through the
+  audited `boundary_policy.toml` exception list
 - several public boundaries still offer optional settings fallbacks for
   convenience
 
-This is a pragmatic boundary model. It is maintainable, but it depends on team
-discipline more than on absolute architectural isolation.
+The public-to-private boundary is enforced by Ruff for direct imports and an
+AST-aware import-lint check for direct and lazy imports.
 
 ## Design patterns in active use
 
-- Facade: `ser.api`, `ser.config`, `ser.data.application`
+- Facade: `ser.api`, `ser.config`, `ser.utils`
 - Strategy: dataset strategy registry and dataset-specific strategy classes
 - Adapter: transcription adapters, representation backends, backend hooks
 - Catalog/config-driven runtime selection: profile YAML definitions
@@ -307,8 +316,8 @@ discipline more than on absolute architectural isolation.
 
 ## Main architectural liabilities
 
-- [`ser/runtime/accurate_inference.py`](../ser/runtime/accurate_inference.py) and [`ser/runtime/medium_inference.py`](../ser/runtime/medium_inference.py) remain large public wrappers because they preserve public/runtime signatures, exception surfaces, and worker-entry orchestration seams, even though most compute, retry, and pooling ownership now lives in [`ser/_internal/runtime/accurate_public_boundary.py`](../ser/_internal/runtime/accurate_public_boundary.py), [`ser/_internal/runtime/medium_public_boundary.py`](../ser/_internal/runtime/medium_public_boundary.py), [`ser/runtime/accurate_execution.py`](../ser/runtime/accurate_execution.py), and [`ser/runtime/medium_execution.py`](../ser/runtime/medium_execution.py)
-- [`ser/transcript/transcript_extractor.py`](../ser/transcript/transcript_extractor.py) remains a large public boundary, but process-isolation, runtime/setup, and wrapper orchestration now route through [`ser/_internal/transcription/public_boundary_process.py`](../ser/_internal/transcription/public_boundary_process.py), [`ser/_internal/transcription/public_boundary_runtime.py`](../ser/_internal/transcription/public_boundary_runtime.py), and [`ser/_internal/transcription/public_boundary_support.py`](../ser/_internal/transcription/public_boundary_support.py)
+- [`ser/_internal/runtime/accurate_inference.py`](../ser/_internal/runtime/accurate_inference.py) and [`ser/_internal/runtime/medium_inference.py`](../ser/_internal/runtime/medium_inference.py) remain large internal owner modules because they preserve runtime signatures, exception surfaces, and worker-entry orchestration seams, even though most compute, retry, and pooling ownership lives in [`ser/_internal/runtime/accurate_public_boundary.py`](../ser/_internal/runtime/accurate_public_boundary.py), [`ser/_internal/runtime/medium_public_boundary.py`](../ser/_internal/runtime/medium_public_boundary.py), [`ser/_internal/runtime/accurate_execution.py`](../ser/_internal/runtime/accurate_execution.py), and [`ser/_internal/runtime/medium_execution.py`](../ser/_internal/runtime/medium_execution.py)
+- [`ser/_internal/transcript/transcript_extractor.py`](../ser/_internal/transcript/transcript_extractor.py) remains a large internal boundary owner, while process-isolation, runtime/setup, and wrapper orchestration route through [`ser/_internal/transcription/public_boundary_process.py`](../ser/_internal/transcription/public_boundary_process.py), [`ser/_internal/transcription/public_boundary_runtime.py`](../ser/_internal/transcription/public_boundary_runtime.py), and [`ser/_internal/transcription/public_boundary_support.py`](../ser/_internal/transcription/public_boundary_support.py)
 - [`ser/__main__.py`](../ser/__main__.py) is still a long CLI composition function
 - optional boundary-level `reload_settings()` fallbacks remain, so DI is still
   incomplete even though direct `get_settings()` calls have been removed from

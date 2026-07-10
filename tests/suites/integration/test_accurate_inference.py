@@ -11,10 +11,10 @@ import pytest
 from sklearn.neural_network import MLPClassifier
 
 import ser.config as config
+from ser._internal.models import emotion_model
+from ser._internal.repr import EncodedSequence
 from ser._internal.runtime import accurate_public_boundary as accurate_boundary
-from ser.models import emotion_model
-from ser.repr import EncodedSequence
-from ser.runtime.accurate_inference import (
+from ser._internal.runtime.accurate_inference import (
     AccurateInferenceExecutionError,
     AccurateInferenceTimeoutError,
     AccurateModelUnavailableError,

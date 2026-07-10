@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from ser.repr import (
+from ser._internal.repr import (
     EncodedSequence,
     FeatureBackend,
     PoolingWindow,

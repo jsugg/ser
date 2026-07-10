@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ser.models import training_reporting
+from ser._internal.models import training_reporting
 
 
 class _Artifacts:

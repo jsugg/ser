@@ -79,7 +79,7 @@ if [[ "$run_training" == "true" ]]; then
 fi
 
 gate_cmd=(
-  uv run --frozen --extra medium python -m ser.runtime.profile_quality_gate
+  uv run --frozen --extra medium python -m ser._internal.runtime.profile_quality_gate
   --dataset-glob "$dataset_glob"
   --random-state 42
   --test-size 0.25

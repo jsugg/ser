@@ -8,8 +8,7 @@ from typing import cast
 
 import pytest
 
-from ser.config import AppConfig
-from ser.data.dataset_registry import (
+from ser._internal.data.dataset_registry import (
     DatasetRegistryEntry,
     load_dataset_registry,
     parse_dataset_registry_options,
@@ -18,6 +17,7 @@ from ser.data.dataset_registry import (
     save_dataset_registry,
     upsert_dataset_registry_entry,
 )
+from ser.config import AppConfig
 
 
 def _settings(tmp_path: Path) -> AppConfig:

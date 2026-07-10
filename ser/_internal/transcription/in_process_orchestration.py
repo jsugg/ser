@@ -6,16 +6,16 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
-from ser.config import AppConfig
-from ser.profiles import TranscriptionBackendId
-from ser.runtime.phase_contract import (
+from ser._internal.runtime.phase_contract import (
     PHASE_TRANSCRIPTION,
     PHASE_TRANSCRIPTION_MODEL_LOAD,
     PHASE_TRANSCRIPTION_SETUP,
 )
+from ser.config import AppConfig
+from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
-    from ser.transcript.backends import BackendRuntimeRequest
+    from ser._internal.transcript.backends import BackendRuntimeRequest
 
 
 class _SetupLoadAdapter(Protocol):

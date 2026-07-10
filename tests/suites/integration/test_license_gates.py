@@ -8,7 +8,7 @@ import pytest
 
 import ser._internal.runtime.backend_hooks as backend_hooks
 import ser.config as config
-from ser.license_check import (
+from ser._internal.license_check import (
     BackendLicensePolicyError,
     ensure_backend_access,
     evaluate_backend_access,

@@ -9,14 +9,14 @@ from typing import Any, cast
 
 import pytest
 
+import ser._internal.runtime.pipeline as runtime_pipeline_module
 import ser.config as config
-import ser.runtime.pipeline as runtime_pipeline_module
+from ser._internal.runtime.pipeline import RuntimePipeline, create_runtime_pipeline
+from ser._internal.runtime.registry import RuntimeCapability, UnsupportedProfileError
 from ser.config import AppConfig, TimelineConfig
 from ser.domain import EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import RuntimeProfile
 from ser.runtime.contracts import InferenceRequest
-from ser.runtime.pipeline import RuntimePipeline, create_runtime_pipeline
-from ser.runtime.registry import RuntimeCapability, UnsupportedProfileError
 from ser.runtime.schema import (
     OUTPUT_SCHEMA_VERSION,
     FramePrediction,
@@ -518,7 +518,7 @@ def test_create_runtime_pipeline_marks_medium_available_when_hook_registry_is_re
     """Factory should treat medium as available when hook registry is populated."""
     monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -530,7 +530,7 @@ def test_create_runtime_pipeline_marks_medium_available_when_hook_registry_is_re
         )
 
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {"hf_xlsr": fake_medium_hook},
     )
     settings = config.reload_settings()
@@ -548,7 +548,7 @@ def test_create_runtime_pipeline_marks_accurate_available_when_hook_registry_is_
     """Factory should treat accurate as available when hook registry is populated."""
     monkeypatch.setenv("SER_ENABLE_ACCURATE_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -560,7 +560,7 @@ def test_create_runtime_pipeline_marks_accurate_available_when_hook_registry_is_
         )
 
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {"hf_whisper": fake_accurate_hook},
     )
     settings = config.reload_settings()
@@ -579,7 +579,7 @@ def test_create_runtime_pipeline_marks_accurate_research_available_when_hook_reg
     monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
     monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -591,7 +591,7 @@ def test_create_runtime_pipeline_marks_accurate_research_available_when_hook_reg
         )
 
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {"emotion2vec": fake_accurate_research_hook},
     )
     settings = config.reload_settings()
@@ -649,7 +649,7 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
 ) -> None:
     """Factory should bind transcript extraction to selected profile defaults."""
     monkeypatch.setattr(
-        "ser.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
+        "ser._internal.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
         lambda: False,
     )
     monkeypatch.delenv("WHISPER_MODEL", raising=False)
@@ -658,11 +658,11 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {
             backend_id: lambda _request: InferenceResult(
                 schema_version=OUTPUT_SCHEMA_VERSION,
@@ -684,7 +684,9 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
         captured["settings"] = settings
         return []
 
-    monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
+    monkeypatch.setattr(
+        "ser._internal.transcript.transcript_extractor.extract_transcript", fake_extract
+    )
     settings = config.reload_settings()
     pipeline = create_runtime_pipeline(settings)
 
@@ -692,7 +694,7 @@ def test_create_runtime_pipeline_uses_profile_specific_transcription_profile(
         InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
     )
 
-    from ser.transcript import TranscriptionProfile
+    from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 
     profile = captured["profile"]
     assert isinstance(profile, TranscriptionProfile)
@@ -708,28 +710,28 @@ def test_create_runtime_pipeline_uses_settings_timeline_folder_for_default_subti
     tmp_path: Path,
 ) -> None:
     """Factory-backed subtitle export should forward the configured timeline folder."""
-    monkeypatch.setattr("ser.runtime.pipeline.build_backend_hooks", lambda _settings: {})
+    monkeypatch.setattr("ser._internal.runtime.pipeline.build_backend_hooks", lambda _settings: {})
     monkeypatch.setattr(
-        "ser.models.emotion_model.predict_emotions",
+        "ser._internal.models.emotion_model.predict_emotions",
         lambda _file_path, *, settings=None: [EmotionSegment("happy", 0.0, 1.0)],
     )
     monkeypatch.setattr(
-        "ser.models.emotion_model.predict_emotions_detailed",
+        "ser._internal.models.emotion_model.predict_emotions_detailed",
         lambda _file_path, *, settings=None: (_ for _ in ()).throw(
             AssertionError("Detailed path should not run when schema flag is disabled.")
         ),
     )
     monkeypatch.setattr(
-        "ser.transcript.extract_transcript",
+        "ser._internal.transcript.transcript_extractor.extract_transcript",
         lambda _file_path, _language, profile=None, *, settings=None: [
             TranscriptWord("hello", 0.0, 0.5)
         ],
     )
     monkeypatch.setattr(
-        "ser.utils.timeline_utils.build_timeline",
+        "ser._internal.utils.timeline_utils.build_timeline",
         lambda _transcript, _emotions: [TimelineEntry(0.0, "happy", "hello")],
     )
-    monkeypatch.setattr("ser.utils.timeline_utils.print_timeline", lambda _timeline: None)
+    monkeypatch.setattr("ser._internal.utils.timeline_utils.print_timeline", lambda _timeline: None)
     captured: dict[str, object] = {}
 
     def fake_save_timeline_to_subtitles(
@@ -744,7 +746,7 @@ def test_create_runtime_pipeline_uses_settings_timeline_folder_for_default_subti
         return "custom/sample.vtt"
 
     monkeypatch.setattr(
-        "ser.utils.subtitles.save_timeline_to_subtitles",
+        "ser._internal.utils.subtitles.save_timeline_to_subtitles",
         fake_save_timeline_to_subtitles,
     )
     settings = replace(
@@ -776,17 +778,17 @@ def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
 ) -> None:
     """Fast profile should keep faster-whisper and rely on process isolation."""
     monkeypatch.setattr(
-        "ser.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
+        "ser._internal.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
         lambda: True,
     )
     monkeypatch.delenv("WHISPER_BACKEND", raising=False)
     monkeypatch.delenv("WHISPER_MODEL", raising=False)
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {
             "handcrafted": lambda _request: InferenceResult(
                 schema_version=OUTPUT_SCHEMA_VERSION,
@@ -808,7 +810,9 @@ def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
         captured["settings"] = settings
         return []
 
-    monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
+    monkeypatch.setattr(
+        "ser._internal.transcript.transcript_extractor.extract_transcript", fake_extract
+    )
     settings = config.reload_settings()
     pipeline = create_runtime_pipeline(settings)
 
@@ -816,7 +820,7 @@ def test_create_runtime_pipeline_retains_faster_whisper_on_openmp_conflict(
         InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
     )
 
-    from ser.transcript import TranscriptionProfile
+    from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 
     profile = captured["profile"]
     assert isinstance(profile, TranscriptionProfile)
@@ -834,15 +838,15 @@ def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
     monkeypatch.setenv("WHISPER_BACKEND", "faster_whisper")
     monkeypatch.setenv("WHISPER_MODEL", "distil-large-v3")
     monkeypatch.setattr(
-        "ser.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
+        "ser._internal.runtime.pipeline.has_known_faster_whisper_openmp_runtime_conflict",
         lambda: True,
     )
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {
             "handcrafted": lambda _request: InferenceResult(
                 schema_version=OUTPUT_SCHEMA_VERSION,
@@ -864,7 +868,9 @@ def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
         captured["settings"] = settings
         return []
 
-    monkeypatch.setattr("ser.transcript.extract_transcript", fake_extract)
+    monkeypatch.setattr(
+        "ser._internal.transcript.transcript_extractor.extract_transcript", fake_extract
+    )
     settings = config.reload_settings()
     pipeline = create_runtime_pipeline(settings)
 
@@ -872,7 +878,7 @@ def test_create_runtime_pipeline_respects_explicit_faster_backend_override(
         InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
     )
 
-    from ser.transcript import TranscriptionProfile
+    from ser._internal.transcript.transcript_extractor import TranscriptionProfile
 
     profile = captured["profile"]
     assert isinstance(profile, TranscriptionProfile)
@@ -887,7 +893,7 @@ def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selec
     """Medium profile should route training through medium training entrypoint."""
     monkeypatch.setenv("SER_ENABLE_MEDIUM_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -901,7 +907,7 @@ def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selec
     called = {"fast": False, "medium": False}
 
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {"hf_xlsr": fake_medium_hook},
     )
     captured_settings: dict[str, object] = {}
@@ -914,9 +920,9 @@ def test_create_runtime_pipeline_uses_medium_training_callable_when_medium_selec
         captured_settings["medium"] = settings
         called["medium"] = True
 
-    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
+    monkeypatch.setattr("ser._internal.models.emotion_model.train_model", _fake_train_model)
     monkeypatch.setattr(
-        "ser.models.emotion_model.train_medium_model",
+        "ser._internal.models.emotion_model.train_medium_model",
         _fake_train_medium_model,
     )
 
@@ -936,14 +942,14 @@ def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
     """Accurate profile should route training through accurate training entrypoint."""
     monkeypatch.setenv("SER_ENABLE_ACCURATE_PROFILE", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
     called = {"fast": False, "medium": False, "accurate": False}
 
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {
             "hf_whisper": lambda _request: InferenceResult(
                 schema_version=OUTPUT_SCHEMA_VERSION,
@@ -966,13 +972,13 @@ def test_create_runtime_pipeline_uses_accurate_training_callable_when_selected(
         captured_settings["accurate"] = settings
         called["accurate"] = True
 
-    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
+    monkeypatch.setattr("ser._internal.models.emotion_model.train_model", _fake_train_model)
     monkeypatch.setattr(
-        "ser.models.emotion_model.train_medium_model",
+        "ser._internal.models.emotion_model.train_medium_model",
         _fake_train_medium_model,
     )
     monkeypatch.setattr(
-        "ser.models.emotion_model.train_accurate_model",
+        "ser._internal.models.emotion_model.train_accurate_model",
         _fake_train_accurate_model,
     )
 
@@ -993,7 +999,7 @@ def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_s
     monkeypatch.setenv("SER_ENABLE_ACCURATE_RESEARCH_PROFILE", "true")
     monkeypatch.setenv("SER_ENABLE_RESTRICTED_BACKENDS", "true")
     monkeypatch.setattr(
-        "ser.runtime.registry._missing_optional_modules",
+        "ser._internal.runtime.registry._missing_optional_modules",
         lambda _required_modules: (),
     )
 
@@ -1005,7 +1011,7 @@ def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_s
     }
 
     monkeypatch.setattr(
-        "ser.runtime.pipeline.build_backend_hooks",
+        "ser._internal.runtime.pipeline.build_backend_hooks",
         lambda _settings: {
             "emotion2vec": lambda _request: InferenceResult(
                 schema_version=OUTPUT_SCHEMA_VERSION,
@@ -1035,17 +1041,17 @@ def test_create_runtime_pipeline_uses_accurate_research_training_callable_when_s
         captured_settings["accurate_research"] = settings
         called["accurate_research"] = True
 
-    monkeypatch.setattr("ser.models.emotion_model.train_model", _fake_train_model)
+    monkeypatch.setattr("ser._internal.models.emotion_model.train_model", _fake_train_model)
     monkeypatch.setattr(
-        "ser.models.emotion_model.train_medium_model",
+        "ser._internal.models.emotion_model.train_medium_model",
         _fake_train_medium_model,
     )
     monkeypatch.setattr(
-        "ser.models.emotion_model.train_accurate_model",
+        "ser._internal.models.emotion_model.train_accurate_model",
         _fake_train_accurate_model,
     )
     monkeypatch.setattr(
-        "ser.models.emotion_model.train_accurate_research_model",
+        "ser._internal.models.emotion_model.train_accurate_research_model",
         _fake_train_accurate_research_model,
     )
 

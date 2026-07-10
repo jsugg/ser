@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import re
+import subprocess
+import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +14,33 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.topology_contract
+
+_TIER_ONE_SOURCE_FILES = frozenset(
+    {
+        "ser/__init__.py",
+        "ser/api.py",
+        "ser/config.py",
+        "ser/domain.py",
+        "ser/profiles.py",
+        "ser/utils/__init__.py",
+    }
+)
+_ALLOWED_NON_TIER_ONE_PUBLIC_FILES = frozenset(
+    {
+        "ser/__main__.py",
+        "ser/diagnostics/__init__.py",
+        "ser/diagnostics/domain.py",
+        "ser/runtime/__init__.py",
+        "ser/runtime/contracts.py",
+        "ser/runtime/schema.py",
+    }
+)
+_PACKAGE_MARKER_FILES = frozenset(
+    {
+        "ser/diagnostics/__init__.py",
+        "ser/runtime/__init__.py",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -58,18 +88,11 @@ def _resolve_repo_path(repo_root: Path, relative_path: str) -> Path:
     return (repo_root / relative_path).resolve()
 
 
-def _explicit_allowlist_paths(repo_root: Path) -> set[Path]:
-    """Loads the authoritative public-to-internal allowlist for contract enforcement."""
-    return {
-        _resolve_repo_path(repo_root, entry.relative_path)
-        for entry in _load_boundary_policy_entries(repo_root)
-    }
-
-
 def test_boundary_policy_file_is_well_formed(repo_root: Path) -> None:
-    """Boundary policy entries should be sorted, unique, and point to public modules."""
+    """Boundary policy entries should be bounded, sorted, unique, and public."""
     entries = _load_boundary_policy_entries(repo_root)
     assert entries, "boundary_policy.toml must declare at least one allowed public module."
+    assert len(entries) <= 10, "boundary_policy.toml must contain at most ten facade entries."
 
     relative_paths = [entry.relative_path for entry in entries]
     assert relative_paths == sorted(
@@ -112,17 +135,40 @@ def test_no_first_party_module_imports_internal_api_directly(repo_root: Path) ->
             )
 
 
-def test_public_to_internal_imports_match_explicit_allowlist(repo_root: Path) -> None:
-    """Public modules importing `_internal` should match the authoritative allowlist."""
-    package_root = repo_root / "ser"
-    import_pattern = re.compile(r"^\s*(?:from\s+ser\._internal|import\s+ser\._internal)", re.M)
-    discovered_files = {
-        source_path.resolve()
-        for source_path in package_root.rglob("*.py")
-        if "_internal" not in source_path.parts
-        and import_pattern.search(source_path.read_text(encoding="utf-8"))
+def test_public_python_tree_contains_only_tier_one_and_justified_contract_leaves(
+    repo_root: Path,
+) -> None:
+    """Public package residue must stay limited to documented contract paths."""
+    public_python_files = {
+        source_path.relative_to(repo_root).as_posix()
+        for source_path in (repo_root / "ser").rglob("*.py")
+        if "_internal" not in source_path.relative_to(repo_root / "ser").parts
     }
-    assert discovered_files == _explicit_allowlist_paths(repo_root)
+    expected_files = _TIER_ONE_SOURCE_FILES | _ALLOWED_NON_TIER_ONE_PUBLIC_FILES
+    assert public_python_files == expected_files, (
+        "Public Python tree drifted. Move implementation under ser._internal or add a narrowly "
+        "justified tier-one/contract-leaf rule with architecture review."
+    )
+
+    for relative_path in _PACKAGE_MARKER_FILES:
+        tree = ast.parse((repo_root / relative_path).read_text(encoding="utf-8"))
+        assert (
+            len(tree.body) == 1
+            and isinstance(tree.body[0], ast.Expr)
+            and isinstance(tree.body[0].value, ast.Constant)
+            and isinstance(tree.body[0].value.value, str)
+        ), f"{relative_path} must remain a package marker, not public implementation."
+
+
+def test_public_to_internal_imports_match_explicit_allowlist(repo_root: Path) -> None:
+    """Static and dynamic private imports should match the authoritative allowlist."""
+    completed = subprocess.run(
+        [sys.executable, "scripts/check_public_internal_imports.py"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
 
 
 def test_cli_main_uses_internal_cli_support_modules_for_runtime_policy(repo_root: Path) -> None:
@@ -167,6 +213,38 @@ def test_legacy_api_implementation_modules_are_not_publicly_importable(
         importlib.import_module(module_name)
 
 
+@pytest.mark.parametrize(
+    "module_name",
+    (
+        "ser.data",
+        "ser.data.application",
+        "ser.features",
+        "ser.heads",
+        "ser.license_check",
+        "ser.models",
+        "ser.models.emotion_model",
+        "ser.models.profile_runtime",
+        "ser.models.training_entrypoints",
+        "ser.pool",
+        "ser.pool.stats_pool",
+        "ser.repr",
+        "ser.runtime.pipeline",
+        "ser.runtime.registry",
+        "ser.train",
+        "ser.train.eval",
+        "ser.transcript",
+        "ser.transcript.backends.base",
+        "ser.transcript.profiling",
+        "ser.utils.common_utils",
+        "ser.utils.logger",
+    ),
+)
+def test_removed_public_implementation_paths_are_not_importable(module_name: str) -> None:
+    """Moved implementation owners must not remain accidentally importable in public paths."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module_name)
+
+
 _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
     "ser": (
         "EmotionSegment",
@@ -175,8 +253,13 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "__version__",
     ),
     "ser.api": (
+        "AccurateResearchRuntimeConfig",
+        "AccurateRuntimeConfig",
         "AppConfig",
+        "AudioReadConfig",
         "ComplianceMode",
+        "DataLoaderConfig",
+        "DatasetConfig",
         "DatasetConsents",
         "DatasetPrepareResult",
         "DatasetRegistryHealthIssueRecord",
@@ -184,12 +267,34 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "DiagnosticFinding",
         "DiagnosticReport",
         "DiagnosticSeverity",
+        "EmotionSegment",
+        "FastRuntimeConfig",
+        "FeatureFlags",
+        "FeatureRuntimeBackendOverride",
+        "FeatureRuntimePolicyConfig",
+        "FramePrediction",
         "InferenceExecution",
         "InferenceRequest",
+        "InferenceResult",
+        "MediumRuntimeConfig",
+        "MediumTrainingConfig",
+        "ModelsConfig",
+        "NeuralNetConfig",
         "ProfileName",
+        "QualityGateConfig",
+        "RuntimeFlags",
         "RuntimePipeline",
         "RuntimePipelineBuilder",
+        "SchemaConfig",
+        "SegmentPrediction",
         "SubtitleFormat",
+        "TimelineConfig",
+        "TimelineEntry",
+        "TorchRuntimeConfig",
+        "TrainingConfig",
+        "TranscriptWord",
+        "TranscriptionConfig",
+        "WhisperModelConfig",
         "configure_dataset_consents",
         "infer",
         "list_dataset_registry_health_issues",
@@ -237,6 +342,23 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
         "TimelineEntry",
         "TranscriptWord",
     ),
+    "ser.profiles": (
+        "ProfileCatalogEntry",
+        "ProfileEnableFlag",
+        "ProfileFeatureRuntimeDefaults",
+        "ProfileModelDefinition",
+        "ProfileName",
+        "ProfileRuntimeDefaults",
+        "ProfileRuntimeEnvDefinition",
+        "ProfileTranscriptionDefaults",
+        "ProfileTranscriptionEnvDefinition",
+        "RuntimeProfile",
+        "TranscriptionBackendId",
+        "available_profiles",
+        "get_profile_catalog",
+        "resolve_profile",
+        "resolve_profile_name",
+    ),
     "ser.utils": (
         "build_timeline",
         "display_elapsed_time",
@@ -271,3 +393,30 @@ def test_root_package_exposes_metadata_version() -> None:
     import ser
 
     assert ser.__version__ == "1.0.0"
+
+
+def test_root_package_uses_exact_metadata_fallback_without_heavy_imports(repo_root: Path) -> None:
+    """Source-tree imports should retain the documented metadata fallback."""
+    script = """
+import importlib.metadata
+import sys
+
+
+def _missing_distribution(_distribution_name: str) -> str:
+    raise importlib.metadata.PackageNotFoundError
+
+
+importlib.metadata.version = _missing_distribution
+import ser
+
+assert ser.__version__ == \"0.0.0.dev0\"
+assert \"__version__\" in ser.__all__
+assert \"torch\" not in sys.modules
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout

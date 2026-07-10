@@ -9,16 +9,16 @@ from typing import cast
 
 import pytest
 
+import ser._internal.models.training_support as training_support
 import ser.config as config
-import ser.models.training_support as training_support
+from ser._internal.models import emotion_model
 from ser._internal.runtime import fast_public_boundary as fast_boundary
-from ser.models import emotion_model
-from ser.runtime.contracts import InferenceRequest
-from ser.runtime.fast_inference import (
+from ser._internal.runtime.fast_inference import (
     FastInferenceTimeoutError,
     FastModelUnavailableError,
     run_fast_inference,
 )
+from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("reset_ambient_settings")]

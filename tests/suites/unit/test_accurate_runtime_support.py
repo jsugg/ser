@@ -9,13 +9,13 @@ import pytest
 from numpy.typing import NDArray
 
 import ser.config as config
+from ser._internal.repr import EncodedSequence, PoolingWindow
 from ser._internal.runtime.accurate_runtime_support import (
     build_cpu_settings_snapshot,
     build_process_settings_snapshot,
     encode_accurate_sequence,
     prepare_accurate_backend_runtime,
 )
-from ser.repr import EncodedSequence, PoolingWindow
 
 pytestmark = pytest.mark.unit
 

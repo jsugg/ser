@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ser.data import public_dataset_downloads as downloads
+import ser._internal.data.public_dataset_downloads as downloads
 
 
 def test_write_source_manifest_delegates_to_provider_helper(

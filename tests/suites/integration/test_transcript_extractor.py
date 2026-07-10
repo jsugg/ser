@@ -8,8 +8,8 @@ from typing import Any, cast
 
 import pytest
 
+import ser._internal.transcript.transcript_extractor as te
 from ser.domain import TranscriptWord
-from ser.transcript import transcript_extractor as te
 
 pytestmark = pytest.mark.integration
 

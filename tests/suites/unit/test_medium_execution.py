@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 
 import ser.config as config
-from ser.repr import EncodedSequence
-from ser.runtime import medium_execution
-from ser.runtime.medium_prediction import (
+from ser._internal.repr import EncodedSequence
+from ser._internal.runtime import medium_execution
+from ser._internal.runtime.medium_prediction import (
     confidence_and_probabilities as _confidence_and_probabilities_impl,
 )
-from ser.runtime.medium_prediction import predict_labels as _predict_labels_impl
+from ser._internal.runtime.medium_prediction import predict_labels as _predict_labels_impl
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("reset_ambient_settings")]
 

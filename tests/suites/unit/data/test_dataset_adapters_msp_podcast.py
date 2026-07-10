@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ser.data.adapters.msp_podcast import (
+from ser._internal.data.adapters.msp_podcast import (
     MSP_PODCAST_CORPUS_ID,
     MSP_PODCAST_DATASET_LICENSE_ID,
     MSP_PODCAST_DATASET_POLICY_ID,
     build_msp_podcast_utterances,
 )
-from ser.data.ontology import LabelOntology
+from ser._internal.data.ontology import LabelOntology
 
 
 def _ontology() -> LabelOntology:

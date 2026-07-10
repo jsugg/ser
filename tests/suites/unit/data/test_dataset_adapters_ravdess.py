@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ser.data.adapters.ravdess import (
+from ser._internal.data.adapters.ravdess import (
     RAVDESS_CORPUS_ID,
     RAVDESS_DATASET_LICENSE_ID,
     RAVDESS_DATASET_POLICY_ID,
     build_ravdess_utterances,
 )
-from ser.data.ontology import LabelOntology
+from ser._internal.data.ontology import LabelOntology
 
 
 def _ontology() -> LabelOntology:

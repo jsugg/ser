@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 import torch
 
-from ser.transcript.backends import stable_whisper_mps_compat as mps_compat
+import ser._internal.transcript.backends.stable_whisper_mps_compat as mps_compat
 
 
 class _FakeModel:

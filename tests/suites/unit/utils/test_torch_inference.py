@@ -6,7 +6,7 @@ from contextlib import nullcontext
 
 import pytest
 
-import ser.utils.torch_inference as torch_inference
+import ser._internal.utils.torch_inference as torch_inference
 
 
 class _FakeCuda:

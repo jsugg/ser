@@ -8,11 +8,11 @@ from typing import cast
 
 import pytest
 
-import ser.models.dataset_training_consents as training_consents
+import ser._internal.models.dataset_training_consents as training_consents
+from ser._internal.data import Utterance
+from ser._internal.data.dataset_consents import DatasetConsentError
+from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION
 from ser.config import AppConfig
-from ser.data import Utterance
-from ser.data.dataset_consents import DatasetConsentError
-from ser.data.manifest import MANIFEST_SCHEMA_VERSION
 
 
 def _settings_stub(tmp_path: Path) -> AppConfig:

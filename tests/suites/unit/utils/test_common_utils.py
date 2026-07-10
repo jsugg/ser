@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ser.utils.common_utils import display_elapsed_time
+from ser._internal.utils.common_utils import display_elapsed_time
 
 pytestmark = pytest.mark.unit
 
