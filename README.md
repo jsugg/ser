@@ -136,6 +136,7 @@ uv run pytest -q \
 - Architecture guide: [docs/architecture.md](https://github.com/jsugg/ser/blob/main/docs/architecture.md)
 - Contributor guide: [CONTRIBUTING.md](https://github.com/jsugg/ser/blob/main/CONTRIBUTING.md)
 - Compatibility details: [docs/compatibility-matrix.md](https://github.com/jsugg/ser/blob/main/docs/compatibility-matrix.md)
+- Public API stability: [docs/api-stability.md](docs/api-stability.md)
 - Hardware validation workflows: [docs/ci/hardware-validation.md](https://github.com/jsugg/ser/blob/main/docs/ci/hardware-validation.md)
 - Release and rollback runbook: [docs/release-and-rollback.md](https://github.com/jsugg/ser/blob/main/docs/release-and-rollback.md)
 - Security policy: [SECURITY.md](https://github.com/jsugg/ser/blob/main/SECURITY.md)
