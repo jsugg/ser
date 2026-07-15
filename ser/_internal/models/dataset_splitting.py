@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from hashlib import sha1
 
 import numpy as np
@@ -26,6 +27,38 @@ class MediumSplitMetadata:
     train_unique_speakers: int
     test_unique_speakers: int
     speaker_overlap_count: int
+
+
+def medium_split_metadata_from_mapping(raw: Mapping[str, object]) -> MediumSplitMetadata:
+    """Validates and restores split metadata from a prepared-plan payload."""
+    split_strategy = raw.get("split_strategy")
+    speaker_grouped = raw.get("speaker_grouped")
+    speaker_id_coverage = raw.get("speaker_id_coverage")
+    train_unique_speakers = raw.get("train_unique_speakers")
+    test_unique_speakers = raw.get("test_unique_speakers")
+    speaker_overlap_count = raw.get("speaker_overlap_count")
+    if not isinstance(split_strategy, str) or not split_strategy:
+        raise ValueError("Prepared split metadata requires a non-empty split_strategy.")
+    if not isinstance(speaker_grouped, bool):
+        raise ValueError("Prepared split metadata speaker_grouped must be boolean.")
+    if not isinstance(speaker_id_coverage, int | float) or isinstance(speaker_id_coverage, bool):
+        raise ValueError("Prepared split metadata speaker_id_coverage must be numeric.")
+    if any(
+        not isinstance(value, int) or isinstance(value, bool)
+        for value in (train_unique_speakers, test_unique_speakers, speaker_overlap_count)
+    ):
+        raise ValueError("Prepared split metadata speaker counts must be integers.")
+    assert isinstance(train_unique_speakers, int)
+    assert isinstance(test_unique_speakers, int)
+    assert isinstance(speaker_overlap_count, int)
+    return MediumSplitMetadata(
+        split_strategy=split_strategy,
+        speaker_grouped=speaker_grouped,
+        speaker_id_coverage=float(speaker_id_coverage),
+        train_unique_speakers=train_unique_speakers,
+        test_unique_speakers=test_unique_speakers,
+        speaker_overlap_count=speaker_overlap_count,
+    )
 
 
 def split_labeled_audio_samples(
@@ -162,7 +195,7 @@ def hash_stratified_split(
     """Builds deterministic per-label train/test split ordered by salted hash."""
     by_label: dict[str, list[Utterance]] = {}
     for utterance in samples:
-        by_label.setdefault(utterance.label, []).append(utterance)
+        by_label.setdefault(utterance.require_label(), []).append(utterance)
 
     train: list[Utterance] = []
     test: list[Utterance] = []
@@ -199,6 +232,25 @@ def hash_stratified_split(
     return train, test
 
 
+def _partition_speakers(
+    partition: Sequence[Utterance],
+    *,
+    samples: Sequence[Utterance],
+    speaker_ids: Sequence[str | None],
+) -> set[str]:
+    """Returns the distinct resolved speakers within one partition in linear time.
+
+    Membership is tested against a hashed set so large inventories stay O(n); a
+    plain ``utterance in partition_list`` scan would be O(n**2) over the samples.
+    """
+    members = set(partition)
+    return {
+        speaker
+        for utterance, speaker in zip(samples, speaker_ids, strict=False)
+        if utterance in members and speaker is not None
+    }
+
+
 def split_utterances(
     *,
     samples: list[Utterance],
@@ -209,7 +261,7 @@ def split_utterances(
     if len(samples) < 2:
         raise RuntimeError("Training requires at least two labeled audio files.")
 
-    labels: list[str] = [utterance.label for utterance in samples]
+    labels: list[str] = [utterance.require_label() for utterance in samples]
     speaker_ids: list[str | None] = [
         resolve_corpus_scoped_speaker_id(utterance) for utterance in samples
     ]
@@ -221,16 +273,12 @@ def split_utterances(
         train_split = [utterance for utterance in samples if utterance.split in {"train", "dev"}]
         test_split = [utterance for utterance in samples if utterance.split == "test"]
         if train_split and test_split:
-            train_speakers = {
-                speaker
-                for utterance, speaker in zip(samples, speaker_ids, strict=False)
-                if utterance in train_split and speaker is not None
-            }
-            test_speakers = {
-                speaker
-                for utterance, speaker in zip(samples, speaker_ids, strict=False)
-                if utterance in test_split and speaker is not None
-            }
+            train_speakers = _partition_speakers(
+                train_split, samples=samples, speaker_ids=speaker_ids
+            )
+            test_speakers = _partition_speakers(
+                test_split, samples=samples, speaker_ids=speaker_ids
+            )
             return (
                 train_split,
                 test_split,
@@ -300,16 +348,8 @@ def split_utterances(
     )
     if not train_split or not test_split:
         raise RuntimeError("Deterministic split produced an empty partition; adjust test_size.")
-    train_speakers = {
-        speaker
-        for utterance, speaker in zip(samples, speaker_ids, strict=False)
-        if utterance in train_split and speaker is not None
-    }
-    test_speakers = {
-        speaker
-        for utterance, speaker in zip(samples, speaker_ids, strict=False)
-        if utterance in test_split and speaker is not None
-    }
+    train_speakers = _partition_speakers(train_split, samples=samples, speaker_ids=speaker_ids)
+    test_speakers = _partition_speakers(test_split, samples=samples, speaker_ids=speaker_ids)
     return (
         train_split,
         test_split,
@@ -320,5 +360,47 @@ def split_utterances(
             train_unique_speakers=len(train_speakers),
             test_unique_speakers=len(test_speakers),
             speaker_overlap_count=len(train_speakers.intersection(test_speakers)),
+        ),
+    )
+
+
+def split_utterances_three_way(
+    *,
+    samples: list[Utterance],
+    settings: AppConfig,
+    logger: logging.Logger,
+) -> tuple[list[Utterance], list[Utterance], list[Utterance], MediumSplitMetadata]:
+    """Returns canonical train/dev/test partitions, preserving complete native assignments."""
+    if samples and all(item.split is not None for item in samples):
+        train = [item for item in samples if item.split == "train"]
+        dev = [item for item in samples if item.split == "dev"]
+        test = [item for item in samples if item.split == "test"]
+        if train and dev and test:
+            _, _, metadata = split_utterances(samples=samples, settings=settings, logger=logger)
+            return train, dev, test, replace(metadata, split_strategy="manifest_three_way_split")
+    initial_train, test, metadata = split_utterances(
+        samples=samples, settings=settings, logger=logger
+    )
+    relative_dev_size = settings.training.dev_size / (1.0 - settings.training.test_size)
+    dev_settings = replace(
+        settings,
+        training=replace(settings.training, test_size=relative_dev_size),
+    )
+    train, dev, dev_metadata = split_utterances(
+        samples=initial_train,
+        settings=dev_settings,
+        logger=logger,
+    )
+    return (
+        train,
+        dev,
+        test,
+        replace(
+            metadata,
+            split_strategy=f"{metadata.split_strategy}+dev",
+            speaker_overlap_count=max(
+                metadata.speaker_overlap_count,
+                dev_metadata.speaker_overlap_count,
+            ),
         ),
     )
