@@ -83,6 +83,8 @@ def run_startup_preflight(
     *,
     settings: AppConfig,
     include_transcription_checks: bool,
+    include_dataset_registry_checks: bool = False,
+    include_training_readiness: bool = False,
 ) -> DiagnosticReport:
     """Runs one startup preflight diagnostics check suite."""
     from ser._internal.diagnostics.service import _run_startup_preflight
@@ -90,6 +92,8 @@ def run_startup_preflight(
     return _run_startup_preflight(
         settings=settings,
         include_transcription_checks=include_transcription_checks,
+        include_dataset_registry_checks=include_dataset_registry_checks,
+        include_training_readiness=include_training_readiness,
     )
 
 
@@ -142,6 +146,8 @@ def run_startup_preflight_cli_gate(
             no_transcript=no_transcript,
             calibrate_transcription_runtime=calibrate_transcription_runtime,
         ),
+        include_dataset_registry_checks=train_requested,
+        include_training_readiness=train_requested,
     )
     doctor_command = resolve_doctor_command(profile=profile)
     fail_preflight = should_fail_preflight(report=report, mode=mode)

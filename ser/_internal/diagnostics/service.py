@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
+import time
 from dataclasses import replace
 from typing import Literal, cast
 
@@ -19,6 +21,7 @@ from ser._internal.transcript.runtime_policy import (
     DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
     resolve_transcription_runtime_policy,
 )
+from ser._internal.utils.logger import get_logger
 from ser._internal.utils.transcription_compat import (
     FASTER_WHISPER_OPENMP_CONFLICT_ISSUE_CODE,
     resolve_transcription_compatibility_lane,
@@ -27,10 +30,12 @@ from ser.config import AppConfig
 from ser.diagnostics.domain import (
     DiagnosticFinding,
     DiagnosticReport,
+    DiagnosticSeverity,
     PreflightMode,
 )
 from ser.profiles import ProfileName, get_profile_catalog, resolve_profile_name
 
+logger: logging.Logger = get_logger(__name__)
 _SUPPORTED_PREFLIGHT_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
 
 
@@ -65,13 +70,42 @@ def _run_startup_preflight(
     *,
     settings: AppConfig,
     include_transcription_checks: bool,
+    include_dataset_registry_checks: bool = False,
+    include_training_readiness: bool = False,
 ) -> DiagnosticReport:
     """Runs one fast startup preflight report for command execution gating."""
-    findings = _run_checks(
-        settings=settings,
-        include_transcription_checks=include_transcription_checks,
-        include_noise_findings=False,
-        include_lane_info=False,
+    started_at = time.perf_counter()
+    logger.info(
+        "PREFLIGHT_START include_transcription=%s include_registry=%s "
+        "include_training_readiness=%s",
+        include_transcription_checks,
+        include_dataset_registry_checks,
+        include_training_readiness,
+    )
+    try:
+        findings = _run_checks(
+            settings=settings,
+            include_transcription_checks=include_transcription_checks,
+            include_noise_findings=False,
+            include_lane_info=False,
+            include_dataset_registry_checks=include_dataset_registry_checks,
+        )
+        if include_training_readiness:
+            findings.extend(_check_complete_training_readiness(settings=settings))
+    except Exception:
+        logger.exception(
+            "PREFLIGHT_DONE status=FAIL elapsed=%.1fs",
+            time.perf_counter() - started_at,
+        )
+        raise
+    status = (
+        "FAIL" if any(finding.blocking for finding in findings) else "WARN" if findings else "PASS"
+    )
+    logger.info(
+        "PREFLIGHT_DONE status=%s findings=%d elapsed=%.1fs",
+        status,
+        len(findings),
+        time.perf_counter() - started_at,
     )
     return DiagnosticReport(findings=tuple(findings))
 
@@ -81,6 +115,7 @@ def run_doctor_diagnostics(
     settings: AppConfig,
     include_transcription_checks: bool,
     include_noise_findings: bool,
+    include_training_readiness: bool = False,
 ) -> DiagnosticReport:
     """Runs one comprehensive diagnostics report for interactive troubleshooting."""
     findings = _run_checks(
@@ -90,7 +125,60 @@ def run_doctor_diagnostics(
         include_lane_info=True,
         include_dataset_registry_checks=True,
     )
+    if include_training_readiness:
+        findings.extend(_check_complete_training_readiness(settings=settings))
     return DiagnosticReport(findings=tuple(findings))
+
+
+def _check_complete_training_readiness(*, settings: AppConfig) -> tuple[DiagnosticFinding, ...]:
+    """Runs the same bounded checker/backend smoke used by every training entrypoint."""
+    from ser._internal.data.data_loader import load_utterances
+    from ser._internal.models.training_orchestration import (
+        ensure_entrypoint_readiness,
+        training_operation_active,
+        training_operation_scope,
+    )
+    from ser._internal.models.training_readiness import (
+        FailureSeverity,
+        ReadinessReport,
+        TrainingMode,
+        TrainingOperation,
+        TrainingReadinessError,
+    )
+
+    def _run() -> ReadinessReport:
+        try:
+            report, _ = ensure_entrypoint_readiness(
+                settings=settings,
+                load_utterances=lambda: load_utterances(
+                    settings=settings,
+                    allow_prepare=False,
+                ),
+            )
+        except TrainingReadinessError as error:
+            return error.report
+        return report
+
+    if training_operation_active():
+        report = _run()
+    else:
+        with training_operation_scope(TrainingOperation(mode=TrainingMode.DRY_RUN)):
+            report = _run()
+    severity_map: dict[FailureSeverity, DiagnosticSeverity] = {
+        FailureSeverity.DEBUG: "info",
+        FailureSeverity.INFO: "info",
+        FailureSeverity.WARNING: "warning",
+        FailureSeverity.ERROR: "error",
+    }
+    return tuple(
+        DiagnosticFinding(
+            code=f"training_readiness_{finding.reason_code.value}",
+            severity=severity_map[finding.severity],
+            message=finding.message,
+            blocking=finding.blocking,
+        )
+        for finding in report.findings
+    )
 
 
 def should_fail_preflight(*, report: DiagnosticReport, mode: PreflightMode) -> bool:
@@ -107,7 +195,7 @@ def format_report_text(report: DiagnosticReport) -> str:
     counts = report.counts_by_severity()
     lines: list[str] = [
         "SER diagnostics report",
-        ("summary: " f"info={counts['info']} warning={counts['warning']} error={counts['error']}"),
+        (f"summary: info={counts['info']} warning={counts['warning']} error={counts['error']}"),
     ]
     if not report.findings:
         lines.append("status: ok (no findings)")
@@ -139,7 +227,7 @@ def format_report_brief(
     counts = report.counts_by_severity()
     lines: list[str] = [
         "SER diagnostics preflight summary",
-        ("summary: " f"info={counts['info']} warning={counts['warning']} error={counts['error']}"),
+        (f"summary: info={counts['info']} warning={counts['warning']} error={counts['error']}"),
     ]
     if not report.findings:
         lines.append("status: ok (no findings)")
@@ -250,8 +338,7 @@ def _check_ffmpeg_binary() -> tuple[DiagnosticFinding, ...]:
             code="ffmpeg_binary_missing",
             severity="error",
             message=(
-                "ffmpeg executable was not found on PATH; transcription workflows "
-                "require ffmpeg."
+                "ffmpeg executable was not found on PATH; transcription workflows require ffmpeg."
             ),
             remediation=("Install ffmpeg and rerun diagnostics (`brew install ffmpeg` on macOS).",),
             blocking=True,
