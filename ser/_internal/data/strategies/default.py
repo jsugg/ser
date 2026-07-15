@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ser._internal.data.adapters.biic_podcast import build_biic_podcast_manifest_jsonl
-from ser._internal.data.adapters.crema_d import build_crema_d_manifest_jsonl
+from ser._internal.data.adapters.crema_d import (
+    CremaDDatasetIntegrityError,
+    build_crema_d_manifest_jsonl,
+    validate_crema_d_audio_files,
+)
 from ser._internal.data.adapters.msp_podcast import build_msp_podcast_manifest_jsonl
 from ser._internal.data.adapters.ravdess import build_ravdess_manifest_jsonl
 from ser._internal.data.msp_podcast_mirror import (
@@ -45,6 +51,60 @@ if TYPE_CHECKING:
     from ser._internal.data.dataset_prepare import DatasetDescriptor
 
 logger = get_logger(__name__)
+
+_CREMA_D_AUDIO_PATTERN = "AudioWAV/**/*.wav"
+_SUBPROCESS_ERROR_DETAIL_LIMIT = 2_000
+
+
+def _crema_d_audio_pattern(dataset_root: Path) -> str:
+    """Returns the narrowest useful audio glob for one CREMA-D tree."""
+    return _CREMA_D_AUDIO_PATTERN if (dataset_root / "AudioWAV").exists() else "**/*.wav"
+
+
+def _require_crema_d_git_tools() -> str:
+    """Resolves the mandatory Git and Git LFS executables for CREMA-D."""
+    git_bin = shutil.which("git")
+    if git_bin is None:
+        raise RuntimeError(
+            "git is required to download CREMA-D. Install Git and retry dataset preparation."
+        )
+    if shutil.which("git-lfs") is None:
+        raise RuntimeError(
+            "git-lfs is required to download CREMA-D audio. Install it with "
+            "`brew install git-lfs` or your operating system package manager, then retry."
+        )
+    return git_bin
+
+
+def _run_crema_d_git_command(
+    command: list[str],
+    *,
+    operation: str,
+    cwd: Path | None = None,
+) -> None:
+    """Runs one mandatory CREMA-D Git command with bounded diagnostics."""
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd is not None else None,
+        )
+    except (OSError, subprocess.CalledProcessError) as err:
+        stderr = getattr(err, "stderr", None)
+        detail = stderr.strip() if isinstance(stderr, str) else str(err)
+        if len(detail) > _SUBPROCESS_ERROR_DETAIL_LIMIT:
+            detail = f"...{detail[-_SUBPROCESS_ERROR_DETAIL_LIMIT:]}"
+        raise RuntimeError(f"CREMA-D {operation} failed: {detail}") from err
+
+
+def _validate_crema_d_tree(dataset_root: Path) -> None:
+    """Validates all CREMA-D audio without decoding complete waveforms."""
+    validate_crema_d_audio_files(
+        dataset_root=dataset_root,
+        dataset_glob_pattern=_crema_d_audio_pattern(dataset_root),
+    )
 
 
 def _log_manual_download_instructions(
@@ -136,28 +196,68 @@ class CremaDDatasetStrategy:
         source_revision: str | None,
     ) -> tuple[str | None, str | None]:
         del source_repo_id, source_revision
-        if any(dataset_root.iterdir()):
-            logger.info("CREMA-D target directory is not empty; skipping download.")
+        dataset_root.mkdir(parents=True, exist_ok=True)
+        has_existing_content = any(dataset_root.iterdir())
+        if has_existing_content:
+            try:
+                _validate_crema_d_tree(dataset_root)
+            except CremaDDatasetIntegrityError as integrity_error:
+                if not (dataset_root / ".git").exists():
+                    raise RuntimeError(
+                        f"Existing CREMA-D directory is incomplete: {integrity_error} "
+                        f"Move it aside and retry: {dataset_root}"
+                    ) from integrity_error
+                git_bin = _require_crema_d_git_tools()
+                logger.info("Repairing incomplete CREMA-D Git LFS checkout at %s", dataset_root)
+                for args, operation in (
+                    (("lfs", "install", "--local"), "Git LFS initialization"),
+                    (("lfs", "pull"), "Git LFS pull"),
+                    (("lfs", "checkout"), "Git LFS checkout"),
+                ):
+                    _run_crema_d_git_command(
+                        [git_bin, *args],
+                        operation=operation,
+                        cwd=dataset_root,
+                    )
+                _validate_crema_d_tree(dataset_root)
+                return (None, None)
+            logger.info("Existing CREMA-D dataset passed integrity checks; skipping download.")
             return (None, None)
-        git_bin = shutil.which("git")
-        if git_bin is None:
-            raise RuntimeError("git is required to download CREMA-D (git-lfs recommended).")
-        logger.info("Cloning CREMA-D into %s", dataset_root)
-        subprocess.run(
-            [
-                git_bin,
-                "clone",
-                "--depth",
-                "1",
-                descriptor.source_url,
-                str(dataset_root),
-            ],
-            check=True,
+
+        git_bin = _require_crema_d_git_tools()
+        staging_root = Path(
+            tempfile.mkdtemp(prefix=f".{dataset_root.name}.staging-", dir=dataset_root.parent)
         )
-        git_lfs = shutil.which("git-lfs")
-        if git_lfs is not None:
-            logger.info("Running git-lfs pull for CREMA-D")
-            subprocess.run([git_lfs, "pull"], check=False, cwd=str(dataset_root))
+        staging_root.rmdir()
+        try:
+            logger.info("Cloning CREMA-D into staging directory %s", staging_root)
+            _run_crema_d_git_command(
+                [
+                    git_bin,
+                    "clone",
+                    "--depth",
+                    "1",
+                    descriptor.source_url,
+                    str(staging_root),
+                ],
+                operation="clone",
+            )
+            for args, operation in (
+                (("lfs", "install", "--local"), "Git LFS initialization"),
+                (("lfs", "pull"), "Git LFS pull"),
+                (("lfs", "checkout"), "Git LFS checkout"),
+            ):
+                _run_crema_d_git_command(
+                    [git_bin, *args],
+                    operation=operation,
+                    cwd=staging_root,
+                )
+            _validate_crema_d_tree(staging_root)
+            dataset_root.rmdir()
+            os.replace(staging_root, dataset_root)
+        finally:
+            if staging_root.exists():
+                shutil.rmtree(staging_root)
         return (None, None)
 
     def prepare_manifest(
@@ -182,7 +282,7 @@ class CremaDDatasetStrategy:
             "NEU": "neutral",
             "SAD": "sad",
         }
-        pattern = "AudioWAV/**/*.wav" if (dataset_root / "AudioWAV").exists() else "**/*.wav"
+        pattern = _crema_d_audio_pattern(dataset_root)
         utterances = build_crema_d_manifest_jsonl(
             dataset_root=dataset_root,
             dataset_glob_pattern=pattern,

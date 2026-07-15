@@ -14,6 +14,15 @@ from ser._internal.utils.logger import get_logger
 from ser.config import AudioReadConfig
 
 logger: logging.Logger = get_logger(__name__)
+_GIT_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+
+
+class AudioIntegrityError(OSError):
+    """Raised when a path contains metadata in place of audio bytes."""
+
+
+class AudioDecodeError(OSError):
+    """Raised when one otherwise regular media file cannot be decoded locally."""
 
 
 def _normalize_audio(audiofile: NDArray[np.float32]) -> NDArray[np.float32]:
@@ -77,8 +86,16 @@ def read_audio_file(
         raise FileNotFoundError(f"Audio file not found: {file_path}")
     if not path.is_file():
         raise OSError(f"Path is not a regular file: {file_path}")
+    with path.open("rb") as audio_file:
+        if audio_file.read(len(_GIT_LFS_POINTER_PREFIX)) == _GIT_LFS_POINTER_PREFIX:
+            raise AudioIntegrityError(
+                f"Audio file is an unmaterialized Git LFS pointer: {file_path}. "
+                "Install Git LFS, then run `git lfs pull` and `git lfs checkout` "
+                "in the dataset checkout."
+            )
 
     logger.debug(msg=f"Starting to read audio file: {file_path}")
+    last_error: Exception | None = None
     for attempt in range(active_config.max_retries):
         logger.debug(msg=f"Attempt {attempt + 1} to read audio file using librosa.")
         try:
@@ -96,7 +113,9 @@ def read_audio_file(
             return normalized_audio, int(current_sample_rate)
 
         except Exception as err:
-            logger.warning(msg=f"Librosa failed to read audio file: {err}")
+            last_error = err
+            detail = str(err).strip() or type(err).__name__
+            logger.warning(msg=f"Librosa failed to read audio file: {detail}")
 
             # Segment reads rely on librosa offset/duration.
             if start_seconds is not None or duration_seconds is not None:
@@ -122,7 +141,9 @@ def read_audio_file(
                 return normalized_audio, current_sample_rate
 
             except Exception as err:
-                logger.warning(msg=f"Soundfile also failed: {err}")
+                last_error = err
+                detail = str(err).strip() or type(err).__name__
+                logger.warning(msg=f"Soundfile also failed: {detail}")
                 if attempt < active_config.max_retries - 1:
                     logger.info(
                         msg=(
@@ -133,8 +154,9 @@ def read_audio_file(
                     time.sleep(active_config.retry_delay_seconds)
 
     logger.error(
-        msg=(
-            f"Failed to read audio file {file_path} " f"after {active_config.max_retries} retries."
-        )
+        msg=(f"Failed to read audio file {file_path} after {active_config.max_retries} retries.")
     )
-    raise OSError(f"Error reading {file_path}")
+    error = AudioDecodeError(f"Error reading {file_path}")
+    if last_error is None:
+        raise error
+    raise error from last_error
