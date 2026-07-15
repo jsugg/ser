@@ -137,7 +137,13 @@ class WhisperBackend:
             raise ValueError(
                 "feature_extractor and model must be provided together or omitted together."
             )
-        self._model_id = model_id
+        self._model_id, separator, requested_revision = model_id.rpartition("@")
+        if not separator:
+            self._model_id = model_id
+            requested_revision = ""
+        if not self._model_id:
+            raise ValueError("model_id repository must be non-empty.")
+        self._requested_revision = requested_revision or None
         self._max_chunk_seconds = max_chunk_seconds
         self._cache_dir = cache_dir
         self._device = device
@@ -150,6 +156,13 @@ class WhisperBackend:
     def backend_id(self) -> str:
         """Stable backend identifier used by runtime capability registry."""
         return "hf_whisper"
+
+    @property
+    def model_revision(self) -> str | None:
+        """Returns the exact Hugging Face commit resolved by the loaded model."""
+        _, model = self._ensure_runtime_components()
+        revision = getattr(model.config, "_commit_hash", None)
+        return revision.strip() if isinstance(revision, str) and revision.strip() else None
 
     @property
     def feature_dim(self) -> int:
@@ -328,6 +341,8 @@ class WhisperBackend:
         if self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             cache_kwargs["cache_dir"] = str(self._cache_dir)
+        if self._requested_revision is not None:
+            cache_kwargs["revision"] = self._requested_revision
 
         feature_extractor = cast(
             _FeatureExtractor,

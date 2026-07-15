@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import logging
@@ -156,6 +157,29 @@ class Emotion2VecBackend:
     def backend_id(self) -> str:
         """Stable backend identifier used by runtime capability registry."""
         return "emotion2vec"
+
+    @property
+    def model_revision(self) -> str | None:
+        """Returns an exact hub commit when exposed by the loaded backend."""
+        if self._model is not None:
+            revision = getattr(self._model.config, "_commit_hash", None)
+            if isinstance(revision, str) and revision.strip():
+                return revision.strip()
+        source, is_local = self._resolve_funasr_model_source()
+        source_path = Path(source)
+        if not is_local or not source_path.is_dir():
+            return None
+        digest = hashlib.sha256()
+        for path in sorted(
+            source_path.rglob("*"), key=lambda item: str(item.relative_to(source_path))
+        ):
+            if not path.is_file():
+                continue
+            digest.update(str(path.relative_to(source_path)).encode("utf-8"))
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        return f"content-sha256:{digest.hexdigest()}"
 
     @property
     def feature_dim(self) -> int:
