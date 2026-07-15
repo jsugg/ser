@@ -1,5 +1,6 @@
 """Behavior tests for CLI argument dispatch and exit semantics."""
 
+import logging
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ import ser.config as config_module
 from ser._internal.config.schema import profile_artifact_file_names
 from ser._internal.license_check import load_persisted_backend_consents
 from ser._internal.runtime.accurate_inference import AccurateRuntimeDependencyError
+from ser._internal.runtime.commands import WorkflowErrorDisposition, classify_training_exception
 from ser._internal.runtime.medium_inference import MediumRuntimeDependencyError
 from ser._internal.runtime.registry import UnsupportedProfileError
 from ser.runtime.contracts import InferenceRequest
@@ -337,6 +339,50 @@ def test_cli_train_option_uses_runtime_pipeline_when_enabled(
 
     assert exc_info.value.code == 0
     assert called["train"] is True
+
+
+def test_cli_training_mode_start_logs_before_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Training mode should be visible before preflight can start long readiness work."""
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "run_restricted_backend_cli_gate",
+        lambda **_kwargs: ((), None),
+    )
+    base_settings = config_module.reload_settings()
+    monkeypatch.setattr(
+        cli,
+        "reload_settings",
+        lambda: replace(
+            base_settings,
+            runtime_flags=replace(base_settings.runtime_flags, profile_pipeline=True),
+        ),
+    )
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["ser", "--train", "--profile", "medium", "--dry-run"],
+    )
+    caplog.set_level(logging.INFO, logger="ser")
+
+    def _preflight_gate(**_kwargs: object) -> tuple[tuple[tuple[str, str], ...], None]:
+        assert any("TRAIN_MODE_START mode=dry_run" in item.message for item in caplog.records)
+        return ((), None)
+
+    class FakePipeline:
+        def run_training(self) -> None:
+            return None
+
+    monkeypatch.setattr(cli, "run_startup_preflight_cli_gate", _preflight_gate)
+    monkeypatch.setattr(cli, "build_runtime_pipeline", lambda _settings: FakePipeline())
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 0
 
 
 def test_cli_prediction_uses_runtime_pipeline_when_enabled(
@@ -875,6 +921,32 @@ def test_cli_train_path_calls_api_delegates_once(
 
     assert exc_info.value.code == 0
     assert captured == {"profile": 1, "timeout": 1, "train": 1}
+
+
+def test_cli_training_failure_logs_preserved_traceback(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Training failures should log their real traceback outside the catch scope."""
+
+    def _failure_disposition() -> WorkflowErrorDisposition:
+        try:
+            raise OSError("invalid audio bytes")
+        except OSError as err:
+            return classify_training_exception(err)
+
+    monkeypatch.setattr(
+        cli,
+        "run_training_command",
+        lambda **_kwargs: _failure_disposition(),
+    )
+
+    with caplog.at_level("ERROR"), pytest.raises(SystemExit) as exc_info:
+        cli._run_training_or_exit(active_settings=config_module.reload_settings())
+
+    assert exc_info.value.code == 1
+    assert "OSError: invalid audio bytes" in caplog.text
+    assert "NoneType: None" not in caplog.text
 
 
 def test_cli_infer_path_calls_api_delegates_once(
