@@ -12,13 +12,15 @@ from ser._internal.models.artifact_loading import (
     deserialize_model_artifact_envelope,
 )
 from ser._internal.models.artifact_metadata import (
-    build_v2_artifact_metadata,
+    build_v3_artifact_metadata,
     normalize_v2_artifact_metadata,
+    normalize_v3_artifact_metadata,
     read_positive_int,
 )
 from ser.runtime.schema import ARTIFACT_SCHEMA_VERSION
 
-MODEL_ARTIFACT_VERSION = 2
+MODEL_ARTIFACT_VERSION = 3
+SUPPORTED_MODEL_ARTIFACT_VERSIONS = frozenset({2, MODEL_ARTIFACT_VERSION})
 DEFAULT_BACKEND_ID = "handcrafted"
 DEFAULT_PROFILE_ID = "fast"
 DEFAULT_FRAME_SIZE_SECONDS = 3.0
@@ -40,10 +42,10 @@ def normalize_model_artifact_metadata(
     metadata: dict[str, object],
 ) -> dict[str, object]:
     """Validates and normalizes artifact metadata to the current envelope shape."""
-    return normalize_v2_artifact_metadata(
-        metadata,
-        artifact_version=MODEL_ARTIFACT_VERSION,
-    )
+    artifact_version = metadata.get("artifact_version")
+    if artifact_version == 2:
+        return normalize_v2_artifact_metadata(metadata, artifact_version=2)
+    return normalize_v3_artifact_metadata(metadata, artifact_version=MODEL_ARTIFACT_VERSION)
 
 
 def build_model_artifact_metadata(
@@ -61,9 +63,16 @@ def build_model_artifact_metadata(
     torch_device: str | None = None,
     torch_dtype: str | None = None,
     provenance: dict[str, object] | None = None,
+    recipe_digest: str | None = None,
+    split_ledger_digest: str | None = None,
+    model_revision: str | None = None,
+    task_heads: list[str] | None = None,
+    sampling_policy: dict[str, object] | None = None,
+    seed: int | None = None,
+    evaluation_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Builds normalized artifact metadata for persisted model envelopes."""
-    return build_v2_artifact_metadata(
+    return build_v3_artifact_metadata(
         artifact_version=MODEL_ARTIFACT_VERSION,
         artifact_schema_version=ARTIFACT_SCHEMA_VERSION,
         feature_vector_size=feature_vector_size,
@@ -79,6 +88,13 @@ def build_model_artifact_metadata(
         torch_device=torch_device,
         torch_dtype=torch_dtype,
         provenance=provenance,
+        recipe_digest=recipe_digest,
+        split_ledger_digest=split_ledger_digest,
+        model_revision=model_revision,
+        task_heads=task_heads or ["primary_emotion"],
+        sampling_policy=sampling_policy,
+        seed=seed,
+        evaluation_summary=evaluation_summary,
     )
 
 
@@ -97,6 +113,13 @@ def build_model_artifact(
     torch_device: str | None = None,
     torch_dtype: str | None = None,
     provenance: dict[str, object] | None = None,
+    recipe_digest: str | None = None,
+    split_ledger_digest: str | None = None,
+    model_revision: str | None = None,
+    task_heads: list[str] | None = None,
+    sampling_policy: dict[str, object] | None = None,
+    seed: int | None = None,
+    evaluation_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Constructs one versioned model artifact envelope for safe persistence."""
     metadata = build_model_artifact_metadata(
@@ -113,6 +136,13 @@ def build_model_artifact(
         torch_device=torch_device,
         torch_dtype=torch_dtype,
         provenance=provenance,
+        recipe_digest=recipe_digest,
+        split_ledger_digest=split_ledger_digest,
+        model_revision=model_revision,
+        task_heads=task_heads,
+        sampling_policy=sampling_policy,
+        seed=seed,
+        evaluation_summary=evaluation_summary,
     )
     return build_model_artifact_envelope(
         artifact_version=MODEL_ARTIFACT_VERSION,
@@ -126,6 +156,7 @@ def deserialize_model_artifact(payload: object) -> LoadedModel:
     return deserialize_model_artifact_envelope(
         payload,
         artifact_version=MODEL_ARTIFACT_VERSION,
+        supported_artifact_versions=SUPPORTED_MODEL_ARTIFACT_VERSIONS,
         model_instance_check=lambda model: isinstance(model, MLPClassifier | Pipeline),
         normalize_metadata=normalize_model_artifact_metadata,
         read_positive_int=read_positive_int,

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import UTC, datetime
+
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def read_positive_int(metadata: dict[str, object], field_name: str) -> int:
@@ -193,3 +197,116 @@ def build_v2_artifact_metadata(
         payload,
         artifact_version=artifact_version,
     )
+
+
+def _read_optional_digest(metadata: dict[str, object], field_name: str) -> str | None:
+    raw_value = metadata.get(field_name)
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, str) or _SHA256_PATTERN.fullmatch(raw_value) is None:
+        raise ValueError(f"Model artifact metadata contains invalid {field_name!r} value.")
+    return raw_value
+
+
+def _read_json_object(metadata: dict[str, object], field_name: str) -> dict[str, object]:
+    raw_value = metadata.get(field_name, {})
+    if not isinstance(raw_value, dict) or any(not isinstance(key, str) for key in raw_value):
+        raise ValueError(f"Model artifact metadata contains invalid {field_name!r} value.")
+    try:
+        json.dumps(raw_value, allow_nan=False, sort_keys=True)
+    except (TypeError, ValueError) as err:
+        raise ValueError(
+            f"Model artifact metadata contains non-JSON {field_name!r} value."
+        ) from err
+    return raw_value
+
+
+def normalize_v3_artifact_metadata(
+    metadata: dict[str, object],
+    *,
+    artifact_version: int,
+) -> dict[str, object]:
+    """Validates research provenance fields while preserving the v2 inference contract."""
+    normalized = normalize_v2_artifact_metadata(metadata, artifact_version=artifact_version)
+    for field_name in ("recipe_digest", "split_ledger_digest"):
+        digest = _read_optional_digest(metadata, field_name)
+        if digest is not None:
+            normalized[field_name] = digest
+    model_revision = metadata.get("model_revision")
+    if model_revision is not None:
+        if not isinstance(model_revision, str) or not model_revision.strip():
+            raise ValueError("Model artifact metadata contains invalid 'model_revision' value.")
+        normalized["model_revision"] = model_revision.strip()
+    task_heads = metadata.get("task_heads", ["primary_emotion"])
+    if not isinstance(task_heads, list) or not task_heads:
+        raise ValueError("Model artifact metadata contains invalid 'task_heads' value.")
+    normalized_heads: list[str] = []
+    for task_head in task_heads:
+        if not isinstance(task_head, str) or not task_head.strip():
+            raise ValueError("Model artifact metadata contains invalid 'task_heads' value.")
+        normalized_heads.append(task_head.strip())
+    normalized["task_heads"] = sorted(set(normalized_heads))
+    seed = metadata.get("seed")
+    if seed is not None:
+        if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
+            raise ValueError("Model artifact metadata contains invalid 'seed' value.")
+        normalized["seed"] = seed
+    normalized["sampling_policy"] = _read_json_object(metadata, "sampling_policy")
+    normalized["evaluation_summary"] = _read_json_object(metadata, "evaluation_summary")
+    return normalized
+
+
+def build_v3_artifact_metadata(
+    *,
+    artifact_version: int,
+    artifact_schema_version: str,
+    feature_vector_size: int,
+    training_samples: int,
+    labels: list[str],
+    backend_id: str,
+    profile: str,
+    feature_dim: int | None,
+    frame_size_seconds: float,
+    frame_stride_seconds: float,
+    pooling_strategy: str,
+    backend_model_id: str | None,
+    torch_device: str | None,
+    torch_dtype: str | None,
+    provenance: dict[str, object] | None,
+    recipe_digest: str | None,
+    split_ledger_digest: str | None,
+    model_revision: str | None,
+    task_heads: list[str],
+    sampling_policy: dict[str, object] | None,
+    seed: int | None,
+    evaluation_summary: dict[str, object] | None,
+) -> dict[str, object]:
+    """Builds v3 metadata with reproducible dataset and training provenance."""
+    payload = build_v2_artifact_metadata(
+        artifact_version=artifact_version,
+        artifact_schema_version=artifact_schema_version,
+        feature_vector_size=feature_vector_size,
+        training_samples=training_samples,
+        labels=labels,
+        backend_id=backend_id,
+        profile=profile,
+        feature_dim=feature_dim,
+        frame_size_seconds=frame_size_seconds,
+        frame_stride_seconds=frame_stride_seconds,
+        pooling_strategy=pooling_strategy,
+        backend_model_id=backend_model_id,
+        torch_device=torch_device,
+        torch_dtype=torch_dtype,
+        provenance=provenance,
+    )
+    optional_fields: dict[str, object | None] = {
+        "recipe_digest": recipe_digest,
+        "split_ledger_digest": split_ledger_digest,
+        "model_revision": model_revision,
+        "seed": seed,
+    }
+    payload.update((key, value) for key, value in optional_fields.items() if value is not None)
+    payload["task_heads"] = task_heads
+    payload["sampling_policy"] = sampling_policy or {}
+    payload["evaluation_summary"] = evaluation_summary or {}
+    return normalize_v3_artifact_metadata(payload, artifact_version=artifact_version)

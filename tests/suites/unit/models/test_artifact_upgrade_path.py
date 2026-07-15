@@ -52,6 +52,67 @@ def test_deserialize_round_trips_v2_artifact_metadata() -> None:
     assert loaded.artifact_metadata["artifact_version"] == artifact_envelope.MODEL_ARTIFACT_VERSION
     assert loaded.artifact_metadata["artifact_schema_version"] == "v2"
     assert loaded.artifact_metadata["labels"] == ["happy", "sad"]
+    assert loaded.artifact_metadata["task_heads"] == ["primary_emotion"]
+
+
+def test_deserialize_loads_previous_v2_envelope() -> None:
+    """The immediately previous artifact envelope remains loadable after v3 promotion."""
+    artifact = artifact_envelope.build_model_artifact(
+        model=_build_classifier(),
+        feature_vector_size=193,
+        training_samples=32,
+        labels=["happy", "sad"],
+    )
+    artifact["artifact_version"] = 2
+    metadata = artifact["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["artifact_version"] = 2
+
+    loaded = artifact_envelope.deserialize_model_artifact(artifact)
+
+    assert loaded.artifact_metadata is not None
+    assert loaded.artifact_metadata["artifact_version"] == 2
+
+
+def test_v3_artifact_persists_research_recipe_and_evaluation_provenance() -> None:
+    """New envelopes retain reproducibility and masked-head declarations."""
+    artifact = artifact_envelope.build_model_artifact(
+        model=_build_classifier(),
+        feature_vector_size=193,
+        training_samples=32,
+        labels=["happy", "sad"],
+        recipe_digest="a" * 64,
+        split_ledger_digest="b" * 64,
+        model_revision="encoder-r1",
+        task_heads=["primary_emotion", "vad"],
+        sampling_policy={"corpus": "sqrt", "class": "inverse_sqrt"},
+        seed=17,
+        evaluation_summary={"macro_per_corpus_uar": 0.61},
+    )
+
+    loaded = artifact_envelope.deserialize_model_artifact(artifact)
+
+    assert loaded.artifact_metadata is not None
+    assert loaded.artifact_metadata["recipe_digest"] == "a" * 64
+    assert loaded.artifact_metadata["split_ledger_digest"] == "b" * 64
+    assert loaded.artifact_metadata["task_heads"] == ["primary_emotion", "vad"]
+    assert loaded.artifact_metadata["seed"] == 17
+
+
+def test_deserialize_rejects_mismatched_envelope_and_metadata_versions() -> None:
+    """Legacy selection is controlled by one consistent artifact version."""
+    artifact = artifact_envelope.build_model_artifact(
+        model=_build_classifier(),
+        feature_vector_size=193,
+        training_samples=32,
+        labels=["happy", "sad"],
+    )
+    metadata = artifact["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["artifact_version"] = 2
+
+    with pytest.raises(ValueError, match="envelope and metadata versions must match"):
+        artifact_envelope.deserialize_model_artifact(artifact)
 
 
 def test_deserialize_round_trips_medium_v2_artifact_metadata() -> None:

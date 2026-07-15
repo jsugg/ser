@@ -71,6 +71,7 @@ def deserialize_model_artifact_envelope(
     payload: object,
     *,
     artifact_version: int,
+    supported_artifact_versions: frozenset[int] | None = None,
     model_instance_check: Callable[[object], bool],
     normalize_metadata: Callable[[dict[str, object]], dict[str, object]],
     read_positive_int: Callable[[dict[str, object], str], int],
@@ -87,10 +88,11 @@ def deserialize_model_artifact_envelope(
         )
 
     resolved_artifact_version = payload.get("artifact_version")
-    if resolved_artifact_version != artifact_version:
+    supported_versions = supported_artifact_versions or frozenset({artifact_version})
+    if resolved_artifact_version not in supported_versions:
         raise ValueError(
             "Unsupported model artifact version "
-            f"{resolved_artifact_version!r}; expected {artifact_version}. "
+            f"{resolved_artifact_version!r}; supported versions are {sorted(supported_versions)}. "
             "Regenerate artifacts with current training code."
         )
 
@@ -103,6 +105,8 @@ def deserialize_model_artifact_envelope(
     metadata_obj = payload.get("metadata")
     if not isinstance(metadata_obj, dict):
         raise ValueError("Model artifact metadata is missing or invalid.")
+    if metadata_obj.get("artifact_version") != resolved_artifact_version:
+        raise ValueError("Model artifact envelope and metadata versions must match.")
     normalized_metadata = normalize_metadata(metadata_obj)
     expected_feature_size = read_positive_int(
         normalized_metadata,
