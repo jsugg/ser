@@ -18,4 +18,9 @@ after its first published distribution.
 
 - README Python API guidance now directs workflow users to `ser.api`.
 
+### Fixed
+
+- Import lint path collection now works on shells without `mapfile`, such as the
+  Bash 3.2 that ships with macOS.
+
 [Unreleased]: https://github.com/jsugg/ser/compare/HEAD...HEAD
