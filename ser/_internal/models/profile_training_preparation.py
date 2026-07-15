@@ -28,7 +28,7 @@ class UtteranceLike(Protocol):
     def duration_seconds(self) -> float | None: ...
 
     @property
-    def label(self) -> str: ...
+    def label(self) -> str | None: ...
 
     @property
     def language(self) -> str | None: ...
@@ -55,6 +55,7 @@ def build_medium_feature_dataset(
     merge_noise_stats: Callable[[_StatsT, _StatsT], _StatsT],
     initial_noise_stats: _StatsT,
     window_meta_factory: Callable[[str, str, str], _MetaT],
+    handle_sample_failure: Callable[[_UtteranceT, Exception], bool] | None = None,
 ) -> tuple[np.ndarray, list[str], list[_MetaT], _StatsT]:
     """Builds a medium-profile feature matrix from utterance-level embeddings."""
     feature_blocks: list[np.ndarray] = []
@@ -62,8 +63,24 @@ def build_medium_feature_dataset(
     meta: list[_MetaT] = []
     aggregate_stats = initial_noise_stats
 
-    for utterance in utterances:
-        encoded = encode_sequence(utterance)
+    from ser._internal.models.training_orchestration import (  # noqa: TID251
+        record_medium_noise_stats,
+        record_preparation_progress,
+    )
+
+    total = len(utterances)
+    for processed, utterance in enumerate(utterances, start=1):
+        try:
+            encoded = encode_sequence(utterance)
+        except Exception as error:
+            if handle_sample_failure is not None and handle_sample_failure(utterance, error):
+                record_preparation_progress(
+                    processed=processed,
+                    total=total,
+                    sample_id=utterance.sample_id,
+                )
+                continue
+            raise
         windows = build_pooling_windows(
             encoded,
             window_size_seconds,
@@ -73,12 +90,20 @@ def build_medium_feature_dataset(
         filtered, stats = apply_noise_controls(np.asarray(pooled, dtype=np.float64))
         feature_blocks.append(filtered)
         row_count = int(filtered.shape[0])
+        if utterance.label is None:
+            raise ValueError(f"Utterance {utterance.sample_id!r} has no primary emotion target.")
         labels.extend([utterance.label] * row_count)
         language = utterance.language or "unknown"
         meta.extend(
             [window_meta_factory(utterance.sample_id, utterance.corpus, language)] * row_count
         )
         aggregate_stats = merge_noise_stats(aggregate_stats, stats)
+        record_medium_noise_stats(sample_id=utterance.sample_id, stats=stats)
+        record_preparation_progress(
+            processed=processed,
+            total=total,
+            sample_id=utterance.sample_id,
+        )
 
     if not feature_blocks:
         raise RuntimeError("Medium training produced no feature vectors.")
@@ -100,14 +125,30 @@ def build_accurate_feature_dataset(
     ],
     pool_features: Callable[[EncodedSequence, Sequence[PoolingWindow]], np.ndarray],
     window_meta_factory: Callable[[str, str, str], _MetaT],
+    handle_sample_failure: Callable[[_UtteranceT, Exception], bool] | None = None,
 ) -> tuple[np.ndarray, list[str], list[_MetaT]]:
     """Builds an accurate-profile feature matrix from utterance embeddings."""
     feature_blocks: list[np.ndarray] = []
     labels: list[str] = []
     meta: list[_MetaT] = []
 
-    for utterance in utterances:
-        encoded = encode_sequence(utterance)
+    from ser._internal.models.training_orchestration import (  # noqa: TID251
+        record_preparation_progress,
+    )
+
+    total = len(utterances)
+    for processed, utterance in enumerate(utterances, start=1):
+        try:
+            encoded = encode_sequence(utterance)
+        except Exception as error:
+            if handle_sample_failure is not None and handle_sample_failure(utterance, error):
+                record_preparation_progress(
+                    processed=processed,
+                    total=total,
+                    sample_id=utterance.sample_id,
+                )
+                continue
+            raise
         windows = build_pooling_windows(
             encoded,
             window_size_seconds,
@@ -116,10 +157,17 @@ def build_accurate_feature_dataset(
         pooled = pool_features(encoded, windows)
         feature_blocks.append(np.asarray(pooled, dtype=np.float64))
         row_count = int(pooled.shape[0])
+        if utterance.label is None:
+            raise ValueError(f"Utterance {utterance.sample_id!r} has no primary emotion target.")
         labels.extend([utterance.label] * row_count)
         language = utterance.language or "unknown"
         meta.extend(
             [window_meta_factory(utterance.sample_id, utterance.corpus, language)] * row_count
+        )
+        record_preparation_progress(
+            processed=processed,
+            total=total,
+            sample_id=utterance.sample_id,
         )
 
     if not feature_blocks:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Sequence
 from typing import TypeVar
 
@@ -114,22 +115,51 @@ def prepare_medium_training_features(
 ) -> MediumTrainingPreparation[_UtteranceT, _SplitMetaT, _MetaT, _NoiseStatsT]:
     """Builds medium-profile feature matrices and runtime metadata for training."""
 
+    started_at = time.perf_counter()
+    logger = logging.getLogger(__name__)
+    logger.info("PREPARE_START stage=medium_features utterances=%d", len(utterances))
     train_utterances, test_utterances, split_metadata = split_utterances(utterances)
+    logger.info(
+        "PREPARE_SPLIT_DONE train=%d test=%d elapsed=%.1fs",
+        len(train_utterances),
+        len(test_utterances),
+        time.perf_counter() - started_at,
+    )
     model_id = resolve_model_id()
     runtime_device, runtime_dtype = resolve_runtime_selectors()
+    logger.info(
+        "PREPARE_BACKEND_START model_id=%s device=%s dtype=%s",
+        model_id,
+        runtime_device,
+        runtime_dtype,
+    )
     backend = build_backend(model_id, runtime_device, runtime_dtype)
     cache = build_cache()
-    x_train, y_train, _train_meta, train_noise_stats = build_feature_dataset(
+    logger.info("PREPARE_FEATURES_START partition=train utterances=%d", len(train_utterances))
+    x_train, y_train, train_meta, train_noise_stats = build_feature_dataset(
         train_utterances,
         backend,
         cache,
         model_id,
     )
+    logger.info(
+        "PREPARE_FEATURES_DONE partition=train rows=%d labels=%d elapsed=%.1fs",
+        int(x_train.shape[0]),
+        len(y_train),
+        time.perf_counter() - started_at,
+    )
+    logger.info("PREPARE_FEATURES_START partition=test utterances=%d", len(test_utterances))
     x_test, y_test, test_meta, test_noise_stats = build_feature_dataset(
         test_utterances,
         backend,
         cache,
         model_id,
+    )
+    logger.info(
+        "PREPARE_DONE stage=medium_features train_rows=%d test_rows=%d elapsed=%.1fs",
+        int(x_train.shape[0]),
+        int(x_test.shape[0]),
+        time.perf_counter() - started_at,
     )
     return MediumTrainingPreparation(
         train_utterances=train_utterances,
@@ -140,6 +170,7 @@ def prepare_medium_training_features(
         runtime_dtype=runtime_dtype,
         x_train=x_train,
         y_train=y_train,
+        train_meta=train_meta,
         x_test=x_test,
         y_test=y_test,
         test_meta=test_meta,
@@ -166,22 +197,51 @@ def prepare_accurate_training_features(
 ) -> AccurateTrainingPreparation[_UtteranceT, _SplitMetaT, _MetaT]:
     """Builds accurate-profile feature matrices and runtime metadata for training."""
 
+    started_at = time.perf_counter()
+    logger = logging.getLogger(__name__)
+    logger.info("PREPARE_START stage=accurate_features utterances=%d", len(utterances))
     train_utterances, test_utterances, split_metadata = split_utterances(utterances)
+    logger.info(
+        "PREPARE_SPLIT_DONE train=%d test=%d elapsed=%.1fs",
+        len(train_utterances),
+        len(test_utterances),
+        time.perf_counter() - started_at,
+    )
     model_id = resolve_model_id()
     runtime_device, runtime_dtype = resolve_runtime_selectors()
+    logger.info(
+        "PREPARE_BACKEND_START model_id=%s device=%s dtype=%s",
+        model_id,
+        runtime_device,
+        runtime_dtype,
+    )
     backend = build_backend(model_id, runtime_device, runtime_dtype)
     cache = build_cache()
-    x_train, y_train, _train_meta = build_feature_dataset(
+    logger.info("PREPARE_FEATURES_START partition=train utterances=%d", len(train_utterances))
+    x_train, y_train, train_meta = build_feature_dataset(
         train_utterances,
         backend,
         cache,
         model_id,
     )
+    logger.info(
+        "PREPARE_FEATURES_DONE partition=train rows=%d labels=%d elapsed=%.1fs",
+        int(x_train.shape[0]),
+        len(y_train),
+        time.perf_counter() - started_at,
+    )
+    logger.info("PREPARE_FEATURES_START partition=test utterances=%d", len(test_utterances))
     x_test, y_test, test_meta = build_feature_dataset(
         test_utterances,
         backend,
         cache,
         model_id,
+    )
+    logger.info(
+        "PREPARE_DONE stage=accurate_features train_rows=%d test_rows=%d elapsed=%.1fs",
+        int(x_train.shape[0]),
+        int(x_test.shape[0]),
+        time.perf_counter() - started_at,
     )
     return AccurateTrainingPreparation(
         train_utterances=train_utterances,
@@ -192,6 +252,7 @@ def prepare_accurate_training_features(
         runtime_dtype=runtime_dtype,
         x_train=x_train,
         y_train=y_train,
+        train_meta=train_meta,
         x_test=x_test,
         y_test=y_test,
         test_meta=test_meta,

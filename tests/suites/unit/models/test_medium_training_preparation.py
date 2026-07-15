@@ -152,6 +152,7 @@ def test_run_medium_profile_training_from_prepared_delegates_to_orchestration(
         runtime_dtype="float32",
         x_train=np.asarray([[0.1, 0.2]], dtype=np.float64),
         y_train=["happy"],
+        train_meta=[{"sample_id": utterances[0].sample_id}],
         x_test=np.asarray([[0.3, 0.4]], dtype=np.float64),
         y_test=["sad"],
         test_meta=[{"sample_id": utterances[1].sample_id}],

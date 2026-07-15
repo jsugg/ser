@@ -117,6 +117,7 @@ class MediumTrainingPreparation(Generic[_UtteranceT, _SplitMetaT, _MetaT, _Noise
     runtime_dtype: str
     x_train: np.ndarray
     y_train: list[str]
+    train_meta: list[_MetaT]
     x_test: np.ndarray
     y_test: list[str]
     test_meta: list[_MetaT]
@@ -136,6 +137,7 @@ class AccurateTrainingPreparation(Generic[_UtteranceT, _SplitMetaT, _MetaT]):
     runtime_dtype: str
     x_train: np.ndarray
     y_train: list[str]
+    train_meta: list[_MetaT]
     x_test: np.ndarray
     y_test: list[str]
     test_meta: list[_MetaT]
