@@ -34,7 +34,7 @@ def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) ->
         "--profile",
         choices=_PROFILE_CHOICES,
         default=None,
-        help=("Profile context for diagnostics " "(fast, medium, accurate, accurate-research)."),
+        help=("Profile context for diagnostics (fast, medium, accurate, accurate-research)."),
     )
     parser.add_argument(
         "--format",
@@ -68,6 +68,7 @@ def run_doctor_command(argv: list[str], *, settings: AppConfig | None = None) ->
         settings=active_settings,
         include_transcription_checks=not bool(args.skip_transcription_checks),
         include_noise_findings=bool(args.include_noise_findings),
+        include_training_readiness=True,
     )
     formatted_output = (
         format_report_json(report) if args.format == "json" else format_report_text(report)
