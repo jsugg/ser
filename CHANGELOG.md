@@ -15,6 +15,8 @@ after its first published distribution.
 - Changelog discipline before first publish.
 - Internal masked uncertainty-weighted multitask loss for auxiliary training
   heads, combining only the targets each sample actually carries.
+- Internal hierarchical utterance sampling primitives: square-root corpus mass,
+  inverse-square-root class mass, and bounded seeded window selection.
 
 ### Changed
 
