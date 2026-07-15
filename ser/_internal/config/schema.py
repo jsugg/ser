@@ -256,6 +256,8 @@ class DatasetConfig:
     subfolder_prefix: str = "Actor_*"
     extension: str = "*.wav"
     manifest_paths: tuple[Path, ...] = ()
+    recipe: str | None = None
+    strict_audit: bool = False
 
     @property
     def glob_pattern(self) -> str:
@@ -269,6 +271,12 @@ class DataLoaderConfig:
 
     max_workers: int = 8
     max_failed_file_ratio: float = 0.01
+    max_failed_files: int = 25
+    max_failed_file_ratio_per_corpus: float = 0.01
+    max_failed_file_ratio_per_class: float = 0.01
+    max_failures_per_reason: int = 10
+    min_remaining_per_class_split: int = 1
+    strict_quarantine: bool = False
 
 
 @dataclass(frozen=True)
@@ -276,6 +284,7 @@ class TrainingConfig:
     """Dataset split controls for model training."""
 
     test_size: float = 0.25
+    dev_size: float = 0.10
     random_state: int = 42
     stratify_split: bool = True
 

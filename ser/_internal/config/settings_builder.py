@@ -87,13 +87,22 @@ def build_settings_from_inputs(
         dataset=config_schema.DatasetConfig(
             folder=inputs.dataset_folder,
             manifest_paths=inputs.manifest_paths,
+            recipe=inputs.dataset_recipe,
+            strict_audit=inputs.strict_dataset_audit,
         ),
         data_loader=config_schema.DataLoaderConfig(
             max_workers=inputs.max_workers,
             max_failed_file_ratio=inputs.max_failed_file_ratio,
+            max_failed_files=inputs.max_failed_files,
+            max_failed_file_ratio_per_corpus=inputs.max_failed_file_ratio_per_corpus,
+            max_failed_file_ratio_per_class=inputs.max_failed_file_ratio_per_class,
+            max_failures_per_reason=inputs.max_failures_per_reason,
+            min_remaining_per_class_split=inputs.min_remaining_per_class_split,
+            strict_quarantine=inputs.strict_quarantine,
         ),
         training=config_schema.TrainingConfig(
             test_size=inputs.test_size,
+            dev_size=inputs.dev_size,
             random_state=inputs.random_state,
         ),
         models=config_schema.ModelsConfig(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import importlib
 import json
 import os
@@ -13,12 +14,16 @@ from typing import Any, Protocol, TypeVar
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
-from ser._internal.utils.logger import get_logger
+from ..utils.logger import get_logger  # noqa: TID251
+from .training_readiness import OptionalArtifactError  # noqa: TID251
 
 type EmotionClassifier = MLPClassifier | Pipeline
 _PersistedArtifactsT = TypeVar("_PersistedArtifactsT")
 
 logger = get_logger(__name__)
+_OPTIONAL_TARGET_ERRNOS = frozenset(
+    {errno.EACCES, errno.EDQUOT, errno.ENOSPC, errno.EPERM, errno.EROFS}
+)
 
 
 class _ModelsConfigLike(Protocol):
@@ -36,6 +41,28 @@ class _SettingsLike(Protocol):
 
     @property
     def models(self) -> _ModelsConfigLike: ...
+
+
+def _is_optional_target_write_error(
+    error: OSError,
+    *,
+    path: Path,
+    tmp_path: Path,
+) -> bool:
+    """Returns whether an OSError is a known failure of only the optional target."""
+    if error.errno not in _OPTIONAL_TARGET_ERRNOS:
+        return False
+    target_paths = {
+        path.expanduser().resolve(strict=False),
+        path.parent.expanduser().resolve(strict=False),
+        tmp_path.expanduser().resolve(strict=False),
+    }
+    reported_paths = {
+        Path(raw).expanduser().resolve(strict=False)
+        for raw in (error.filename, error.filename2)
+        if isinstance(raw, str)
+    }
+    return bool(reported_paths) and reported_paths.issubset(target_paths)
 
 
 def atomic_write_bytes(path: Path, payload: bytes) -> None:
@@ -68,26 +95,46 @@ def persist_secure_artifact(path: Path, model: EmotionClassifier) -> bool:
     """Attempts to persist a secure model format via `skops`, if available."""
     try:
         skops_io: Any = importlib.import_module("skops.io")
-    except ModuleNotFoundError:
-        logger.info(
-            "Optional dependency `skops` is not installed; skipping secure model "
-            "artifact generation."
+    except ModuleNotFoundError as err:
+        if err.name not in {"skops", "skops.io"}:
+            raise
+        from ser._internal.models.training_orchestration import (  # noqa: TID251
+            record_optional_artifact_failure,
+        )
+
+        record_optional_artifact_failure(
+            OptionalArtifactError(
+                "Optional dependency `skops` is not installed; secure artifact skipped."
+            )
         )
         return False
 
-    path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(f"{path.suffix}.tmp")
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         skops_io.dump(model, str(tmp_path))
         os.replace(tmp_path, path)
         return True
-    except Exception as err:
-        logger.warning(
-            "Failed to persist secure model artifact at %s: %s. Continuing with "
-            "pickle artifact.",
-            path,
-            err,
+    except OptionalArtifactError as err:
+        from ser._internal.models.training_orchestration import (  # noqa: TID251
+            record_optional_artifact_failure,
         )
+
+        record_optional_artifact_failure(err)
+        return False
+    except OSError as err:
+        if not _is_optional_target_write_error(err, path=path, tmp_path=tmp_path):
+            raise
+        from ser._internal.models.training_orchestration import (  # noqa: TID251
+            record_optional_artifact_failure,
+        )
+
+        wrapped = OptionalArtifactError(
+            err.errno,
+            f"Secure artifact target write failed: {err.strerror or err}",
+            err.filename,
+        )
+        record_optional_artifact_failure(wrapped)
         return False
     finally:
         if tmp_path.exists():
