@@ -13,6 +13,10 @@ after its first published distribution.
 - Public API stability policy for tier-1 modules.
 - README Python API example coverage through a contract test.
 - Changelog discipline before first publish.
+- Internal masked uncertainty-weighted multitask loss for auxiliary training
+  heads, combining only the targets each sample actually carries.
+- Internal hierarchical utterance sampling primitives: square-root corpus mass,
+  inverse-square-root class mass, and bounded seeded window selection.
 
 ### Changed
 
