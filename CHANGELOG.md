@@ -13,6 +13,8 @@ after its first published distribution.
 - Public API stability policy for tier-1 modules.
 - README Python API example coverage through a contract test.
 - Changelog discipline before first publish.
+- Internal masked uncertainty-weighted multitask loss for auxiliary training
+  heads, combining only the targets each sample actually carries.
 
 ### Changed
 
