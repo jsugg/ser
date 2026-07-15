@@ -1071,6 +1071,41 @@ def test_collect_registry_health_reports_unpinned_manifest_source(
     assert "missing source pin" in issues[0].message
 
 
+def test_collect_registry_health_reports_crema_d_lfs_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Startup health checks should block an existing unmaterialized CREMA-D checkout."""
+    settings = _settings(tmp_path)
+    dataset_root = tmp_path / "datasets" / "crema-d"
+    audio_path = dataset_root / "AudioWAV" / "1077_WSI_ANG_XX.wav"
+    audio_path.parent.mkdir(parents=True)
+    audio_path.write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\n"
+        b"oid sha256:be5c849653d28aaed49fbca687812f5352f295b1e1a66c269e4a3f2b7ae46489\n"
+        b"size 85462\n"
+    )
+    entry = DatasetRegistryEntry(
+        dataset_id="crema-d",
+        dataset_root=dataset_root,
+        manifest_path=tmp_path / "manifests" / "crema-d.jsonl",
+        options={},
+    )
+    monkeypatch.setattr(
+        dp,
+        "load_dataset_registry",
+        lambda **kwargs: {"crema-d": entry},
+    )
+
+    issues = dp.collect_dataset_registry_health_issues(settings=settings)
+
+    assert len(issues) == 1
+    assert issues[0].dataset_id == "crema-d"
+    assert issues[0].code == "dataset_media_invalid"
+    assert "unmaterialized Git LFS pointer" in issues[0].message
+    assert "ser data download --dataset crema-d" in issues[0].message
+
+
 def test_prepare_from_registry_entry_detects_msp_mirror_artifact_path_mismatch(
     tmp_path: Path,
 ) -> None:

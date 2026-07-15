@@ -116,3 +116,53 @@ def test_read_audio_file_segment_uses_librosa_offset_duration(
     assert captured["sr"] is None
     assert captured["offset"] == pytest.approx(1.5)
     assert captured["duration"] == pytest.approx(0.75)
+
+
+def test_read_audio_file_rejects_lfs_pointer_without_decoder_retries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """LFS pointers should produce an actionable permanent integrity failure immediately."""
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:0123456789abcdef\nsize 1234\n"
+    )
+
+    def _unexpected(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("decoder or retry invoked")
+
+    monkeypatch.setattr(au.librosa, "load", _unexpected)
+    monkeypatch.setattr(au.sf, "SoundFile", _unexpected)
+    monkeypatch.setattr(au.time, "sleep", _unexpected)
+
+    with pytest.raises(au.AudioIntegrityError, match="git lfs pull"):
+        au.read_audio_file(
+            str(audio_path),
+            audio_read_config=AudioReadConfig(max_retries=3, retry_delay_seconds=1.0),
+        )
+
+
+def test_read_audio_file_chains_the_terminal_decoder_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Generic read errors should retain the decoder cause for diagnostics."""
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"not-audio")
+    terminal_error = RuntimeError("soundfile decoder failed")
+    monkeypatch.setattr(
+        au.librosa,
+        "load",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("librosa failed")),
+    )
+    monkeypatch.setattr(
+        au.sf,
+        "SoundFile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(terminal_error),
+    )
+
+    with pytest.raises(OSError, match="Error reading") as exc_info:
+        au.read_audio_file(
+            str(audio_path),
+            audio_read_config=AudioReadConfig(max_retries=1, retry_delay_seconds=0.0),
+        )
+
+    assert exc_info.value.__cause__ is terminal_error

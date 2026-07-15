@@ -22,10 +22,20 @@ after its first published distribution.
 
 ### Changed
 
+- Audio read failures now raise the typed `AudioIntegrityError` and
+  `AudioDecodeError` instead of a bare `OSError`, and preserve the underlying
+  cause. Both subclass `OSError`, so existing handling keeps working.
+- Preparing CREMA-D now requires Git and Git LFS up front and fails with an
+  actionable message when either is missing.
 - README Python API guidance now directs workflow users to `ser.api`.
 
 ### Fixed
 
+- Unmaterialized Git LFS pointer files are now reported as a dataset integrity
+  problem naming the repair steps, instead of surfacing as an opaque audio
+  decode failure during feature extraction.
+- CREMA-D audio is validated before manifest registration, so an incomplete
+  checkout fails during dataset preparation rather than mid-training.
 - Import lint path collection now works on shells without `mapfile`, such as the
   Bash 3.2 that ships with macOS.
 
