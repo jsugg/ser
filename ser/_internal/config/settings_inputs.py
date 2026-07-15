@@ -27,10 +27,19 @@ class ResolvedSettingsInputs:
 
     dataset_folder: Path
     manifest_paths: tuple[Path, ...]
+    dataset_recipe: str | None
+    strict_dataset_audit: bool
     default_language: str
     max_workers: int
     max_failed_file_ratio: float
+    max_failed_files: int
+    max_failed_file_ratio_per_corpus: float
+    max_failed_file_ratio_per_class: float
+    max_failures_per_reason: int
+    min_remaining_per_class_split: int
+    strict_quarantine: bool
     test_size: float
+    dev_size: float
     random_state: int
     profile_pipeline: bool
     medium_profile: bool
@@ -165,6 +174,12 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
     manifest_paths = deps.parse_manifest_paths(
         (deps.getenv("SER_DATASET_MANIFESTS", "") or "").strip()
     )
+    dataset_recipe_raw = (deps.getenv("SER_DATASET_RECIPE", "") or "").strip()
+    dataset_recipe = dataset_recipe_raw or None
+    strict_dataset_audit = deps.read_bool_env(
+        "SER_STRICT_DATASET_AUDIT",
+        dataset_recipe is not None,
+    )
     default_language = deps.getenv("DEFAULT_LANGUAGE", "en") or "en"
 
     max_workers = deps.read_int_env("SER_MAX_WORKERS", 8, minimum=1)
@@ -174,7 +189,26 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
         minimum=0.0,
         maximum=1.0,
     )
+    max_failed_files = deps.read_int_env("SER_MAX_FAILED_FILES", 25, minimum=0)
+    max_failed_file_ratio_per_corpus = deps.read_float_env(
+        "SER_MAX_FAILED_FILE_RATIO_PER_CORPUS",
+        max_failed_file_ratio,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    max_failed_file_ratio_per_class = deps.read_float_env(
+        "SER_MAX_FAILED_FILE_RATIO_PER_CLASS",
+        max_failed_file_ratio,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    max_failures_per_reason = deps.read_int_env("SER_MAX_FAILURES_PER_REASON", 10, minimum=0)
+    min_remaining_per_class_split = deps.read_int_env(
+        "SER_MIN_REMAINING_PER_CLASS_SPLIT", 1, minimum=0
+    )
+    strict_quarantine = deps.read_bool_env("SER_STRICT_QUARANTINE", False)
     test_size = deps.read_float_env("SER_TEST_SIZE", 0.25, minimum=0.05, maximum=0.95)
+    dev_size = deps.read_float_env("SER_DEV_SIZE", 0.10, minimum=0.0, maximum=0.5)
     random_state = deps.read_int_env("SER_RANDOM_STATE", 42, minimum=0)
 
     profile_catalog = deps.get_profile_catalog()
@@ -354,10 +388,19 @@ def resolve_settings_inputs(deps: SettingsInputDeps) -> ResolvedSettingsInputs:
     return ResolvedSettingsInputs(
         dataset_folder=dataset_folder,
         manifest_paths=manifest_paths,
+        dataset_recipe=dataset_recipe,
+        strict_dataset_audit=strict_dataset_audit,
         default_language=default_language,
         max_workers=max_workers,
         max_failed_file_ratio=max_failed_file_ratio,
+        max_failed_files=max_failed_files,
+        max_failed_file_ratio_per_corpus=max_failed_file_ratio_per_corpus,
+        max_failed_file_ratio_per_class=max_failed_file_ratio_per_class,
+        max_failures_per_reason=max_failures_per_reason,
+        min_remaining_per_class_split=min_remaining_per_class_split,
+        strict_quarantine=strict_quarantine,
         test_size=test_size,
+        dev_size=dev_size,
         random_state=random_state,
         profile_pipeline=profile_pipeline,
         medium_profile=medium_profile,
