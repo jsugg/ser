@@ -8,6 +8,8 @@ import sys
 import time
 from collections.abc import Sequence
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 from dotenv import load_dotenv
@@ -29,12 +31,18 @@ from ser._internal.cli.runtime import (
     run_training_command,
     run_transcription_runtime_calibration_command,
 )
+from ser._internal.models.training_orchestration import (
+    current_training_state,
+    training_operation_active,
+    training_operation_scope,
+)
+from ser._internal.models.training_readiness import TrainingMode, TrainingOperation
 from ser._internal.runtime.phase_timing import format_duration
 from ser._internal.utils.logger import configure_logging, get_logger
 from ser._internal.utils.subtitles import SUPPORTED_SUBTITLE_FORMATS
 from ser.config import AppConfig, reload_settings, settings_override
 from ser.diagnostics.domain import PreflightMode
-from ser.profiles import ProfileName
+from ser.profiles import ProfileName, resolve_profile_name
 from ser.runtime.contracts import SubtitleFormat
 
 logger: logging.Logger = get_logger("ser")
@@ -132,6 +140,46 @@ def _build_main_parser(settings: AppConfig) -> argparse.ArgumentParser:
         "--train",
         action="store_true",
         help="Train the emotion classification model",
+    )
+    training_mode = parser.add_mutually_exclusive_group()
+    training_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Run bounded training readiness and backend smoke checks without fitting "
+            "or writing model artifacts."
+        ),
+    )
+    training_mode.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Validate and materialize reusable training features without fitting a classifier.",
+    )
+    parser.add_argument(
+        "--prepared-plan",
+        type=str,
+        default=None,
+        help="Consume a digest-validated prepared training plan.",
+    )
+    parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="Enable allowlisted idempotent repairs during dry-run or preparation.",
+    )
+    parser.add_argument(
+        "--dataset-recipe",
+        type=str,
+        default=None,
+        help=(
+            "Versioned dataset recipe JSON path or built-in 'research-v1'. "
+            "Training audits and routes manifests before feature extraction."
+        ),
+    )
+    parser.add_argument(
+        "--strict-dataset-audit",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Fail training on duplicate content, missing revisions/hashes, leakage, or empty classes.",
     )
     parser.add_argument(
         "--file",
@@ -232,8 +280,7 @@ def _build_main_parser(settings: AppConfig) -> argparse.ArgumentParser:
         type=str,
         default="accurate,medium,accurate-research,fast",
         help=(
-            "Comma-separated profile list for calibration "
-            "(fast,medium,accurate,accurate-research)."
+            "Comma-separated profile list for calibration (fast,medium,accurate,accurate-research)."
         ),
     )
     return parser
@@ -244,6 +291,21 @@ def _settings_scope(active_settings: object) -> AbstractContextManager[object]:
     if isinstance(active_settings, AppConfig):
         return settings_override(active_settings)
     return nullcontext()
+
+
+def _apply_dataset_recipe_override(settings: AppConfig, args: argparse.Namespace) -> AppConfig:
+    """Applies CLI dataset recipe/audit overrides to one immutable settings snapshot."""
+    recipe_arg = args.dataset_recipe if isinstance(args.dataset_recipe, str) else None
+    strict_arg = args.strict_dataset_audit
+    if recipe_arg is None and strict_arg is None:
+        return settings
+    recipe = recipe_arg or settings.dataset.recipe
+    strict = (
+        bool(strict_arg)
+        if isinstance(strict_arg, bool)
+        else True if recipe_arg is not None else settings.dataset.strict_audit
+    )
+    return replace(settings, dataset=replace(settings.dataset, recipe=recipe, strict_audit=strict))
 
 
 def _run_restricted_backend_gate(
@@ -297,7 +359,7 @@ def _run_calibration_or_exit(args: argparse.Namespace) -> None:
         logger.error(
             "%s",
             calibration_error.message,
-            exc_info=calibration_error.include_traceback,
+            exc_info=calibration_error.exc_info,
         )
         sys.exit(calibration_error.exit_code)
     if calibration_result is None:
@@ -320,10 +382,66 @@ def _run_calibration_or_exit(args: argparse.Namespace) -> None:
     sys.exit(0)
 
 
-def _run_training_or_exit(*, active_settings: object) -> None:
+def _validate_training_mode_args(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+) -> None:
+    """Rejects train-only option misuse before any runtime or backend work."""
+    has_train_only_option = bool(
+        args.dry_run or args.prepare_only or args.repair or args.prepared_plan is not None
+    )
+    if has_train_only_option and not args.train:
+        parser.error("--dry-run, --prepare-only, --repair, and --prepared-plan require --train.")
+    if args.repair and not (args.dry_run or args.prepare_only):
+        parser.error("--repair is valid only with --dry-run or --prepare-only.")
+    if args.prepared_plan is not None and (args.dry_run or args.prepare_only):
+        parser.error("--prepared-plan is valid only for real training.")
+
+
+def _training_operation_from_args(args: argparse.Namespace) -> TrainingOperation:
+    """Translates validated CLI flags into the typed orchestration contract."""
+    mode = (
+        TrainingMode.DRY_RUN
+        if args.dry_run
+        else TrainingMode.PREPARE_ONLY if args.prepare_only else TrainingMode.TRAIN
+    )
+    prepared_plan = (
+        Path(args.prepared_plan).expanduser() if isinstance(args.prepared_plan, str) else None
+    )
+    return TrainingOperation(mode=mode, repair=bool(args.repair), prepared_plan=prepared_plan)
+
+
+def _log_training_mode_start(
+    args: argparse.Namespace,
+    *,
+    active_settings: AppConfig,
+    preflight_mode: PreflightMode,
+) -> None:
+    """Emits the first visible training-mode lifecycle event before preflight work."""
+    operation = _training_operation_from_args(args)
+    logger.info(
+        "TRAIN_MODE_START mode=%s profile=%s preflight=%s repair=%s prepared_plan=%s",
+        operation.mode.value,
+        resolve_profile_name(active_settings),
+        preflight_mode,
+        operation.repair,
+        operation.prepared_plan is not None,
+    )
+
+
+def _run_training_or_exit(
+    args: argparse.Namespace | None = None,
+    *,
+    active_settings: object,
+) -> None:
     """Runs training flow and exits with the appropriate status code."""
     logger.info("Starting model training...")
     start_time = time.perf_counter()
+    operation = (
+        current_training_state().operation
+        if training_operation_active()
+        else _training_operation_from_args(args) if args is not None else TrainingOperation()
+    )
     disposition = run_training_command(
         settings=cast(AppConfig, active_settings),
         pipeline_builder=build_runtime_pipeline,
@@ -332,11 +450,17 @@ def _run_training_or_exit(*, active_settings: object) -> None:
         logger.error(
             "%s",
             disposition.message,
-            exc_info=disposition.include_traceback,
+            exc_info=disposition.exc_info,
         )
         sys.exit(disposition.exit_code)
+    completion_label = {
+        TrainingMode.DRY_RUN: "Training readiness dry run",
+        TrainingMode.PREPARE_ONLY: "Training preparation",
+        TrainingMode.TRAIN: "Training",
+    }[operation.mode]
     logger.info(
-        "Training completed in %s.",
+        "%s completed in %s.",
+        completion_label,
         format_duration(time.perf_counter() - start_time),
     )
     sys.exit(0)
@@ -366,7 +490,7 @@ def _run_inference_or_exit(args: argparse.Namespace, *, active_settings: object)
         logger.error(
             "%s",
             disposition.message,
-            exc_info=disposition.include_traceback,
+            exc_info=disposition.exc_info,
         )
         sys.exit(disposition.exit_code)
     timeline_csv_path = getattr(execution, "timeline_csv_path", None) if execution else None
@@ -393,6 +517,7 @@ def main() -> None:
 
     parser = _build_main_parser(settings)
     args: argparse.Namespace = parser.parse_args()
+    _validate_training_mode_args(parser, args)
     configure_logging(args.log_level)
     active_settings = apply_cli_profile_override(
         settings,
@@ -402,8 +527,24 @@ def main() -> None:
         active_settings,
         disable_timeouts=bool(args.disable_timeouts),
     )
+    active_settings = _apply_dataset_recipe_override(active_settings, args)
     preflight_mode = parse_preflight_mode(str(args.preflight))
-    with _settings_scope(active_settings):
+    training_scope: AbstractContextManager[object] = (
+        cast(
+            AbstractContextManager[object],
+            training_operation_scope(_training_operation_from_args(args)),
+        )
+        if args.train
+        else nullcontext()
+    )
+    with _settings_scope(active_settings), training_scope:
+        if args.train:
+            _log_training_mode_start(
+                args,
+                active_settings=active_settings,
+                preflight_mode=preflight_mode,
+            )
+
         restricted_exit_code = _run_restricted_backend_gate(
             args,
             active_settings=active_settings,
@@ -423,7 +564,7 @@ def main() -> None:
             _run_calibration_or_exit(args)
 
         if args.train:
-            _run_training_or_exit(active_settings=active_settings)
+            _run_training_or_exit(args, active_settings=active_settings)
 
         _run_inference_or_exit(args, active_settings=active_settings)
 
