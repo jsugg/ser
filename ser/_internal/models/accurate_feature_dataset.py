@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from functools import partial
-from typing import TypeVar
+from typing import TypeVar, cast
 
 import numpy as np
 
-from ser._internal.data import EmbeddingCache
+from ser._internal.data import EmbeddingCache, Utterance
 from ser._internal.models.feature_runtime_encoding import (
     encode_sequence_with_cache,
     resolve_accurate_runtime_config,
@@ -25,6 +25,7 @@ from ser._internal.models.profile_training_preparation import (
 from ser._internal.models.profile_training_preparation import (
     build_accurate_feature_dataset as _build_prepared_accurate_feature_dataset,
 )
+from ser._internal.models.training_orchestration import handle_sample_encoding_failure
 from ser._internal.pool import mean_std_pool, temporal_pooling_windows
 from ser._internal.repr import EncodedSequence, FeatureBackend, PoolingWindow
 from ser._internal.utils.audio_utils import read_audio_file
@@ -149,6 +150,11 @@ def build_accurate_feature_dataset(
         build_pooling_windows=build_pooling_windows,
         pool_features=pool_features,
         window_meta_factory=window_meta_factory,
+        handle_sample_failure=lambda utterance, error: handle_sample_encoding_failure(
+            settings=settings,
+            sample=cast(Utterance, utterance),
+            error=error,
+        ),
     )
 
 

@@ -126,12 +126,19 @@ def encode_sequence_with_cache(
     read_audio: ReadAudioFile = read_audio_file,
 ) -> EncodedSequence:
     """Encodes one audio sequence and caches embeddings with runtime selectors."""
+    from ser._internal.models.training_orchestration import (  # noqa: TID251
+        bounded_retry_local_io,
+        record_cache_activity,
+    )
 
     def _compute_sequence() -> EncodedSequence:
-        audio, sample_rate = read_audio(
-            file_path=audio_path,
-            start_seconds=start_seconds,
-            duration_seconds=duration_seconds,
+        audio, sample_rate = bounded_retry_local_io(
+            lambda: read_audio(
+                file_path=audio_path,
+                start_seconds=start_seconds,
+                duration_seconds=duration_seconds,
+            ),
+            identity=audio_path,
         )
         audio_array = np.asarray(audio, dtype=np.float32)
         return backend.encode_sequence(audio_array, sample_rate)
@@ -145,6 +152,10 @@ def encode_sequence_with_cache(
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
         compute=_compute_sequence,
+    )
+    record_cache_activity(
+        cache_hit=cache_entry.cache_hit,
+        recomputed=cache_entry.invalidated_stale_entry,
     )
     logger.debug(
         "%s embedding cache %s for %s (%s).",

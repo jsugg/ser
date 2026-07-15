@@ -176,6 +176,8 @@ def test_run_transcription_runtime_calibration_command_maps_unexpected_errors(
     assert disposition.exit_code == 1
     assert disposition.message == "Transcription runtime calibration failed: boom"
     assert disposition.include_traceback is True
+    assert isinstance(disposition.exception, RuntimeError)
+    assert isinstance(disposition.exc_info, tuple)
 
 
 def test_run_training_command_maps_training_exceptions_to_disposition(
@@ -193,9 +195,9 @@ def test_run_training_command_maps_training_exceptions_to_disposition(
     )
 
     assert disposition is not None
-    assert disposition.exit_code == 2
-    assert disposition.message == "training failed"
-    assert disposition.include_traceback is False
+    assert disposition.exit_code == 1
+    assert disposition.message == "Training workflow failed: training failed"
+    assert disposition.include_traceback is True
 
 
 def test_run_training_command_delegates_arguments_on_success(

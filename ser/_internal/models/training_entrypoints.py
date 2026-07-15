@@ -18,6 +18,8 @@ import ser._internal.models.medium_feature_dataset as _medium_feature_dataset
 import ser._internal.models.medium_noise_controls as _medium_noise_controls
 import ser._internal.models.medium_training_preparation as _medium_training_preparation
 import ser._internal.models.profile_runtime as _profile_runtime
+import ser._internal.models.training_orchestration as _training_orchestration
+import ser._internal.models.training_readiness as _training_readiness
 import ser._internal.models.training_reporting as _training_reporting
 import ser._internal.models.training_support as _training_support
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
@@ -31,17 +33,51 @@ logger = get_logger(__name__)
 def train_model(*, settings: AppConfig) -> None:
     """Runs fast-profile training with one explicit settings snapshot."""
 
+    if not _training_orchestration.training_operation_active():
+        with _training_orchestration.training_operation_scope(
+            _training_readiness.TrainingOperation()
+        ):
+            train_model(settings=settings)
+        return
+
+    _training_orchestration.ensure_entrypoint_readiness(
+        settings=settings,
+        load_utterances=partial(
+            _data_loader.load_utterances,
+            settings=settings,
+            allow_prepare=False,
+        ),
+    )
+    if (
+        _training_orchestration.current_training_state().operation.mode
+        is _training_readiness.TrainingMode.DRY_RUN
+    ):
+        return
+
     def _build_hooks(active_settings: AppConfig) -> _fast_training.FastTrainingHooks:
         return _fast_training.FastTrainingHooks(
             logger=logger,
             settings=active_settings,
-            load_utterances=partial(_data_loader.load_utterances, settings=active_settings),
+            load_utterances=lambda: list(
+                _training_orchestration.current_training_state().utterances
+            ),
             ensure_dataset_consents_for_training=partial(
                 _training_support.ensure_dataset_consents_for_training,
                 settings=active_settings,
                 logger=logger,
             ),
             load_data=partial(_data_loader.load_data, settings=active_settings),
+            load_checked_data=lambda utterances: _data_loader.load_checked_fast_data(
+                utterances=utterances,
+                settings=active_settings,
+                handle_sample_failure=lambda sample, error: (
+                    _training_orchestration.handle_sample_encoding_failure(
+                        settings=active_settings,
+                        sample=sample,
+                        error=error,
+                    )
+                ),
+            ),
             create_classifier=lambda: _training_support.create_classifier(active_settings),
             evaluate_training_predictions=_training_support.evaluate_training_predictions,
             build_provenance_metadata=_license_check.build_provenance_metadata,
@@ -75,11 +111,34 @@ def train_model(*, settings: AppConfig) -> None:
 def train_medium_model(*, settings: AppConfig) -> None:
     """Runs medium-profile training with one explicit settings snapshot."""
 
+    if not _training_orchestration.training_operation_active():
+        with _training_orchestration.training_operation_scope(
+            _training_readiness.TrainingOperation()
+        ):
+            train_medium_model(settings=settings)
+        return
+
+    _training_orchestration.ensure_entrypoint_readiness(
+        settings=settings,
+        load_utterances=partial(
+            _data_loader.load_utterances,
+            settings=settings,
+            allow_prepare=False,
+        ),
+    )
+    if (
+        _training_orchestration.current_training_state().operation.mode
+        is _training_readiness.TrainingMode.DRY_RUN
+    ):
+        return
+
     _medium_training_preparation.train_medium_profile_entrypoint(
         settings=settings,
         logger=logger,
         train_profile_model=_medium_training_preparation.train_medium_profile_model,
-        load_utterances_for_training=partial(_data_loader.load_utterances, settings=settings),
+        load_utterances_for_training=lambda: list(
+            _training_orchestration.current_training_state().utterances
+        ),
         ensure_dataset_consents_for_training=partial(
             _training_support.ensure_dataset_consents_for_training,
             settings=settings,
@@ -149,11 +208,34 @@ def train_medium_model(*, settings: AppConfig) -> None:
 def train_accurate_model(*, settings: AppConfig) -> None:
     """Runs accurate-profile training with one explicit settings snapshot."""
 
+    if not _training_orchestration.training_operation_active():
+        with _training_orchestration.training_operation_scope(
+            _training_readiness.TrainingOperation()
+        ):
+            train_accurate_model(settings=settings)
+        return
+
+    _training_orchestration.ensure_entrypoint_readiness(
+        settings=settings,
+        load_utterances=partial(
+            _data_loader.load_utterances,
+            settings=settings,
+            allow_prepare=False,
+        ),
+    )
+    if (
+        _training_orchestration.current_training_state().operation.mode
+        is _training_readiness.TrainingMode.DRY_RUN
+    ):
+        return
+
     _accurate_training_preparation.train_accurate_whisper_profile_entrypoint(
         settings=settings,
         logger=logger,
         train_profile_model=_accurate_training_preparation.train_accurate_whisper_profile_model,
-        load_utterances_for_training=partial(_data_loader.load_utterances, settings=settings),
+        load_utterances_for_training=lambda: list(
+            _training_orchestration.current_training_state().utterances
+        ),
         ensure_dataset_consents_for_training=partial(
             _training_support.ensure_dataset_consents_for_training,
             settings=settings,
@@ -198,6 +280,35 @@ def train_accurate_model(*, settings: AppConfig) -> None:
 def train_accurate_research_model(*, settings: AppConfig) -> None:
     """Runs accurate-research training with one explicit settings snapshot."""
 
+    if not _training_orchestration.training_operation_active():
+        with _training_orchestration.training_operation_scope(
+            _training_readiness.TrainingOperation()
+        ):
+            train_accurate_research_model(settings=settings)
+        return
+
+    allowed_restricted_backends = _license_check.parse_allowed_restricted_backends_env()
+    persisted_consents = _license_check.load_persisted_backend_consents(settings=settings)
+    _license_check.ensure_backend_access(
+        backend_id=_profile_runtime.ACCURATE_RESEARCH_BACKEND_ID,
+        restricted_backends_enabled=settings.runtime_flags.restricted_backends,
+        allowed_restricted_backends=allowed_restricted_backends,
+        persisted_consents=persisted_consents,
+    )
+    _training_orchestration.ensure_entrypoint_readiness(
+        settings=settings,
+        load_utterances=partial(
+            _data_loader.load_utterances,
+            settings=settings,
+            allow_prepare=False,
+        ),
+    )
+    if (
+        _training_orchestration.current_training_state().operation.mode
+        is _training_readiness.TrainingMode.DRY_RUN
+    ):
+        return
+
     _accurate_training_preparation.train_accurate_research_profile_entrypoint(
         settings=settings,
         logger=logger,
@@ -208,7 +319,9 @@ def train_accurate_research_model(*, settings: AppConfig) -> None:
         load_persisted_backend_consents=_license_check.load_persisted_backend_consents,
         ensure_backend_access=_license_check.ensure_backend_access,
         restricted_backend_id=_profile_runtime.ACCURATE_RESEARCH_BACKEND_ID,
-        load_utterances_for_training=partial(_data_loader.load_utterances, settings=settings),
+        load_utterances_for_training=lambda: list(
+            _training_orchestration.current_training_state().utterances
+        ),
         ensure_dataset_consents_for_training=partial(
             _training_support.ensure_dataset_consents_for_training,
             settings=settings,

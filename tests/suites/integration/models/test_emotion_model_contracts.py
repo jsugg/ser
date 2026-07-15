@@ -48,6 +48,7 @@ def test_train_model_raises_when_dataset_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`train_model` should fail closed when no dataset split can be loaded."""
+    _stub_training_readiness(monkeypatch)
     settings = SimpleNamespace(
         training=SimpleNamespace(test_size=0.25),
         models=SimpleNamespace(
@@ -152,6 +153,7 @@ def test_training_entrypoints_train_model_builds_fast_hooks_from_canonical_owner
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fast training entrypoint should bind canonical collaborators directly."""
+    _stub_training_readiness(monkeypatch)
     settings = cast(em.AppConfig, SimpleNamespace())
     captured: dict[str, object] = {}
 
@@ -175,9 +177,13 @@ def test_training_entrypoints_train_model_builds_fast_hooks_from_canonical_owner
     hooks = cast(FastTrainingHooks, captured["hooks"])
     assert hooks.logger is training_entrypoints.logger
     assert hooks.settings is settings
-    assert isinstance(hooks.load_utterances, partial)
-    assert hooks.load_utterances.func is data_loader.load_utterances
-    assert hooks.load_utterances.keywords == {"settings": settings}
+    effective_utterance = object()
+    monkeypatch.setattr(
+        training_entrypoints._training_orchestration,
+        "current_training_state",
+        lambda: SimpleNamespace(utterances=(effective_utterance,)),
+    )
+    assert hooks.load_utterances() == [effective_utterance]
     assert isinstance(hooks.ensure_dataset_consents_for_training, partial)
     assert (
         hooks.ensure_dataset_consents_for_training.func
@@ -214,6 +220,7 @@ def test_training_entrypoints_train_medium_model_uses_canonical_helpers(
     tmp_path: Path,
 ) -> None:
     """Medium training entrypoint should use direct owner modules, not emotion-model aliases."""
+    _stub_training_readiness(monkeypatch)
     settings = cast(
         em.AppConfig,
         SimpleNamespace(
@@ -240,10 +247,14 @@ def test_training_entrypoints_train_medium_model_uses_canonical_helpers(
 
     assert captured["settings"] is settings
     assert captured["logger"] is training_entrypoints.logger
-    load_utterances = captured["load_utterances_for_training"]
-    assert isinstance(load_utterances, partial)
-    assert load_utterances.func is data_loader.load_utterances
-    assert load_utterances.keywords == {"settings": settings}
+    effective_utterance = object()
+    monkeypatch.setattr(
+        training_entrypoints._training_orchestration,
+        "current_training_state",
+        lambda: SimpleNamespace(utterances=(effective_utterance,)),
+    )
+    load_utterances = cast(Callable[[], list[object]], captured["load_utterances_for_training"])
+    assert load_utterances() == [effective_utterance]
     ensure_consents = captured["ensure_dataset_consents_for_training"]
     assert isinstance(ensure_consents, partial)
     assert ensure_consents.func is training_support.ensure_dataset_consents_for_training
@@ -299,6 +310,7 @@ def test_training_entrypoints_train_accurate_model_uses_canonical_helpers(
     tmp_path: Path,
 ) -> None:
     """Accurate training entrypoint should assemble direct owner collaborators."""
+    _stub_training_readiness(monkeypatch)
     settings = cast(
         em.AppConfig,
         SimpleNamespace(
@@ -352,10 +364,12 @@ def test_training_entrypoints_train_accurate_research_model_uses_canonical_helpe
     tmp_path: Path,
 ) -> None:
     """Research training entrypoint should use direct license and runtime owners."""
+    events: list[str] = []
     settings = cast(
         em.AppConfig,
         SimpleNamespace(
             models=SimpleNamespace(
+                folder=tmp_path / "models",
                 huggingface_cache_root=tmp_path / "hf-cache",
                 modelscope_cache_root=tmp_path / "ms-cache",
             ),
@@ -369,6 +383,35 @@ def test_training_entrypoints_train_accurate_research_model_uses_canonical_helpe
     )
     captured: dict[str, object] = {}
     sentinel_runner = object()
+
+    def _parse_access() -> frozenset[str]:
+        events.append("parse_access")
+        return frozenset()
+
+    def _load_access(**_kwargs: object) -> frozenset[str]:
+        events.append("load_access")
+        return frozenset()
+
+    monkeypatch.setattr(
+        license_check,
+        "parse_allowed_restricted_backends_env",
+        _parse_access,
+    )
+    monkeypatch.setattr(
+        license_check,
+        "load_persisted_backend_consents",
+        _load_access,
+    )
+    monkeypatch.setattr(
+        license_check,
+        "ensure_backend_access",
+        lambda **_kwargs: events.append("ensure_access"),
+    )
+    monkeypatch.setattr(
+        training_entrypoints._training_orchestration,
+        "ensure_entrypoint_readiness",
+        lambda **_kwargs: events.append("readiness"),
+    )
 
     monkeypatch.setattr(
         accurate_training_preparation,
@@ -391,6 +434,7 @@ def test_training_entrypoints_train_accurate_research_model_uses_canonical_helpe
 
     training_entrypoints.train_accurate_research_model(settings=settings)
 
+    assert events[:4] == ["parse_access", "load_access", "ensure_access", "readiness"]
     assert captured["settings"] is settings
     assert captured["logger"] is training_entrypoints.logger
     assert (
@@ -537,7 +581,9 @@ def test_predict_emotions_detailed_rejects_feature_size_mismatch(
     monkeypatch.setattr(
         em,
         "load_model",
-        lambda *, settings=None, expected_backend_id=None, expected_profile=None, expected_backend_model_id=None: loaded_model,
+        lambda *, settings=None, expected_backend_id=None, expected_profile=None, expected_backend_model_id=None: (
+            loaded_model
+        ),
     )
 
     with pytest.raises(ValueError, match="Feature vector size mismatch"):
@@ -654,3 +700,12 @@ def test_predict_emotions_returns_legacy_segments_from_detailed_output(
 
     assert [segment.emotion for segment in result] == ["v1"]
     assert captured["file"] == "sample.wav"
+
+
+def _stub_training_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keeps collaborator-wiring tests focused on their post-readiness seam."""
+    monkeypatch.setattr(
+        training_entrypoints._training_orchestration,
+        "ensure_entrypoint_readiness",
+        lambda **_kwargs: None,
+    )

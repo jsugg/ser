@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING
 
 from ser._internal.utils.subtitles import resolve_subtitle_export_request
@@ -29,16 +30,34 @@ class WorkflowErrorDisposition:
     exit_code: int
     message: str
     include_traceback: bool = False
+    exception: Exception | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def exc_info(self) -> tuple[type[BaseException], BaseException, TracebackType | None] | bool:
+        """Returns explicit logging traceback data without consulting active exception state."""
+        if not self.include_traceback or self.exception is None:
+            return False
+        return (type(self.exception), self.exception, self.exception.__traceback__)
 
 
 def classify_training_exception(err: Exception) -> WorkflowErrorDisposition:
     """Classifies one training exception into CLI logging/exit behavior."""
-    if isinstance(err, RuntimeError):
+    from ser._internal.models.training_readiness import (
+        PreparedPlanError,
+        QuarantineBudgetExceeded,
+        TrainingReadinessError,
+    )
+
+    if isinstance(
+        err,
+        (PreparedPlanError, QuarantineBudgetExceeded, TrainingReadinessError),
+    ):
         return WorkflowErrorDisposition(exit_code=2, message=str(err))
     return WorkflowErrorDisposition(
         exit_code=1,
         message=f"Training workflow failed: {err}",
         include_traceback=True,
+        exception=err,
     )
 
 
@@ -109,11 +128,13 @@ def classify_inference_exception(err: Exception) -> WorkflowErrorDisposition:
             exit_code=3,
             message=f"Transcription failed: {err}",
             include_traceback=True,
+            exception=err,
         )
     return WorkflowErrorDisposition(
         exit_code=1,
         message=f"Prediction workflow failed: {err}",
         include_traceback=True,
+        exception=err,
     )
 
 
@@ -273,6 +294,7 @@ def run_transcription_runtime_calibration_command(
                 exit_code=1,
                 message=f"Transcription runtime calibration failed: {err}",
                 include_traceback=True,
+                exception=err,
             ),
         )
     return (calibration_result, None)

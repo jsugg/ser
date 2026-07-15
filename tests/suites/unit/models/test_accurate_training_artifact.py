@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
-from typing import cast
 
 import numpy as np
 import pytest
@@ -17,6 +17,14 @@ import ser._internal.models.accurate_training_execution as accurate_training_exe
 import ser._internal.models.profile_runtime as profile_runtime
 import ser._internal.models.training_entrypoints as training_entrypoints
 import ser._internal.models.training_support as training_support
+from ser._internal.config.schema import (
+    AccurateResearchRuntimeConfig,
+    AccurateRuntimeConfig,
+    DatasetConfig,
+    MediumRuntimeConfig,
+    ModelsConfig,
+    RuntimeFlags,
+)
 from ser._internal.data import EmbeddingCache
 from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser._internal.models import emotion_model as em
@@ -26,38 +34,57 @@ from ser._internal.repr.runtime_policy import resolve_feature_runtime_policy
 from ser.config import AppConfig
 
 
-def _settings_stub(tmp_path: Path) -> SimpleNamespace:
-    """Builds minimal settings stub required by accurate training helpers."""
-    return SimpleNamespace(
-        dataset=SimpleNamespace(
-            glob_pattern=str(tmp_path / "*.wav"),
-            manifest_paths=(),
-        ),
+def _settings_stub(tmp_path: Path) -> AppConfig:
+    """Builds a complete settings value required by accurate training."""
+    return AppConfig(
+        emotions={"03": "happy", "04": "sad"},
+        dataset=DatasetConfig(folder=tmp_path, subfolder_prefix=""),
         tmp_folder=tmp_path / "tmp",
-        models=SimpleNamespace(
+        models=ModelsConfig(
             folder=tmp_path / "models",
-            training_report_file=tmp_path / "training_report_accurate.json",
+            model_cache_dir=tmp_path / "model-cache",
+            training_report_file_name="training_report_accurate.json",
             accurate_model_id="openai/whisper-large-v3",
             accurate_research_model_id="iic/emotion2vec_plus_large",
-            huggingface_cache_root=tmp_path / "model-cache" / "huggingface",
-            modelscope_cache_root=tmp_path / "model-cache" / "modelscope" / "hub",
         ),
-        runtime_flags=SimpleNamespace(restricted_backends=True),
-        medium_runtime=SimpleNamespace(
+        runtime_flags=RuntimeFlags(restricted_backends=True),
+        medium_runtime=MediumRuntimeConfig(
             pool_window_size_seconds=1.0,
             pool_window_stride_seconds=1.0,
         ),
-        accurate_runtime=SimpleNamespace(
+        accurate_runtime=AccurateRuntimeConfig(
             pool_window_size_seconds=2.0,
             pool_window_stride_seconds=0.5,
         ),
-        accurate_research_runtime=SimpleNamespace(
+        accurate_research_runtime=AccurateResearchRuntimeConfig(
             pool_window_size_seconds=2.5,
             pool_window_stride_seconds=0.75,
         ),
-        torch_runtime=SimpleNamespace(device="auto", dtype="auto"),
-        feature_runtime_policy=SimpleNamespace(for_backend=lambda _backend_id: None),
     )
+
+
+def _stub_training_readiness(monkeypatch: pytest.MonkeyPatch) -> list[AppConfig]:
+    """Keeps artifact tests focused while preserving the checked-loader contract."""
+    checked_settings: list[AppConfig] = []
+
+    def _ensure_entrypoint_readiness(
+        *,
+        settings: AppConfig,
+        load_utterances: Callable[[], list[Utterance] | None],
+    ) -> None:
+        checked_settings.append(settings)
+        utterances = load_utterances()
+        if utterances is None:
+            raise RuntimeError("Dataset not loaded")
+        state = training_entrypoints._training_orchestration.current_training_state()
+        state.utterances = tuple(utterances)
+
+    monkeypatch.setattr(
+        training_entrypoints._training_orchestration,
+        "ensure_entrypoint_readiness",
+        _ensure_entrypoint_readiness,
+    )
+    return checked_settings
 
 
 def _utterances_from_samples(samples: list[tuple[str, str]]) -> list[Utterance]:
@@ -92,15 +119,18 @@ def test_train_accurate_model_requires_labeled_dataset(
     tmp_path: Path,
 ) -> None:
     """Accurate training should fail fast when dataset loading returns no samples."""
-    monkeypatch.setattr(em, "reload_settings", lambda: _settings_stub(tmp_path))
+    settings = _settings_stub(tmp_path)
+    checked_settings = _stub_training_readiness(monkeypatch)
+    monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
-        lambda *, settings=None: None,
+        lambda *, settings=None, allow_prepare=False: None,
     )
 
     with pytest.raises(RuntimeError, match="Dataset not loaded"):
         em.train_accurate_model()
+    assert checked_settings == [settings]
 
 
 def test_train_accurate_model_persists_whisper_profile_metadata(
@@ -142,11 +172,12 @@ def test_train_accurate_model_persists_whisper_profile_metadata(
     train_utterances = all_utterances[: len(train_samples)]
     test_utterances = all_utterances[len(train_samples) :]
 
+    _stub_training_readiness(monkeypatch)
     monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
-        lambda *, settings=None: all_utterances,
+        lambda *, settings=None, allow_prepare=False: all_utterances,
     )
     monkeypatch.setattr(
         training_support,
@@ -285,7 +316,10 @@ def test_train_accurate_model_uses_configured_model_id(
 ) -> None:
     """Accurate training should initialize backend/dataset with configured model id."""
     settings = _settings_stub(tmp_path)
-    settings.models.accurate_model_id = "unit-test/whisper-tiny"
+    settings = replace(
+        settings,
+        models=replace(settings.models, accurate_model_id="unit-test/whisper-tiny"),
+    )
     train_samples = [("train_0.wav", "happy"), ("train_1.wav", "sad")]
     test_samples = [("test_0.wav", "happy"), ("test_1.wav", "sad")]
     split_metadata = MediumSplitMetadata(
@@ -319,12 +353,13 @@ def test_train_accurate_model_uses_configured_model_id(
             captured["backend_device"] = device
             captured["backend_dtype"] = dtype
 
+    _stub_training_readiness(monkeypatch)
     monkeypatch.setattr(profile_runtime, "WhisperBackend", _BackendStub)
     monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
-        lambda *, settings=None: all_utterances,
+        lambda *, settings=None, allow_prepare=False: all_utterances,
     )
     monkeypatch.setattr(
         training_support,
@@ -418,11 +453,14 @@ def test_resolve_accurate_research_model_id_uses_configured_value(
     """Accurate-research model id resolver should honor configured settings value."""
     del monkeypatch
     settings = _settings_stub(tmp_path)
-    settings.models.accurate_research_model_id = "unit-test/emotion2vec-plus"
-    assert (
-        resolve_accurate_research_model_id(cast(AppConfig, settings))
-        == "unit-test/emotion2vec-plus"
+    settings = replace(
+        settings,
+        models=replace(
+            settings.models,
+            accurate_research_model_id="unit-test/emotion2vec-plus",
+        ),
     )
+    assert resolve_accurate_research_model_id(settings) == "unit-test/emotion2vec-plus"
 
 
 def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
@@ -431,7 +469,13 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
 ) -> None:
     """Accurate-research training should persist emotion2vec/accurate-research metadata."""
     settings = _settings_stub(tmp_path)
-    settings.models.accurate_research_model_id = "unit-test/emotion2vec-plus"
+    settings = replace(
+        settings,
+        models=replace(
+            settings.models,
+            accurate_research_model_id="unit-test/emotion2vec-plus",
+        ),
+    )
     train_samples = [("train_0.wav", "happy"), ("train_1.wav", "sad")]
     test_samples = [("test_0.wav", "happy"), ("test_1.wav", "sad")]
     split_metadata = MediumSplitMetadata(
@@ -465,12 +509,13 @@ def test_train_accurate_research_model_persists_emotion2vec_profile_metadata(
             captured["backend_modelscope_cache_root"] = modelscope_cache_root
             captured["backend_huggingface_cache_root"] = huggingface_cache_root
 
+    _stub_training_readiness(monkeypatch)
     monkeypatch.setattr(profile_runtime, "Emotion2VecBackend", _BackendStub)
     monkeypatch.setattr(em, "reload_settings", lambda: settings)
     monkeypatch.setattr(
         training_entrypoints._data_loader,
         "load_utterances",
-        lambda *, settings=None: all_utterances,
+        lambda *, settings=None, allow_prepare=False: all_utterances,
     )
     monkeypatch.setattr(
         training_support,
