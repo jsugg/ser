@@ -230,6 +230,15 @@ def test_load_utterances_prefers_manifest_when_configured(
     assert all(item.audio_path.is_absolute() for item in utterances)
 
 
+def test_strict_dataset_audit_requires_explicit_recipe() -> None:
+    """The strict safety flag cannot silently become a no-op."""
+    settings = _build_settings(max_failed_file_ratio=1.0)
+    settings.dataset.strict_audit = True
+
+    with pytest.raises(RuntimeError, match="requires an explicit versioned dataset recipe"):
+        dl.load_utterances(settings=cast(AppConfig, settings))
+
+
 def test_load_utterances_rejects_duplicate_sample_ids_across_manifests(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -306,6 +315,49 @@ def test_load_utterances_registry_uses_dataset_root_as_manifest_base_dir(
     assert utterances is not None
     assert utterances[0].audio_path == dataset_root / "clips" / "a.wav"
     assert utterances[1].audio_path == dataset_root / "clips" / "b.wav"
+
+
+def test_load_utterances_rejects_registered_crema_pointer_before_manifest_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Existing CREMA-D manifests must not bypass media validation."""
+    dataset_root = tmp_path / "datasets" / "crema-d"
+    audio_path = dataset_root / "AudioWAV" / "1077_WSI_ANG_XX.wav"
+    audio_path.parent.mkdir(parents=True)
+    audio_path.write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\n"
+        b"oid sha256:be5c849653d28aaed49fbca687812f5352f295b1e1a66c269e4a3f2b7ae46489\n"
+        b"size 85462\n"
+    )
+    manifest_path = tmp_path / "manifests" / "crema-d.jsonl"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{}\n", encoding="utf-8")
+    settings = _build_settings(max_failed_file_ratio=1.0)
+    settings.dataset.manifest_paths = ()
+    monkeypatch.setattr(
+        dl,
+        "load_dataset_registry",
+        lambda settings: {
+            "crema-d": SimpleNamespace(
+                dataset_id="crema-d",
+                dataset_root=dataset_root,
+                manifest_path=manifest_path,
+                options={},
+            )
+        },
+    )
+    monkeypatch.setattr(
+        dl,
+        "load_manifest_jsonl",
+        lambda *_args, **_kwargs: pytest.fail("invalid manifest must not be loaded"),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Registered CREMA-D dataset is not ready.*ser data download --dataset crema-d",
+    ):
+        dl.load_utterances(settings=cast(AppConfig, settings))
 
 
 def test_load_utterances_registry_rebuilds_missing_manifest(

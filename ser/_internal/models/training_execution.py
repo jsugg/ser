@@ -9,6 +9,7 @@ from typing import Any, Protocol, TypeVar, cast
 
 import numpy as np
 
+from ser._internal.models.training_orchestration import build_training_robustness_provenance
 from ser._internal.models.training_types import (
     AccurateTrainingPreparation,
     MediumTrainingPreparation,
@@ -197,6 +198,10 @@ def finalize_profile_training_report(
             profile_label,
             persisted_artifacts.secure_path,
         )
+    report_provenance = {
+        **provenance,
+        "training_robustness": build_training_robustness_provenance(),
+    }
     report = build_training_report(
         accuracy=evaluation.accuracy,
         macro_f1=evaluation.macro_f1,
@@ -207,7 +212,7 @@ def finalize_profile_training_report(
         labels=[*y_train, *y_test],
         artifacts=persisted_artifacts,
         artifact_metadata=artifact_metadata,
-        provenance=provenance,
+        provenance=report_provenance,
         data_controls=data_controls,
     )
     persist_training_report(report)
@@ -262,6 +267,10 @@ def run_medium_profile_training(
         backend_id=backend_id,
         profile=profile_id,
     )
+    provenance = {
+        **provenance,
+        "training_robustness": build_training_robustness_provenance(),
+    }
     execution = execute_default_profile_training(
         create_classifier=create_classifier,
         x_train=prepared.x_train,
@@ -371,6 +380,10 @@ def run_accurate_profile_training(
         backend_id=backend_id,
         profile=profile_id,
     )
+    provenance = {
+        **provenance,
+        "training_robustness": build_training_robustness_provenance(),
+    }
     execution = execute_default_profile_training(
         create_classifier=create_classifier,
         x_train=prepared.x_train,

@@ -4,22 +4,31 @@ import glob
 import logging
 import multiprocessing as mp
 import os
-from collections.abc import Collection, Mapping
+import time
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.model_selection import train_test_split
 
 from ser._internal.data.adapters.ravdess import build_ravdess_utterances
-from ser._internal.data.dataset_prepare import prepare_from_registry_entry
+from ser._internal.data.dataset_audit import audit_dataset_recipe
+from ser._internal.data.dataset_prepare import (
+    prepare_from_registry_entry,
+    validate_registered_dataset_integrity,
+)
 from ser._internal.data.dataset_registry import load_dataset_registry
 from ser._internal.data.label_ontology import resolve_label_ontology
-from ser._internal.data.manifest import Utterance
+from ser._internal.data.manifest import SplitName, Utterance
 from ser._internal.data.manifest_jsonl import load_manifest_jsonl
+from ser._internal.data.recipe import load_dataset_recipe
 from ser._internal.features.feature_extractor import _extract_feature_for_settings
+from ser._internal.repr import HandcraftedBackend
+from ser._internal.utils.audio_utils import read_audio_file
 from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
 
@@ -37,9 +46,17 @@ def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
     return settings if settings is not None else reload_settings()
 
 
-def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None:
+def _load_utterances_for_settings(
+    settings: AppConfig,
+    *,
+    allow_prepare: bool = True,
+) -> list[Utterance] | None:
     """Loads utterances using one explicit settings snapshot."""
     ontology = resolve_label_ontology(settings)
+    dataset_recipe = getattr(settings.dataset, "recipe", None)
+    strict_dataset_audit = bool(getattr(settings.dataset, "strict_audit", False))
+    if strict_dataset_audit and not isinstance(dataset_recipe, str):
+        raise RuntimeError("Strict dataset audit requires an explicit versioned dataset recipe.")
 
     def _validate_utterances(utterances: list[Utterance]) -> list[Utterance] | None:
         if not utterances:
@@ -55,7 +72,34 @@ def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None
             raise RuntimeError(
                 "Duplicate sample_id values across manifests: " + ", ".join(sorted(duplicates))
             )
-        labels = [utterance.label for utterance in utterances]
+        if isinstance(dataset_recipe, str):
+            recipe = load_dataset_recipe(dataset_recipe)
+            report = audit_dataset_recipe(
+                utterances,
+                recipe=recipe,
+                seed=settings.training.random_state,
+                strict=strict_dataset_audit,
+            )
+            by_sample_id = {utterance.sample_id: utterance for utterance in utterances}
+            utterances = [
+                replace(by_sample_id[entry.sample_id], split=cast(SplitName, entry.split))
+                for entry in report.ledger
+                if "primary_emotion" in entry.tasks
+                and entry.split in {"train", "dev", "test"}
+                and by_sample_id[entry.sample_id].label is not None
+            ]
+            logger.info(
+                "Dataset audit passed (recipe=%s@%s recipe_digest=%s ledger_digest=%s counters=%s).",
+                report.recipe_id,
+                report.recipe_revision,
+                report.recipe_digest,
+                report.split_ledger_digest,
+                report.counters,
+            )
+            if not utterances:
+                logger.warning("Dataset recipe produced zero primary-emotion training rows.")
+                return None
+        labels = [utterance.label for utterance in utterances if utterance.label is not None]
         if len(set(labels)) < 2:
             logger.warning("At least two emotion classes are required to train the model.")
             return None
@@ -66,17 +110,31 @@ def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None
         *,
         base_dirs: Mapping[Path, Path] | None = None,
     ) -> list[Utterance] | None:
+        started_at = time.perf_counter()
+        logger.info("MANIFEST_LOAD_START manifests=%d", len(manifest_paths))
         utterances: list[Utterance] = []
         for manifest_path in manifest_paths:
+            manifest_started_at = time.perf_counter()
             resolved_manifest_path = manifest_path.expanduser()
             base_dir = base_dirs.get(resolved_manifest_path) if base_dirs is not None else None
-            utterances.extend(
-                load_manifest_jsonl(
-                    resolved_manifest_path,
-                    ontology=ontology,
-                    base_dir=base_dir,
-                )
+            manifest_utterances = load_manifest_jsonl(
+                resolved_manifest_path,
+                ontology=ontology,
+                base_dir=base_dir,
             )
+            utterances.extend(manifest_utterances)
+            logger.info(
+                "MANIFEST_LOAD_DONE path=%s rows=%d elapsed=%.1fs",
+                resolved_manifest_path,
+                len(manifest_utterances),
+                time.perf_counter() - manifest_started_at,
+            )
+        logger.info(
+            "MANIFEST_LOAD_DONE total_rows=%d manifests=%d elapsed=%.1fs",
+            len(utterances),
+            len(manifest_paths),
+            time.perf_counter() - started_at,
+        )
         return _validate_utterances(utterances)
 
     if settings.dataset.manifest_paths:
@@ -84,15 +142,22 @@ def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None
 
     registry = load_dataset_registry(settings=settings)
     if registry:
+        logger.info("DATASET_REGISTRY_LOAD datasets=%d", len(registry))
         manifest_paths: list[Path] = []
         base_dirs: dict[Path, Path] = {}
         for entry in registry.values():
             manifest_path = entry.manifest_path.expanduser()
             dataset_root = entry.dataset_root.expanduser()
+            validate_registered_dataset_integrity(entry)
             if manifest_path.is_file():
                 manifest_paths.append(manifest_path)
                 base_dirs[manifest_path] = dataset_root
                 continue
+            if not allow_prepare:
+                raise RuntimeError(
+                    f"Registered dataset {entry.dataset_id!r} is missing its manifest at "
+                    f"{manifest_path}; run prepare-only with --repair to rebuild it."
+                )
             try:
                 built_paths = prepare_from_registry_entry(
                     settings=settings,
@@ -120,7 +185,7 @@ def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None
             )
         return _load_manifest_paths(deduped_paths, base_dirs=base_dirs)
 
-    return build_ravdess_utterances(
+    fallback = build_ravdess_utterances(
         dataset_root=settings.dataset.folder,
         dataset_glob_pattern=settings.dataset.glob_pattern,
         emotion_code_map=dict(settings.emotions),
@@ -128,11 +193,19 @@ def _load_utterances_for_settings(settings: AppConfig) -> list[Utterance] | None
         ontology=ontology,
         max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
     )
+    return _validate_utterances(fallback) if fallback is not None else None
 
 
-def load_utterances(*, settings: AppConfig | None = None) -> list[Utterance] | None:
+def load_utterances(
+    *,
+    settings: AppConfig | None = None,
+    allow_prepare: bool = True,
+) -> list[Utterance] | None:
     """Loads manifest utterances when configured, otherwise defaults to RAVDESS discovery."""
-    return _load_utterances_for_settings(_resolve_boundary_settings(settings))
+    return _load_utterances_for_settings(
+        _resolve_boundary_settings(settings),
+        allow_prepare=allow_prepare,
+    )
 
 
 class ProcessFileResult(NamedTuple):
@@ -195,8 +268,7 @@ def process_file(
             return ProcessFileResult(
                 sample=None,
                 error=(
-                    "Skipping file with unexpected name format "
-                    f"(missing emotion code): {file_name}"
+                    f"Skipping file with unexpected name format (missing emotion code): {file_name}"
                 ),
             )
 
@@ -234,7 +306,9 @@ def _load_labeled_audio_paths_for_settings(
         return None
 
     samples: list[LabeledAudioSample] = [
-        (str(utterance.audio_path), utterance.label) for utterance in utterances
+        (str(utterance.audio_path), label)
+        for utterance in utterances
+        if (label := utterance.label) is not None
     ]
     labels: list[str] = [label for _, label in samples]
     if len(set(labels)) < 2:
@@ -388,3 +462,74 @@ def load_data(
         test_size,
         settings=_resolve_boundary_settings(settings),
     )
+
+
+def load_checked_fast_data(
+    *,
+    utterances: Sequence[Utterance],
+    settings: AppConfig,
+    handle_sample_failure: Callable[[Utterance, Exception], bool] | None = None,
+) -> DataSplit | None:
+    """Extracts fast features from exactly the readiness-checked utterance view."""
+    from ser._internal.models.dataset_splitting import split_utterances
+
+    if not utterances:
+        return None
+    train_utterances, test_utterances, _ = split_utterances(
+        samples=list(utterances),
+        settings=settings,
+        logger=logger,
+    )
+    backend = HandcraftedBackend(feature_flags=settings.feature_flags)
+
+    def _extract_partition(
+        partition: Sequence[Utterance],
+    ) -> tuple[FeatureMatrix, LabelList]:
+        from ser._internal.models.training_orchestration import (  # noqa: TID251
+            record_preparation_progress,
+        )
+
+        rows: list[FeatureVector] = []
+        labels: LabelList = []
+        total = len(partition)
+        for processed, utterance in enumerate(partition, start=1):
+            try:
+                audio, sample_rate = read_audio_file(
+                    str(utterance.audio_path),
+                    start_seconds=utterance.start_seconds,
+                    duration_seconds=utterance.duration_seconds,
+                    audio_read_config=settings.audio_read,
+                )
+                feature = np.asarray(
+                    backend.extract_vector(audio=audio, sample_rate=sample_rate),
+                    dtype=np.float64,
+                )
+            except Exception as error:
+                if handle_sample_failure is not None and handle_sample_failure(utterance, error):
+                    record_preparation_progress(
+                        processed=processed,
+                        total=total,
+                        sample_id=utterance.sample_id,
+                    )
+                    continue
+                raise
+            if feature.ndim != 1 or feature.size <= 0 or not np.all(np.isfinite(feature)):
+                raise ValueError(
+                    f"Fast feature contract failed for sample {utterance.sample_id!r}."
+                )
+            rows.append(feature)
+            labels.append(utterance.require_label())
+            record_preparation_progress(
+                processed=processed,
+                total=total,
+                sample_id=utterance.sample_id,
+            )
+        if not rows:
+            raise RuntimeError("Fast checked preparation produced an empty split partition.")
+        return np.vstack(rows).astype(np.float64, copy=False), labels
+
+    x_train, y_train = _extract_partition(train_utterances)
+    x_test, y_test = _extract_partition(test_utterances)
+    if len(set(y_train)) < 2:
+        raise RuntimeError("Fast checked preparation left fewer than two training classes.")
+    return x_train, x_test, y_train, y_test
