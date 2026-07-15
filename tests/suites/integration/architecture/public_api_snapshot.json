@@ -375,10 +375,40 @@
                 "kind": "attribute",
                 "value": "0.01"
               },
+              "max_failed_file_ratio_per_class": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "max_failed_file_ratio_per_corpus": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "max_failed_files": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "25"
+              },
+              "max_failures_per_reason": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "10"
+              },
               "max_workers": {
                 "annotation": "int",
                 "kind": "attribute",
                 "value": "8"
+              },
+              "min_remaining_per_class_split": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "1"
+              },
+              "strict_quarantine": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
               }
             }
           },
@@ -408,6 +438,16 @@
                 "annotation": "tuple[Path, ...]",
                 "kind": "attribute",
                 "value": "()"
+              },
+              "recipe": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "strict_audit": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
               },
               "subfolder_prefix": {
                 "annotation": "str",
@@ -1364,6 +1404,11 @@
             "bases": [],
             "kind": "class",
             "members": {
+              "dev_size": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.1"
+              },
               "random_state": {
                 "annotation": "int",
                 "kind": "attribute",
@@ -2083,10 +2128,40 @@
                 "kind": "attribute",
                 "value": "0.01"
               },
+              "max_failed_file_ratio_per_class": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "max_failed_file_ratio_per_corpus": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.01"
+              },
+              "max_failed_files": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "25"
+              },
+              "max_failures_per_reason": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "10"
+              },
               "max_workers": {
                 "annotation": "int",
                 "kind": "attribute",
                 "value": "8"
+              },
+              "min_remaining_per_class_split": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "1"
+              },
+              "strict_quarantine": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
               }
             }
           },
@@ -2116,6 +2191,16 @@
                 "annotation": "tuple[Path, ...]",
                 "kind": "attribute",
                 "value": "()"
+              },
+              "recipe": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": "None"
+              },
+              "strict_audit": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": "False"
               },
               "subfolder_prefix": {
                 "annotation": "str",
@@ -2676,6 +2761,11 @@
             "bases": [],
             "kind": "class",
             "members": {
+              "dev_size": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.1"
+              },
               "random_state": {
                 "annotation": "int",
                 "kind": "attribute",
