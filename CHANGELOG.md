@@ -17,6 +17,8 @@ after its first published distribution.
   heads, combining only the targets each sample actually carries.
 - Internal hierarchical utterance sampling primitives: square-root corpus mass,
   inverse-square-root class mass, and bounded seeded window selection.
+- Feature backends resolve and expose the exact model revision they loaded, and
+  accept a `repository@revision` model identifier to pin it.
 
 ### Changed
 
