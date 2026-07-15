@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Mapping
 from pathlib import Path
+
+import soundfile as sf
 
 from ser._internal.data.manifest import Utterance
 from ser._internal.data.manifest_jsonl import write_manifest_jsonl
@@ -17,6 +20,127 @@ CREMA_D_CORPUS_ID = "crema-d"
 CREMA_D_DATASET_POLICY_ID = "share_alike"
 CREMA_D_DATASET_LICENSE_ID = "odbl-1.0"
 CREMA_D_SOURCE_URL = "https://github.com/CheyneyComputerScience/CREMA-D"
+_GIT_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+_MIN_WAV_FILE_BYTES = 44
+
+
+class CremaDDatasetIntegrityError(RuntimeError):
+    """Raised when a CREMA-D tree contains missing or invalid audio."""
+
+
+def _audio_integrity_error(audio_path: Path) -> str | None:
+    """Returns an integrity diagnostic for one CREMA-D audio file."""
+    try:
+        if not audio_path.is_file():
+            return "not a regular file"
+        file_size = audio_path.stat().st_size
+        with audio_path.open("rb") as audio_file:
+            prefix = audio_file.read(len(_GIT_LFS_POINTER_PREFIX))
+        if prefix == _GIT_LFS_POINTER_PREFIX:
+            return "unmaterialized Git LFS pointer"
+        if file_size == 0:
+            return "empty file"
+        if file_size < _MIN_WAV_FILE_BYTES:
+            return f"implausibly small file ({file_size} bytes)"
+        metadata = sf.info(str(audio_path))
+        if metadata.samplerate <= 0:
+            return "invalid sample rate"
+        if metadata.channels <= 0:
+            return "invalid channel count"
+        if metadata.frames <= 0:
+            return "audio contains no frames"
+    except Exception as err:
+        detail = str(err).strip() or type(err).__name__
+        return f"audio metadata decode failed ({detail})"
+    return None
+
+
+def validate_crema_d_audio_files(
+    *,
+    dataset_root: Path,
+    dataset_glob_pattern: str,
+) -> tuple[Path, ...]:
+    """Validates every candidate CREMA-D WAV before manifest registration.
+
+    Args:
+        dataset_root: Root of the CREMA-D checkout.
+        dataset_glob_pattern: Glob used to discover candidate WAV files.
+
+    Returns:
+        Validated audio paths in deterministic order.
+
+    Raises:
+        CremaDDatasetIntegrityError: If audio is missing, unmaterialized, or invalid.
+    """
+    started_at = time.perf_counter()
+    files = tuple(sorted(dataset_root.glob(dataset_glob_pattern)))
+    if not files:
+        raise CremaDDatasetIntegrityError(
+            "CREMA-D audio integrity check failed: no WAV files were found. "
+            "The dataset checkout is incomplete."
+        )
+    logger.info(
+        "DATASET_INTEGRITY_START dataset_id=%s files=%d root=%s",
+        CREMA_D_CORPUS_ID,
+        len(files),
+        dataset_root,
+    )
+
+    invalid_count = 0
+    samples: list[str] = []
+    interval = max(1, len(files) // 10)
+    last_progress_at = started_at
+    for processed, audio_path in enumerate(files, start=1):
+        diagnostic = _audio_integrity_error(audio_path)
+        if diagnostic is None:
+            pass
+        else:
+            invalid_count += 1
+            if len(samples) < 5:
+                try:
+                    display_path = audio_path.relative_to(dataset_root).as_posix()
+                except ValueError:
+                    display_path = str(audio_path)
+                samples.append(f"{display_path}: {diagnostic}")
+        now = time.perf_counter()
+        if (
+            processed == 1
+            or processed == len(files)
+            or processed % interval == 0
+            or (now - last_progress_at) >= 30.0
+        ):
+            logger.info(
+                "DATASET_INTEGRITY_PROGRESS dataset_id=%s checked=%d total=%d invalid=%d elapsed=%.1fs",
+                CREMA_D_CORPUS_ID,
+                processed,
+                len(files),
+                invalid_count,
+                now - started_at,
+            )
+            last_progress_at = now
+
+    if invalid_count:
+        sample_text = "; ".join(samples)
+        logger.error(
+            "DATASET_INTEGRITY_DONE dataset_id=%s files=%d invalid=%d elapsed=%.1fs",
+            CREMA_D_CORPUS_ID,
+            len(files),
+            invalid_count,
+            time.perf_counter() - started_at,
+        )
+        raise CremaDDatasetIntegrityError(
+            "CREMA-D audio integrity check failed: "
+            f"{invalid_count}/{len(files)} invalid file(s). Examples: {sample_text}. "
+            "CREMA-D audio must be materialized with Git LFS; run `git lfs pull` and "
+            "`git lfs checkout`, or move the incomplete dataset aside and download it again."
+        )
+    logger.info(
+        "DATASET_INTEGRITY_DONE dataset_id=%s files=%d invalid=0 elapsed=%.1fs",
+        CREMA_D_CORPUS_ID,
+        len(files),
+        time.perf_counter() - started_at,
+    )
+    return files
 
 
 def _extract_actor_id(file_name: str) -> str | None:
@@ -58,22 +182,20 @@ def build_crema_d_utterances(
         A list of utterances or ``None`` when no usable samples exist.
     """
 
-    files = sorted(dataset_root.glob(dataset_glob_pattern))
-    if not files:
-        logger.warning("No dataset files found for pattern: %s", dataset_glob_pattern)
-        return None
+    files = validate_crema_d_audio_files(
+        dataset_root=dataset_root,
+        dataset_glob_pattern=dataset_glob_pattern,
+    )
 
     utterances: list[Utterance] = []
     parse_errors: list[str] = []
     root = dataset_root.expanduser()
     for audio_path in files:
-        if audio_path.is_dir():
-            continue
         file_name = os.path.basename(str(audio_path))
         emotion_code = _extract_emotion_code(file_name)
         if emotion_code is None:
             parse_errors.append(
-                "Skipping file with unexpected name format " f"(missing emotion code): {file_name}"
+                f"Skipping file with unexpected name format (missing emotion code): {file_name}"
             )
             continue
         mapped_label = remap_label(

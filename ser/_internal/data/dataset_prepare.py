@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 
+from ser._internal.data.adapters.crema_d import (
+    CremaDDatasetIntegrityError,
+    validate_crema_d_audio_files,
+)
 from ser._internal.data.dataset_registry import (
     DatasetRegistryEntry,
     load_dataset_registry,
@@ -55,6 +59,31 @@ class DatasetRegistryHealthIssue:
     dataset_id: str
     code: str
     message: str
+
+
+def validate_registered_dataset_integrity(entry: DatasetRegistryEntry) -> None:
+    """Validates media required by a registered dataset before it is consumed.
+
+    Args:
+        entry: Registered dataset paths and metadata.
+
+    Raises:
+        CremaDDatasetIntegrityError: If registered CREMA-D media is incomplete or invalid.
+    """
+    if entry.dataset_id != "crema-d":
+        return
+    dataset_root = entry.dataset_root.expanduser()
+    pattern = "AudioWAV/**/*.wav" if (dataset_root / "AudioWAV").exists() else "**/*.wav"
+    try:
+        validate_crema_d_audio_files(
+            dataset_root=dataset_root,
+            dataset_glob_pattern=pattern,
+        )
+    except CremaDDatasetIntegrityError as err:
+        raise CremaDDatasetIntegrityError(
+            f"Registered CREMA-D dataset is not ready: {err} "
+            "After installing Git LFS, run `ser data download --dataset crema-d` to repair it."
+        ) from err
 
 
 SUPPORTED_DATASETS: dict[str, DatasetDescriptor] = {
@@ -205,7 +234,7 @@ def _normalize_source_overrides(
             char.isspace() for char in normalized_source_repo_id
         ):
             raise ValueError(
-                "Invalid --source value. Expected Hugging Face dataset id like " "`namespace/name`."
+                "Invalid --source value. Expected Hugging Face dataset id like `namespace/name`."
             )
     if normalized_source_revision is not None and any(
         char.isspace() for char in normalized_source_revision
@@ -294,7 +323,7 @@ def _build_dataset_strategy_registry(
             supported_dataset_ids=resolved_supported_dataset_ids,
         )
     except ValueError as err:
-        raise ValueError("Dataset strategy registry initialization failed. " f"{err}") from err
+        raise ValueError(f"Dataset strategy registry initialization failed. {err}") from err
 
 
 _DATASET_STRATEGY_REGISTRY = _build_dataset_strategy_registry()
@@ -305,7 +334,7 @@ def _resolve_dataset_strategy(dataset_id: str) -> DatasetStrategy:
         return _DATASET_STRATEGY_REGISTRY.resolve(dataset_id)
     except ValueError as err:
         raise ValueError(
-            "Dataset strategy resolution failed for " f"dataset_id={dataset_id!r}. {err}"
+            f"Dataset strategy resolution failed for dataset_id={dataset_id!r}. {err}"
         ) from err
 
 
@@ -506,7 +535,9 @@ def collect_dataset_registry_health_issues(
 ) -> tuple[DatasetRegistryHealthIssue, ...]:
     """Collects deterministic dataset registry health issues."""
 
+    started_at = perf_counter()
     registry = load_dataset_registry(settings=settings)
+    logger.info("REGISTRY_HEALTH_START datasets=%d", len(registry))
     issues: list[DatasetRegistryHealthIssue] = []
     for entry in sorted(registry.values(), key=lambda item: item.dataset_id):
         try:
@@ -552,6 +583,23 @@ def collect_dataset_registry_health_issues(
                     message=str(err),
                 )
             )
+            continue
+        try:
+            validate_registered_dataset_integrity(entry)
+        except CremaDDatasetIntegrityError as err:
+            issues.append(
+                DatasetRegistryHealthIssue(
+                    dataset_id=entry.dataset_id,
+                    code="dataset_media_invalid",
+                    message=str(err),
+                )
+            )
+    logger.info(
+        "REGISTRY_HEALTH_DONE datasets=%d issues=%d elapsed=%.1fs",
+        len(registry),
+        len(issues),
+        perf_counter() - started_at,
+    )
     return tuple(issues)
 
 
