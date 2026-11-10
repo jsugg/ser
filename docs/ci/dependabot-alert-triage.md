@@ -1,55 +1,46 @@
 # Dependabot Alert Triage
 
-Snapshot date: 2026-07-07.
+Snapshot date: 2026-11-10 (expected state after the 2026-11 dependency maintenance PR).
 
 ## Summary
 
-- Open alerts: 24
-- Severity mix: 1 critical, 7 high, 8 medium, 8 low
-- Direct project dependencies with alerts: `black`, `pyarrow`, `pytest`, `python-dotenv`, `torch`, `transformers`
-- Transitive dependencies with alerts: `cryptography`, `msgpack`, `Pygments`, `requests`, `urllib3`
+- Open alerts expected after remediation: 15 (1 critical, 5 high, 4 medium, 5 low)
+- Remediated by lock/spec updates: `black`, `certifi`, `cryptography`, `filelock`, `fsspec`,
+  `hydra-core`, `msgpack`, `setuptools`, `urllib3`, `virtualenv`
+- Remaining direct runtime dependencies with alerts: `torch`, `transformers`
 - Merge policy: keep Dependency Review, CodeQL, and Scorecard advisory until alert noise and
   remediation risk are understood.
 
-## Priority order
+## Why the remaining alerts are open
 
-1. Review Dependabot PRs for direct critical/high runtime packages first: `torch`, `pyarrow`,
-   `transformers`.
-2. Review direct dev-tool alerts next: `black`, `pytest`.
-3. Review direct medium runtime alerts: `python-dotenv`.
-4. Resolve transitive high/medium alerts through parent dependency updates where possible:
-   `cryptography`, `msgpack`, `requests`, `urllib3`.
-5. Leave low-severity transitive alerts advisory unless a compatible parent update is already
-   available.
+- `torch` on `darwin-x86_64` + Python 3.12 is pinned to `<=2.2.2` (`pyproject.toml`), the last
+  release with macOS x86_64 wheels. Every alert below except 27 matches only that lock entry and
+  cannot be fixed without dropping the full-support `darwin-x86_64` target.
+- `torch` 27 (low) affects the 2.10.0 lock entry used on other platforms; the fix (2.13.0) moves
+  Linux wheels to CUDA 13 and needs GPU-lane validation before adoption.
+- `transformers` alerts need `>=5.10.0`, and 35 has no patched release yet. The project caps
+  `transformers<5.0.0`; a 5.x migration is a runtime change for the medium/accurate profiles and
+  needs its own validated PR.
 
 ## Open alert inventory
 
-| Alert | Severity | Dependency | Direct? | Manifest | Advisory | Triage |
-|---:|---|---|---|---|---|---|
-| 4 | critical | `torch` | yes | `uv.lock` | GHSA-53q9-r3pm-6pq6 | Runtime dependency; prioritize compatible update and profile smoke tests. |
-| 25 | high | `transformers` | yes | `uv.lock` | GHSA-29pf-2h5f-8g72 | Optional runtime dependency; prioritize with medium/full profile compatibility. |
-| 16 | high | `pyarrow` | yes | `uv.lock` | GHSA-rgxp-2hwp-jwgg | Runtime dependency; update lock and validate dataset/data paths. |
-| 1 | high | `pyarrow` | yes | `pyproject.toml` | GHSA-rgxp-2hwp-jwgg | Same advisory as alert 16; update spec only if required for patched range. |
-| 5 | high | `black` | yes | `uv.lock` | GHSA-3936-cmfr-pm3m | Dev-only formatter; update with lint/format checks. |
-| 24 | high | `msgpack` | no | `uv.lock` | GHSA-6v7p-g79w-8964 | Transitive; identify parent from `uv tree` before pinning. |
-| 23 | high | `cryptography` | no | `uv.lock` | GHSA-537c-gmf6-5ccf | Transitive; prefer parent update. |
-| 14 | high | `urllib3` | no | `uv.lock` | GHSA-mf9v-mfxr-j63j | Transitive; prefer parent update. |
-| 13 | high | `urllib3` | no | `uv.lock` | GHSA-qccp-gfcp-xxvc | Same package as alert 14; resolve together. |
-| 20 | medium | `torch` | yes | `uv.lock` | GHSA-vgrw-7cvw-pwgx | Resolve with critical `torch` update if compatible. |
-| 18 | medium | `torch` | yes | `uv.lock` | GHSA-f4hp-rmr7-r7v8 | Resolve with critical `torch` update if compatible. |
-| 3 | medium | `torch` | yes | `uv.lock` | GHSA-887c-mr87-cxwp | Resolve with critical `torch` update if compatible. |
-| 12 | medium | `python-dotenv` | yes | `uv.lock` | GHSA-mf9w-mj56-hr94 | Direct runtime dependency; update and run CLI config smoke. |
-| 11 | medium | `pytest` | yes | `uv.lock` | GHSA-6w46-j5rx-g56g | Dev test dependency; update with full unit suite. |
-| 9 | medium | `transformers` | yes | `uv.lock` | GHSA-69w3-r845-3855 | Resolve with high `transformers` update if compatible. |
-| 10 | medium | `cryptography` | no | `uv.lock` | GHSA-p423-j2cm-9vmq | Resolve with high `cryptography` update if compatible. |
-| 6 | medium | `requests` | no | `uv.lock` | GHSA-gc5v-m9x4-r6x2 | Transitive; prefer parent update. |
-| 22 | low | `torch` | yes | `uv.lock` | GHSA-qfhq-4f3w-5fph | Resolve with critical `torch` update if compatible. |
-| 21 | low | `torch` | yes | `uv.lock` | GHSA-rrmf-rvhw-rf47 | Resolve with critical `torch` update if compatible. |
-| 19 | low | `torch` | yes | `uv.lock` | GHSA-x3gm-94wq-g975 | Resolve with critical `torch` update if compatible. |
-| 17 | low | `torch` | yes | `uv.lock` | GHSA-c678-jfcj-6jmf | Resolve with critical `torch` update if compatible. |
-| 2 | low | `torch` | yes | `uv.lock` | GHSA-3749-ghw9-m3mg | Resolve with critical `torch` update if compatible. |
-| 7 | low | `cryptography` | no | `uv.lock` | GHSA-m959-cc7f-wv43 | Resolve with higher-severity `cryptography` update if compatible. |
-| 8 | low | `Pygments` | no | `uv.lock` | GHSA-5239-wwwm-4pmq | Transitive dev/docs dependency; update via parent or normal bot PR. |
+| Alert | Severity | Dependency | Advisory | Patched | Triage |
+|---:|---|---|---|---|---|
+| 4 | critical | `torch` | GHSA-53q9-r3pm-6pq6 | 2.6.0 | `darwin-x86_64` pin; load only trusted checkpoints. |
+| 73 | high | `torch` | GHSA-63cw-57p8-fm3p | 2.10.0 | `darwin-x86_64` pin; load only trusted checkpoints. |
+| 35 | high | `transformers` | GHSA-x9r9-c232-4q39 | none | Needs 5.x migration; no patched release yet. |
+| 31 | high | `transformers` | GHSA-xrqw-3rrv-vx5w | 5.10.0 | Needs 5.x migration. |
+| 26 | high | `transformers` | GHSA-fgcw-684q-jj6r | 5.5.0 | Needs 5.x migration. |
+| 25 | high | `transformers` | GHSA-29pf-2h5f-8g72 | 5.3.0 | Needs 5.x migration. |
+| 20 | medium | `torch` | GHSA-vgrw-7cvw-pwgx | 2.9.1 | `darwin-x86_64` pin. |
+| 18 | medium | `torch` | GHSA-f4hp-rmr7-r7v8 | none | `darwin-x86_64` pin. |
+| 9 | medium | `transformers` | GHSA-69w3-r845-3855 | 5.0.0rc3 | Needs 5.x migration. |
+| 3 | medium | `torch` | GHSA-887c-mr87-cxwp | 2.8.0 | `darwin-x86_64` pin. |
+| 27 | low | `torch` | GHSA-rrmf-rvhw-rf47 | 2.13.0 | 2.10.0 entry; adopt 2.13 after GPU-lane validation. |
+| 22 | low | `torch` | GHSA-qfhq-4f3w-5fph | 2.10.0 | `darwin-x86_64` pin. |
+| 19 | low | `torch` | GHSA-x3gm-94wq-g975 | none | `darwin-x86_64` pin. |
+| 17 | low | `torch` | GHSA-c678-jfcj-6jmf | none | `darwin-x86_64` pin. |
+| 2 | low | `torch` | GHSA-3749-ghw9-m3mg | 2.7.1 | `darwin-x86_64` pin. |
 
 ## Required validation for remediation PRs
 
