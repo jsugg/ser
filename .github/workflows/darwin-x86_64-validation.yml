@@ -42,7 +42,7 @@ jobs:
         run: ./scripts/workflows/setup_validation_environment.sh --python 3.12 --no-dev
 
       - name: Build synthetic RAVDESS smoke dataset
-        run: python ./scripts/build_synthetic_ravdess_dataset.py
+        run: python ./scripts/build_synthetic_ravdess_dataset.py --actors 1 2 3
 
       - name: Persist validation dataset consents
         run: ./scripts/configure_validation_dataset_consents.sh
