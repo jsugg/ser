@@ -69,9 +69,12 @@ from ser._internal.runtime.quality_gate_reporting import (
 )
 from ser._internal.train.eval import grouped_train_test_split, speaker_independent_cv
 from ser._internal.train.metrics import compute_ser_metrics
+from ser._internal.utils.logger import get_logger
 from ser._internal.utils.segment_canonicalization import canonicalize_segments
 from ser.config import AppConfig, reload_settings
 from ser.runtime.contracts import InferenceRequest
+
+logger = get_logger(__name__)
 
 type IndexArray = NDArray[np.int64]
 type FoldIndices = tuple[IndexArray, IndexArray]
@@ -262,7 +265,16 @@ def _build_grouped_folds(
             random_state=random_state,
         )
         return "stratified_group_kfold", folds
-    except ValueError:
+    except ValueError as error:
+        logger.warning(
+            "Grouped CV fell back to a single grouped holdout: requested n_splits=%d, "
+            "distinct speakers=%d, samples=%d, holdout test_size=%.2f, folds=1 (%s).",
+            n_splits,
+            len(set(speaker_ids)),
+            len(labels),
+            fallback_test_size,
+            error,
+        )
         grouped_split = grouped_train_test_split(
             features,
             labels,

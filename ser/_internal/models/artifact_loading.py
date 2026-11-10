@@ -5,12 +5,18 @@ from __future__ import annotations
 import logging
 import pickle
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from importlib import import_module
 from pathlib import Path
 from typing import Literal, Protocol, TypeVar, cast
 
+from sklearn.exceptions import InconsistentVersionWarning
+
 type ArtifactFormat = Literal["pickle", "skops"]
+
+_LOGGER = logging.getLogger(__name__)
+# (artifact path, saved version, running version) already reported in this process.
+_REPORTED_VERSION_MISMATCHES: set[tuple[str, str, str]] = set()
 
 
 class ModelCandidateLike(Protocol):
@@ -160,16 +166,52 @@ def load_secure_model_artifact(
     return loaded_model_factory(payload, feature_size)
 
 
+def report_sklearn_version_mismatch(
+    candidate_path: Path,
+    caught: Sequence[warnings.WarningMessage],
+    *,
+    logger: logging.Logger,
+) -> None:
+    """Logs one WARNING when an artifact was pickled under another scikit-learn version."""
+    mismatches = [
+        cast(InconsistentVersionWarning, record.message)
+        for record in caught
+        if isinstance(record.message, InconsistentVersionWarning)
+    ]
+    if not mismatches:
+        return
+    saved_version = mismatches[0].original_sklearn_version
+    running_version = mismatches[0].current_sklearn_version
+    key = (str(candidate_path), saved_version, running_version)
+    if key in _REPORTED_VERSION_MISMATCHES:
+        return
+    _REPORTED_VERSION_MISMATCHES.add(key)
+    estimators = sorted({mismatch.estimator_name for mismatch in mismatches})
+    logger.warning(
+        "Model artifact %s was saved with scikit-learn %s and is loaded with %s "
+        "(estimators: %s). Predictions are not guaranteed to match; re-train with "
+        "`ser --train` or re-save the artifact under scikit-learn %s to remove this warning.",
+        candidate_path,
+        saved_version,
+        running_version,
+        ", ".join(estimators),
+        running_version,
+    )
+
+
 def load_pickle_model_artifact(
     *,
     candidate_path: Path,
     deserialize_payload: Callable[[object], PickleLoadedModelT],
+    logger: logging.Logger | None = None,
 ) -> PickleLoadedModelT:
-    """Loads and deserializes one compatibility pickle artifact."""
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore")
+    """Loads one compatibility pickle artifact, surfacing only version-skew warnings."""
+    # Recording keeps unpickling noise out of user output; version skew is reported explicitly.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         with candidate_path.open("rb") as model_fh:
             payload = pickle.load(model_fh)
+    report_sklearn_version_mismatch(candidate_path, caught, logger=logger or _LOGGER)
     return deserialize_payload(payload)
 
 

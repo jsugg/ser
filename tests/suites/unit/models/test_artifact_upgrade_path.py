@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import sklearn
 from sklearn.neural_network import MLPClassifier
 
 import ser._internal.models.artifact_envelope as artifact_envelope
@@ -229,3 +230,33 @@ def test_deserialize_rejects_legacy_raw_model_object() -> None:
         match="versioned dictionary envelope",
     ):
         artifact_envelope.deserialize_model_artifact(_build_classifier())
+
+
+def test_new_artifacts_record_the_saving_sklearn_version() -> None:
+    """Save time stamps the scikit-learn version so later loads can explain skew."""
+    artifact = artifact_envelope.build_model_artifact(
+        model=_build_classifier(),
+        feature_vector_size=193,
+        training_samples=32,
+        labels=["happy", "sad"],
+    )
+
+    loaded = artifact_envelope.deserialize_model_artifact(artifact)
+
+    assert loaded.artifact_metadata is not None
+    assert loaded.artifact_metadata["sklearn_version"] == sklearn.__version__
+
+
+def test_deserialize_rejects_blank_sklearn_version() -> None:
+    artifact = artifact_envelope.build_model_artifact(
+        model=_build_classifier(),
+        feature_vector_size=193,
+        training_samples=32,
+        labels=["happy", "sad"],
+    )
+    metadata = artifact["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["sklearn_version"] = "  "
+
+    with pytest.raises(ValueError, match="sklearn_version"):
+        artifact_envelope.deserialize_model_artifact(artifact)
