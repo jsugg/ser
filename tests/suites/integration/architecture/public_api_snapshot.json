@@ -100,57 +100,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('accurate-research'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('accurate-research'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('accurate-research'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('accurate-research'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('accurate-research'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('accurate-research'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('accurate-research'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('accurate-research'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('accurate-research'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('accurate-research'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('accurate-research'))"
               }
             }
           },
@@ -166,57 +166,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('accurate'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('accurate'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('accurate'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('accurate'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('accurate'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('accurate'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('accurate'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('accurate'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('accurate'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('accurate'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('accurate'))"
               }
             }
           },
@@ -250,7 +250,7 @@
               "dataset": {
                 "annotation": "DatasetConfig",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: DatasetConfig(folder=(Path('ser/dataset/ravdess')))))"
+                "value": "field(default_factory=lambda: DatasetConfig(folder=Path('ser/dataset/ravdess')))"
               },
               "default_language": {
                 "annotation": "str",
@@ -627,57 +627,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('fast'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('fast'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('fast'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('fast'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('fast'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('fast'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('fast'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('fast'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('fast'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('fast'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('fast'))"
               }
             }
           },
@@ -940,57 +940,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('medium'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('medium'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('medium'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('medium'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('medium'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('medium'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('medium'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('medium'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('medium'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('medium'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('medium'))"
               }
             }
           },
@@ -1023,12 +1023,12 @@
               "accurate_model_id": {
                 "annotation": "str",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: default_profile_model_id('accurate')))"
+                "value": "field(default_factory=lambda: default_profile_model_id('accurate'))"
               },
               "accurate_research_model_id": {
                 "annotation": "str",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: default_profile_model_id('accurate-research')))"
+                "value": "field(default_factory=lambda: default_profile_model_id('accurate-research'))"
               },
               "folder": {
                 "annotation": "Path",
@@ -1043,7 +1043,7 @@
               "medium_model_id": {
                 "annotation": "str",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: default_profile_model_id('medium')))"
+                "value": "field(default_factory=lambda: default_profile_model_id('medium'))"
               },
               "model_cache_dir": {
                 "annotation": "Path",
@@ -1850,57 +1850,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('accurate-research'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('accurate-research'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('accurate-research'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('accurate-research'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('accurate-research'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('accurate-research'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('accurate-research'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('accurate-research'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('accurate-research'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('accurate-research'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate-research')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('accurate-research'))"
               }
             }
           },
@@ -1916,57 +1916,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('accurate'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('accurate'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('accurate'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('accurate'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('accurate'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('accurate'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('accurate'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('accurate'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('accurate'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('accurate'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('accurate')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('accurate'))"
               }
             }
           },
@@ -2000,7 +2000,7 @@
               "dataset": {
                 "annotation": "DatasetConfig",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: DatasetConfig(folder=(Path('ser/dataset/ravdess')))))"
+                "value": "field(default_factory=lambda: DatasetConfig(folder=Path('ser/dataset/ravdess')))"
               },
               "default_language": {
                 "annotation": "str",
@@ -2221,57 +2221,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('fast'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('fast'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('fast'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('fast'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('fast'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('fast'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('fast'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('fast'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('fast'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('fast'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('fast')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('fast'))"
               }
             }
           },
@@ -2354,57 +2354,57 @@
               "max_timeout_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_timeout_retries('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_timeout_retries('medium'))"
               },
               "max_transient_retries": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_max_transient_retries('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_max_transient_retries('medium'))"
               },
               "pool_window_size_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_size_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_size_seconds('medium'))"
               },
               "pool_window_stride_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_pool_window_stride_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_pool_window_stride_seconds('medium'))"
               },
               "post_hysteresis_enter_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_enter_confidence('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_enter_confidence('medium'))"
               },
               "post_hysteresis_exit_confidence": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_hysteresis_exit_confidence('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_hysteresis_exit_confidence('medium'))"
               },
               "post_min_segment_duration_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_min_segment_duration_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_min_segment_duration_seconds('medium'))"
               },
               "post_smoothing_window_frames": {
                 "annotation": "int",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_post_smoothing_window_frames('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_post_smoothing_window_frames('medium'))"
               },
               "process_isolation": {
                 "annotation": "bool",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_process_isolation('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_process_isolation('medium'))"
               },
               "retry_backoff_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_retry_backoff_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_retry_backoff_seconds('medium'))"
               },
               "timeout_seconds": {
                 "annotation": "float",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: _default_runtime_timeout_seconds('medium')))"
+                "value": "field(default_factory=lambda: _default_runtime_timeout_seconds('medium'))"
               }
             }
           },
@@ -2437,12 +2437,12 @@
               "accurate_model_id": {
                 "annotation": "str",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: default_profile_model_id('accurate')))"
+                "value": "field(default_factory=lambda: default_profile_model_id('accurate'))"
               },
               "accurate_research_model_id": {
                 "annotation": "str",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: default_profile_model_id('accurate-research')))"
+                "value": "field(default_factory=lambda: default_profile_model_id('accurate-research'))"
               },
               "folder": {
                 "annotation": "Path",
@@ -2457,7 +2457,7 @@
               "medium_model_id": {
                 "annotation": "str",
                 "kind": "attribute",
-                "value": "field(default_factory=(lambda: default_profile_model_id('medium')))"
+                "value": "field(default_factory=lambda: default_profile_model_id('medium'))"
               },
               "model_cache_dir": {
                 "annotation": "Path",
