@@ -1,3 +1,5 @@
+default_install_hook_types: [commit-msg]
+
 repos:
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.22.0
@@ -50,6 +52,18 @@ repos:
         entry: bash scripts/run_import_lint.sh
         language: system
         pass_filenames: false
+        stages: [pre-push]
+      - id: attribution-guard-commit-msg
+        name: attribution-guard (commit message)
+        entry: python scripts/attribution_guard.py commit-msg
+        language: python
+        stages: [commit-msg]
+      - id: attribution-guard-pre-push
+        name: attribution-guard (pushed refs and commits)
+        entry: python scripts/attribution_guard.py pre-push
+        language: python
+        pass_filenames: false
+        always_run: true
         stages: [pre-push]
       - id: pyright
         name: pyright
