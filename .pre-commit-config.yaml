@@ -1,13 +1,13 @@
 repos:
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.21.2
+    rev: v3.22.0
     hooks:
       - id: pyupgrade
         args: [--py312-plus]
         stages: [pre-commit]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.1
+    rev: v0.17.3
     hooks:
       - id: ruff
         args: [--fix, --ignore, TID251]
@@ -17,7 +17,7 @@ repos:
         stages: [pre-push]
 
   - repo: https://github.com/psf/black
-    rev: 26.3.1
+    rev: 26.10.1
     hooks:
       - id: black
         stages: [pre-commit]
@@ -26,7 +26,7 @@ repos:
         stages: [pre-push]
 
   - repo: https://github.com/pycqa/isort
-    rev: 6.1.0
+    rev: 8.0.1
     hooks:
       - id: isort
         stages: [pre-commit]
@@ -35,7 +35,7 @@ repos:
         stages: [pre-push]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v2.4.1
     hooks:
       - id: mypy
         pass_filenames: false

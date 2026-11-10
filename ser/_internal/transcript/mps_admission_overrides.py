@@ -295,8 +295,8 @@ def _read_report_cached(
         recommendation = CalibrationRecommendation(
             backend_id=backend_id,
             model_name=model_name,
-            recommendation=cast(RuntimeRecommendation, recommendation_text),
-            confidence=cast(RecommendationConfidence, confidence_text),
+            recommendation=recommendation_text,
+            confidence=confidence_text,
             reason=str(row.get("reason", "")).strip(),
             source_profile=str(row.get("profile", "")).strip(),
         )

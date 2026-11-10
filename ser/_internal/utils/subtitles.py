@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from ser._internal.utils.logger import get_logger
 from ser.config import TimelineConfig
@@ -31,7 +31,7 @@ def infer_subtitle_format(output_path: str) -> SubtitleFormat | None:
     """Infers subtitle format from one output-path suffix."""
     suffix = Path(output_path).suffix.lower().lstrip(".")
     if suffix in SUPPORTED_SUBTITLE_FORMATS:
-        return cast(SubtitleFormat, suffix)
+        return suffix
     return None
 
 

@@ -9,7 +9,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,7 +23,7 @@ from ser._internal.data.dataset_prepare import (
 )
 from ser._internal.data.dataset_registry import load_dataset_registry
 from ser._internal.data.label_ontology import resolve_label_ontology
-from ser._internal.data.manifest import SplitName, Utterance
+from ser._internal.data.manifest import Utterance
 from ser._internal.data.manifest_jsonl import load_manifest_jsonl
 from ser._internal.data.recipe import load_dataset_recipe
 from ser._internal.features.feature_extractor import _extract_feature_for_settings
@@ -82,7 +82,7 @@ def _load_utterances_for_settings(
             )
             by_sample_id = {utterance.sample_id: utterance for utterance in utterances}
             utterances = [
-                replace(by_sample_id[entry.sample_id], split=cast(SplitName, entry.split))
+                replace(by_sample_id[entry.sample_id], split=entry.split)
                 for entry in report.ledger
                 if "primary_emotion" in entry.tasks
                 and entry.split in {"train", "dev", "test"}

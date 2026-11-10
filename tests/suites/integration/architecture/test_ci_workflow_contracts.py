@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import cast
 
@@ -90,6 +91,12 @@ def _event_names(workflow: dict[str, object]) -> set[str]:
     if isinstance(trigger, list):
         return {str(event_name) for event_name in trigger}
     return set(_as_mapping(trigger, context="on"))
+
+
+def _uses_action_major(step: dict[str, object], action: str, major: int) -> bool:
+    """Checks a step pins `action` to `major`, tolerating Dependabot minor/patch bumps."""
+    pattern = rf"{re.escape(action)}@v{major}(?:\.\d+){{0,2}}"
+    return re.fullmatch(pattern, str(step.get("uses", ""))) is not None
 
 
 def _workflow_paths(repo_root: Path) -> list[Path]:
@@ -304,4 +311,4 @@ def test_advisory_code_scanning_and_scorecard_are_configured(repo_root: Path) ->
     scorecard = _workflow(repo_root, "scorecard.yml")
     assert {"schedule", "workflow_dispatch"} == _event_names(scorecard)
     scorecard_steps = _steps(_job(scorecard, "scorecard"))
-    assert any(step.get("uses") == "ossf/scorecard-action@v2.4.3" for step in scorecard_steps)
+    assert any(_uses_action_major(step, "ossf/scorecard-action", 2) for step in scorecard_steps)
