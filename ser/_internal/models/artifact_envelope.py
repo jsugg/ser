@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import NamedTuple, cast
 
+import sklearn
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
@@ -71,7 +72,7 @@ def build_model_artifact_metadata(
     seed: int | None = None,
     evaluation_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Builds normalized artifact metadata for persisted model envelopes."""
+    """Builds normalized artifact metadata, stamping the scikit-learn version used to save."""
     return build_v3_artifact_metadata(
         artifact_version=MODEL_ARTIFACT_VERSION,
         artifact_schema_version=ARTIFACT_SCHEMA_VERSION,
@@ -95,6 +96,7 @@ def build_model_artifact_metadata(
         sampling_policy=sampling_policy,
         seed=seed,
         evaluation_summary=evaluation_summary,
+        sklearn_version=sklearn.__version__,
     )
 
 

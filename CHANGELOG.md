@@ -54,6 +54,19 @@ after its first published distribution.
   failures continue to exit `1` with a traceback.
 - `ser doctor` and the training preflight now include training readiness checks.
 - README Python API guidance now directs workflow users to `ser.api`.
+- scikit-learn is now required at `>=1.9.0,<1.10.0`. scikit-learn 1.8 fixed how
+  `StratifiedGroupKFold(shuffle=True)` assigns groups to folds, so grouped
+  cross-validation folds, and the quality-gate metrics computed from them,
+  shift once relative to earlier runs with the same seed. Compare gate results
+  across this upgrade as a new baseline rather than as a regression.
+- When grouped cross-validation is infeasible (more folds than speakers), the
+  quality gate now logs a WARNING with the requested fold count and the speaker
+  and sample counts before falling back to a single grouped holdout. The
+  fallback behavior and the reported `fold_strategy` are unchanged.
+- Model artifacts now record the scikit-learn version they were saved with.
+  Loading an artifact pickled under a different scikit-learn version logs one
+  WARNING with re-train or re-save guidance instead of silently suppressing the
+  version warning; other unpickling warnings stay suppressed.
 
 ### Fixed
 

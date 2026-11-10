@@ -139,6 +139,11 @@ def normalize_v2_artifact_metadata(
         if not isinstance(torch_dtype, str) or not torch_dtype.strip():
             raise ValueError("Model artifact metadata contains invalid 'torch_dtype' value.")
         normalized["torch_dtype"] = torch_dtype.strip().lower()
+    sklearn_version = metadata.get("sklearn_version")
+    if sklearn_version is not None:
+        if not isinstance(sklearn_version, str) or not sklearn_version.strip():
+            raise ValueError("Model artifact metadata contains invalid 'sklearn_version' value.")
+        normalized["sklearn_version"] = sklearn_version.strip()
     return normalized
 
 
@@ -159,6 +164,7 @@ def build_v2_artifact_metadata(
     torch_device: str | None,
     torch_dtype: str | None,
     provenance: dict[str, object] | None,
+    sklearn_version: str | None = None,
 ) -> dict[str, object]:
     """Builds normalized v2 artifact metadata for persisted model envelopes."""
     resolved_feature_dim = feature_vector_size if feature_dim is None else feature_dim
@@ -193,6 +199,8 @@ def build_v2_artifact_metadata(
         if not resolved_torch_dtype:
             raise ValueError("Model artifact metadata contains invalid 'torch_dtype' value.")
         payload["torch_dtype"] = resolved_torch_dtype
+    if sklearn_version is not None:
+        payload["sklearn_version"] = sklearn_version
     return normalize_v2_artifact_metadata(
         payload,
         artifact_version=artifact_version,
@@ -280,6 +288,7 @@ def build_v3_artifact_metadata(
     sampling_policy: dict[str, object] | None,
     seed: int | None,
     evaluation_summary: dict[str, object] | None,
+    sklearn_version: str | None = None,
 ) -> dict[str, object]:
     """Builds v3 metadata with reproducible dataset and training provenance."""
     payload = build_v2_artifact_metadata(
@@ -298,6 +307,7 @@ def build_v3_artifact_metadata(
         torch_device=torch_device,
         torch_dtype=torch_dtype,
         provenance=provenance,
+        sklearn_version=sklearn_version,
     )
     optional_fields: dict[str, object | None] = {
         "recipe_digest": recipe_digest,
