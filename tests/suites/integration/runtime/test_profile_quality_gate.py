@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -144,9 +145,12 @@ def test_profile_quality_gate_raises_when_speaker_metadata_is_missing() -> None:
         )
 
 
-def test_profile_quality_gate_falls_back_to_grouped_holdout() -> None:
-    """Infeasible fold count should fall back to deterministic grouped holdout."""
+def test_profile_quality_gate_falls_back_to_grouped_holdout(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Infeasible fold count should fall back to grouped holdout and say so loudly."""
     samples = _build_samples()
+    caplog.set_level(logging.WARNING, logger=gate_module.__name__)
 
     report = evaluate_profile_quality_gate(
         samples=samples,
@@ -161,6 +165,16 @@ def test_profile_quality_gate_falls_back_to_grouped_holdout() -> None:
     assert report.fold_strategy == "group_shuffle_holdout"
     assert report.folds_evaluated == 1
     assert report.grouped_evaluation.fold_speaker_overlap_counts == (0,)
+    fallback_warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING and "single grouped holdout" in record.getMessage()
+    ]
+    assert len(fallback_warnings) == 1
+    speaker_count = len(set(gate_module._resolve_speaker_ids(samples)))
+    assert "requested n_splits=8" in fallback_warnings[0]
+    assert f"distinct speakers={speaker_count}" in fallback_warnings[0]
+    assert "folds=1" in fallback_warnings[0]
 
 
 def test_enforce_quality_gate_noop_when_not_required() -> None:

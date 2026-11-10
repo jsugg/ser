@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import logging
 import pickle
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pytest
+import sklearn
+import sklearn.base
+from sklearn.preprocessing import StandardScaler
 
+import ser._internal.models.artifact_loading as artifact_loading
 from ser._internal.models.artifact_loading import (
     load_model_with_resolution,
     load_pickle_model_artifact,
@@ -238,3 +244,78 @@ def test_resolve_model_for_loading_from_settings_uses_settings_paths(
     assert resolved_model is expected
     assert captured["candidate"] == resolved_candidate
     assert captured["settings"] is settings
+
+
+class _NoisyPayload:
+    """Unpickles with an unrelated warning, standing in for third-party load noise."""
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        warnings.warn("unrelated unpickling noise", UserWarning, stacklevel=1)
+        self.__dict__.update(state)
+
+
+def _scaler_from_payload(payload: object) -> StandardScaler:
+    if not isinstance(payload, dict) or not isinstance(payload.get("model"), StandardScaler):
+        raise AssertionError("Expected a pickled StandardScaler payload.")
+    return payload["model"]
+
+
+def _write_skewed_scaler(path: Path, monkeypatch: pytest.MonkeyPatch, version: str) -> None:
+    scaler = StandardScaler().fit(np.arange(6, dtype=np.float64).reshape(3, 2))
+    with monkeypatch.context() as patch:
+        patch.setattr(sklearn.base, "__version__", version)
+        path.write_bytes(pickle.dumps({"model": scaler}, protocol=pickle.HIGHEST_PROTOCOL))
+
+
+def test_pickle_loader_reports_sklearn_version_skew_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Version skew is logged once per artifact with re-save guidance."""
+    monkeypatch.setattr(artifact_loading, "_REPORTED_VERSION_MISMATCHES", set())
+    candidate_path = tmp_path / "ser_model.pkl"
+    _write_skewed_scaler(candidate_path, monkeypatch, "0.0.1")
+    logger = logging.getLogger("tests.artifact_loading.version_skew")
+    caplog.set_level(logging.WARNING, logger=logger.name)
+
+    loads = [
+        load_pickle_model_artifact(
+            candidate_path=candidate_path,
+            deserialize_payload=_scaler_from_payload,
+            logger=logger,
+        )
+        for _ in range(2)
+    ]
+
+    assert all(isinstance(loaded, StandardScaler) for loaded in loads)
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 1
+    assert f"saved with scikit-learn 0.0.1 and is loaded with {sklearn.__version__}" in (
+        messages[0]
+    )
+    assert "StandardScaler" in messages[0]
+    assert "re-save the artifact" in messages[0]
+
+
+def test_pickle_loader_keeps_matching_versions_and_other_warnings_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Same-version artifacts log nothing and unrelated unpickling warnings stay contained."""
+    monkeypatch.setattr(artifact_loading, "_REPORTED_VERSION_MISMATCHES", set())
+    matching_path = tmp_path / "matching.pkl"
+    _write_skewed_scaler(matching_path, monkeypatch, sklearn.__version__)
+    noisy_path = tmp_path / "noisy.pkl"
+    noisy_path.write_bytes(pickle.dumps(_NoisyPayload(), protocol=pickle.HIGHEST_PROTOCOL))
+    logger = logging.getLogger("tests.artifact_loading.quiet")
+    caplog.set_level(logging.DEBUG, logger=logger.name)
+
+    with warnings.catch_warnings(record=True) as escaped:
+        warnings.simplefilter("always")
+        for path in (matching_path, noisy_path):
+            load_pickle_model_artifact(
+                candidate_path=path,
+                deserialize_payload=lambda payload: payload,
+                logger=logger,
+            )
+
+    assert caplog.records == []
+    assert escaped == []
