@@ -87,7 +87,7 @@ jobs:
             uv-${{ runner.os }}-full-gate-
 
       - name: Bootstrap synthetic RAVDESS dataset for hosted validation
-        run: python ./scripts/build_synthetic_ravdess_dataset.py
+        run: python ./scripts/build_synthetic_ravdess_dataset.py --actors 1 2 3
 
       - name: Persist validation dataset consents
         run: ./scripts/configure_validation_dataset_consents.sh
@@ -166,7 +166,7 @@ jobs:
             uv-${{ runner.os }}-full-gate-
 
       - name: Bootstrap synthetic RAVDESS dataset for hosted validation
-        run: python ./scripts/build_synthetic_ravdess_dataset.py
+        run: python ./scripts/build_synthetic_ravdess_dataset.py --actors 1 2 3
 
       - name: Persist validation dataset consents
         run: ./scripts/configure_validation_dataset_consents.sh
