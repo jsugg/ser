@@ -1,0 +1,77 @@
+name: Attribution Guard
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  attribution-guard:
+    name: Attribution Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout trusted helper from base commit
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Locate helper
+        id: helper
+        if: github.event_name == 'pull_request'
+        run: |
+          if [[ -f trusted/scripts/attribution_guard.py ]]; then
+            echo "path=trusted/scripts/attribution_guard.py" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Base commit has no guard helper; bootstrapping from the pull request head."
+            echo "path=bootstrap/scripts/attribution_guard.py" >> "$GITHUB_OUTPUT"
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout pull request helper (bootstrap only)
+        if: github.event_name == 'pull_request' && steps.helper.outputs.bootstrap == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: bootstrap
+          persist-credentials: false
+
+      - name: Checkout pushed history
+        if: github.event_name == 'push'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Check pull request metadata
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HELPER: ${{ steps.helper.outputs.path }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python "$HELPER" pull-request --repo "$GITHUB_REPOSITORY" --number "$PR_NUMBER"
+
+      - name: Audit pushed commits
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: python scripts/attribution_guard.py push --before "$BEFORE_SHA" --after "$AFTER_SHA"

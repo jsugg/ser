@@ -119,6 +119,7 @@ def test_no_workflow_uses_pull_request_target(repo_root: Path) -> None:
 def test_workflow_permissions_are_least_privilege(repo_root: Path) -> None:
     """Workflow permissions should stay explicit and narrow."""
     expected_permissions = {
+        "attribution-guard.yml": {"contents": "read", "pull-requests": "read"},
         "ci.yml": {"contents": "read"},
         "codeql.yml": {"actions": "read", "contents": "read", "security-events": "write"},
         "darwin-x86_64-validation.yml": {"contents": "read"},
@@ -312,3 +313,48 @@ def test_advisory_code_scanning_and_scorecard_are_configured(repo_root: Path) ->
     assert {"schedule", "workflow_dispatch"} == _event_names(scorecard)
     scorecard_steps = _steps(_job(scorecard, "scorecard"))
     assert any(_uses_action_major(step, "ossf/scorecard-action", 2) for step in scorecard_steps)
+
+
+def test_attribution_guard_is_a_standalone_metadata_gate(repo_root: Path) -> None:
+    """The guard must re-run on PR metadata events and stay outside the CI aggregate."""
+    workflow = _workflow(repo_root, "attribution-guard.yml")
+    triggers = _as_mapping(workflow["on"], context="attribution-guard triggers")
+    pull_request = _as_mapping(triggers["pull_request"], context="pull_request trigger")
+    push = _as_mapping(triggers["push"], context="push trigger")
+
+    assert set(triggers) == {"pull_request", "push"}
+    assert set(_as_sequence(pull_request["types"], context="pull_request types")) == {
+        "opened",
+        "reopened",
+        "synchronize",
+        "edited",
+        "labeled",
+        "unlabeled",
+        "ready_for_review",
+    }
+    assert _as_sequence(push["branches"], context="push branches") == ["main"]
+    for trigger in (pull_request, push):
+        assert not {"paths", "paths-ignore", "branches-ignore"} & set(trigger)
+
+    jobs = _jobs(workflow)
+    assert set(jobs) == {"attribution-guard"}
+    job = _job(workflow, "attribution-guard")
+    assert job["name"] == "Attribution Guard"
+    assert "if" not in job
+    assert "continue-on-error" not in job
+    steps = _steps(job)
+    checkouts = [
+        step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")
+    ]
+    assert checkouts
+    for step in checkouts:
+        assert (
+            _as_mapping(step["with"], context="checkout inputs")["persist-credentials"] == "false"
+        )
+    assert not any("continue-on-error" in step for step in steps)
+    assert "pull-request --repo" in _run_commands(job)
+    assert "push --before" in _run_commands(job)
+
+    ci_jobs = _jobs(_workflow(repo_root, "ci.yml"))
+    assert "attribution-guard" not in ci_jobs
+    assert "attribution-guard" not in _needs(_job(_workflow(repo_root, "ci.yml"), "required-ci"))
