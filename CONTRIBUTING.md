@@ -51,11 +51,28 @@ Install or refresh git hooks manually:
 ./scripts/install_git_hooks.sh
 ```
 
-The generated `.git/hooks/pre-push` runs `bash ./scripts/run_prepush_gate.sh`, which:
+The generated `.git/hooks/pre-push` first runs the attribution guard on the pushed refs (see below), then runs `bash ./scripts/run_prepush_gate.sh`, which:
 - runs `make prepush` to attempt formatter/linter auto-fixes first
 - reruns the canonical pre-push verification lane
 - aborts the push if non-fixable issues remain
 - aborts the push if the hook changed the working tree, so you can review, stage, and commit the fixes first
+
+The installer also runs `pre-commit install --hook-type commit-msg` (the only type in `default_install_hook_types`; the pre-push hook stays owned by the installer).
+
+## Attribution Guard
+`scripts/attribution_guard.py` rejects AI-tool attribution in branch and tag names, commit messages,
+author/committer emails, pull request titles and bodies, and labels. Naming a provider or dependency
+as the subject of a change stays allowed; only attribution (co-author trailers, "generated with"
+footers, session links, tool-namespaced refs) is rejected. Its pattern block is vendored
+byte-for-byte from the shared source and pinned by a digest test; re-vendor it, never edit it.
+
+- `commit-msg` stage: checks the message being committed.
+- `pre-push`: checks every pushed ref name and each commit it introduces. Under
+  `pre-commit run --hook-stage pre-push` it checks the current branch and its unpushed commits.
+- CI: `.github/workflows/attribution-guard.yml` publishes the `Attribution Guard` check. It
+  refetches pull request metadata from the API on every PR event (including edits and label
+  changes) and audits each push to `main`. It is a separate required status check on the `main`
+  ruleset, alongside `required-ci`, so metadata-only events re-evaluate it without new commits.
 
 ## Boundary Commands (When Required)
 Run the boundary lane whenever your change touches `ser/api.py`, `ser/_internal/api/*`, `ser/__main__.py`, or boundary contract tests:
