@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Final, Protocol
 
 from ser.config import AppConfig
 from ser.profiles import TranscriptionBackendId
 
 if TYPE_CHECKING:
     from ser._internal.transcript.backends.base import BackendRuntimeRequest
+
+_SUPPORTED_BACKEND_IDS: Final[frozenset[TranscriptionBackendId]] = frozenset(
+    {"stable_whisper", "faster_whisper"}
+)
 
 
 class _RuntimeProfile(Protocol):
@@ -86,8 +90,8 @@ def resolve_backend_id(
     error_factory: _ErrorFactory,
 ) -> TranscriptionBackendId:
     """Normalizes one backend id and validates supported values."""
-    if raw_backend_id in {"stable_whisper", "faster_whisper"}:
-        return cast(TranscriptionBackendId, raw_backend_id)
+    if raw_backend_id in _SUPPORTED_BACKEND_IDS:
+        return raw_backend_id
     raise error_factory(
         "Unsupported transcription backend id configured. "
         "Expected 'stable_whisper' or 'faster_whisper'."
