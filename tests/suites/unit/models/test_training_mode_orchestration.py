@@ -35,6 +35,7 @@ from ser._internal.config.schema import (  # noqa: TID251
 )
 from ser._internal.data.dataset_registry import DatasetRegistryEntry  # noqa: TID251
 from ser._internal.data.manifest import Utterance  # noqa: TID251
+from ser._internal.features.feature_extractor import fast_feature_contract  # noqa: TID251
 from ser._internal.models.medium_noise_controls import (  # noqa: TID251
     MediumNoiseControlStats,
     merge_medium_noise_stats,
@@ -624,6 +625,7 @@ def test_operation_level_plan_validation_recomputes_trusted_expectations(
 
 def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = AppConfig(
         emotions={"01": "calm", "02": "happy"},
@@ -736,6 +738,11 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
         secure_path: Path | None = None
 
     captures: list[tuple[np.ndarray, list[str]]] = []
+    artifacts: list[dict[str, object]] = []
+
+    def _capture_artifact(**kwargs: object) -> dict[str, object]:
+        artifacts.append(kwargs)
+        return {}
 
     class _Classifier:
         def fit(self, x_rows: np.ndarray, labels: list[str]) -> None:
@@ -753,10 +760,10 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
             ),
             evaluate_training_predictions=lambda *, y_true, y_pred: _Evaluation(),
             build_provenance_metadata=lambda **_kwargs: {},
-            build_model_artifact=lambda **_kwargs: {},
+            build_model_artifact=_capture_artifact,
             extract_artifact_metadata=lambda _artifact: {},
             persist_model_artifacts=lambda **_kwargs: _Persisted(),
-            build_training_report=lambda **_kwargs: {},
+            build_training_report=lambda **kwargs: kwargs,
         )
 
     with training_operation_scope(TrainingOperation()) as state:
@@ -770,13 +777,31 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
         fast_training.train_fast_model(hooks=_training_hooks())
 
     assert len(reports) == 2
-    for report in reports:
+    train, dev, test, _ = dataset_splitting.split_utterances_three_way(
+        samples=list(utterances), settings=settings, logger=orchestration.logger
+    )
+    digest = dataset_splitting.fast_split_digest({"train": train, "dev": dev, "test": test})
+    for artifact, report in zip(artifacts, reports, strict=True):
+        controls = report["data_controls"]
+        assert isinstance(controls, dict)
+        assert artifact["model_revision"] == fast_feature_contract(settings.feature_flags)
+        assert artifact["split_ledger_digest"] == controls["split_digest"] == digest
         assert report["dataset_corpus_samples"] == len(utterances)
         assert report["dataset_effective_samples"] == len(utterances)
         assert report["dataset_skipped_samples"] == 0
     assert len(captures) == 2
     np.testing.assert_array_equal(captures[0][0], captures[1][0])
     assert captures[0][1] == captures[1][1]
+
+    monkeypatch.setattr(
+        fast_training, "read_prepared_feature_payload", lambda _plan: replace(payload, metadata={})
+    )
+    with training_operation_scope(TrainingOperation(prepared_plan=plan_path)) as state:
+        state.readiness = readiness
+        state.utterances = utterances
+        with pytest.raises(ValueError, match="feature contract"):
+            fast_training.train_fast_model(hooks=_training_hooks())
+    assert len(captures) == 2
 
 
 def test_prepared_plan_matches_full_fresh_partition_and_noise_provenance(

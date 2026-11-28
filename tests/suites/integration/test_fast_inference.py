@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import pickle
+import re
 import threading
 import time
+from dataclasses import replace
 from typing import cast
 
 import pytest
 
 import ser._internal.models.training_support as training_support
 import ser.config as config
+from ser._internal.features.feature_extractor import fast_feature_contract
 from ser._internal.models import emotion_model
 from ser._internal.runtime import fast_public_boundary as fast_boundary
 from ser._internal.runtime.fast_inference import (
     FastInferenceTimeoutError,
+    FastModelLoadError,
     FastModelUnavailableError,
     run_fast_inference,
 )
@@ -82,6 +86,41 @@ def test_fast_inference_returns_expected_schema(
     )
 
     assert result == expected
+
+
+@pytest.mark.parametrize("canonical", [True, False], ids=["canonical", "legacy"])
+def test_fast_inference_checks_model_feature_contract(
+    monkeypatch: pytest.MonkeyPatch, canonical: bool
+) -> None:
+    settings = config.reload_settings()
+    metadata = _fast_metadata()
+    if canonical:
+        metadata["model_revision"] = fast_feature_contract(
+            replace(settings.feature_flags, mel=False)
+        )
+    _patch_fast_prerequisites(monkeypatch, metadata=metadata)
+    expected = InferenceResult(schema_version=OUTPUT_SCHEMA_VERSION, segments=[], frames=[])
+    scored = []
+
+    def predict(file_path: str, *, loaded_model: object) -> InferenceResult:
+        scored.append(file_path)
+        return expected
+
+    monkeypatch.setattr(fast_boundary, "predict_emotions_detailed", predict)
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    if canonical:
+        with pytest.raises(
+            FastModelLoadError,
+            match=re.escape(
+                "This fast model was trained on canonical audio. "
+                "This command path does not score it yet."
+            ),
+        ):
+            run_fast_inference(request, settings)
+        assert scored == []
+    else:
+        assert run_fast_inference(request, settings) == expected
+        assert scored == ["sample.wav"]
 
 
 def test_fast_timeout_retries_up_to_configured_budget(

@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from dataclasses import asdict, dataclass
+from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 from threadpoolctl import threadpool_info
 
+import ser
 from ser._internal.repr import HandcraftedBackend
 from ser._internal.repr.backend import EncodedSequence
 from ser._internal.utils.audio_utils import CANONICAL_SAMPLE_RATE, read_audio_file
@@ -26,12 +28,13 @@ if TYPE_CHECKING:
 
 type FeatureVector = NDArray[np.float64]
 logger = get_logger(__name__)
+CANONICAL_FAST_FEATURE_CONTRACT_PREFIX = f"handcrafted-v1-{CANONICAL_SAMPLE_RATE}hz-"
 
 
 def fast_feature_contract(feature_flags: FeatureFlags) -> str:
     """Revision persisted on fast models and in content-addressed feature keys."""
     names = "+".join(name for name, enabled in asdict(feature_flags).items() if enabled)
-    return f"handcrafted-v1-{CANONICAL_SAMPLE_RATE}hz-{names}"
+    return CANONICAL_FAST_FEATURE_CONTRACT_PREFIX + names
 
 
 def fast_training_vectors(
@@ -55,6 +58,10 @@ def fast_training_vectors(
     if cache_dir is not None:
         with sample.audio_path.open("rb") as stream:
             audio_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        try:
+            ser_version = metadata.version("ser")
+        except metadata.PackageNotFoundError:
+            ser_version = ser.__version__
         key = json.dumps(
             [
                 fast_feature_contract(feature_flags),
@@ -69,6 +76,7 @@ def fast_training_vectors(
                     for pool in threadpool_info()
                     if pool["user_api"] == "blas"
                 ),
+                [ser_version, *(metadata.version(name) for name in ("librosa", "numpy", "scipy"))],
                 audio_digest,
                 sample.start_seconds,
                 sample.duration_seconds,

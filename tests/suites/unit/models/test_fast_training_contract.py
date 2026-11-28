@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 from dataclasses import replace
+from importlib import metadata
 from pathlib import Path
 
 import numpy as np
@@ -28,7 +29,7 @@ def test_training_rows_equal_analysis_windows(tmp_path: Path) -> None:
     settings = AppConfig(emotions={}, tmp_folder=tmp_path)
     path = tmp_path / "quiet.wav"
     t = np.arange(48_000 * 4 + 1) / 48_000
-    sf.write(path, np.column_stack((0.08 * np.sin(500 * t), 0.02 * np.cos(900 * t))), 48_000)
+    sf.write(path, np.column_stack((0.08 * np.sin(500 * t**2), 0.02 * np.cos(900 * t))), 48_000)
     sample = Utterance(1, "clip", "fixture", path, "calm", speaker_id="actor")
     decoded = decode_file(path, max_duration_s=10)
     assert isinstance(decoded, DecodedAudio)
@@ -53,9 +54,19 @@ def test_training_rows_equal_analysis_windows(tmp_path: Path) -> None:
         ],
     )
     assert checked is not None
-    _, rows, _, _ = checked.matrices
+    train_rows, rows, _, _ = checked.matrices
     assert checked.test_sample_ids == [sample.sample_id] * len(expected.spans)
     np.testing.assert_array_equal(rows, expected.vectors)
+    assert checked.train_sample_ids == ["a", "b"]
+    first_second = canonicalize(DecodedAudio(decoded.samples[:48_000], 48_000))
+    next_second = canonicalize(DecodedAudio(decoded.samples[48_000:96_000], 48_000))
+    expected_train = np.vstack(
+        [
+            backend.extract(segment, deadline_monotonic_s=float("inf")).vectors
+            for segment in (first_second, next_second)
+        ]
+    )
+    np.testing.assert_array_equal(train_rows, expected_train)
     reduced = feature_extractor.fast_training_vectors(
         sample,
         feature_flags=replace(settings.feature_flags, mel=False),
@@ -102,9 +113,9 @@ def test_feature_contract_rejects_stale_revision_and_changed_flags() -> None:
     fast_training.validate_fast_feature_contract(
         {"model_revision": revision}, settings.feature_flags
     )
-    for metadata in ({}, {"model_revision": revision.replace("16000", "48000")}):
+    for artifact_metadata in ({}, {"model_revision": revision.replace("16000", "48000")}):
         with pytest.raises(ValueError, match="feature contract"):
-            fast_training.validate_fast_feature_contract(metadata, settings.feature_flags)
+            fast_training.validate_fast_feature_contract(artifact_metadata, settings.feature_flags)
     with pytest.raises(ValueError, match="feature contract"):
         fast_training.validate_fast_feature_contract(
             {"model_revision": revision}, replace(settings.feature_flags, mel=False)
@@ -180,6 +191,42 @@ def test_fast_cache_recovers_corrupt_entry_and_reports_activity(tmp_path: Path) 
             )
             np.testing.assert_array_equal(actual, expected)
         assert (state.cache_hits, state.cache_misses, state.recomputed_cache_entries) == (1, 2, 1)
+
+
+@pytest.mark.parametrize("changed_input", ["contract", "ser", "librosa", "numpy", "scipy"])
+def test_fast_cache_misses_when_contract_or_version_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed_input: str
+) -> None:
+    path = tmp_path / "tone.wav"
+    sf.write(path, np.sin(np.arange(16_000) * 0.1), 16_000)
+    sample = Utterance(1, "clip", "fixture", path, "calm", speaker_id="actor")
+    flags = replace(AppConfig(emotions={}).feature_flags, tonnetz=False)
+    cache = tmp_path / "features"
+    expected = feature_extractor.fast_training_vectors(sample, feature_flags=flags, cache_dir=cache)
+    old_rows = np.full_like(expected, 7.0)
+    np.save(next(cache.glob("*.npy")), old_rows, allow_pickle=False)
+    np.testing.assert_array_equal(
+        feature_extractor.fast_training_vectors(sample, feature_flags=flags, cache_dir=cache),
+        old_rows,
+    )
+
+    if changed_input == "contract":
+        old_contract = feature_extractor.fast_feature_contract(flags)
+        monkeypatch.setattr(
+            feature_extractor, "fast_feature_contract", lambda _flags: old_contract + "-revised"
+        )
+    else:
+        installed_version = metadata.version
+        monkeypatch.setattr(
+            metadata,
+            "version",
+            lambda name: "999.0" if name == changed_input else installed_version(name),
+        )
+    np.testing.assert_array_equal(
+        feature_extractor.fast_training_vectors(sample, feature_flags=flags, cache_dir=cache),
+        expected,
+    )
+    assert len(list(cache.glob("*.npy"))) == 2
 
 
 def test_fast_cache_separates_blas_thread_counts(tmp_path: Path) -> None:

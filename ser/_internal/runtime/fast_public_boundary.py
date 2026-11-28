@@ -10,6 +10,7 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Literal
 
+from ser._internal.features.feature_extractor import CANONICAL_FAST_FEATURE_CONTRACT_PREFIX
 from ser._internal.models.emotion_model import LoadedModel, load_model, predict_emotions_detailed
 from ser._internal.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
 from ser._internal.runtime.phase_timing import (
@@ -89,6 +90,20 @@ class FastModelLoadError(RuntimeError):
     """Spawn-safe fast worker error marker for model load failures."""
 
 
+def ensure_legacy_fast_scoring(
+    loaded_model: LoadedModel,
+    error_factory: Callable[[str], Exception] = FastModelLoadError,
+) -> None:
+    """Refuse canonical fast models before native-rate feature extraction."""
+    metadata = loaded_model.artifact_metadata or {}
+    revision = metadata.get("model_revision")
+    if isinstance(revision, str) and revision.startswith(CANONICAL_FAST_FEATURE_CONTRACT_PREFIX):
+        raise error_factory(
+            "This fast model was trained on canonical audio. "
+            "This command path does not score it yet."
+        )
+
+
 def _load_fast_model_for_worker(
     settings: AppConfig,
     *,
@@ -97,7 +112,7 @@ def _load_fast_model_for_worker(
     """Loads one fast model for the spawned worker process."""
     if loaded_model is None:
         try:
-            return load_model(
+            loaded_model = load_model(
                 settings=settings,
                 expected_backend_id="handcrafted",
                 expected_profile="fast",
@@ -108,7 +123,9 @@ def _load_fast_model_for_worker(
             raise FastModelLoadError(
                 "Failed to load fast-profile model artifact from configured paths."
             ) from err
-    _ensure_fast_compatible_model(loaded_model, FastModelUnavailableError)
+    else:
+        _ensure_fast_compatible_model(loaded_model, FastModelUnavailableError)
+    ensure_legacy_fast_scoring(loaded_model)
     return loaded_model
 
 
@@ -173,7 +190,7 @@ def run_fast_inference_from_public_boundary(
     ) -> LoadedModel:
         if loaded_model is None:
             try:
-                return load_model(
+                loaded_model = load_model(
                     settings=settings,
                     expected_backend_id="handcrafted",
                     expected_profile="fast",
@@ -184,7 +201,9 @@ def run_fast_inference_from_public_boundary(
                 raise model_load_error_type(
                     "Failed to load fast-profile model artifact from configured paths."
                 ) from err
-        _ensure_fast_compatible_model(loaded_model, model_unavailable_error_type)
+        else:
+            _ensure_fast_compatible_model(loaded_model, model_unavailable_error_type)
+        ensure_legacy_fast_scoring(loaded_model, model_load_error_type)
         return loaded_model
 
     def _run_fast_inference_once(
@@ -401,7 +420,7 @@ def run_fast_inference_from_public_boundary(
                 retry_delay_seconds=_retry_delay_seconds,
                 logger=logger,
             )
-        except ValueError:
+        except (ValueError, model_load_error_type):
             raise
         except execution_error_type:
             raise
