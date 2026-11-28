@@ -25,7 +25,7 @@ _MAX_MANIFEST = 256 * 1024
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _ACTIVATIONS = {"identity", "logistic", "tanh", "relu"}
 _LICENCES = {"open", "non-commercial", "research-only", "academic-only"}
-_FEATURES = ("mfcc", "chroma", "mel", "contrast", "tonnetz")
+_FEATURES = {"mfcc": 40, "chroma": 12, "mel": 128, "contrast": 7, "tonnetz": 6}
 
 type _Float = np.float32 | np.float64
 type _Array = NDArray[_Float]
@@ -334,12 +334,14 @@ def verify_artifact(data: bytes) -> VerifiedArtifact:
         or features["version"] != 1
     ):
         raise _invalid("feature set or version")
+    dimension = _positive(features.get("dimension"), "feature dimension")
     flags = features.get("enabled")
     if flags is not None:
         enabled = _items(flags, "enabled features")
         if not enabled or enabled != [flag for flag in _FEATURES if flag in enabled]:
             raise _invalid("enabled features")
-    dimension = _positive(features.get("dimension"), "feature dimension")
+        if dimension != sum(width for name, width in _FEATURES.items() if name in enabled):
+            raise _invalid("feature dimension")
     if (
         features.get("frame_size_seconds"),
         features.get("frame_stride_seconds"),

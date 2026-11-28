@@ -6,11 +6,14 @@ import base64
 import builtins
 import hashlib
 import json
+import os
 import pickle
 import subprocess
 import sys
+from contextlib import nullcontext
+from dataclasses import fields
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import joblib
 import numpy as np
@@ -19,17 +22,18 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+from ser._internal.analysis import artifact
 from ser._internal.analysis.artifact import open_model, read_model_file
 from ser._internal.analysis.errors import AnalysisModelLoadError, AnalysisModelNotConformingError
 from ser._internal.models import artifact_safe
 from ser._internal.models.artifact_envelope import build_model_artifact
-from ser.api import UtteranceAnalyzer
+from ser.api import AnalysisConfig, ModelManifest, UtteranceAnalyzer
 from ser.runtime.contracts import LicenceRecord, TrainingAudioForm
 
 
-def _fit() -> Pipeline:
+def _fit(dimension: int = 5) -> Pipeline:
     rng = np.random.default_rng(42)
-    train = rng.normal(size=(48, 5))
+    train = rng.normal(size=(48, dimension))
     y = ["calm", "happy", "sad"] * 16
     classifier = MLPClassifier(hidden_layer_sizes=(4, 3), solver="lbfgs", random_state=42)
     model = make_pipeline(StandardScaler(), classifier)
@@ -40,8 +44,9 @@ def _fit() -> Pipeline:
 @pytest.fixture
 def safe_bytes() -> bytes:
     return artifact_safe.encode_model(
-        _fit(),
+        _fit(19),
         model_id="fixture-fast",
+        enabled_features=("chroma", "contrast"),
         training_audio=TrainingAudioForm(16000, 1, True),
         datasets=(
             LicenceRecord("fixture", "cc-by-nc-4.0", "non-commercial", "https://example.org"),
@@ -136,7 +141,7 @@ def test_payload_digest_is_checked_even_if_trailer_is_recomputed(safe_bytes: byt
 
 
 def test_incomplete_conversion_cannot_bypass_analysis_licence_gate() -> None:
-    data = artifact_safe.encode_model(_fit(), model_id="historical")
+    data = artifact_safe.encode_model(_fit(12), model_id="historical", enabled_features=("chroma",))
     with pytest.raises(AnalysisModelLoadError, match="licence"):
         open_model(data, profile="fast", expected_sha256=None, allow_legacy_baseline=True)
 
@@ -166,6 +171,10 @@ def test_api_import_leaves_scipy_unloaded() -> None:
 @pytest.mark.parametrize(
     "part",
     [
+        "enabled-unknown",
+        "enabled-duplicate",
+        "enabled-unordered",
+        "frame-size",
         "required",
         "missing-required",
         "undeclared-calibration",
@@ -182,7 +191,15 @@ def test_invalid_manifest_or_weights(safe_bytes: bytes, part: str) -> None:
     manifest = json.loads(safe_bytes[18 : 18 + size])
     payload = json.loads(safe_bytes[18 + size : -32])
     version = 1
-    if part == "required":
+    if part == "enabled-unknown":
+        manifest["features"]["enabled"].append("unknown")
+    elif part == "enabled-duplicate":
+        manifest["features"]["enabled"].append("chroma")
+    elif part == "enabled-unordered":
+        manifest["features"]["enabled"].reverse()
+    elif part == "frame-size":
+        manifest["features"]["frame_size_seconds"] = 2
+    elif part == "required":
         manifest["required"] = ["calibration"]
     elif part == "undeclared-calibration":
         manifest["calibration"] = {"temperature": 2}
@@ -289,7 +306,9 @@ sys.meta_path.insert(0, RefuseLegacyImports())
 from ser._internal.analysis.fast import load_fast
 manifest, opened = open_model(Path(sys.argv[1]).read_bytes(), profile="fast",
                               expected_sha256=None, allow_legacy_baseline=False)
-load_fast(BackendLoadRequest("safe", opened.payload, manifest, None)).close()
+request = BackendLoadRequest("safe", opened.payload, manifest, None,
+                             enabled_features=opened.metadata.enabled_features)
+load_fast(request).close()
 """,
             str(path),
         ],
@@ -318,3 +337,202 @@ def test_conversion_preserves_destination_created_during_encoding(
         == 1
     )
     assert destination.read_bytes() == b"another conversion"
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["safe", "legacy"])
+@pytest.mark.parametrize("inspect_only", [True, False], ids=["inspect", "load"])
+def test_public_manifest_matches_snapshot(
+    safe_bytes: bytes, tmp_path: Path, repo_root: Path, legacy: bool, inspect_only: bool
+) -> None:
+    path = tmp_path / "model"
+    path.write_bytes(
+        pickle.dumps(build_model_artifact(_fit(193), 193, 48, ["calm", "happy", "sad"]))
+        if legacy
+        else safe_bytes
+    )
+    with pytest.warns(FutureWarning) if legacy else nullcontext():
+        if inspect_only:
+            manifest = UtteranceAnalyzer.inspect_model(
+                profile="fast", model_path=path, allow_legacy_baseline=legacy
+            )
+        else:
+            with UtteranceAnalyzer.load(
+                profile="fast",
+                model_path=path,
+                allow_legacy_baseline=legacy,
+                config=AnalysisConfig(isolation="inline"),
+            ) as analyzer:
+                manifest = analyzer.model_manifest
+
+    snapshot = repo_root / "tests/suites/integration/architecture/public_api_snapshot.json"
+    contract = json.loads(snapshot.read_text())["modules"]["ser.api"]["exports"]["ModelManifest"]
+    assert type(manifest) is ModelManifest
+    assert {field.name for field in fields(manifest)} == set(contract["contract"]["members"])
+
+
+@pytest.mark.parametrize("subset", [None, ["mfcc"]], ids=["missing", "wrong-width"])
+@pytest.mark.parametrize("inspect_only", [True, False], ids=["inspect", "load"])
+def test_analysis_requires_matching_feature_subset(
+    safe_bytes: bytes, tmp_path: Path, subset: list[str] | None, inspect_only: bool
+) -> None:
+    length = int.from_bytes(safe_bytes[14:18], "big")
+    header = json.loads(safe_bytes[18 : 18 + length])
+    header["features"]["enabled"] = subset
+    encoded = json.dumps(header).encode()
+    body = (
+        safe_bytes[:14] + len(encoded).to_bytes(4, "big") + encoded + safe_bytes[18 + length : -32]
+    )
+    path = tmp_path / "model.ser"
+    path.write_bytes(body + hashlib.sha256(body).digest())
+    error = AnalysisModelNotConformingError if subset is None else AnalysisModelLoadError
+    message = "does not record its feature subset" if subset is None else "feature dimension"
+    with pytest.raises(error, match=message):
+        if inspect_only:
+            UtteranceAnalyzer.inspect_model(profile="fast", model_path=path)
+        else:
+            with UtteranceAnalyzer.load(
+                profile="fast", model_path=path, config=AnalysisConfig(isolation="inline")
+            ):
+                pass
+
+
+@pytest.mark.parametrize("invalid", ["provenance", "existing", "dangling", "parent", "long-name"])
+def test_conversion_validates_inputs_before_legacy_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid: str
+) -> None:
+    from ser._internal.models.artifact_cli import run_models_command
+
+    source, destination = tmp_path / "legacy.pkl", tmp_path / "out.ser"
+    witness = tmp_path / "deserialized"
+    source.write_bytes(pickle.dumps(build_model_artifact(_fit(), 5, 48, ["calm", "happy", "sad"])))
+    original_loads = pickle.loads
+
+    def record_load(data: bytes) -> object:
+        value = original_loads(data)
+        witness.touch()
+        return value
+
+    monkeypatch.setattr(pickle, "loads", record_load)
+    args = ["convert", "--trust-pickle"]
+    if invalid == "provenance":
+        provenance = tmp_path / "invalid.json"
+        provenance.write_text("{}")
+        args += ["--provenance", str(provenance)]
+    elif invalid == "long-name":
+        destination = tmp_path / ("m" * 1024)
+    elif invalid == "parent":
+        destination = source / "out.ser"
+    elif invalid == "dangling":
+        destination.symlink_to(tmp_path / "absent")
+    else:
+        destination.touch()
+    try:
+        assert run_models_command([*args, str(source), str(destination)]) == 1
+        assert not witness.exists()
+        if invalid == "provenance":
+            assert (
+                run_models_command(["convert", "--trust-pickle", str(source), str(destination)])
+                == 0
+            )
+            assert witness.is_file()
+    finally:
+        witness.unlink(missing_ok=True)
+        source.unlink()
+
+
+@pytest.mark.parametrize("mask", [0o022, 0o077])
+def test_converted_file_respects_umask(tmp_path: Path, mask: int) -> None:
+    from ser._internal.models.artifact_cli import run_models_command
+
+    source, dest = tmp_path / "model.pkl", tmp_path / "out.ser"
+    source.write_bytes(pickle.dumps(build_model_artifact(_fit(), 5, 48, ["calm", "happy", "sad"])))
+    previous = os.umask(mask)
+    try:
+        assert run_models_command(["convert", "--trust-pickle", str(source), str(dest)]) == 0
+    finally:
+        os.umask(previous)
+    assert dest.stat().st_mode & 0o777 == 0o666 & ~mask
+
+
+@pytest.mark.parametrize("kind", ["missing", "directory", "oversized", "malformed"])
+def test_unreadable_provenance_error(
+    tmp_path: Path, kind: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ser._internal.models.artifact_cli import run_models_command
+
+    provenance = tmp_path / "private-name"
+    if kind == "malformed":
+        provenance.write_text("{}")
+    elif kind == "directory":
+        provenance.mkdir()
+    elif kind == "oversized":
+        with provenance.open("wb") as stream:
+            stream.truncate(artifact_safe.MAX_FILE_SIZE + 1)
+    source = tmp_path / "model.pkl"
+    source.write_bytes(pickle.dumps(build_model_artifact(_fit(), 5, 48, ["calm", "happy", "sad"])))
+    assert (
+        run_models_command(
+            [
+                "convert",
+                "--trust-pickle",
+                "--provenance",
+                str(provenance),
+                str(source),
+                str(tmp_path / "out.ser"),
+            ]
+        )
+        == 1
+    )
+    error = capsys.readouterr().err
+    assert "provenance file" in error
+    assert "model file" not in error and provenance.name not in error and str(tmp_path) not in error
+
+
+def test_digest_valid_model_at_size_cap(safe_bytes: bytes, tmp_path: Path) -> None:
+    end = 18 + int.from_bytes(safe_bytes[14:18], "big")
+    payload = safe_bytes[end:-32]
+    padded = payload + b" " * (artifact_safe.MAX_FILE_SIZE - len(safe_bytes))
+    header = safe_bytes[:end].replace(
+        hashlib.sha256(payload).hexdigest().encode(), hashlib.sha256(padded).hexdigest().encode()
+    )
+    body = header + padded
+    path = tmp_path / "at-cap.ser"
+    path.write_bytes(body + hashlib.sha256(body).digest())
+    assert path.stat().st_size == artifact_safe.MAX_FILE_SIZE
+    manifest = UtteranceAnalyzer.inspect_model(profile="fast", model_path=path)
+    assert manifest.identity.model_id == "fixture-fast"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires FIFOs")
+def test_fifo_refused_without_blocking(tmp_path: Path) -> None:
+    path = tmp_path / "fifo"
+    os.mkfifo(path)
+    probe = """
+import signal, sys
+from ser._internal.analysis.artifact import read_model_file
+from ser._internal.analysis.errors import AnalysisModelLoadError
+
+signal.alarm(3)
+try:
+    read_model_file(sys.argv[1])
+except AnalysisModelLoadError as err:
+    assert "regular file" in str(err)
+else:
+    raise AssertionError("FIFO accepted")
+"""
+    subprocess.run([sys.executable, "-c", probe, str(path)], timeout=20, check=True)
+
+
+def test_read_is_bounded_when_size_is_underreported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "underreported"
+    with path.open("wb") as stream:
+        stream.truncate(artifact_safe.MAX_FILE_SIZE * 2)
+    with path.open("rb") as reader:
+        info = SimpleNamespace(st_mode=path.stat().st_mode, st_size=0)
+        monkeypatch.setattr(os, "fstat", lambda fd: info)
+        monkeypatch.setattr(artifact, "open", lambda *a, **kw: nullcontext(reader), raising=False)
+        with pytest.raises(AnalysisModelLoadError, match="size"):
+            read_model_file(path)
+        assert reader.tell() == artifact_safe.MAX_FILE_SIZE + 1

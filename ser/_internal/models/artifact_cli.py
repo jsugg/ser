@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import fields
 from itertools import product
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import TemporaryDirectory
 from typing import cast
 
 from ser._internal.analysis.artifact import read_model_file
@@ -21,6 +21,7 @@ from ser._internal.models.artifact_safe import (
     read_conversion_provenance,
     verify_artifact,
 )
+from ser.runtime.contracts import LicenceRecord, TrainingAudioForm
 
 _TRUST_WARNING = "Conversion unpickles and can execute code. Only convert files you trust."
 
@@ -38,13 +39,39 @@ def _enabled_features(dimension: int | None) -> tuple[str, ...] | None:
 
 
 def _convert(source: Path, destination: Path, provenance: Path | None) -> None:
-    from ser._internal.analysis.legacy import load_legacy
-
     if source.resolve() == destination.resolve():
         raise ValueError("The source and destination must be different files.")
-    if destination.exists():
+    try:
+        destination.lstat()
+    except FileNotFoundError:
+        pass
+    else:
         raise ValueError("The destination already exists.")
-    data = read_model_file(source)
+    audio, datasets = _read_provenance(provenance) if provenance is not None else (None, ())
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=destination.parent) as directory:
+        staged = Path(directory) / "model"
+        with staged.open("xb") as stream:
+            stream.write(_encode_legacy(read_model_file(source), audio, datasets))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(staged, destination)
+
+
+def _read_provenance(path: Path) -> tuple[TrainingAudioForm, tuple[LicenceRecord, ...]]:
+    try:
+        return read_conversion_provenance(read_model_file(path))
+    except AnalysisError:
+        raise ValueError("The provenance file could not be read.") from None
+    except ValueError as err:
+        raise ValueError(f"Invalid provenance file. {err}") from None
+
+
+def _encode_legacy(
+    data: bytes, audio: TrainingAudioForm | None, datasets: tuple[LicenceRecord, ...]
+) -> bytes:
+    from ser._internal.analysis.legacy import load_legacy
+
     try:
         loaded, version_mismatch = load_legacy(data)
     except MemoryError:
@@ -64,14 +91,9 @@ def _convert(source: Path, destination: Path, provenance: Path | None) -> None:
     model_id = revision if isinstance(revision, str) else "fast-handcrafted"
     split = metadata.get("split_ledger_digest")
     created = metadata.get("created_at_utc")
-    audio, datasets = (
-        read_conversion_provenance(read_model_file(provenance))
-        if provenance is not None
-        else (None, ())
-    )
     if loaded.expected_feature_size != getattr(loaded.model, "n_features_in_", None):
         raise ValueError("Legacy model feature dimensions disagree.")
-    artifact = encode_model(
+    return encode_model(
         loaded.model,
         model_id=model_id,
         enabled_features=_enabled_features(loaded.expected_feature_size),
@@ -83,13 +105,6 @@ def _convert(source: Path, destination: Path, provenance: Path | None) -> None:
         split_ledger_digest=split if isinstance(split, str) else None,
         created_at=created if isinstance(created, str) else None,
     )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(dir=destination.parent, delete_on_close=False) as temporary:
-        temporary.write(artifact)
-        temporary.flush()
-        os.fsync(temporary.fileno())
-        temporary.close()
-        os.link(temporary.name, destination)
 
 
 def run_models_command(argv: Sequence[str]) -> int:

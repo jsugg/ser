@@ -28,13 +28,6 @@ from ser.runtime.contracts import (
 
 
 @dataclass(frozen=True)
-class FastModelManifest(ModelManifest):
-    """Verified extractor selection carried with the internal backend load request."""
-
-    enabled_features: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class ArtifactMetadata:
     """What a format reads from a model file before the payload is deserialised.
 
@@ -94,6 +87,8 @@ class SafeModelFormat:
             verified = artifact_safe.verify_artifact(data)
         except ValueError as err:
             raise AnalysisModelLoadError(str(err)) from None
+        if verified.enabled_features is None:
+            raise AnalysisModelNotConformingError("The model does not record its feature subset.")
         return OpenedArtifact(
             ArtifactMetadata(
                 profile="fast",
@@ -281,18 +276,6 @@ def open_model(
     ):
         raise AnalysisModelLoadError("The model identifiers are invalid.") from None
     identity = ModelIdentity(profile, model_id, digest, label_set_id, metadata.labels)
-    if metadata.enabled_features is not None:
-        return (
-            FastModelManifest(
-                identity,
-                artifact_format.name,
-                metadata.training_audio,
-                provenance,
-                baseline,
-                metadata.enabled_features,
-            ),
-            opened,
-        )
     return (
         ModelManifest(
             identity, artifact_format.name, metadata.training_audio, provenance, baseline

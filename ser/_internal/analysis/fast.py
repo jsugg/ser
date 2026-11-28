@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from ser._internal.analysis.artifact import FastModelManifest
 from ser._internal.analysis.backend import (
     BackendFrame,
     BackendLoadRequest,
@@ -107,9 +106,9 @@ class FastBackend:
 
 def load_fast(request: BackendLoadRequest) -> FastBackend:
     if request.artifact_format == "safe":
-        if not isinstance(request.manifest, FastModelManifest):
+        enabled = request.enabled_features
+        if enabled is None:
             raise ValueError("The fast model must specify enabled features.")
-        enabled = request.manifest.enabled_features
         flags = FeatureFlags(
             **{field.name: field.name in enabled for field in fields(FeatureFlags)}
         )
