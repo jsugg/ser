@@ -49,6 +49,7 @@ def _inventory(tmp_path: Path) -> tuple[Utterance, ...]:
                 "fixture",
                 path,
                 "calm" if index % 2 == 0 else "happy",
+                speaker_id=f"actor-{index // 2}",
             )
         )
     return tuple(samples)

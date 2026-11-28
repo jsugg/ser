@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import cast
 import pytest
 
 import ser._internal.runtime.profile_quality_gate as gate_module
+from ser._internal.features.feature_extractor import fast_feature_contract
 from ser._internal.runtime.profile_quality_gate import (
     QualityGateThresholds,
     _build_fast_predictor,
@@ -315,10 +317,16 @@ def test_parse_args_uses_quality_gate_settings_defaults(
     assert args.min_medium_median_segment_duration == pytest.approx(2.2)
 
 
-def test_build_fast_predictor_loads_model_once(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("canonical", [True, False], ids=["canonical", "legacy"])
+def test_build_fast_predictor_checks_contract_and_loads_once(
+    monkeypatch: pytest.MonkeyPatch, canonical: bool
+) -> None:
     """Fast gate predictor should preload model once and reuse it for all clips."""
     settings = reload_settings()
-    loaded_model = object()
+    metadata = (
+        {"model_revision": fast_feature_contract(settings.feature_flags)} if canonical else {}
+    )
+    loaded_model = SimpleNamespace(artifact_metadata=metadata)
     loaded_calls: list[object] = []
     predict_calls: list[tuple[str, object | None]] = []
 
@@ -341,13 +349,28 @@ def test_build_fast_predictor_loads_model_once(monkeypatch: pytest.MonkeyPatch) 
         _fake_predict_emotions,
     )
 
-    predictor = _build_fast_predictor(
-        model_file_name="fast.pkl",
-        secure_model_file_name="fast.skops",
-        training_report_file_name="fast_report.json",
-        settings=settings,
-    )
+    def build_predictor() -> gate_module.SegmentPredictor:
+        return _build_fast_predictor(
+            model_file_name="fast.pkl",
+            secure_model_file_name="fast.skops",
+            training_report_file_name="fast_report.json",
+            settings=settings,
+        )
 
+    if canonical:
+        with pytest.raises(
+            RuntimeError,
+            match=re.escape(
+                "This fast model was trained on canonical audio. "
+                "This command path does not score it yet."
+            ),
+        ):
+            build_predictor()
+        assert len(loaded_calls) == 1
+        assert predict_calls == []
+        return
+
+    predictor = build_predictor()
     assert len(loaded_calls) == 1
     predictor("a.wav")
     predictor("b.wav")

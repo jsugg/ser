@@ -7,8 +7,15 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
+from ser._internal.data.curation_ledger import (
+    CurationLedger,
+    CurationLedgerError,
+    git_blob_sha1,
+    git_tree_sha1,
+    stamp_manifest_provenance,
+    write_curated_manifest,
+)
 from ser._internal.data.manifest import Utterance
-from ser._internal.data.manifest_jsonl import write_manifest_jsonl
 from ser._internal.data.ontology import LabelOntology, remap_label
 from ser._internal.utils.logger import get_logger
 
@@ -18,6 +25,10 @@ RAVDESS_CORPUS_ID = "ravdess"
 RAVDESS_DATASET_POLICY_ID = "noncommercial"
 RAVDESS_DATASET_LICENSE_ID = "cc-by-nc-sa-4.0"
 RAVDESS_SOURCE_URL = "https://zenodo.org/records/1188976"
+RAVDESS_AUDIO_TREE_SHA1 = "54bfa7692eee656451c78063922e01633728d552"
+RAVDESS_DATASET_REVISION = (
+    f"10.5281/zenodo.1188976:Audio_Speech_Actors_01-24={RAVDESS_AUDIO_TREE_SHA1}"
+)
 
 
 def _extract_emotion_code(file_name: str) -> str | None:
@@ -134,6 +145,41 @@ def build_ravdess_utterances(
     return utterances
 
 
+def _verified_ravdess_revision(
+    dataset_root: Path, dataset_glob_pattern: str, *, required: bool
+) -> str | None:
+    """Returns the pinned revision when the audio tree matches the Zenodo speech archive.
+
+    When ``required``, a mismatch raises instead.
+    """
+    root = dataset_root.expanduser()
+    try:
+        tree: str | None = git_tree_sha1(
+            {
+                Path(path).relative_to(root).as_posix(): git_blob_sha1(Path(path))
+                for path in glob.glob(dataset_glob_pattern)
+            }
+        )
+    except ValueError:
+        tree = None
+    if tree == RAVDESS_AUDIO_TREE_SHA1:
+        return RAVDESS_DATASET_REVISION
+    mismatch = (
+        f"RAVDESS audio tree {tree} under {root} does not match Zenodo record 1188976 "
+        f"({RAVDESS_AUDIO_TREE_SHA1})"
+    )
+    if required:
+        raise CurationLedgerError(
+            f"{mismatch}, so the curation ledger cannot be applied; no manifest was written. "
+            "Restore the Audio_Speech_Actors_01-24 WAV files (remove added ones, restore "
+            "changed ones) and rerun the build, or download a fresh copy with `ser data "
+            "download --dataset ravdess --dataset-root <new directory>`; downloading again "
+            f"into {root} keeps the files already there."
+        )
+    logger.warning("%s; dataset_revision is left unset.", mismatch)
+    return None
+
+
 def build_ravdess_manifest_jsonl(
     *,
     dataset_root: Path,
@@ -143,8 +189,14 @@ def build_ravdess_manifest_jsonl(
     ontology: LabelOntology,
     max_failed_file_ratio: float,
     output_path: Path,
+    curation_ledger: CurationLedger | None = None,
 ) -> list[Utterance] | None:
-    """Builds utterances and persists a RAVDESS JSONL manifest."""
+    """Builds utterances with content hashes and verified revision, then writes them.
+
+    With a curation ledger the curated rows go to ``output_path`` and the source rows to
+    its ``.source.jsonl`` sibling; a tree that is not the pinned release then fails
+    before anything is written.
+    """
 
     utterances = build_ravdess_utterances(
         dataset_root=dataset_root,
@@ -155,6 +207,16 @@ def build_ravdess_manifest_jsonl(
         max_failed_file_ratio=max_failed_file_ratio,
     )
     if utterances is None:
+        if curation_ledger is not None and glob.glob(dataset_glob_pattern):
+            _verified_ravdess_revision(dataset_root, dataset_glob_pattern, required=True)
         return None
-    write_manifest_jsonl(output_path, utterances, base_dir=dataset_root)
-    return utterances
+    revision = _verified_ravdess_revision(
+        dataset_root, dataset_glob_pattern, required=curation_ledger is not None
+    )
+    stamped = stamp_manifest_provenance(utterances, dataset_revision=revision)
+    return write_curated_manifest(
+        stamped,
+        output_path=output_path,
+        base_dir=dataset_root,
+        curation_ledger=curation_ledger,
+    )

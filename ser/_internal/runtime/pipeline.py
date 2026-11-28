@@ -27,6 +27,7 @@ from ser._internal.runtime.registry import (
     ensure_profile_supported,
     resolve_runtime_capability,
 )
+from ser._internal.transcript.backends.dependencies import require_transcription_dependencies
 from ser._internal.utils.logger import get_logger
 from ser._internal.utils.subtitles import resolve_subtitle_export_request
 from ser._internal.utils.transcription_compat import (
@@ -138,6 +139,7 @@ class RuntimePipeline:
     save_timeline_to_csv: SaveTimelineCallable
     save_timeline_to_subtitles: SaveSubtitleCallable | None = None
     backend_inference: BackendInferenceCallable | None = None
+    check_transcription_dependencies: Callable[[], None] | None = None
 
     def run_training(self) -> None:
         """Runs the model training workflow."""
@@ -161,6 +163,8 @@ class RuntimePipeline:
                 "Subtitle export requires transcript extraction; disable subtitle export or "
                 "remove the no-transcript option."
             )
+        if request.include_transcript and self.check_transcription_dependencies is not None:
+            self.check_transcription_dependencies()
         runtime_environment = build_runtime_environment_plan(self.settings)
         with (
             settings_override(self.settings),
@@ -283,10 +287,6 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         train_medium_model,
         train_model,
     )
-    from ser._internal.transcript.transcript_extractor import (
-        TranscriptionProfile,
-        extract_transcript,
-    )
     from ser._internal.utils.subtitles import save_timeline_to_subtitles
     from ser._internal.utils.timeline_utils import (
         build_timeline,
@@ -311,32 +311,35 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         transcription_use_demucs,
         transcription_use_vad,
     ) = resolve_profile_transcription_config(capability.profile)
-    (
-        transcription_backend_id,
-        transcription_model_name,
-        transcription_use_demucs,
-        transcription_use_vad,
-    ) = _resolve_transcription_profile_with_runtime_fallback(
-        backend_id=transcription_backend_id,
-        model_name=transcription_model_name,
-        use_demucs=transcription_use_demucs,
-        use_vad=transcription_use_vad,
-    )
-    transcription_profile = TranscriptionProfile(
-        backend_id=transcription_backend_id,
-        model_name=transcription_model_name,
-        use_demucs=transcription_use_demucs,
-        use_vad=transcription_use_vad,
-    )
+
+    def check_transcription_dependencies() -> None:
+        require_transcription_dependencies(
+            transcription_backend_id, use_demucs=transcription_use_demucs
+        )
 
     def extract_transcript_for_profile(
         file_path: str,
         language: str | None,
     ) -> list[TranscriptWord]:
+        from ser._internal.transcript.transcript_extractor import (
+            TranscriptionProfile,
+            extract_transcript,
+        )
+
+        backend_id, model_name, use_demucs, use_vad = (
+            _resolve_transcription_profile_with_runtime_fallback(
+                backend_id=transcription_backend_id,
+                model_name=transcription_model_name,
+                use_demucs=transcription_use_demucs,
+                use_vad=transcription_use_vad,
+            )
+        )
         return extract_transcript(
             file_path,
             language,
-            profile=transcription_profile,
+            profile=TranscriptionProfile(
+                backend_id=backend_id, model_name=model_name, use_demucs=use_demucs, use_vad=use_vad
+            ),
             settings=settings,
         )
 
@@ -373,4 +376,5 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
         print_timeline=print_timeline,
         save_timeline_to_csv=save_timeline_to_csv,
         save_timeline_to_subtitles=save_timeline_to_subtitles_for_settings,
+        check_transcription_dependencies=check_transcription_dependencies,
     )

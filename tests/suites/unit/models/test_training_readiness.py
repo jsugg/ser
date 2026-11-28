@@ -107,6 +107,7 @@ def _utterance(
         corpus=corpus,
         audio_path=path,
         label=label,
+        speaker_id=split or sample_id.rsplit("-", 1)[-1],
         language="en",
         split=cast(SplitName | None, split),
     )

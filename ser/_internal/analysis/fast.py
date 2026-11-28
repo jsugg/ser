@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -15,16 +16,14 @@ from ser._internal.analysis.backend import (
     coverage_weighted_mean,
     frame_layout,
 )
-from ser._internal.analysis.legacy import capture_legacy_warnings, load_legacy
-from ser._internal.models.artifact_envelope import (
-    DEFAULT_BACKEND_ID,
-    DEFAULT_FRAME_SIZE_SECONDS,
-    DEFAULT_FRAME_STRIDE_SECONDS,
-    EmotionClassifier,
-)
+from ser._internal.models.artifact_safe import SafeClassifier, load_classifier_payload
 from ser._internal.repr.handcrafted import HandcraftedBackend
 from ser._internal.utils.audio_utils import CANONICAL_SAMPLE_RATE, CanonicalAudio
+from ser.config import FeatureFlags
 from ser.runtime.contracts import LanguageHint
+
+if TYPE_CHECKING:
+    from ser._internal.models.artifact_envelope import EmotionClassifier
 
 
 @dataclass(frozen=True)
@@ -36,15 +35,18 @@ class _FastFeatures:
 
 class FastBackend:
     def __init__(
-        self, model: EmotionClassifier, labels: tuple[str, ...], extractor: HandcraftedBackend
+        self,
+        model: SafeClassifier | EmotionClassifier,
+        labels: tuple[str, ...],
+        extractor: HandcraftedBackend,
     ) -> None:
-        self._model: EmotionClassifier | None = model
+        self._model: SafeClassifier | EmotionClassifier | None = model
         self._labels = labels
         self._extractor = extractor
 
     def warm_up(self, *, deadline_monotonic_s: float) -> None:
         rate = CANONICAL_SAMPLE_RATE
-        duration = DEFAULT_FRAME_SIZE_SECONDS
+        duration = 3.0
         t = np.arange(round(duration * rate), dtype=np.float64) / rate
         samples = (0.25 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
         audio = CanonicalAudio(samples, rate, rate, duration)
@@ -56,8 +58,8 @@ class FastBackend:
     def extract(self, audio: CanonicalAudio, *, deadline_monotonic_s: float) -> _FastFeatures:
         spans = frame_layout(
             audio.duration_seconds,
-            frame_size_s=DEFAULT_FRAME_SIZE_SECONDS,
-            stride_s=DEFAULT_FRAME_STRIDE_SECONDS,
+            frame_size_s=3.0,
+            stride_s=1.0,
         )
         vectors: list[NDArray[np.float64]] = []
         for start, end in spans:
@@ -83,8 +85,13 @@ class FastBackend:
     ) -> BackendScores:
         if not isinstance(features, _FastFeatures) or self._model is None:
             raise ValueError("Invalid fast analysis state.")
-        with capture_legacy_warnings():
+        if isinstance(self._model, SafeClassifier):
             values = np.asarray(self._model.predict_proba(features.vectors), dtype=np.float64)
+        else:
+            from ser._internal.analysis.legacy import capture_legacy_warnings
+
+            with capture_legacy_warnings():
+                values = np.asarray(self._model.predict_proba(features.vectors), dtype=np.float64)
         if values.shape != (len(features.spans), len(self._labels)):
             raise ValueError("Invalid fast probability shape.")
         frames = tuple(
@@ -98,8 +105,24 @@ class FastBackend:
 
 
 def load_fast(request: BackendLoadRequest) -> FastBackend:
+    if request.artifact_format == "safe":
+        enabled = request.enabled_features
+        if enabled is None:
+            raise ValueError("The fast model must specify enabled features.")
+        flags = FeatureFlags(
+            **{field.name: field.name in enabled for field in fields(FeatureFlags)}
+        )
+        extractor = HandcraftedBackend(feature_flags=flags)
+        labels = request.manifest.identity.labels
+        classifier = load_classifier_payload(
+            request.payload, labels=labels, dimension=extractor.feature_dim
+        )
+        return FastBackend(classifier, labels, extractor)
     if request.artifact_format != "legacy-pickle" or not request.manifest.baseline:
         raise ValueError("No compatible fast payload format is registered.")
+    from ser._internal.analysis.legacy import load_legacy
+    from ser._internal.models.artifact_envelope import DEFAULT_BACKEND_ID
+
     loaded, _ = load_legacy(request.payload)
     metadata = loaded.artifact_metadata
     extractor = HandcraftedBackend(feature_flags=request.feature_flags)

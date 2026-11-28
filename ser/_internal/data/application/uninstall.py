@@ -6,6 +6,10 @@ import shutil
 from pathlib import Path
 
 from ser._internal.data.application.models import DatasetUninstallWorkflowResult
+from ser._internal.data.curation_ledger import (
+    load_builtin_curation_ledger,
+    source_manifest_path,
+)
 from ser._internal.data.dataset_prepare import (
     default_dataset_root,
     default_manifest_path,
@@ -43,6 +47,11 @@ def run_dataset_uninstall_workflow(
             existing.manifest_path.expanduser(),
             default_manifest_path(settings, descriptor.dataset_id).expanduser(),
         }
+        curated_corpora = {entry.corpus for entry in load_builtin_curation_ledger().entries}
+        if descriptor.dataset_id in curated_corpora:
+            manifest_paths_to_remove |= {
+                source_manifest_path(path) for path in manifest_paths_to_remove
+            }
         for manifest_path in sorted(manifest_paths_to_remove):
             if not manifest_path.is_file():
                 continue

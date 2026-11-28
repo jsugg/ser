@@ -89,6 +89,34 @@ class FastModelLoadError(RuntimeError):
     """Spawn-safe fast worker error marker for model load failures."""
 
 
+_CONTRACT_REFUSAL = (
+    "This fast model was trained on canonical audio. This command path does not score it yet."
+)
+
+
+def raise_for_invalid_fast_revision(
+    error: ValueError, error_factory: Callable[[str], Exception] = FastModelLoadError
+) -> None:
+    """Recover the revision validation error wrapped by artifact candidate resolution."""
+    cause: BaseException | None = error
+    while cause is not None:
+        if isinstance(cause, ValueError) and cause.args == (
+            "Model artifact metadata contains invalid 'model_revision' value.",
+        ):
+            raise error_factory(_CONTRACT_REFUSAL) from error
+        cause = cause.__cause__
+
+
+def ensure_legacy_fast_scoring(
+    loaded_model: LoadedModel,
+    error_factory: Callable[[str], Exception] = FastModelLoadError,
+) -> None:
+    """Native-rate fast models have no recorded feature contract."""
+    metadata = loaded_model.artifact_metadata or {}
+    if metadata.get("model_revision") is not None:
+        raise error_factory(_CONTRACT_REFUSAL)
+
+
 def _load_fast_model_for_worker(
     settings: AppConfig,
     *,
@@ -97,7 +125,7 @@ def _load_fast_model_for_worker(
     """Loads one fast model for the spawned worker process."""
     if loaded_model is None:
         try:
-            return load_model(
+            loaded_model = load_model(
                 settings=settings,
                 expected_backend_id="handcrafted",
                 expected_profile="fast",
@@ -105,10 +133,13 @@ def _load_fast_model_for_worker(
         except FileNotFoundError as err:
             raise FastModelUnavailableError(str(err)) from err
         except ValueError as err:
+            raise_for_invalid_fast_revision(err)
             raise FastModelLoadError(
                 "Failed to load fast-profile model artifact from configured paths."
             ) from err
-    _ensure_fast_compatible_model(loaded_model, FastModelUnavailableError)
+    else:
+        _ensure_fast_compatible_model(loaded_model, FastModelUnavailableError)
+    ensure_legacy_fast_scoring(loaded_model)
     return loaded_model
 
 
@@ -173,7 +204,7 @@ def run_fast_inference_from_public_boundary(
     ) -> LoadedModel:
         if loaded_model is None:
             try:
-                return load_model(
+                loaded_model = load_model(
                     settings=settings,
                     expected_backend_id="handcrafted",
                     expected_profile="fast",
@@ -181,10 +212,13 @@ def run_fast_inference_from_public_boundary(
             except FileNotFoundError as err:
                 raise model_unavailable_error_type(str(err)) from err
             except ValueError as err:
+                raise_for_invalid_fast_revision(err, model_load_error_type)
                 raise model_load_error_type(
                     "Failed to load fast-profile model artifact from configured paths."
                 ) from err
-        _ensure_fast_compatible_model(loaded_model, model_unavailable_error_type)
+        else:
+            _ensure_fast_compatible_model(loaded_model, model_unavailable_error_type)
+        ensure_legacy_fast_scoring(loaded_model, model_load_error_type)
         return loaded_model
 
     def _run_fast_inference_once(
@@ -401,7 +435,7 @@ def run_fast_inference_from_public_boundary(
                 retry_delay_seconds=_retry_delay_seconds,
                 logger=logger,
             )
-        except ValueError:
+        except (ValueError, model_load_error_type):
             raise
         except execution_error_type:
             raise

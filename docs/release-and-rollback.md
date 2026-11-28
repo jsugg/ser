@@ -55,10 +55,12 @@ Release.
    git tag -a vX.Y.Z <commit-sha> -m "Release vX.Y.Z"
    git push origin refs/tags/vX.Y.Z
    ```
-5. Consumers install the tagged version by pinning the tag:
+5. Consumers install the tagged core by pinning the tag:
    ```bash
    python -m pip install "git+https://github.com/jsugg/ser.git@vX.Y.Z"
    ```
+   To keep transcription, install `ser[transcript] @ git+https://github.com/jsugg/ser.git@vX.Y.Z`
+   and put `ffmpeg` on `PATH`.
 6. Do not create or publish a GitHub Release for the tag.
 
 ## Rolling back a bad tag

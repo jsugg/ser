@@ -597,7 +597,7 @@ the MB/MiB ambiguity. `worker_start_timeout_s` is new here and proposed.
   - No record at any level, no exception message and no metric carries audio, file contents,
     caller-supplied paths or backend content (backend exception text, features, scores). This holds in
     the parent and in the worker.
-  - No warnings filter changes, and no warning is emitted.
+  - Warning filters are preserved. Each opted-in legacy pickle open via `load` or `inspect_model` emits one path-free `FutureWarning` at the caller’s line in the caller’s process. Workers and `analyze` emit none.
 - **Determinism.** The same audio and the same model give the same record apart from `timing_ms`.
 
 **Reason**

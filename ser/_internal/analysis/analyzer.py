@@ -307,6 +307,7 @@ class UtteranceAnalyzer:
             manifest,
             config.max_threads if config.isolation == "worker" else None,
             feature_flags=settings.feature_flags,
+            enabled_features=opened.metadata.enabled_features,
         )
         worker_runner: worker.WorkerSupervisor | None = None
         if config.isolation == "inline":

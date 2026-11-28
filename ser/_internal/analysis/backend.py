@@ -65,6 +65,7 @@ class BackendLoadRequest:
     max_threads: int | None
     device: Literal["cpu"] = "cpu"
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
+    enabled_features: tuple[str, ...] | None = None
 
 
 # Loaders must be module-level callables: they pickle by reference into the worker.

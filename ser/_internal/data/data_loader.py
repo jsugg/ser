@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 
 from ser._internal.data.adapters.ravdess import build_ravdess_utterances
 from ser._internal.data.catalog.public_datasets import MESD_CORPUS_ID
+from ser._internal.data.curation_ledger import load_builtin_curation_ledger
 from ser._internal.data.dataset_audit import audit_dataset_recipe
 from ser._internal.data.dataset_prepare import (
     prepare_from_registry_entry,
@@ -27,9 +28,10 @@ from ser._internal.data.label_ontology import resolve_label_ontology
 from ser._internal.data.manifest import Utterance
 from ser._internal.data.manifest_jsonl import load_manifest_jsonl
 from ser._internal.data.recipe import load_dataset_recipe
-from ser._internal.features.feature_extractor import _extract_feature_for_settings
-from ser._internal.repr import HandcraftedBackend
-from ser._internal.utils.audio_utils import read_audio_file
+from ser._internal.features.feature_extractor import (
+    _extract_feature_for_settings,
+    fast_training_vectors,
+)
 from ser._internal.utils.logger import get_logger
 from ser.config import AppConfig, AudioReadConfig, FeatureFlags, reload_settings
 
@@ -40,6 +42,12 @@ type FeatureMatrix = NDArray[np.float64]
 type LabelList = list[str]
 type DataSplit = tuple[FeatureMatrix, FeatureMatrix, LabelList, LabelList]
 type LabeledAudioSample = tuple[str, str]
+
+
+class CheckedFastData(NamedTuple):
+    matrices: DataSplit
+    train_sample_ids: list[str]
+    test_sample_ids: list[str]
 
 
 def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
@@ -87,7 +95,16 @@ def _load_utterances_for_settings(
                 recipe=recipe,
                 seed=settings.training.random_state,
                 strict=strict_dataset_audit,
+                curation=load_builtin_curation_ledger(),
             )
+            if report.curation_excluded:
+                logger.info(
+                    "Curation ledger excluded %d row(s): %s",
+                    len(report.curation_excluded),
+                    "; ".join(
+                        f"{item.sample_id} ({item.reason})" for item in report.curation_excluded
+                    ),
+                )
             by_sample_id = {utterance.sample_id: utterance for utterance in utterances}
             utterances = [
                 replace(by_sample_id[entry.sample_id], split=entry.split)
@@ -477,9 +494,10 @@ def load_checked_fast_data(
     utterances: Sequence[Utterance],
     settings: AppConfig,
     handle_sample_failure: Callable[[Utterance, Exception], bool] | None = None,
-) -> DataSplit | None:
+) -> CheckedFastData | None:
     """Extracts fast features from exactly the readiness-checked utterance view."""
     from ser._internal.models.dataset_splitting import split_utterances
+    from ser._internal.models.training_readiness import validated_cache_root
 
     if not utterances:
         return None
@@ -488,29 +506,25 @@ def load_checked_fast_data(
         settings=settings,
         logger=logger,
     )
-    backend = HandcraftedBackend(feature_flags=settings.feature_flags)
+    cache_dir = validated_cache_root(settings, "fast_features")
 
     def _extract_partition(
         partition: Sequence[Utterance],
-    ) -> tuple[FeatureMatrix, LabelList]:
+    ) -> tuple[FeatureMatrix, LabelList, list[str]]:
         from ser._internal.models.training_orchestration import (  # noqa: TID251
             record_preparation_progress,
         )
 
         rows: list[FeatureVector] = []
         labels: LabelList = []
+        sample_ids: list[str] = []
         total = len(partition)
         for processed, utterance in enumerate(partition, start=1):
             try:
-                audio, sample_rate = read_audio_file(
-                    str(utterance.audio_path),
-                    start_seconds=utterance.start_seconds,
-                    duration_seconds=utterance.duration_seconds,
-                    audio_read_config=settings.audio_read,
-                )
-                feature = np.asarray(
-                    backend.extract_vector(audio=audio, sample_rate=sample_rate),
-                    dtype=np.float64,
+                features = fast_training_vectors(
+                    utterance,
+                    feature_flags=settings.feature_flags,
+                    cache_dir=cache_dir,
                 )
             except Exception as error:
                 if handle_sample_failure is not None and handle_sample_failure(utterance, error):
@@ -521,12 +535,13 @@ def load_checked_fast_data(
                     )
                     continue
                 raise
-            if feature.ndim != 1 or feature.size <= 0 or not np.all(np.isfinite(feature)):
+            if features.ndim != 2 or features.size <= 0 or not np.all(np.isfinite(features)):
                 raise ValueError(
                     f"Fast feature contract failed for sample {utterance.sample_id!r}."
                 )
-            rows.append(feature)
-            labels.append(utterance.require_label())
+            rows.append(features)
+            labels.extend([utterance.require_label()] * len(features))
+            sample_ids.extend([utterance.sample_id] * len(features))
             record_preparation_progress(
                 processed=processed,
                 total=total,
@@ -534,10 +549,10 @@ def load_checked_fast_data(
             )
         if not rows:
             raise RuntimeError("Fast checked preparation produced an empty split partition.")
-        return np.vstack(rows).astype(np.float64, copy=False), labels
+        return np.vstack(rows).astype(np.float64, copy=False), labels, sample_ids
 
-    x_train, y_train = _extract_partition(train_utterances)
-    x_test, y_test = _extract_partition(test_utterances)
+    x_train, y_train, train_ids = _extract_partition(train_utterances)
+    x_test, y_test, test_ids = _extract_partition(test_utterances)
     if len(set(y_train)) < 2:
         raise RuntimeError("Fast checked preparation left fewer than two training classes.")
-    return x_train, x_test, y_train, y_test
+    return CheckedFastData((x_train, x_test, y_train, y_test), train_ids, test_ids)

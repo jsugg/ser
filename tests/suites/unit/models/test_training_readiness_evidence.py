@@ -83,6 +83,7 @@ def _utterance(
         corpus="fixture",
         audio_path=path,
         label=label,
+        speaker_id=split or sample_id.rsplit("-", 1)[-1],
         language="en",
         split=split,
     )

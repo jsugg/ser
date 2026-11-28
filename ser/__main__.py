@@ -112,6 +112,10 @@ def _dispatch_subcommand(command: str, command_argv: Sequence[str], *, settings:
             raise SystemExit(run_configure_command(list(command_argv), settings=settings))
         if command == "data":
             raise SystemExit(run_data_command(list(command_argv), settings=settings))
+        if command == "models":
+            from ser._internal.models.artifact_cli import run_models_command  # noqa: TID251
+
+            raise SystemExit(run_models_command(command_argv))
         raise SystemExit(run_doctor_command(list(command_argv), settings=settings))
     except SystemExit:
         raise
@@ -122,7 +126,13 @@ def _dispatch_subcommand(command: str, command_argv: Sequence[str], *, settings:
 
 def _maybe_dispatch_subcommand(pre_remaining: Sequence[str], *, settings: AppConfig) -> bool:
     """Runs subcommand flow when one CLI subcommand is requested."""
-    if not pre_remaining or pre_remaining[0] not in {"analyze", "configure", "data", "doctor"}:
+    if not pre_remaining or pre_remaining[0] not in {
+        "analyze",
+        "configure",
+        "data",
+        "doctor",
+        "models",
+    }:
         return False
     _dispatch_subcommand(pre_remaining[0], pre_remaining[1:], settings=settings)
     return True

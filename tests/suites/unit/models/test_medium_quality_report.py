@@ -4,14 +4,23 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Literal, cast
+from typing import Literal
 
 import pytest
 
 import ser._internal.models.training_support as training_support
+from ser._internal.config.schema import RuntimeFlags, TrainingConfig
 from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser.config import AppConfig
+
+
+@pytest.fixture
+def settings() -> AppConfig:
+    return AppConfig(
+        emotions={},
+        runtime_flags=RuntimeFlags(medium_profile=True),
+        training=TrainingConfig(random_state=7),
+    )
 
 
 def _sample_utterance(
@@ -39,18 +48,10 @@ def _sample_utterance(
     )
 
 
-def test_medium_split_prefers_grouped_strategy_when_speaker_ids_are_available() -> None:
+def test_medium_split_prefers_grouped_strategy_when_speaker_ids_are_available(
+    settings: AppConfig,
+) -> None:
     """Medium file-level split should use grouped speakers when metadata is complete."""
-    settings = cast(
-        AppConfig,
-        SimpleNamespace(
-            training=SimpleNamespace(
-                test_size=0.25,
-                random_state=7,
-                stratify_split=True,
-            )
-        ),
-    )
     samples = [
         _sample_utterance(1, "happy"),
         _sample_utterance(1, "sad"),
@@ -76,18 +77,8 @@ def test_medium_split_prefers_grouped_strategy_when_speaker_ids_are_available() 
     assert split_metadata.speaker_overlap_count == 0
 
 
-def test_medium_split_falls_back_when_speaker_metadata_is_incomplete() -> None:
+def test_medium_split_falls_back_when_speaker_metadata_is_incomplete(settings: AppConfig) -> None:
     """Missing speaker IDs should trigger non-grouped fallback with diagnostics."""
-    settings = cast(
-        AppConfig,
-        SimpleNamespace(
-            training=SimpleNamespace(
-                test_size=0.25,
-                random_state=7,
-                stratify_split=True,
-            )
-        ),
-    )
     samples = [
         _sample_utterance(1, "happy", speaker_id=None, corpus="custom"),
         _sample_utterance(2, "sad", speaker_id=None, corpus="custom"),
@@ -106,18 +97,8 @@ def test_medium_split_falls_back_when_speaker_metadata_is_incomplete() -> None:
     assert split_metadata.speaker_id_coverage == pytest.approx(0.5)
 
 
-def test_medium_split_prefers_explicit_manifest_split() -> None:
+def test_medium_split_prefers_explicit_manifest_split(settings: AppConfig) -> None:
     """Explicit manifest split tags should take priority over speaker grouping."""
-    settings = cast(
-        AppConfig,
-        SimpleNamespace(
-            training=SimpleNamespace(
-                test_size=0.25,
-                random_state=7,
-                stratify_split=True,
-            )
-        ),
-    )
     samples = [
         _sample_utterance(1, "happy", split="train"),
         _sample_utterance(1, "sad", split="train"),
