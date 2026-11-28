@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, TypedDict
 
 from ser.domain import EmotionSegment
 
@@ -51,3 +52,60 @@ def to_legacy_emotion_segments(result: InferenceResult) -> list[EmotionSegment]:
         )
         for segment in result.segments
     ]
+
+
+UTTERANCE_SCHEMA_VERSION = "ser.utterance/v1"
+
+type UtteranceStatus = Literal[
+    "ok",
+    "too_short",
+    "too_long",
+    "silent",
+    "unreadable",
+    "timeout",
+    "model_error",
+]
+
+
+class UtteranceFrame(TypedDict):
+    """Label probabilities for one model window inside an utterance."""
+
+    start_s: float
+    end_s: float
+    labels: dict[str, float]
+
+
+class UtteranceAudio(TypedDict):
+    """Facts about the analysed input; ``None`` when the input could not be decoded."""
+
+    duration_s: float | None
+    input_sample_rate_hz: int | None
+
+
+class UtteranceTiming(TypedDict):
+    """Wall-clock milliseconds spent per stage; excluded from determinism."""
+
+    features: int
+    predict: int
+
+
+class UtteranceRecord(TypedDict):
+    """One ``ser.utterance/v1`` analysis record (see docs/adr/0001-utterance-analysis.md).
+
+    Every status other than ``"ok"`` carries ``None`` in ``labels``, ``top_label``,
+    ``confidence`` and ``frames``.
+    """
+
+    schema_version: str
+    ser_version: str
+    model_id: str
+    model_sha256: str
+    label_set_id: str
+    labels: dict[str, float] | None
+    top_label: str | None
+    confidence: float | None
+    frames: list[UtteranceFrame] | None
+    dimensions: None
+    audio: UtteranceAudio
+    status: UtteranceStatus
+    timing_ms: UtteranceTiming

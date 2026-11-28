@@ -43,3 +43,34 @@ class InferenceExecution:
 
 
 type BackendInferenceCallable = Callable[[InferenceRequest], InferenceResult]
+
+
+type LanguageHint = Literal["en", "es", "pt"]
+
+
+@dataclass(frozen=True)
+class AnalysisConfig:
+    """Limits for utterance analysis.
+
+    The defaults are the proposed values of the integration contract and await the
+    owner's decision; change them here only.
+    """
+
+    min_duration_s: float = 0.3
+    max_duration_s: float = 120.0
+    timeout_floor_s: float = 10.0
+    timeout_per_audio_second: float = 2.0
+    silence_rms_dbfs: float = -60.0
+    max_threads: int = 2
+    memory_budget_mb: int = 1024
+
+
+@dataclass(frozen=True)
+class ModelIdentity:
+    """Identity of the model an analyser loaded, as written into every record."""
+
+    profile: ProfileName
+    model_id: str
+    model_sha256: str
+    label_set_id: str
+    labels: tuple[str, ...]
