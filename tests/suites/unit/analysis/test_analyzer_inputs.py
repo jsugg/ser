@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 from tests.suites.unit.analysis._contract import (
     INLINE,
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
     load_baseline,
@@ -31,7 +30,6 @@ def _centroid_model(tmp_path: Path, config: AnalysisConfig | None = None) -> Utt
     return load_artifact(path, config)
 
 
-@NOT_IMPLEMENTED
 def test_wav_path_may_be_str_or_pathlike(tmp_path: Path, fast_model_path: Path) -> None:
     wav = write_wav(tmp_path / "clip.wav", tone(2.0))
     analyzer = load_baseline(fast_model_path)
@@ -44,7 +42,6 @@ def test_wav_path_may_be_str_or_pathlike(tmp_path: Path, fast_model_path: Path) 
     assert without_timing(from_str) == without_timing(from_path)
 
 
-@NOT_IMPLEMENTED
 def test_samples_and_float_wav_of_the_same_audio_give_the_same_record(
     tmp_path: Path, fast_model_path: Path
 ) -> None:
@@ -176,7 +173,6 @@ def test_opposite_stereo_channels_cancel_to_silence(tmp_path: Path) -> None:
         assert analyzer.analyze(stereo)["status"] == "silent"
 
 
-@NOT_IMPLEMENTED
 def test_integer_pcm_wav_is_accepted(tmp_path: Path, fast_model_path: Path) -> None:
     wav = write_wav(tmp_path / "clip.wav", tone(2.0), subtype="PCM_16")
     analyzer = load_baseline(fast_model_path)
@@ -199,12 +195,13 @@ def test_the_language_hint_reaches_the_backend(
     assert record["top_label"] == (language or "none")
 
 
-@NOT_IMPLEMENTED
-def test_unknown_language_hint_is_a_usage_error(fast_model_path: Path) -> None:
-    analyzer: Any = load_baseline(fast_model_path)
+@pytest.mark.usefixtures("scripted")
+@pytest.mark.parametrize("language", ["fr", np.array(["en", "es"])], ids=["unknown", "array"])
+def test_unknown_language_hint_is_a_usage_error(tmp_path: Path, language: object) -> None:
+    analyzer: Any = load_artifact(write_artifact(tmp_path / "model.ser"), INLINE)
 
     with pytest.raises(AnalysisUsageError):
-        analyzer.analyze(tone(2.0), sample_rate_hz=CANONICAL_RATE_HZ, language="fr")
+        analyzer.analyze(tone(2.0), sample_rate_hz=CANONICAL_RATE_HZ, language=language)
 
 
 # Typed loosely so that calls the signature rejects can still be made.
@@ -230,7 +227,6 @@ _MISUSES: dict[str, Misuse] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("misuse", list(_MISUSES.values()), ids=list(_MISUSES))
 def test_malformed_arguments_are_usage_errors(
     tmp_path: Path, fast_model_path: Path, misuse: Misuse

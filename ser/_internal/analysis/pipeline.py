@@ -126,7 +126,7 @@ def run_pipeline(
     if time.monotonic() >= deadline_monotonic_s():
         return finish("timeout")
     mean_square = float(np.mean(np.square(canonical.samples, dtype=np.float64)))
-    if mean_square == 0.0 or 10 * math.log10(mean_square) < config.silence_rms_dbfs:
+    if mean_square == 0.0 or 20 * math.log10(math.sqrt(mean_square)) < config.silence_rms_dbfs:
         return finish("silent")
     if time.monotonic() >= deadline_monotonic_s():
         return finish("timeout")

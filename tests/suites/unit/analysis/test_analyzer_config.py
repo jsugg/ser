@@ -119,14 +119,18 @@ def test_exact_silence_threshold_is_not_silent(tmp_path: Path) -> None:
         assert analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
 
 
-@pytest.mark.usefixtures("scripted")
+@pytest.mark.usefixtures("virtual_analysis_time")
 def test_performance_targets_are_not_enforced(tmp_path: Path) -> None:
-    path = write_artifact(tmp_path / "model.ser", script={"extract_sleep_s": 1.0})
-    analyzer = load_artifact(path, _targets(p95_real_time_factor=0.1, cold_start_s=0.01))
+    path = write_artifact(tmp_path / "model.ser", script={"extract_elapsed_s": 1.0})
+    config = dataclasses.replace(
+        _targets(p95_real_time_factor=0.1, cold_start_s=0.01), isolation="inline"
+    )
+    analyzer = load_artifact(path, config)
 
     record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert record["status"] == "ok"
+    assert record["timing_ms"]["features"] == 1_000
 
 
 @pytest.mark.usefixtures("scripted")

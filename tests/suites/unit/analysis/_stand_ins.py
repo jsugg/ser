@@ -42,6 +42,17 @@ class FailingClassifier(MLPClassifier):
         raise RuntimeError("stand-in prediction failure")
 
 
+class WindowClassifier(MLPClassifier):
+    """Gives the first window a different class from all subsequent windows."""
+
+    def predict_proba(self, X: object) -> NDArray[np.float64]:
+        assert isinstance(X, np.ndarray)
+        probabilities = np.zeros((len(X), 2), dtype=np.float64)
+        probabilities[0, 0] = 1.0
+        probabilities[1:, 1] = 1.0
+        return probabilities
+
+
 def write_model(
     path: Path,
     *,

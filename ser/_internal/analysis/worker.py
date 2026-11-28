@@ -268,7 +268,9 @@ def start_worker(
     deadline = time.monotonic() + settings.start_timeout_s
     context = mp.get_context("spawn")
     parent, child = context.Pipe()
-    process = context.Process(target=_worker_main, args=(child, request, loader, settings))
+    process = context.Process(
+        target=_worker_main, args=(child, request, loader, settings), daemon=True
+    )
     try:
         process.start()
     except (OSError, ValueError, TypeError):
@@ -300,9 +302,9 @@ class _Pending:
     result: PipelineOutcome | None = None
     closed: bool = False
 
-    def interrupted(self, status: Literal["timeout", "model_error"], now: float) -> PipelineOutcome:
-        end_ns = int(now * 1_000_000_000)
-
+    def interrupted(
+        self, status: Literal["timeout", "model_error"], end_ns: int
+    ) -> PipelineOutcome:
         def elapsed(start_ns: int | None) -> int:
             return 0 if start_ns is None else max(0, (end_ns - start_ns) // 1_000_000)
 
@@ -356,11 +358,13 @@ class WorkerSupervisor:
         settings: WorkerSettings,
         *,
         clock: Callable[[], float] = time.monotonic,
+        clock_ns: Callable[[], int] = time.monotonic_ns,
     ) -> None:
         self._request = request
         self._loader = loader
         self._settings = settings
         self._clock = clock
+        self._clock_ns = clock_ns
         self._condition = Condition()
         self._state: WorkerState = "starting"
         self._closing = False
@@ -373,7 +377,7 @@ class WorkerSupervisor:
             ready = self._condition.wait_for(
                 lambda: self._state != "starting", timeout=settings.start_timeout_s
             )
-            if not ready or self._state != "ready":
+            if not ready or self.state != "ready":
                 self._closing = True
                 self._state = "closing"
                 self._condition.notify_all()
@@ -431,7 +435,7 @@ class WorkerSupervisor:
                     return pending.result
                 remaining = pending.work.deadline - self._clock()
                 if remaining <= 0:
-                    pending.result = pending.interrupted("timeout", pending.work.deadline)
+                    pending.result = pending.interrupted("timeout", self._clock_ns())
                     if self._active is not pending:
                         self._queued.remove(pending)
                     self._condition.notify_all()
@@ -478,9 +482,9 @@ class WorkerSupervisor:
                     pending = self._queued.popleft()
                     now = self._clock()
                     if now >= pending.work.deadline:
-                        pending.result = pending.interrupted("timeout", pending.work.deadline)
+                        pending.result = pending.interrupted("timeout", self._clock_ns())
                     else:
-                        pending.result = pending.interrupted("model_error", now)
+                        pending.result = pending.interrupted("model_error", self._clock_ns())
                 self._condition.notify_all()
         else:
             with self._condition:
@@ -496,14 +500,15 @@ class WorkerSupervisor:
                 self._drain_events()
                 worker, pending = self._worker, self._active
                 now = self._clock()
+                reason: str | None
                 if pending is not None:
                     assert worker is not None
                     dead = not worker.alive
                     if pending.result is None:
                         if now >= pending.work.deadline:
-                            pending.result = pending.interrupted("timeout", pending.work.deadline)
+                            pending.result = pending.interrupted("timeout", self._clock_ns())
                         elif dead:
-                            pending.result = pending.interrupted("model_error", now)
+                            pending.result = pending.interrupted("model_error", self._clock_ns())
                         else:
                             self._condition.wait(timeout=pending.work.deadline - now)
                             continue
@@ -522,7 +527,7 @@ class WorkerSupervisor:
                     continue
                 elif now >= self._queued[0].work.deadline:
                     expired = self._queued.popleft()
-                    expired.result = expired.interrupted("timeout", expired.work.deadline)
+                    expired.result = expired.interrupted("timeout", self._clock_ns())
                     self._condition.notify_all()
                     continue
                 elif worker is not None and worker.alive:

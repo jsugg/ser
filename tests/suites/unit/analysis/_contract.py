@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import stat
 import sys
 import types
 import typing
@@ -33,12 +34,6 @@ from ser.api import (
 PROBABILITY_SUM_TOLERANCE = 1e-6
 INLINE = AnalysisConfig(isolation="inline")
 _ANALYZERS = ExitStack()
-
-NOT_IMPLEMENTED = pytest.mark.xfail(
-    strict=True,
-    raises=NotImplementedError,
-    reason="UtteranceAnalyzer is a stub until brief A1-2; remove this marker then.",
-)
 
 
 def load_baseline(
@@ -200,6 +195,12 @@ class IoGuard:
             return
         if event == "open":
             path, mode, flags = args
+            if isinstance(path, int):
+                try:
+                    if not stat.S_ISREG(os.fstat(path).st_mode):
+                        return
+                except OSError:
+                    return
             writing = (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
                 isinstance(flags, int) and flags & _WRITE_FLAGS
             )

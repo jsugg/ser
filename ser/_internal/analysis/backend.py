@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from ser._internal.utils.audio_utils import CanonicalAudio
+from ser.config import FeatureFlags
 from ser.profiles import ProfileName
 from ser.runtime.contracts import LanguageHint, ModelFormat, ModelManifest
 
@@ -63,6 +64,7 @@ class BackendLoadRequest:
     manifest: ModelManifest
     max_threads: int | None
     device: Literal["cpu"] = "cpu"
+    feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
 
 
 # Loaders must be module-level callables: they pickle by reference into the worker.
@@ -75,7 +77,9 @@ def backend_loaders() -> Mapping[ProfileName, BackendLoader]:
 
 
 def _load_fast(request: BackendLoadRequest) -> AnalysisBackend:
-    raise NotImplementedError("The fast analysis backend is not implemented yet.")
+    from ser._internal.analysis.fast import load_fast
+
+    return load_fast(request)
 
 
 def frame_layout(

@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from tests.suites.unit.analysis import _scripted_backend
 from tests.suites.unit.analysis._contract import (
-    NOT_IMPLEMENTED,
     IoGuard,
     assert_valid_record,
     load_artifact,
@@ -198,7 +197,6 @@ def test_a_pickle_is_refused_before_it_is_unpickled(tmp_path: Path) -> None:
     assert TRAP["fired"] is False
 
 
-@NOT_IMPLEMENTED
 def test_legacy_pickle_loads_only_as_a_baseline_with_exact_ids(fast_model_path: Path) -> None:
     sha256 = _sha256(fast_model_path.read_bytes())
     canonical_labels = json.dumps(sorted(set(LABELS)), separators=(",", ":")).encode()
@@ -217,7 +215,6 @@ def test_legacy_pickle_loads_only_as_a_baseline_with_exact_ids(fast_model_path: 
     assert manifest.identity.labels == LABELS
 
 
-@NOT_IMPLEMENTED
 def test_legacy_model_revision_names_the_baseline(revision_model_path: Path) -> None:
     sha256 = _sha256(revision_model_path.read_bytes())
 
@@ -226,7 +223,6 @@ def test_legacy_model_revision_names_the_baseline(revision_model_path: Path) -> 
     assert manifest.identity.model_id == f"baseline:rev-7@{sha256}"
 
 
-@NOT_IMPLEMENTED
 def test_baseline_ids_carry_the_digest_and_label_set_ids_follow_the_labels(
     fast_model_path: Path, other_fast_model_path: Path, seven_label_model_path: Path
 ) -> None:
@@ -264,7 +260,6 @@ def test_no_configured_model_fails_at_load_without_downloading(
     assert guard.network == []
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("kind", ["other-profile", "feature-size", "corrupt"])
 def test_incompatible_legacy_files_are_load_errors_with_clean_tracebacks(
     incompatible_model_paths: dict[str, Path], kind: str

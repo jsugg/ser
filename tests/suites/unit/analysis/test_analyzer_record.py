@@ -8,12 +8,17 @@ from pathlib import Path
 import pytest
 from tests.suites.unit.analysis._contract import (
     INLINE,
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
     load_baseline,
 )
-from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, noise, tone
+from tests.suites.unit.analysis._stand_ins import (
+    CANONICAL_RATE_HZ,
+    WindowClassifier,
+    noise,
+    tone,
+    write_model,
+)
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
 import ser
@@ -40,7 +45,6 @@ def _pooled(frames: list[UtteranceFrame], duration_s: float) -> dict[str, float]
     return {label: total / duration_s for label, total in totals.items()}
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("seconds", [0.5, 3.0, 7.3])
 def test_ok_record_meets_every_record_clause(fast_model_path: Path, seconds: float) -> None:
     analyzer = load_baseline(fast_model_path)
@@ -72,7 +76,6 @@ def test_fast_frame_layout(duration_s: float, expected: tuple[tuple[float, float
         assert span == pytest.approx(wanted)
 
 
-@NOT_IMPLEMENTED
 def test_fast_records_use_the_fast_frame_layout(fast_model_path: Path) -> None:
     analyzer = load_baseline(fast_model_path)
 
@@ -86,7 +89,6 @@ def test_fast_records_use_the_fast_frame_layout(fast_model_path: Path) -> None:
         assert span == pytest.approx(wanted, abs=1e-3)
 
 
-@NOT_IMPLEMENTED
 def test_fast_utterance_scores_are_the_coverage_weighted_mean_of_its_frames(
     fast_model_path: Path,
 ) -> None:
@@ -166,21 +168,19 @@ def test_valid_scores_are_renormalised_before_they_are_written(tmp_path: Path) -
             assert scores[label] == pytest.approx(value / total, rel=1e-12)
 
 
-@pytest.mark.usefixtures("scripted")
+@pytest.mark.usefixtures("virtual_analysis_time")
 def test_timing_reports_features_and_predict_separately(tmp_path: Path) -> None:
-    script = {"extract_sleep_s": 0.3, "score_sleep_s": 0.2}
+    script = {"extract_elapsed_s": 0.3, "score_elapsed_s": 0.2}
     analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script), INLINE)
 
     ok = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
     short = analyzer.analyze(tone(0.1), sample_rate_hz=CANONICAL_RATE_HZ)
 
-    assert ok["timing_ms"]["features"] >= 300
-    assert 200 <= ok["timing_ms"]["predict"] < 300
+    assert ok["timing_ms"] == {"features": 300, "predict": 200}
     assert short["status"] == "too_short"
     assert short["timing_ms"]["predict"] == 0
 
 
-@NOT_IMPLEMENTED
 def test_records_of_two_models_on_the_same_audio_each_name_their_model(
     fast_model_path: Path, other_fast_model_path: Path
 ) -> None:
@@ -195,7 +195,6 @@ def test_records_of_two_models_on_the_same_audio_each_name_their_model(
     assert one["model_sha256"] != two["model_sha256"]
 
 
-@NOT_IMPLEMENTED
 def test_record_names_the_schema_and_ser_versions(fast_model_path: Path) -> None:
     analyzer = load_baseline(fast_model_path)
 
@@ -203,3 +202,24 @@ def test_record_names_the_schema_and_ser_versions(fast_model_path: Path) -> None
 
     assert record["schema_version"] == UTTERANCE_SCHEMA_VERSION
     assert record["ser_version"] == ser.__version__
+
+
+def test_fast_public_record_pools_asymmetric_windows(
+    tmp_path: Path, fast_feature_size: int
+) -> None:
+    model = write_model(
+        tmp_path / "windows.pkl",
+        feature_size=fast_feature_size,
+        labels=("a", "b"),
+        classifier_type=WindowClassifier,
+    )
+    with load_baseline(model) as analyzer:
+        record = analyzer.analyze(tone(4.5), sample_rate_hz=CANONICAL_RATE_HZ)
+
+    assert record["status"] == "ok"
+    assert record["labels"] == pytest.approx({"a": 11 / 27, "b": 16 / 27})
+    assert record["frames"] == [
+        {"start_s": 0.0, "end_s": 3.0, "labels": {"a": 1.0, "b": 0.0}},
+        {"start_s": 1.0, "end_s": 4.0, "labels": {"a": 0.0, "b": 1.0}},
+        {"start_s": 2.0, "end_s": 4.5, "labels": {"a": 0.0, "b": 1.0}},
+    ]

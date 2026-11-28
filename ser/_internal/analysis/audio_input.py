@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import stat
 from dataclasses import dataclass
+from typing import BinaryIO, Literal
 
 import numpy as np
 import soundfile as sf
@@ -23,13 +24,40 @@ from ser._internal.utils.audio_utils import CANONICAL_SAMPLE_RATE, CanonicalAudi
 class DecodedAudio:
     """Audio as stored: native rate, frames first, every channel kept."""
 
-    samples: NDArray[np.float32] | NDArray[np.int16] | NDArray[np.int32]
+    samples: NDArray[np.generic]
     sample_rate_hz: int
 
 
 @dataclass(frozen=True)
 class UnreadableAudio:
     """Input that could not be decoded; carries no path and no exception text."""
+
+
+def _riff_is_complete(stream: BinaryIO, size: int) -> bool:
+    header = stream.read(12)
+    if header[:4] not in (b"RIFF", b"RIFX"):
+        return True
+    if len(header) != 12:
+        return False
+    endian: Literal["little", "big"] = "little" if header[:4] == b"RIFF" else "big"
+    end = int.from_bytes(header[4:8], endian) + 8
+    if not 12 <= end <= size:
+        return False
+    if header[8:] != b"WAVE":
+        return True
+    # libsndfile reduces the reported frame count when a WAV data chunk is truncated.
+    while stream.tell() < end:
+        chunk = stream.read(8)
+        if len(chunk) != 8:
+            return False
+        length = int.from_bytes(chunk[4:], endian)
+        next_chunk = stream.tell() + length
+        if next_chunk > end:
+            return False
+        if chunk[:4] == b"data":
+            return True
+        stream.seek(next_chunk + length % 2)
+    return False
 
 
 def decode_file(path: str | os.PathLike[str]) -> DecodedAudio | UnreadableAudio:
@@ -40,21 +68,15 @@ def decode_file(path: str | os.PathLike[str]) -> DecodedAudio | UnreadableAudio:
     try:
         with open(path, "rb") as stream:
             info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode):
+            if not stat.S_ISREG(info.st_mode) or not _riff_is_complete(stream, info.st_size):
                 return UnreadableAudio()
-            header = stream.read(12)
-            # libsndfile may silently reduce its reported frame count for a truncated WAV.
-            if header[:4] in (b"RIFF", b"RIFX"):
-                endian = "little" if header[:4] == b"RIFF" else "big"
-                if len(header) != 12 or int.from_bytes(header[4:8], endian) + 8 > info.st_size:
-                    return UnreadableAudio()
             stream.seek(0)
             with sf.SoundFile(stream) as source:
-                dtype = {
-                    "PCM_16": "int16",
-                    "PCM_24": "int32",
-                    "PCM_32": "int32",
-                }.get(source.subtype, "float32")
+                dtype: Literal["int16", "int32", "float32"] = "float32"
+                if source.subtype == "PCM_16":
+                    dtype = "int16"
+                elif source.subtype in ("PCM_24", "PCM_32"):
+                    dtype = "int32"
                 samples = source.read(dtype=dtype)
                 if not 0 < len(samples) == source.frames:
                     return UnreadableAudio()

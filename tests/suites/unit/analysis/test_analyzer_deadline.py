@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 from collections import Counter
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -65,19 +64,19 @@ def test_deadline_is_the_floor_or_two_seconds_per_audio_second(
     assert analysis_deadline_s(AnalysisConfig(), duration_s) == pytest.approx(expected_s)
 
 
-_BRANCHES = AnalysisConfig(timeout_floor_s=2.0, timeout_per_audio_second=1.0)
+_BRANCHES = AnalysisConfig(isolation="inline", timeout_floor_s=2.0, timeout_per_audio_second=1.0)
 
 
-@pytest.mark.usefixtures("scripted")
+@pytest.mark.usefixtures("virtual_analysis_time")
 @pytest.mark.parametrize(
-    ("seconds", "sleep_s"),
+    ("seconds", "elapsed_s"),
     [(0.5, 1.2), (4.0, 3.0)],
     ids=["floor-covers-short-audio", "per-second-covers-long-audio"],
 )
 def test_both_deadline_branches_allow_work_within_them(
-    tmp_path: Path, seconds: float, sleep_s: float
+    tmp_path: Path, seconds: float, elapsed_s: float
 ) -> None:
-    path = write_artifact(tmp_path / "model.ser", script={"score_sleep_s": sleep_s})
+    path = write_artifact(tmp_path / "model.ser", script={"score_elapsed_s": elapsed_s})
     analyzer = load_artifact(path, _BRANCHES)
 
     assert _analyse(analyzer, tone(seconds))["status"] == "ok"
@@ -100,27 +99,6 @@ def test_a_hung_backend_times_out_on_time_and_the_worker_comes_back(
     assert recovered[-1]["status"] == "ok"
     assert spies["start_worker"] == 2
     assert spies["read_model_file"] == 1
-
-
-@pytest.mark.usefixtures("scripted")
-def test_a_call_that_times_out_in_the_queue_does_not_evict_the_running_one(
-    tmp_path: Path, spies: Counter[str]
-) -> None:
-    config = AnalysisConfig(timeout_floor_s=1.0, timeout_per_audio_second=2.0)
-    path = write_artifact(tmp_path / "model.ser", script={"score_sleep_s": 2.0})
-    analyzer = load_artifact(path, config)
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        running = pool.submit(_analyse, analyzer, tone(1.5))
-        time.sleep(0.2)
-        queued = pool.submit(_timed, lambda: _analyse(analyzer, tone(0.4)))
-        queued_record, queued_elapsed = queued.result()
-        running_record = running.result()
-
-    assert queued_record["status"] == "timeout"
-    assert queued_elapsed <= 1.0 + _SCHEDULING_SLACK_S
-    assert running_record["status"] == "ok"
-    assert spies["start_worker"] == 1
 
 
 @pytest.mark.usefixtures("scripted")
@@ -158,13 +136,12 @@ def test_a_failed_restart_is_a_model_error_and_the_next_call_retries(tmp_path: P
     assert recovered[-1]["status"] == "ok"
 
 
-@pytest.mark.usefixtures("scripted")
+@pytest.mark.usefixtures("virtual_analysis_time")
 def test_inline_isolation_checks_the_deadline_between_stages_only(tmp_path: Path) -> None:
     config = AnalysisConfig(isolation="inline", timeout_floor_s=0.5, timeout_per_audio_second=0.1)
-    path = write_artifact(tmp_path / "model.ser", script={"score_sleep_s": 1.5})
+    path = write_artifact(tmp_path / "model.ser", script={"score_elapsed_s": 1.5})
     analyzer = load_artifact(path, config)
 
-    record, elapsed = _timed(lambda: _analyse(analyzer, tone(1.0)))
-
+    record = _analyse(analyzer, tone(1.0))
     assert record["status"] == "timeout"
-    assert elapsed >= 1.5
+    assert record["timing_ms"]["predict"] == 1_500

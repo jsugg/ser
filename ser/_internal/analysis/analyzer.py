@@ -225,7 +225,9 @@ def _job(
     rate: int | None,
     language: LanguageHint | None,
 ) -> AnalysisJob:
-    if language not in (None, "en", "es", "pt"):
+    if language is not None and (
+        not isinstance(language, str) or language not in ("en", "es", "pt")
+    ):
         raise AnalysisUsageError("Unsupported language hint.") from None
     if isinstance(audio, (str, os.PathLike)):
         if rate is not None:
@@ -286,6 +288,7 @@ class UtteranceAnalyzer:
         config = config if config is not None else AnalysisConfig()
         _validate_config(config)
         loader = _loader(profile)
+        settings = settings if settings is not None else reload_settings()
         manifest, opened = _open_model(
             profile=profile,
             model_path=model_path,
@@ -298,6 +301,7 @@ class UtteranceAnalyzer:
             opened.payload,
             manifest,
             config.max_threads if config.isolation == "worker" else None,
+            feature_flags=settings.feature_flags,
         )
         runner: _InlineSession | worker.WorkerSupervisor
         if config.isolation == "inline":
