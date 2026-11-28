@@ -216,12 +216,14 @@ Each bundle dataset has a dataset card: source URL, revision or checksum, licenc
 policy, native sample rate, row count, the source collections and speakers it may share with
 other datasets, and, for a third-party copy, the URL of the source it copies.
 
-A training-only entry that the bundle does not hold may have the same card supplied with an
-evaluation, beside the model card, for the overlap check of section 6.1. It is not a bundle input
-and the manifest does not pin it. The audit hashes the card's bytes as read and the report records
-that SHA-256 (section 11); the audit uses the card only if it gives `copy_source` as its source URL,
-`copy_revision` as its revision or checksum and `copy_of` as the source it copies, as a bundle
-card of that entry must, and otherwise treats it as absent.
+A training-only entry may have dataset cards supplied with an evaluation, beside the model card,
+for the overlap check of section 6.1: one card for each revision of the copy at which the model
+trained and which the bundle does not hold. They are not bundle inputs and the manifest does not
+pin them. The audit hashes each card's bytes as read and the report records each SHA-256
+(section 11). The audit uses a supplied card only if it gives `copy_source` as its source URL and
+`copy_of` as the source it copies, and gives as its revision or checksum a revision of that copy at
+which the model card or publisher list shows training; any other card is treated as absent. That
+revision need not be the policy's `copy_revision`, which binds only the copy a bundle holds.
 
 ## 4. Label policy
 
@@ -442,10 +444,12 @@ collection, none is that dataset's, and every training row is a known row; other
 model card or publisher list shows training, at any stage, on a training-only entry of the source
 policy (section 3), known as the copy at its `copy_source` of its `copy_of`, at any revision,
 whatever the evaluated bundle holds, and that entry's dataset card cannot rule out source recordings
-or speakers shared with that dataset. That card is the bundle's card when the bundle holds the
-entry, and otherwise the card supplied with the evaluation (section 3); where neither exists, the
-flag is set. These flags remove the result from clean comparison; they are flags, not provenance
-levels.
+or speakers shared with that dataset. For each revision of the copy at which the model trained,
+that card is the bundle's card when the bundle holds the entry at that revision, and otherwise the
+card supplied with the evaluation for that revision (section 3). The flag is cleared only when every
+such revision has a card that rules the sharing out; it is set where any revision has no card, or
+where the model card or publisher list does not identify the revision. These flags remove the
+result from clean comparison; they are flags, not provenance levels.
 
 `verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
 owner's own recordings (E3-4) are free of overlap by construction; for a `declared` model they are
