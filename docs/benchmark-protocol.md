@@ -1,13 +1,7 @@
 # SER benchmark protocol
 
-Protocol identifier: `ser-bench-protocol`, version `1`.
-
-This document fixes how any SER model is scored. It was written, and revised after review, before
-any model was scored under it. A change to any rule below creates a new protocol version; reports
-produced under different versions are never compared with each other.
-
-The key words "must", "must not", "is" and "are" state rules. The owner's decisions that this
-protocol depends on are recorded in [section 15](#15-pending-owner-decisions).
+Protocol identifier: `ser-bench-protocol`, version `1`. A change to any rule below creates a new
+protocol version; reports produced under different versions are never compared with each other.
 
 ## 1. Purpose and claims
 
@@ -16,102 +10,98 @@ per dataset and per benchmark language (English `en` and Spanish `es`), and how 
 confidence matches its accuracy. It chooses SER's first default model (section 10.5); no existing
 default is presumed. SER's eight labels (`ser-8-v1`, section 4.1) are the shipped output contract.
 
-A report produced under this protocol supports these claims and no others:
+A report supports these claims and no others: the model's UAR, macro-F1, per-class recall,
+confusion matrix and calibration error, with confidence intervals, on the test partition of each
+named dataset and aggregated per benchmark language (section 8.4), for speakers whose speech was in
+no train or dev partition of the bundle and, for `verified` provenance, in no data the model was
+fitted, tuned or calibrated on (section 6.1); whether model A beats model B (section 10.2); and
+whether the model passes the acceptance thresholds (section 10.4).
 
-- the model's UAR, macro-F1, per-class recall, confusion matrix and calibration error on the test
-  partition of each named dataset, with a confidence interval;
-- for speaker-verified datasets (section 5.4) only: that these figures hold for speakers whose
-  speech was in no train or dev partition of the bundle and, for `verified` provenance, in no data
-  the model was fitted, tuned or calibrated on (section 6.1);
-- the same figures aggregated per benchmark language, as defined in section 8.4;
-- that model A beats model B, or does not, under the decision rule of section 10;
-- that a model passes or fails the acceptance thresholds of section 10.4.
+It supports no claim about speech, speakers, recording conditions or languages outside the scored
+test partitions (acted corpora say little about conversational or clinical speech); about
+Portuguese, which is checked only on the owner's own recordings by the kit of brief E3-4, whose
+status alone the report records; about clinical or psychological validity of the labels; about
+agreement with the owner's own reading of his recordings (E3-4); or about fairness across
+demographic groups. No figure is pooled across datasets or languages.
 
-A report does not support any claim about:
+**Descriptive-only flags.** A result carrying a dataset flag (`identity_unresolved`, 5.2;
+`degenerate_label_set`, 4.3) or a model flag (`provenance_unknown`, `test_overlap`,
+`overlap_unverified`, 6.1) is reported and never enters sections 10.2 to 10.5, with the single
+exception of the U11 comparator of section 9.
 
-- speech, speakers, recording conditions or languages outside the scored test partitions. Acted
-  corpora say little about conversational or clinical speech;
-- Portuguese. Portuguese is checked only on the owner's own recordings, by the own-recordings kit
-  of brief E3-4; the report records only that check's status;
-- clinical, diagnostic or psychological validity of the labels;
-- agreement with the owner's own reading of his recordings (measured by the E3-4 kit, not here);
-- fairness across demographic groups (the protocol does not stratify by sex, age or accent);
-- a single pooled number across datasets or languages. Pooled figures are never reported.
-
-Results flagged `speaker_unverified`, `identity_unresolved`, `overlap_unverified`, `contaminated`
-or `provenance_unknown` are descriptive only: they are reported and never enter sections 10.2 to
-10.5.
-
-The only result on record before this protocol (RAVDESS accuracy 58.6%, UAR 56.8%, `fast`
-profile) came from a split by clip, not by speaker, and is not comparable with any figure produced
-here.
+The only earlier result (RAVDESS accuracy 58.6%, UAR 56.8%, `fast` profile) came from a split by
+clip, not by speaker, and is not comparable with any figure produced here.
 
 ## 2. Input form
 
-Every model is scored through the public utterance-analysis call of SER (the call defined by
-workstream WS1), so the benchmark measures what a consumer calls. The harness does not call
-internal model classes and does not aggregate windows itself.
+Every model is scored through SER's public utterance-analysis call (workstream WS1), so the
+benchmark measures what a consumer calls; the harness neither calls internal model classes nor
+aggregates windows. All rows come from a **benchmark bundle** built by workstream WS4; this
+version's bundle is `bench-v1`. Its manifest pins every input of sections 2 to 5, and a change to
+any of them is a new bundle id.
 
 ### 2.1 Preprocessing contract `ser-preproc-v1`
 
-The bundle manifest pins, under `preprocessing`, the decoder (name and version), the resampler
-(name, version and every option it accepts, written out even where it equals the library default)
-and the call options and timeout of section 2.2. A change to any of them is a new bundle id. For
-every row the bundle builder and the harness:
+The manifest pins, under `preprocessing`, the decoder (name and version), the resampler (name,
+version and every option it accepts, written out even where it equals the library default), and
+the call options and timeout of section 2.2. Every row has a `sample_id`, assigned once when the
+bundle is built and never reused or renumbered within a bundle id:
 
-1. identify the row by its `sample_id`, assigned once when the bundle is built from the dataset id
-   and the source file's path relative to the dataset root (plus the segment bounds, if any), and
-   never reused or renumbered within a bundle id;
-2. decode the source file with the pinned decoder to float64 samples; integer PCM of `b` bits is
+```text
+sample_id = <dataset id> ":" <path> [ "#" <start> "-" <end> ]
+```
+
+`<path>` is the source file's POSIX path relative to the dataset root (`/` separators, no leading
+`./`, Unicode NFC). The suffix is present only for a segment row: `<start>` and `<end>` are
+decimal integer frame indices at the file's native rate, without leading zeros, with
+`0 ≤ start < end ≤` the file's frame count. Two rows with the same `sample_id` fail the bundle
+build.
+
+For every row the bundle builder and the harness:
+
+1. decode the source file with the pinned decoder to float64 samples; integer PCM of `b` bits is
    divided by `2^(b−1)`, floating-point PCM is taken as is;
-3. if the row declares a segment `[start, end)` in seconds (written as decimal strings), keep the
-   frames `i` with `start ≤ i / r < end`, that is frames `⌈start·r⌉` up to but excluding
-   `⌈end·r⌉`, computed exactly, where `r` is the file's native rate;
-4. mix all channels to one by the arithmetic mean of the channels, sample by sample, in float64;
-5. resample to 16,000 Hz with the pinned resampler in float64; a file already at 16,000 Hz is not
+2. for a segment row, keep frames `start` up to but excluding `end`;
+3. mix all channels to one by the arithmetic mean of the channels, sample by sample, in float64;
+4. resample to 16,000 Hz with the pinned resampler in float64; a file already at 16,000 Hz is not
    resampled.
 
-A row whose decode fails, yields zero frames after step 3, or contains a non-finite sample is
-excluded when the bundle is built (ledger reason `decode_invalid`), so the scored rows are the same
-for every model.
+A row whose decode fails, whose segment bounds are invalid, or whose audio has zero frames or a
+non-finite sample is excluded when the bundle is built (ledger reason `decode_invalid`), so the
+scored rows are the same for every model.
 
 ### 2.2 The call
 
-For every scored row the harness passes the result of 2.1, cast to float32, and the sample rate
-16,000 to the public call, with the call options pinned in the manifest and one loaded analyser
-reused for all rows of a run. It records the returned status and the probability vector over the
-model's label set (section 11.1). Every model receives identical input. The one exception is the
-`fast@native` baseline row of section 9, which feeds the output of steps 2 to 4 at the file's own
-rate; its report row records `input.sample_rate = "native"`.
+The harness passes the result of 2.1, cast to float32, with sample rate 16,000 and the pinned call
+options, to one loaded analyser reused for all rows of a run, and records the returned status and
+probability vector. Only the `fast@native` baseline (section 9) instead receives the output of
+steps 1 to 3 at the file's own rate.
 
 A row whose call returns any status other than success, raises, exceeds the pinned timeout
 (`timeout_seconds`, 120 in `bench-v1`), or returns an invalid vector (section 4.3) is a **failed
-row**. Failed rows stay in the scored set (section 7.2).
+row**. Failed rows stay in the scored set (section 7).
 
 ### 2.3 Audio content identity
 
 Duplicate detection and the leakage audit compare audio by the content hash contract
 `pcm16k-s16le-v1`:
 
-1. steps 1 to 5 of section 2.1;
+1. steps 1 to 4 of section 2.1;
 2. clip each sample to [-1.0, 1.0], multiply by 32767, round half to even to an integer;
 3. serialise as signed 16-bit little-endian integers, no header;
 4. SHA-256 of those bytes, lowercase hexadecimal: the row's `audio_sha256`.
 
-A change of preprocessing contract or of any step above is a new contract identifier and requires
-recomputing every hash in the bundle. This contract detects identical audio only; re-encoded or
-trimmed copies of the same recording are not detected (section 13).
+A `decode_invalid` row has `audio_sha256` null; it stays in the ledger with its reason and takes
+no part in duplicate detection or any hash comparison. A change of preprocessing contract or of
+any step above is a new contract identifier and requires recomputing every hash in the bundle.
+This contract detects identical audio only (section 13).
 
 ## 3. Datasets and roles
 
-Roles:
-
-- **train/dev/test**: split by speaker as in section 5; train and dev are available to model
-  builders, test is scored.
-- **test-only**: every eligible row is in test; no row of the dataset is used to build or tune a
-  model.
-- **training-only**: rows may be used to build models; no row is ever in dev or test or scored.
-- **excluded**: not in the bundle; not scored.
+Roles: **train/dev/test** (split by speaker as in section 5; train and dev are available to model
+builders, test is scored); **test-only** (every eligible row is in test; none is used to build or
+tune a model); **training-only** (rows may be used to build models; none is ever in dev or test or
+scored); **excluded** (not in the bundle).
 
 | Dataset id | Language | Kind | Speaker identity | Licence id (catalogue policy) | Role in `bench-v1` |
 |---|---|---|---|---|---|
@@ -124,32 +114,27 @@ Roles:
 | `msp-podcast` third-party mirror | `en` | natural | no | `msp-academic-license` (`academic_only`) | training-only (below) |
 
 **Admission of `mesd` and `spanish-meacorpus-2023`.** These datasets are in the catalogue but not
-yet qualified. Each enters a bundle only through this single route: brief D4-2 records, for the
-pinned source revision, (a) the raw category inventory and (b) whether each row carries an
-individual speaker id. If (a) differs from the dataset's map in section 4.1, the dataset is
-excluded until a new protocol version changes the map. Otherwise its role is: train/dev/test if
-(b) holds and it has at least 3 speaker groups; test-only and `speaker_unverified` (section 5.4)
-if (b) does not hold. The bundle manifest records the D4-2 record's SHA-256. A dataset not listed
-in this table enters only through a new protocol version.
+yet qualified. Each enters a bundle only through this route: brief D4-2 records, for the pinned
+source revision, (a) the raw category inventory and (b) whether each row carries an individual
+speaker id. If (a) differs from the dataset's map in section 4.1, the dataset is excluded until a
+new protocol version changes the map. Otherwise its role is train/dev/test if (b) holds, and it
+is excluded if not (section 5.4). The manifest records the D4-2
+record's SHA-256. A dataset not listed in this table enters only through a new protocol version.
 
 **Permission to train is separate from label qualification.** All catalogued data may be used to
 train private models. Whether a dataset's labels are benchmark ground truth is decided only by
-sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is recorded
-with `distribution: "private"` (section 11.2).
+sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private.
 
-**The MSP-Podcast mirror is training-only.** It is not the official release and carries no speaker
-identity and no official split, so it is never in dev or test and never scored. Its 56,157 rows
-whose label the mirror introduced rather than the source are ledgered with `label: null` and
-reason `label_not_from_source`; they are never gold labels, and a model that uses their mirror
-labels as targets lists them as such in its provenance (section 6.1). The mirror is not exempt
-from the checks of section 6: its hashes are compared with every dev and test row, and where its
-dataset card cannot rule out source recordings or speakers shared with a test dataset, the results
-on that test dataset of every model trained on the mirror carry `overlap_unverified`. An official
+**The MSP-Podcast mirror is training-only.** It is not the official release and has no speaker
+identity and no official split; under section 5.4 it is never dev or test and never scored. Its
+56,157 rows whose label the mirror introduced rather than the source keep split `train` with
+`label: null` and reason `label_not_from_source`; they are never gold labels, and a model that uses
+their mirror labels as targets says so in its provenance list (section 6.1). An official
 MSP-Podcast release would be a different dataset and a new table row.
 
-The bundle (`bench-v1`, built by workstream WS4) records for every dataset a dataset card with its
-source URL, revision or checksum, licence id, catalogue policy, native sample rate, row count, and
-the source collections and speaker populations it may share with other datasets.
+Each bundle dataset has a dataset card: source URL, revision or checksum, licence id, catalogue
+policy, native sample rate, row count, and the source collections and speakers it may share with
+other datasets.
 
 ## 4. Label policy
 
@@ -177,125 +162,107 @@ a label already converted by SER's catalogue (whose maps include aliases and coe
 | `spanish-meacorpus-2023` | category named by the source (D4-2 records where), case-folded | `anger` angry, `disgust` disgust, `fear` fearful, `joy` happy, `neutral` neutral, `sadness` sad |
 
 A raw category not in its dataset's map is excluded for that dataset (ledger reason
-`label_not_scored`).
+`label_not_scored`). Training-only rows are never scored, so they have no map and `label: null`.
 
 ### 4.2 Renaming, not mapping
 
-Every entry of 4.1 is a **renaming**: the source's category and the label id name the same
-emotion. Renaming is one-to-one.
-
-A source category is never **mapped** onto a different category. In particular boredom → neutral,
-sleepy → neutral, amused → happy, anxious → fearful, and neutral → calm are forbidden. Some mappings
-of this kind exist in SER's dataset catalogue; the benchmark does not use them. The same rule
-applies to a model's output labels: a model declares a label set whose ids are renamings of its
-outputs.
+Every entry of 4.1 is a one-to-one **renaming**: the source's category and the label id name the
+same emotion. A category is never **mapped** onto a different one (for example boredom → neutral,
+sleepy → neutral, amused → happy, anxious → fearful, neutral → calm), although SER's catalogue has
+such mappings. The same rule applies to a model's output labels.
 
 ### 4.3 Scored label set of a model on a dataset
 
 For dataset `d` with label set `S_d` and model `m` with label set `M_m`:
 
 - the scored labels are `K = S_d ∩ M_m`, further reduced to the labels that have at least one row in
-  `d`'s test partition;
+  `d`'s test partition; labels of `S_d` without a test row are listed as
+  `labels_without_test_rows`;
 - rows whose true label is not in `K` are not scored for this pair; their count is reported as
   `rows_label_not_in_model`;
-- the returned vector `q_i` is **invalid** if its length differs from `|M_m|`, any value is not
-  finite or is negative, `|Σ_{b∈M_m} q_i(b) − 1| > 10^-4`, or `Σ_{b∈K} q_i(b) = 0`. An invalid
-  vector makes the row a failed row;
-- otherwise it is restricted to `K` and renormalised: `p_i(a) = q_i(a) / Σ_{b∈K} q_i(b)` for
-  `a ∈ K`;
+- the returned vector `q_i` is **invalid**, and the row failed, if its length differs from
+  `|M_m|`, a value is not finite or is negative, `|Σ_{b∈M_m} q_i(b) − 1| > 10^-4`, or
+  `Σ_{b∈K} q_i(b) = 0`; otherwise `p_i(a) = q_i(a) / Σ_{b∈K} q_i(b)` for `a ∈ K`;
 - the prediction is `ŷ_i = argmax_{a∈K} p_i(a)`; ties go to the label first in code-point order;
-- `mean_out_of_set_mass` = the mean of `1 − Σ_{b∈K} q_i(b)` over the rows with a valid vector;
-  null if there is none.
+- `mean_out_of_set_mass` = the mean of `1 − Σ_{b∈K} q_i(b)` over the rows with a valid vector.
 
-If `|K| = 0` the dataset is not scored for the model (`scored_labels: []`, metrics null). If
-`|K| = 1` the metrics are reported with the flag `degenerate_label_set`, and the result enters no
-language aggregate and no decision.
+If `|K| ≤ 1` the result carries `degenerate_label_set`.
 
-**Selection basis.** For selection (sections 10.2 to 10.5) the label set of dataset `d` is fixed
-for all candidates: `K*_d = S_d ∩ ser-8-v1`, reduced to labels with at least one test row. A
-candidate whose `K` differs from `K*_d` on a required dataset is not selectable (flag
-`label_coverage_incomplete`). For a descriptive comparison of two models with different label sets,
-both are rescored on `K_AB = S_d ∩ M_A ∩ M_B` (restricted to labels with test rows), and the
-report declares `K_AB`.
+For selection and acceptance, the label set of dataset `d` is the same for every candidate:
+`K*_d = S_d ∩ ser-8-v1`, reduced to labels with at least one test row. Because an eligible model's
+label set is exactly `ser-8-v1` (section 10.5), its `K` equals `K*_d`. For a descriptive comparison
+of two models with different label sets, both are rescored on `K_AB = S_d ∩ M_A ∩ M_B` (restricted
+to labels with test rows), and the report declares `K_AB`.
 
 ## 5. Splits
 
 ### 5.1 Duplicate handling (before any split)
 
-Across the whole bundle, rows are grouped by `audio_sha256`. For each group of two or more rows:
+Across the whole bundle, rows with a non-null `audio_sha256` are grouped by it. For each group of
+two or more rows:
 
-- all rows have the same dataset, the same label and the same speaker group: the row with the
-  smallest `sample_id` (code-point order) is kept; the others get split `excluded`, reason
+- all rows have the same dataset, the same non-null label and the same speaker group: the row with
+  the smallest `sample_id` (code-point order) is kept; the others are excluded, reason
   `duplicate_same_label`;
-- the rows disagree on label: all of them get `excluded`, reason `duplicate_conflicting_label`;
-- the rows agree on label but disagree on dataset or speaker group: all of them get `excluded`,
-  reason `duplicate_identity_conflict`.
+- otherwise, if the labels differ: all rows are excluded, reason `duplicate_conflicting_label`;
+- otherwise: all rows are excluded, reason `duplicate_identity_conflict`.
 
-Every excluded row stays in the split ledger, so the list of exclusions is part of the digest. The
-three CREMA-D pairs of identical audio with different labels fall under the second case.
+So a training-only row whose audio equals a dev or test row removes both. The three CREMA-D pairs
+of identical audio with different labels fall under the second case.
 
 ### 5.2 Identity ledger and speaker groups
 
 Identity is fixed before any split, in a pinned identity ledger (`ser.bench.identity-ledger/v1`,
-its SHA-256 in the manifest). It holds:
-
-- the nodes of every bundle row, in separate namespaces: `<dataset>:speaker:<id>`,
-  `<dataset>:session:<id>` and `source:<id>` (one id per source recording);
-- alias records, each joining two nodes and citing the dataset card that states they are the same
-  person or the same source recording;
-- for every pair of datasets whose cards say they may share speakers or source recordings, whether
-  their identities are `resolved` (every shared node is aliased) or `unresolved`.
+its SHA-256 in the manifest). It gives every bundle row its identity nodes, in separate namespaces
+(`<dataset>:speaker:<id>`, `<dataset>:session:<id>`, `source:<id>` for one source recording);
+alias records, each joining two nodes and citing the dataset card that states they are the same
+person or recording; and, for every pair of datasets whose cards say they may share speakers or
+source recordings, whether that pair is `resolved` (every shared node is aliased) or `unresolved`.
 
 The speaker groups are the connected components of the graph whose edges join each row to its
-nodes, plus the alias records. Every row of the bundle contributes edges, including rows excluded
-by 4.1 or 5.1, so an excluded row can bridge two groups. Rows without any node are not in any group;
-in a train/dev/test dataset they are excluded, reason `no_speaker_identity`. The group id is the smallest node id of its component in code-point order.
+nodes, plus the alias records. Every row contributes edges, including excluded rows, so an
+excluded row can bridge two groups. The group id is the smallest node id of its component in
+code-point order. A row without any node is in no group.
 
-Results on a dataset that belongs to an `unresolved` pair carry `identity_unresolved` and are
-descriptive only; the audit reports the count (section 6) and never claims zero shared speakers for
-them.
+A dataset in an `unresolved` pair carries `identity_unresolved`; the audit never claims zero
+shared speakers for it.
 
 ### 5.3 Assignment
 
-Seed: `17`. Assignment happens per component, in this order of precedence:
+Seed: `17`. Every component is assigned by the first of these rules that applies:
 
-1. **Official splits.** A dataset's documented official split is adopted only if its dataset card
-   shows it is speaker-disjoint (ledger reason `native_speaker_disjoint_split`). A component with
-   rows of such a dataset takes that split. If a component has rows with two different official
-   assignments, the bundle build fails.
-2. **Generated splits.** Every other component is assigned by the first dataset, in code-point
-   order, of its rows that has the train/dev/test role. For dataset `d`, let its remaining groups
-   be `g_1 … g_n`:
-   - if the dataset has fewer than 3 groups in total, it takes no part in assignment and all its
-     rows are excluded, reason `too_few_speaker_groups`;
-   - order the groups by the lowercase hexadecimal SHA-256 of the UTF-8 string
-     `"17:" + d + ":" + group_id`, ascending;
-   - with `R` = round half to even to an integer:
-     `n_train = max(1, min(n − 2, R(0.6·n)))`, `n_dev = max(1, min(n − n_train − 1, R(0.2·n)))`,
-     `n_test = n − n_train − n_dev`;
-   - the first `n_train` groups are train, the next `n_dev` dev, the rest test.
-3. **Other roles.** A row of a test-only dataset whose component was assigned train or dev is
-   excluded, reason `speaker_in_training_partition`. A row of a training-only dataset whose
-   component was assigned dev or test is excluded, reason `speaker_in_evaluation_partition`.
-4. **Check.** If any train/dev/test dataset ends with an empty train, dev or test partition, or any
-   test-only dataset ends with an empty test partition, the bundle build fails.
+1. **Quarantine.** A component with a row of a training-only dataset and a row of any other
+   dataset, or with rows of two different official assignments: all its rows are excluded,
+   reason `identity_quarantined`.
+2. **Official split.** A component with rows of a dataset whose documented official split its
+   dataset card shows to be speaker-disjoint takes that split (reason
+   `native_speaker_disjoint_split`).
+3. **Generated split.** Any other component with a row of a train/dev/test dataset is assigned by
+   the first such dataset `d`, in code-point order. Let `n` be the number of components assigned
+   by `d`. If `n < 3`, all their rows are excluded, reason `too_few_speaker_groups`. Otherwise
+   order those components by the lowercase hexadecimal SHA-256 of the UTF-8 string
+   `"17:" + d + ":" + group_id`, ascending, and, with `R` = round half to even to an integer:
 
-For `ravdess` (`n = 24`) this gives 14/5/5 speakers; for `crema-d` (`n = 91`) 55/18/18.
+   `n_dev = n_test = max(1, R(0.2·n))`, `n_train = n − n_dev − n_test`.
 
-The seed is never changed to obtain a "better" split. A label with no test row after assignment is
-dropped from that dataset's scored set and listed in the report (`labels_without_test_rows`).
+   The first `n_train` components are train, the next `n_dev` dev, the rest test. For `n ≥ 3`
+   every count is at least 1.
+4. **Role only.** A component with rows of test-only datasets only is test (reason
+   `test_only_dataset`); one with rows of training-only datasets only is train (reason
+   `training_only_dataset`).
 
-### 5.4 Test-only, training-only and speaker-unverified rows
+Then a test-only row in a train or dev component is excluded (`speaker_in_training_partition`),
+and a dataset left without one of its required partitions (train, dev and test; test for a
+test-only dataset) has all its rows excluded (`empty_partition`). For `ravdess` (`n = 24`) the rule
+gives 14/5/5 speakers; for `crema-d` (`n = 91`) 55/18/18. The seed is never changed to obtain a "better" split.
 
-Every eligible row of a test-only dataset gets split `test`, reason `test_only_dataset`. Every
-eligible row of a training-only dataset gets split `train`, reason `training_only_dataset`, unless
-5.1, 5.3 or section 3 excludes it or nulls its label.
+### 5.4 Rows without speaker identity
 
-A dataset without individual speaker identity is never train or dev. It is test-only only if no row
-of it, and no row of the same source collection, is in any train or dev partition, and none of its
-audio hashes occurs in train or dev; otherwise it is excluded. Its results carry the flag
-`speaker_unverified`, its bootstrap resamples utterances (section 8.3), and they are descriptive
-only.
+A dataset without individual speaker identity is never dev or test; it may be training-only where
+the owner's licence decision allows it, as for the MSP-Podcast mirror (section 3), and it is still
+subject to the audio-hash check of 5.1. Otherwise it is excluded. A row without a node is train,
+reason `training_only_dataset`, if its dataset is training-only; otherwise it is excluded, reason
+`no_speaker_identity`.
 
 ### 5.5 Split ledger and digest
 
@@ -304,73 +271,72 @@ including excluded rows, with exactly these keys:
 
 | Key | Type | Meaning |
 |---|---|---|
-| `audio_sha256` | string | content hash, section 2.3 |
+| `audio_sha256` | string or null | content hash, section 2.3; null for `decode_invalid` |
 | `dataset` | string | dataset id |
 | `label` | string or null | scored label id after renaming; null if not scored or not gold |
 | `language` | string | BCP 47 tag (`en`, `es`) |
-| `reason` | string | one of `assigned`, `decode_invalid`, `duplicate_conflicting_label`, `duplicate_identity_conflict`, `duplicate_same_label`, `label_not_from_source`, `label_not_scored`, `native_speaker_disjoint_split`, `no_speaker_identity`, `speaker_in_evaluation_partition`, `speaker_in_training_partition`, `test_only_dataset`, `too_few_speaker_groups`, `training_only_dataset` |
-| `sample_id` | string | unique in the bundle (section 2.1) |
+| `reason` | string | one of `assigned`, `decode_invalid`, `duplicate_conflicting_label`, `duplicate_identity_conflict`, `duplicate_same_label`, `empty_partition`, `identity_quarantined`, `label_not_from_source`, `label_not_scored`, `native_speaker_disjoint_split`, `no_speaker_identity`, `speaker_in_training_partition`, `test_only_dataset`, `too_few_speaker_groups`, `training_only_dataset` |
+| `sample_id` | string | section 2.1 |
 | `speaker_group` | string or null | group id of 5.2; null if the row has no node |
 | `split` | string | `train`, `dev`, `test` or `excluded` |
 
-The file follows the JSON Lines byte contract of section 11.3, with lines sorted by `(dataset,
-sample_id)` in code-point order. The **ledger digest** is the lowercase hexadecimal SHA-256 of the
-whole file's bytes. Rebuilding the bundle from the same sources must give the same digest.
+The first applicable reason is recorded, in the order of sections 2.1, 3, 4.1, 5.1, 5.3, 5.4.
+Each line is the UTF-8 bytes of Python
+`json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))` followed by LF,
+lines sorted by `(dataset, sample_id)` in code-point order. The **ledger digest** is the lowercase
+hexadecimal SHA-256 of the whole file. Rebuilding the bundle from the same sources must give the
+same digest.
 
 ### 5.6 Relation to SER's training recipe
 
-The ledger above is authoritative for training, tuning and scoring every benchmark candidate.
-SER's dataset recipe (`ser/_internal/data/dataset_audit.py`, `docs/dataset-recipes.md`) stays the
-default for other training; it differs on purpose: 70/15/15 ratios, components per corpus,
-`ssl_only` for ungrouped rows outside its official-split path, and, for duplicate hashes, rejection
-in strict mode or quarantine of all members otherwise. Both enforce the same invariants: no speaker
-group and no audio hash in more than one partition. A benchmark candidate built from any other
-ledger, including one reconstructed by the recipe, is not selectable unless its provenance
-(section 6.1) proves that none of its training, tuning or calibration rows shares a speaker group
-or an audio hash with this ledger's test partition.
+This ledger is mandatory for fitting, tuning and calibrating every model trained for the
+benchmark: they use its train and dev rows only. Already-trained external candidates fall under
+the provenance rule of section 6.1; there is no other ledger route. SER's dataset recipe
+(`ser/_internal/data/dataset_audit.py`, `docs/dataset-recipes.md`, 70/15/15) stays the default for
+other training.
 
 ## 6. Leakage audit
 
-The audit reads the bundle manifest, the split ledger, the identity ledger and, in a benchmark
-run, the model card (section 6.1). It runs before every benchmark run and on its own. Checks, over
-all datasets together:
+The audit reads the manifest, both ledgers and, in a benchmark run, the model card (6.1). It runs
+before every benchmark run and on its own. Checks, over all datasets together:
 
 | Check | Pass condition |
 |---|---|
 | A1 ledger digests | the recomputed split and identity ledger digests equal those recorded in the manifest |
 | A2 coverage | every manifest row appears exactly once in the split ledger and vice versa |
 | A3 shared speakers | 0 speaker groups appear in more than one of train, dev, test |
-| A4 shared audio | 0 `audio_sha256` values appear in more than one of train, dev, test |
-| A5 duplicate audio | 0 `audio_sha256` values appear twice among non-excluded rows |
+| A4 shared audio | 0 non-null `audio_sha256` values appear in more than one of train, dev, test |
+| A5 duplicate audio | 0 non-null `audio_sha256` values appear twice among non-excluded rows |
 | A6 model data | section 6.1 |
 
-A1 to A5 failing stops the run. `unresolved_pairs` greater than 0 does not stop it; the affected
-datasets carry `identity_unresolved`. A6 never stops the run; it sets the model's provenance level
-and flags.
+A1 to A5 failing stops the run. A6 never stops the run; it sets the model's provenance level and
+flags.
 
 ### 6.1 Model provenance
 
-Each model has a model card that records one provenance level, the lowest of its own and, where
-it is built on a base model, the base model's:
+Each model card records one provenance level, covering every stage of fitting, tuning and
+calibration, including a base model's:
 
-- **`verified`**: a list of every row used to fit, tune or calibrate the artifact, each with
-  dataset, `sample_id` and `audio_sha256`, whose SHA-256 is recorded in the artifact's metadata
-  when it is trained (artifact-bound). The audit compares the listed rows with the test partition
-  by audio hash and by speaker group (resolved through the identity ledger), and their source
-  collections with each test dataset's;
-- **`declared`**: the publisher's documented training-data list, quoted in the card with its URL,
-  which names no test dataset and no source collection of one. The audit compares at dataset and
-  source-collection level only. Results carry `provenance_declared`;
-- **`unknown`**: anything else, including an incomplete list. Results carry `provenance_unknown`.
+- **`verified`**: an artifact-bound list (its SHA-256 recorded in the artifact's metadata when it
+  is trained) of every row used in any of those stages, each a bundle row given by `sample_id`
+  and present in the identity ledger. If any such row is outside the bundle, the model is at best
+  `declared`;
+- **`declared`**: the publisher's documented training-data list, quoted in the card with its URL.
+  Results carry `provenance_declared`;
+- **`unknown`**: anything else. Results carry `provenance_unknown`.
 
-If any comparison finds an overlap, the model is **`contaminated`** and all its results carry
-`contaminated`. `verified` and `declared` models may enter confirmatory selection; `unknown` and
-`contaminated` ones are reported descriptively and cannot be selected. The owner's own recordings
-(E3-4) are free of contamination by construction; for a `declared` model they are the check that
-matters most.
+The flag `test_overlap` is set on a dataset's results when, for a `verified` model, a listed row
+is in that dataset's test partition, shares its speaker group with a test row, or has the
+`audio_sha256` of a test row; or, for any other model, its card or publisher list names that
+dataset or a speaker or recording of its test partition. The flag `overlap_unverified` is set on a
+test dataset's results when the model was trained on the MSP-Podcast mirror and the mirror's dataset
+card cannot rule out source recordings or speakers shared with that dataset. Both flags remove the
+result from clean comparison; they are flags, not provenance levels.
 
-The legacy `fast` artifact was trained on all 24 RAVDESS actors with a clip-level split, so its
-card is `contaminated` on `ravdess`; section 9 gives its use.
+`verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
+owner's own recordings (E3-4) are free of overlap by construction; for a `declared` model they are
+the check that matters most. The legacy `fast` artifact was trained on all 24 RAVDESS actors, so
+its results on `ravdess` carry `test_overlap`.
 
 ### 6.2 Audit output
 
@@ -386,44 +352,35 @@ rows=<n> train=<n> dev=<n> test=<n> excluded=<n>
 shared_speakers train/dev=<n> train/test=<n> dev/test=<n> unresolved_pairs=<n>
 shared_audio train/dev=<n> train/test=<n> dev/test=<n>
 duplicate_audio_scored=<n>
-model_provenance=<verified|declared|unknown|contaminated|not_checked> overlap_rows=<n|null> overlap_groups=<n|null> overlap_datasets=<n|null>
+model_provenance=<verified|declared|unknown|not_checked> test_overlap_datasets=<n|null>
 result=<PASS|FAIL>
 ```
 
-`not_checked` appears only when the audit runs on its own without a model card; a benchmark run
-without a model card is refused. The overlap counts are null for `unknown` and `not_checked`;
-`overlap_rows` and `overlap_groups` are also null for `declared`.
+`not_checked` appears only when the audit runs on its own without a model card, and then
+`test_overlap_datasets` is null; a benchmark run without a model card is refused.
 
 ## 7. Scoring a row
 
-### 7.1 Notation
-
 For one model on one dataset's test partition: rows `i = 1 … N` (rows with a true label in `K`),
 `k = |K|`, true label `y_i`, prediction `ŷ_i` (section 4.3) or `∅` for a failed row, confidence
-`c_i = max_{a∈K} p_i(a)` as an exact rational (section 11.1). `N'` is the number of rows that are
-not failed; `coverage = N'/N`.
+`c_i = max_{a∈K} p_i(a)` as an exact rational (section 11). `N'` is the number of rows that are not
+failed; `coverage = N'/N`.
 
-### 7.2 Failed rows
+A failed row counts in the recall denominator of its true label, is never correct, and appears in
+the confusion matrix in a final column `no_prediction`. It has no confidence and is left out of the
+calibration error, so ECE is conditional on success: a model that fails on hard rows can look
+better calibrated. ECE is a diagnostic, and acceptance requires `n_failed = 0` (section 10.4).
 
-A failed row counts in the recall denominator of its true label and is never correct. It appears
-in the confusion matrix in a final column `no_prediction`. It has no confidence and is left out of
-the calibration error. The report states `n_failed` and `coverage`. ECE is therefore conditional
-on success: a model that fails on hard rows can look better calibrated. It is a diagnostic, and
-acceptance requires `n_failed = 0` (section 10.4).
-
-### 7.3 Fitted settings
-
-Any probability calibrator, threshold or hyperparameter of a model is fitted on train or dev only
-and frozen before the model sees any test row. The model card identifies the calibrator (SHA-256)
-and the ledger rows used for tuning; the report records them (section 11.2).
+Any calibrator, threshold or hyperparameter is fitted on train or dev only and frozen before the
+model sees any test row; the model card identifies the calibrator (SHA-256) and the tuning rows.
 
 ## 8. Metrics
 
 ### 8.1 Per dataset
 
 All metrics are computed in exact rational arithmetic from integer counts and the exact
-confidences of 7.1. Point values and interval bounds are rounded once, half to even, to 6 decimal
-places, only when written (section 11.3).
+confidences of section 7. Point values and interval bounds are rounded once, half to even, to 6
+decimal places, only when written.
 
 - **Confusion matrix** `C[a][b]` = number of rows with `y_i = a` and `ŷ_i = b`, for `a ∈ K` (rows)
   and `b ∈ K ∪ {no_prediction}` (columns), both in code-point order with `no_prediction` last.
@@ -434,41 +391,30 @@ places, only when written (section 11.3).
 - **Per-class F1** `F_a = 2·P_a·R_a / (P_a + R_a)`; `F_a = 0` if `P_a + R_a = 0`.
 - **Macro-F1** `= (1/k) Σ_{a∈K} F_a`.
 - **Accuracy** `= Σ_a C[a][a] / N` (reported for continuity; never used in a decision).
-- **Expected calibration error** (top-label, 10 equal-width bins):
-  - bin of row `i`: `m_i = min(10, ⌊10·c_i⌋ + 1)`, so bin `m` holds `[(m−1)/10, m/10)` and bin 10
-    holds `[0.9, 1.0]`;
-  - for each non-empty bin: `acc_m` = fraction of its rows with `ŷ_i = y_i`, `conf_m` = mean of
-    its `c_i`;
-  - `ECE = Σ_m (|B_m| / N') · |acc_m − conf_m|`;
-  - empty bins contribute 0 and are reported with count 0 and null accuracy and confidence;
-  - if `N' = 0`, ECE is null and the result is flagged `no_predictions`.
+- **Expected calibration error** (top-label, 10 equal-width bins): row `i` is in bin
+  `m_i = min(10, ⌊10·c_i⌋ + 1)`, so bin `m` holds `[(m−1)/10, m/10)` and bin 10 holds `[0.9, 1.0]`;
+  `ECE = Σ_m (|B_m| / N') · |acc_m − conf_m|`, with `acc_m` the fraction of bin `m`'s rows with
+  `ŷ_i = y_i` and `conf_m` the mean of their `c_i`. Empty bins contribute 0 and are reported with
+  count 0 and null accuracy and confidence.
 
 Labels in `S_d` but absent from the test partition are not part of `K` and do not enter UAR as
-zero. SER's `compute_ser_metrics` (`ser/_internal/train/metrics.py`) differs in two ways and is
-never applied directly to benchmark rows that include failed rows: it gives a label passed in
-`labels` but absent from the data a recall of 0.0, and it has no failure column, so with
-`labels = K` it drops rows whose prediction is outside `K` and its recalls diverge from the
-benchmark's. On rows without failures and with all labels present, these definitions equal
-scikit-learn's macro recall and macro F1 with `zero_division=0` over `K`.
+zero. SER's `compute_ser_metrics` (`ser/_internal/train/metrics.py`) is not used: it scores an
+absent label as 0.0 and has no failure column. Without failures and with all labels present, these
+definitions equal scikit-learn's macro recall and macro F1 with `zero_division=0` over `K`.
 
 ### 8.2 What is reported per dataset
 
 UAR, macro-F1, accuracy, per-class recall, precision and F1, the confusion matrix, ECE with its
 per-bin table, `n_rows`, `n_speakers`, `n_failed`, `coverage`, `rows_label_not_in_model`,
 `mean_out_of_set_mass`, and confidence intervals for UAR, macro-F1 and ECE. `n_speakers` is the
-number of test speaker groups; it is null for a `speaker_unverified` dataset. A dataset with fewer
-than 5 test speaker groups is flagged `underpowered` on the model and every baseline row; its
-intervals are reported but are not reliable.
+number of test speaker groups. A dataset with fewer than 5 test speaker groups is flagged
+`underpowered`; its intervals are reported but are not reliable.
 
 ### 8.3 Bootstrap confidence intervals
 
-- **Unit: the speaker group.** Rows of one speaker are correlated (same voice, same session, same
-  prompts); the claim is about new speakers, so groups are resampled. A `speaker_unverified`
-  dataset resamples utterances instead, and its intervals carry that flag.
-- **Universe.** The units of dataset `d` are fixed by the ledger before any model is scored: all
-  test speaker groups of `d` in code-point order of group id (or, for utterance resampling, all
-  test rows of `d` in code-point order of `sample_id`), `S` of them, whatever their labels.
-- **Resamples:** `B = 10,000`.
+- **Unit: the speaker group**, because rows of one speaker are correlated and the claim is about
+  new speakers. The units of dataset `d` are its `S` test speaker groups in code-point order of
+  group id, fixed by the ledger, whatever their labels. `B = 10,000` resamples.
 - **Random draws:** for each dataset, a generator `numpy.random.Generator(numpy.random.PCG64(s_d))`
   with `s_d` = the first 8 bytes, read as a big-endian unsigned integer, of SHA-256 of the UTF-8
   string `"17:bootstrap:" + d`. For `b = 0 … B−1`:
@@ -486,20 +432,33 @@ intervals are reported but are not reliable.
 
 ### 8.4 Per language, never pooled
 
-For benchmark language `ℓ`, `D_ℓ` is its datasets whose results are not descriptive-only (section
-1) and not `degenerate_label_set`, each weighted equally whatever its size:
+For benchmark language `ℓ`, the **required datasets** `D_ℓ` are its datasets with the
+train/dev/test role in the bundle that carry no dataset flag of section 1. `D_ℓ` depends only on
+the bundle, is the same for every model and baseline, and is frozen in the selection plan (10.5).
+Each dataset is weighted equally whatever its size:
 
-- `UAR_ℓ = mean_{d∈D_ℓ} UAR_d`, likewise `MacroF1_ℓ`, `ECE_ℓ`; null if `D_ℓ` is empty or any of its
-  values is null;
+- `UAR_ℓ = mean_{d∈D_ℓ} UAR_d`, likewise `MacroF1_ℓ`, `ECE_ℓ`;
 - `chance_ℓ = mean_{d∈D_ℓ} 1/k_d`;
-- `n_rows`, `n_failed` and `coverage` are summed over `D_ℓ` (`coverage = Σ N' / Σ N`);
+- `n_rows` and `n_failed` are summed over `D_ℓ`, and `coverage = Σ N' / Σ N`;
 - its interval uses, for each `b`, the mean over `d ∈ D_ℓ` of the resample-`b` values (datasets are
-  resampled independently, stratified by dataset). It is null if any dataset interval is null. If
-  a speaker group is in the test partition of two datasets of `D_ℓ`, independent draws misstate
-  the uncertainty: the language intervals are null and flagged `ci_unavailable_shared_groups`.
+  resampled independently, stratified by dataset). If a speaker group is in the test partition of
+  two datasets of `D_ℓ`, independent draws misstate the uncertainty: the language intervals are
+  null and flagged `ci_unavailable_shared_groups`.
 
 Rows of different datasets are never merged into one confusion matrix or one metric. No figure
 across languages is computed.
+
+### 8.5 Null policy
+
+| Value | Null when | Never null because of |
+|---|---|---|
+| every metric, count-derived ratio and interval of a dataset | the dataset has no eligible row for the model (`N = 0`, including `|K| = 0`) | failed rows: they are counted, lower recall and block acceptance |
+| ECE and its interval | `N' = 0` | — |
+| an interval | some resample has no value (`ci_undefined`), or shared groups (`ci_unavailable_shared_groups`) | — |
+| a language value | `D_ℓ` is empty or any dataset value it averages is null | — |
+| a field the reference does not define | always: `chance` is analytic (its values are expectations under uniform guessing), so its confusion matrix, ECE, bins, intervals, `n_failed` and `coverage` are null | — |
+
+A null value fails every threshold and every comparison it enters.
 
 ## 9. Baselines
 
@@ -508,45 +467,38 @@ label set `K` as the model:
 
 | Baseline | Definition | Values |
 |---|---|---|
-| `chance` | analytic expectation of uniform random guessing over `K`; its confusion matrix is the expected one, `E[C[a][b]] = n_a/k` | `UAR = 1/k`; **macro-F1 of the expected confusion matrix** `= (1/k) Σ_a 2·π_a·(1/k) / (π_a + 1/k)` with `π_a = n_a/N` (not the expected macro-F1 of random predictions); accuracy `= Σ_a π_a·(1/k) = 1/k`; per-class recall `1/k`, precision `π_a`, F1 as above; confusion, ECE, intervals and `n_failed` null |
+| `chance` | uniform random guessing over `K` | `UAR = 1/k`; **macro-F1 of the expected confusion matrix** `E[C[a][b]] = n_a/k`, `= (1/k) Σ_a 2·π_a·(1/k) / (π_a + 1/k)` with `π_a = n_a/N` (not the expected macro-F1 of random predictions); accuracy `= Σ_a π_a·(1/k) = 1/k`; per-class recall `1/k`, precision `π_a`, F1 as above |
 | `majority` | always predicts `m`, the label of `K` with the most rows in the dataset's train partition (for a test-only dataset, in its test partition, flagged `majority_from_test`: an oracle, not a deployable baseline); ties to the first label in code-point order; probability 1 on `m` | `UAR = 1/k`; `MacroF1 = (1/k)·2·π_m/(π_m + 1)`; accuracy `= π_m`; `ECE = 1 − π_m`; all fields of 8.2 filled, intervals by 8.3 |
-| `fast@16k` | the legacy `fast` artifact (SHA-256 pinned in the selection plan), through the public call with the input of section 2.2 | measured |
-| `fast@native` | the same artifact with the file's own sample rate | measured |
+| `fast@16k` | the legacy `fast` artifact through the public call with the input of section 2.2 | measured |
+| `fast@native` | the same artifact fed at each file's own sample rate | measured, descriptive only |
 
-Both `fast` rows run at the code revision of the report. If the public call at that revision
-cannot take the native rate, `fast@native` runs at the last commit whose inference path used it;
-that row records the commit and the rate actually fed and carries `confounded_code_revision`, and
-its difference from `fast@16k` is not attributed to the sample rate. Where a dataset's native rate
-is 16 kHz, the two `fast` rows are equal; both are reported.
+**The U11 comparator.** `fast@16k` is the one explicit exception to the descriptive-only flags:
+its artifact SHA-256, call options, code revision, `D_ℓ` and `K*_d` are frozen in the selection
+plan before any score is computed, its own included; it is scored on exactly `D_ℓ` and `K*_d` of
+each language; and its `UAR_ℓ` is used only in U11 condition 2 (section 10.4). It is never a
+selection candidate.
 
-The `fast` rows are `contaminated` (section 6.1) and also carry `trained_on_test_speakers` on
-`ravdess`. They are descriptive, with one use: `fast@16k` is the frozen reference of U11
-condition 2 (section 10.4), a flagged historical hurdle. No clean rerun is required; the
-contamination can only raise the reference on `ravdess`, which makes the hurdle harder. `fast` is
-never a selection candidate.
-
-A baseline value that cannot be computed on a dataset (for example, every `fast` row failed) is
-null, and nulls propagate as in 8.4.
+`fast@native` runs at the same code revision as `fast@16k`. If the public call there cannot take a
+native rate, it runs at the last commit whose inference path did and carries
+`confounded_code_revision`: its difference from `fast@16k` is not attributed to the sample rate.
 
 ## 10. Decision rule
 
 ### 10.1 Primary metric
 
-Decisions use UAR only. Macro-F1, ECE and per-class figures are reported but never decide which
-model is better (ECE enters only acceptance, 10.4).
+Decisions use UAR only. Macro-F1, ECE and per-class figures never decide which model is better;
+ECE enters only acceptance (10.4).
 
 ### 10.2 "Model A beats model B"
 
 **Confirmatory comparisons** are made only between candidates of a frozen selection plan (10.5),
-on the required datasets, on `K*_d` (section 4.3), with the same resamples (8.3). For each
-resample `b`: `Δ_b = UAR_A,b − UAR_B,b` per dataset, and `Δ_ℓ,b` = mean of the dataset `Δ_b` over
-`D_ℓ` per language. The interval of `Δ_ℓ` is familywise-adjusted by Bonferroni: with `M` = the
-number of candidate pairs times the number of benchmark languages, fixed in the plan, the tail
-levels are `q = 0.025/M` and `1 − 0.025/M` (8.3). Then:
-
-- A beats B **in language ℓ** if the lower end of the adjusted `Δ_ℓ` interval is greater than 0;
-- A beats B **overall** if A beats B in at least one benchmark language and B beats A in none;
-- otherwise neither beats the other. A null interval is no win for either side.
+on `D_ℓ` and `K*_d`, with the same resamples (8.3). For each resample `b`:
+`Δ_b = UAR_A,b − UAR_B,b` per dataset, and `Δ_ℓ,b` = mean of the dataset `Δ_b` over `D_ℓ`. The
+interval of `Δ_ℓ` is familywise-adjusted by Bonferroni: with `M` = the number of candidate pairs
+times the number of benchmark languages, fixed in the plan, the tail levels are `q = 0.025/M` and
+`1 − 0.025/M` (8.3). A beats B if, in every benchmark language, the adjusted `Δ_ℓ` interval is
+non-null and its upper end is not below 0, and in at least one its lower end is above 0.
+Otherwise A does not beat B.
 
 **Descriptive comparisons** use unadjusted 95% intervals, on `K*_d` or on `K_AB`; they are labelled
 descriptive and decide nothing.
@@ -560,221 +512,64 @@ peak memory; then smaller model file; then smaller `artifact_sha256` in code-poi
 
 ### 10.4 Acceptance thresholds (checklist U11)
 
-A model is acceptable only if, for every benchmark language `ℓ` (`en` and `es`), on `K*_d`:
+A model is acceptable only if its label set is exactly `ser-8-v1` and, for every benchmark
+language `ℓ` (`en` and `es`), on `D_ℓ` and `K*_d`:
 
 1. `UAR_ℓ ≥ 2 · chance_ℓ`;
-2. `UAR_ℓ ≥ UAR_ℓ(fast@16k) + 0.10`, the reference being the `fast@16k` row of section 9;
+2. `UAR_ℓ ≥ UAR_ℓ(fast@16k) + 0.10`, with the comparator of section 9;
 3. `ECE_ℓ ≤ 0.10`;
 4. `n_failed = 0` on every dataset of `D_ℓ`;
 5. a check on at least 100 of the owner's own labelled turns in `ℓ` is recorded from the E3-4 kit,
 
-and the E3-4 check on the owner's Portuguese recordings is recorded. The report holds each check's
-status and turn count, not its content.
-
-Conditions 1 to 3 are evaluated on point estimates: each side is rounded half to even to 6 decimal
-places, then compared exactly. A null value fails its condition. Intervals are always reported
-next to them but do not enter acceptance.
+and the E3-4 check on the owner's Portuguese recordings is recorded (status and turn count only).
+Conditions 1 to 3 are evaluated on point estimates, each side rounded half to even to 6 decimal
+places, then compared exactly; a null fails. Intervals are reported beside them but do not decide.
 
 ### 10.5 Selection
 
-1. Before any candidate is scored on a test partition, a selection plan
-   (`ser.bench.selection-plan/v1`) is committed. It lists the candidate artifacts (SHA-256) with
-   their provenance level, the required datasets per benchmark language, `K*_d` for each, the
-   `fast` artifact and its call options, the thresholds and precision of 10.4, `M`, and the cost
-   evidence file's SHA-256. Every report used for selection records the plan's SHA-256.
-2. A candidate is eligible if its provenance is `verified` or `declared`, it carries none of the
-   descriptive-only flags of section 1 and no `label_coverage_incomplete`, it has a result on
-   every required dataset, and it passes 10.4.
+1. Before any score is computed, a selection plan (`ser.bench.selection-plan/v1`) is committed. It
+   lists the candidate artifacts (SHA-256) with their provenance level, `D_ℓ` and `K*_d` for each
+   benchmark language, the comparator of section 9, the thresholds and precision of 10.4, `M`, and
+   the cost evidence file's SHA-256. Every report used for selection records the plan's SHA-256.
+2. A candidate is eligible if its label set is exactly `ser-8-v1`, its provenance is `verified`
+   or `declared`, none of its results on `D_ℓ` carries a model flag of section 1, and it passes
+   10.4.
 3. If no candidate is eligible, nothing is selected. No default is presumed.
-4. Otherwise the selected candidate is the eligible one that beats (10.2, overall) the most other
-   eligible candidates; ties go by the cost order of 10.3.
+4. Otherwise the selected candidate is the eligible one that beats (10.2) the most other eligible
+   candidates; ties go by the cost order of 10.3.
 
-## 11. Report format
+## 11. Report requirements
 
-### 11.1 Inputs and files
+A report contains: the identity of the protocol (this document's SHA-256), the model (artifact
+SHA-256, label set, provenance, distribution), the bundle (id, manifest SHA-256, contract ids), the
+split and identity ledger digests, and the code version (commit, clean tree, SER and numpy
+versions); for each configuration scored (model, `fast@16k`, `fast@native`), the call options,
+timeout, code revision and sample rates actually fed; every value of sections 8.2 and 8.4 with its
+interval and flags; the baselines of section 9; the audit output of 6.2 verbatim; the acceptance
+result of 10.4 by condition, with the E3-4 status; and, for every comparison, its basis, its cohort
+of datasets, its label set (`K*_d` or `K_AB`), and the SHA-256 of every input it reads, including
+the other candidate's predictions and card and the selection plan.
 
-A report is a pure function of these inputs, each identified in the report by its SHA-256: this
-document; the bundle manifest, split ledger and identity ledger; the model card and the `fast`
-card; one predictions file per configuration (`model`, `fast@16k`, `fast@native`); the selection
-plan and cost evidence file, if the report is used for selection; and the E3-4 status file
-(`ser.bench.own-recordings-status/v1`: per language `language`, `status` (`recorded` or
-`missing`), `turns`). `chance` and `majority` need no predictions: they are computed from the
-ledger. The audit lines are recomputed from these inputs.
+Two runs on the same inputs produce byte-identical files, with no wall-clock time, host name, user
+name, absolute path or duration. Probabilities are archived losslessly: each returned value is
+written as the shortest decimal string that converts back to the same IEEE 754 double (Python
+`repr(float(x))`), and scoring reads these strings as exact rationals, so the archive reproduces
+every argmax, confidence and bin. A vector with a non-finite value is invalid (4.3) and archived as
+a failed row, not parsed. Predictions of the owner's own recordings are never written here.
 
-The harness writes the predictions file `<stem>.predictions.<config>.jsonl`
-(`ser.bench.predictions/v1`), one line per scored row, keys `dataset`, `probabilities`,
-`sample_id`, `status`, lines sorted by `(dataset, sample_id)`. `status` is one of `ok`,
-`not_success`, `raised`, `timeout`. `probabilities` is null unless `status` is `ok`; otherwise it is
-the returned vector in the model's label order, each value written as the shortest decimal string
-that converts back to the same IEEE 754 double (Python `repr(float(x))`). Scoring reads these
-strings as exact rationals, so the archived file reproduces every argmax, confidence and bin.
-Predictions of the owner's own recordings are never written by this harness.
-
-A run writes `<stem>.json` and `<stem>.md` next to the predictions files, with a stem chosen by the
-operator (for example `benchmarks/reports/2026-12-baselines`).
-
-### 11.2 JSON (`ser.bench.report/v1`)
-
-Types: `str`; `int`; `num` (fixed 6-decimal number, 11.3); `hex64` (64 lowercase hex characters);
-`[T]` an array; `T|null` nullable. Every field is always present.
-
-```text
-report        {schema: "ser.bench.report/v1", protocol, code, inputs, bundle, model, input,
-               settings, audit, datasets: [dataset], languages: [language], baselines: [baseline],
-               acceptance, comparisons: [comparison]}
-protocol      {id: "ser-bench-protocol", version: 1, document_sha256: hex64}
-code          {git_commit: str (40 hex), git_dirty: false, ser_version: str}
-inputs        {manifest_sha256: hex64, split_ledger_sha256: hex64, identity_ledger_sha256: hex64,
-               model_card_sha256: hex64, fast_card_sha256: hex64,
-               predictions: [{config: "model"|"fast@16k"|"fast@native", sha256: hex64}],
-               selection_plan_sha256: hex64|null, cost_evidence_sha256: hex64|null,
-               own_recordings_status_sha256: hex64}
-bundle        {id: str, content_hash_contract: "pcm16k-s16le-v1",
-               preprocessing_contract: "ser-preproc-v1", preprocessing_sha256: hex64}
-model         {id: str, artifact_sha256: hex64, label_set_id: str, labels: [str],
-               distribution: "open"|"private",
-               provenance: "verified"|"declared"|"unknown"|"contaminated",
-               provenance_url: str|null, calibrator_sha256: hex64|null,
-               tuning_rows_sha256: hex64|null, flags: [flag]}
-input         {call: str, call_options: {str: str}, channels: 1, sample_rate: 16000|"native",
-               timeout_seconds: int}
-settings      {bootstrap_resamples: 10000, bootstrap_seed_rule: "17:bootstrap:<dataset>",
-               ece_bins: 10, familywise_contrasts: int|null, numpy_version: str, split_seed: 17}
-audit         {lines: [str]}                       the 10 lines of 6.2, verbatim
-dataset       {dataset: str, language: str, label_set_id: str, scored_labels: [str],
-               labels_without_test_rows: [str], n_rows: int, n_speakers: int|null,
-               n_failed: int|null, coverage: num|null, rows_label_not_in_model: int,
-               mean_out_of_set_mass: num|null, metrics, ci, flags: [flag]}
-metrics       {uar: num|null, macro_f1: num|null, accuracy: num|null,
-               per_class: {<label>: {support: int, recall: num, precision: num, f1: num}},
-               confusion: {rows: [str], columns: [str], matrix: [[int]]}|null,
-               ece: num|null, ece_bins: [bin]|null}
-bin           {bin: int, lower: num, upper: num, count: int, accuracy: num|null,
-               confidence: num|null}
-ci            {uar: [num, num]|null, macro_f1: [num, num]|null, ece: [num, num]|null,
-               unit: "speaker"|"utterance"|null}
-language      {language: str, datasets: [str], n_rows: int, n_failed: int|null,
-               coverage: num|null, uar: num|null, macro_f1: num|null, ece: num|null,
-               chance_uar: num|null, ci: ci, flags: [flag]}
-baseline      {id: "chance"|"majority"|"fast@16k"|"fast@native", git_commit: str,
-               sample_rate: 16000|"native", datasets: [dataset], languages: [language],
-               flags: [flag]}
-acceptance    {languages: [{language: str, conditions: [condition], pass: bool}],
-               own_recordings: [{language: str, status: "recorded"|"missing", turns: int|null}],
-               pass: bool}
-condition     {id: "chance"|"fast_delta"|"ece"|"coverage"|"own_recordings", value: num|null,
-               threshold: num|null, pass: bool}
-comparison    {a: hex64, b: hex64, basis: "confirmatory"|"descriptive",
-               languages: [{language: str, delta_uar: num|null, ci: [num, num]|null,
-                            ci_adjusted: [num, num]|null, verdict: "a"|"b"|"none"}]}
-flag          one of: ci_undefined, ci_unavailable_shared_groups, confounded_code_revision,
-               contaminated, degenerate_label_set, identity_unresolved, label_coverage_incomplete,
-               majority_from_test, no_predictions, overlap_unverified, provenance_declared,
-               provenance_unknown, speaker_unverified, trained_on_test_speakers, underpowered
-```
-
-For `chance`, `metrics.confusion`, `metrics.ece`, `metrics.ece_bins`, `ci`, `n_failed` and
-`coverage` are null. For the `coverage` and `own_recordings` conditions `value` and `threshold`
-are null; `coverage` passes when every `n_failed` in the language is 0. A selection run also writes
-`<stem>.selection.json` (`ser.bench.selection/v1`: `plan_sha256`, `candidates` and `eligible` as
-sorted arrays of artifact SHA-256, `wins` as an object keyed by artifact SHA-256, `selected`
-(hex64 or null), `reason` (`selected` or `no_eligible_candidate`)).
-
-### 11.3 Byte contract
-
-Two runs on the same inputs produce identical bytes.
-
-- All files are UTF-8 without byte order mark; lines end with LF only; the file ends with exactly
-  one LF; no line has trailing spaces; no wall-clock time, host name, user name, absolute path or
-  duration appears.
-- **JSON Lines** (ledgers, predictions): each line is the bytes of Python
-  `json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))`, no blank lines.
-- **JSON** (report, selection): the bytes of Python
-  `json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2)` followed by LF, except that every
-  `num` is written as the exact value rounded half to even to 6 decimal places, with exactly six
-  digits after the point, no exponent, and `-0.000000` written `0.000000` (for example
-  `0.750000`). Integers have no decimal point. Probability strings in predictions are strings, not
-  numbers.
-- **Array order:** `datasets` and per-language `datasets` by dataset id; `languages` and
-  `own_recordings` by tag; labels, `scored_labels`, `labels_without_test_rows`, confusion rows and
-  columns as in 8.1; `baselines` in the order of section 9; `ece_bins` by bin; `conditions` in the
-  order of 10.4; `flags` unique and sorted; `predictions` by config in the order `model`,
-  `fast@16k`, `fast@native`; `comparisons` by `(a, b)`; `audit.lines` as printed.
-
-### 11.4 Markdown rendering
-
-The Markdown file is generated from the JSON file alone by this template. Rules: lines as in
-11.3; exactly one blank line between blocks; tables written `| a | b |` with one space inside each
-border and a separator row of `|---|` per column; a `num` shown to 3 decimals, rounded half to even
-from its 6-decimal JSON value; an interval shown `[l, u]`; null shown `—`; a flag list shown
-comma-and-space separated, or `none` if empty. Repeated blocks follow the JSON array order.
-
-~~~text
-# SER benchmark report `<model.id>`
-
-- protocol: `ser-bench-protocol` v1, document `<document_sha256>`
-- code: `<git_commit>`, ser `<ser_version>`
-- bundle: `<bundle.id>`, split ledger `<split_ledger_sha256>`
-- model: `<artifact_sha256>`, labels `<label_set_id>`, provenance `<provenance>`, distribution `<distribution>`, flags <flags>
-- input: <sample_rate> Hz, mono, call `<call>`, timeout <timeout_seconds> s
-
-## Audit
-
-```text
-<audit.lines, one per line>
-```
-
-## Languages
-
-| language | row | UAR | UAR CI | macro-F1 | ECE | coverage | flags |
-|---|---|---|---|---|---|---|---|
-<one line per language: model row, then one row per baseline>
-
-## Dataset `<dataset>` (<language>)
-
-| row | UAR | macro-F1 | accuracy | ECE | failed | flags |
-|---|---|---|---|---|---|---|
-<model row, then one row per baseline>
-
-| label | support | recall | precision | F1 |
-|---|---|---|---|---|
-<one row per scored label, model only>
-
-| true \ predicted | <columns> |
-|---|<one ---| per column>
-<one row per confusion row>
-
-| bin | range | count | accuracy | confidence |
-|---|---|---|---|---|
-<ten rows>
-
-## Acceptance
-
-| language | condition | value | threshold | pass |
-|---|---|---|---|---|
-<one row per condition per language; then one row per own_recordings entry with condition own_recordings>
-
-## Comparisons
-
-| a | b | basis | language | ΔUAR | CI | adjusted CI | verdict |
-|---|---|---|---|---|---|---|---|
-<one row per comparison per language, or the single line "none">
-~~~
-
-Section 12.8 shows part of the rendering of the toy example.
+**Deferred to the harness.** The JSON schema of the report, predictions and selection files, the
+literal shape of every null, the Markdown rendering, the replay manifest that binds all inputs,
+and the remaining byte-level serialisation rules are defined by the benchmark harness and pinned by
+its tests (brief E3-2). They implement this section and section 8.5 and may not change a number.
 
 ## 12. Worked toy example
 
-A toy dataset `toy` (language `und`, role test-only) of 20 rows: 4 speakers (S1 to S4), 3 labels,
-label set `toy-3-v1` = angry, happy, neutral. The model's label set is the same, so `K` = {angry,
-happy, neutral}, `k = 3`, and no renormalisation changes any vector. Row `toy-s1-04` failed
-(status `raised`).
-
-The toy departs from the real contract in these ways only: `audio_sha256` values are stand-ins
-(`a01` … `a20`), not real hashes; speaker group ids are `S1` … `S4`, not namespaced node ids
-(5.2); the dataset, language `und` and label set are synthetic; its intervals are not computed,
-because the seeded draws cannot be done by hand (12.5); and the excerpts of 12.7 and 12.8 omit
-fields and blocks, as marked there.
+A toy dataset `toy` (language `und`, role test-only) of 20 rows: 4 speakers (S1 to S4), label set
+`toy-3-v1` = angry, happy, neutral, also the model's, so `K` = {angry, happy, neutral}, `k = 3`, and
+no renormalisation changes any vector. Row `toy-s1-04` failed (status `raised`). The toy departs
+from the contract only in this: `sample_id` values do not follow the grammar of 2.1,
+`audio_sha256` values are stand-ins (`a01` … `a20`), group ids are `S1` … `S4` rather than node ids
+(5.2), dataset, language and label set are synthetic, and intervals are not computed (12.5).
 
 ### 12.1 The rows
 
@@ -841,9 +636,7 @@ Supports: angry 8 (rows 1, 2, 6, 7, 11, 12, 16, 17), happy 6 (3, 4, 8, 13, 14, 1
 | 9 | [0.8, 0.9) | 5, 8, 10, 12, 16 | 5 | 4 | 4/5 = 0.8 | 0.8 | 0 | 5/19 |
 | 10 | [0.9, 1.0] | 1, 3, 6, 9, 11, 13 | 6 | 6 | 1 | (0.95+0.95+0.9·4)/6 = 5.5/6 = 11/12 | 1/12 | 6/19 |
 
-Bin of each row: `⌊10·0.5⌋ + 1 = 6`, `⌊10·0.6⌋ + 1 = 7`, `⌊10·0.8⌋ + 1 = 9`,
-`min(10, ⌊10·0.9⌋ + 1) = 10`, `min(10, ⌊10·0.95⌋ + 1) = 10`. Row 4 has no confidence and is left
-out, so the weights are over `N' = 19`.
+Row 4 has no confidence and is left out, so the weights are over `N' = 19`.
 
 **ECE** = (3/19)(1/6) + (5/19)(0) + (5/19)(0) + (6/19)(1/12) = 0.5/19 + 0.5/19 = 1/19 =
 **0.052632**. Because row 4 failed, this ECE is conditional on success, and the model would fail
@@ -861,7 +654,7 @@ uses the test partition and its row is flagged `majority_from_test` (an oracle):
 - `majority`: recalls 1, 0, 0, so UAR = 1/3 = **0.333333**; precision of angry 8/20 = 0.4, F1 of
   angry `2·0.4·1/(0.4 + 1)` = 4/7, others 0; Macro-F1 = (4/7)/3 = 4/21 = **0.190476**;
   accuracy = **0.400000**; every confidence is 1.0, all 20 rows in bin 10 with accuracy 0.4, so
-  ECE = |0.4 − 1.0| = **0.600000**.
+  ECE = |0.4 − 1.0| = **0.600000**; it predicts every row, so its coverage is 20/20 = 1.000000.
 
 ### 12.5 One bootstrap resample, by hand
 
@@ -910,140 +703,26 @@ groups. The sort keys are SHA-256 of `17:toy:S1` … `17:toy:S4`:
 | S3 | `d66010bcb09984b3f15b485da5f5ed0450e36d8223bebf5d3569b08efdcf9390` | 3 |
 | S2 | `e55ebc1b6bc1648a8d228c442d5939cccaef95eb08465f20f4b8f5d38387fc15` | 4 |
 
-`n_train = max(1, min(2, R(2.4))) = 2`, `n_dev = max(1, min(4 − 2 − 1, R(0.8))) = 1`,
-`n_test = 1`: train = S4, S1; dev = S3; test = S2.
-
-Any SHA-256 tool reproduces these, for example `printf '%s' '17:toy:S1' | shasum -a 256`.
-
-### 12.7 Sample report (JSON excerpt)
-
-The excerpt shows `datasets[0]` in full and, from `baselines`, only the `majority` entry with
-some of its fields. The `ece_bins` objects and some small objects are written on one line, and bins
-2 to 5 are replaced by a marker; a real report writes every field and object in the layout of 11.3
-and all ten bins.
-
-```json
-{
-  "baselines": [
-    {
-      "datasets": [
-        {
-          "ci": {"ece": null, "macro_f1": null, "uar": null, "unit": "speaker"},
-          "coverage": 1.000000,
-          "dataset": "toy",
-          "flags": ["majority_from_test", "underpowered"],
-          "metrics": {"accuracy": 0.400000, "ece": 0.600000, "macro_f1": 0.190476, "uar": 0.333333},
-          "n_failed": 0
-        }
-      ],
-      "id": "majority"
-    }
-  ],
-  "datasets": [
-    {
-      "ci": {"ece": null, "macro_f1": null, "uar": null, "unit": "speaker"},
-      "coverage": 0.950000,
-      "dataset": "toy",
-      "flags": ["underpowered"],
-      "label_set_id": "toy-3-v1",
-      "labels_without_test_rows": [],
-      "language": "und",
-      "mean_out_of_set_mass": 0.000000,
-      "metrics": {
-        "accuracy": 0.700000,
-        "confusion": {
-          "columns": ["angry", "happy", "neutral", "no_prediction"],
-          "matrix": [[6, 1, 1, 0], [1, 4, 0, 1], [1, 1, 4, 0]],
-          "rows": ["angry", "happy", "neutral"]
-        },
-        "ece": 0.052632,
-        "ece_bins": [
-          {"accuracy": null, "bin": 1, "confidence": null, "count": 0, "lower": 0.000000, "upper": 0.100000},
-          "... bins 2 to 5 likewise empty ...",
-          {"accuracy": 0.333333, "bin": 6, "confidence": 0.500000, "count": 3, "lower": 0.500000, "upper": 0.600000},
-          {"accuracy": 0.600000, "bin": 7, "confidence": 0.600000, "count": 5, "lower": 0.600000, "upper": 0.700000},
-          {"accuracy": null, "bin": 8, "confidence": null, "count": 0, "lower": 0.700000, "upper": 0.800000},
-          {"accuracy": 0.800000, "bin": 9, "confidence": 0.800000, "count": 5, "lower": 0.800000, "upper": 0.900000},
-          {"accuracy": 1.000000, "bin": 10, "confidence": 0.916667, "count": 6, "lower": 0.900000, "upper": 1.000000}
-        ],
-        "macro_f1": 0.714646,
-        "per_class": {
-          "angry": {"f1": 0.750000, "precision": 0.750000, "recall": 0.750000, "support": 8},
-          "happy": {"f1": 0.666667, "precision": 0.666667, "recall": 0.666667, "support": 6},
-          "neutral": {"f1": 0.727273, "precision": 0.800000, "recall": 0.666667, "support": 6}
-        },
-        "uar": 0.694444
-      },
-      "n_failed": 1,
-      "n_rows": 20,
-      "n_speakers": 4,
-      "rows_label_not_in_model": 0,
-      "scored_labels": ["angry", "happy", "neutral"]
-    }
-  ]
-}
-```
-
-The majority row's `coverage` is 20/20 = 1.000000: it predicts every row.
-
-### 12.8 Sample report (Markdown excerpt)
-
-The excerpt shows the first two tables of the dataset block, with the `fast` rows omitted.
-
-```markdown
-## Dataset `toy` (und)
-
-| row | UAR | macro-F1 | accuracy | ECE | failed | flags |
-|---|---|---|---|---|---|---|
-| model | 0.694 | 0.715 | 0.700 | 0.053 | 1 | underpowered |
-| chance | 0.333 | 0.332 | 0.333 | — | — | underpowered |
-| majority | 0.333 | 0.190 | 0.400 | 0.600 | 0 | majority_from_test, underpowered |
-
-| label | support | recall | precision | F1 |
-|---|---|---|---|---|
-| angry | 8 | 0.750 | 0.750 | 0.750 |
-| happy | 6 | 0.667 | 0.667 | 0.667 |
-| neutral | 6 | 0.667 | 0.800 | 0.727 |
-```
-
-Rounding to 3 decimals: 0.714646 → 0.715, 0.052632 → 0.053, 0.331738 → 0.332, 0.190476 → 0.190.
+`n_dev = n_test = max(1, R(0.8)) = 1`, `n_train = 4 − 1 − 1 = 2`: train = S4, S1; dev = S3;
+test = S2.
 
 ## 13. Limitations of version 1
 
-- Exact-content duplicates only; near-duplicates (re-encoded, trimmed, re-amplified copies) and
-  shared prompt texts across partitions are not detected.
-- Acted corpora dominate; no conversational test set exists yet.
-- Spanish acceptance needs at least one speaker-verified Spanish dataset. If D4-2 finds no
-  individual speaker identity in `mesd` or `spanish-meacorpus-2023`, `D_es` is empty, `UAR_es` is
-  null, and no model can be accepted (10.4).
-- `declared` provenance cannot be checked row by row; the owner's own recordings are the only
-  contamination-free evidence for such a model.
-- Intervals depend on numpy's PCG64 stream; a numpy version that changes it changes the intervals,
-  which is why the report records the version.
-- A wall-clock timeout can fail a row on a slow machine; acceptance treats it as any other
-  failure.
-- Equal dataset weights per language (8.4) give a small dataset as much weight as a large one.
+Only exact-content duplicates are detected, not re-encoded, trimmed or re-amplified copies or
+shared prompt texts. Acted corpora dominate; no conversational test set exists yet. If D4-2 finds
+no individual speaker identity in `mesd` or `spanish-meacorpus-2023`, `D_es` is empty and no model
+can be accepted. `declared` provenance cannot be checked row by row. Intervals depend on numpy's
+PCG64 stream, hence the recorded numpy version. A wall-clock timeout can fail a row on a slow
+machine.
 
 ## 14. Relation to the existing quality gate
 
-The profile quality gate (`ser/_internal/runtime/profile_quality_gate.py` and
-`quality_gate_*.py`) is not reused. It loads one already trained artifact per profile and then, for
-every grouped fold, scores that same artifact on the fold's test indices; the fold's train indices
-are never used (`quality_gate_evaluation.py`, `for _, test_indices in folds`). Whether the
-artifact was trained on a test speaker is never checked, so its folds are repeated partitioned
-inference, not cross-validation. It also derives speakers from RAVDESS file names only, discovers
-samples by a file glob, reports only pooled metrics, has no calibration or interval, and stamps
-its report with the wall-clock time, so two runs are not byte-identical.
+The profile quality gate (`ser/_internal/runtime/profile_quality_gate.py`) is not reused: it scores
+one already trained artifact on every grouped fold without checking whether it was trained on a
+test speaker (`quality_gate_evaluation.py`, `for _, test_indices in folds`), reports only pooled
+metrics, has no calibration or interval, and stamps wall-clock time.
 
 ## 15. Pending owner decisions
 
-None.
-
-Recorded owner decisions (2026-11-28), applied above:
-
-- Benchmark languages are English and Spanish. Portuguese is checked only on the owner's own
-  recordings (sections 1, 3, 10.4).
-- All catalogued data, including the MSP-Podcast mirror, may be used to train private models;
-  models trained on restricted data stay private (section 3).
-- The benchmark chooses the first model, and SER's eight labels are the shipped output contract
-  (sections 1, 4.1, 10.5).
+None. The owner's decisions of 2026-11-28 (benchmark languages, use of catalogued data including
+the MSP-Podcast mirror, first model and output labels) are applied in sections 1, 3, 4.1 and 10.
