@@ -9,9 +9,14 @@ from typing import cast
 import pytest
 
 from ser._internal.data.application import consents as data_application
+from ser._internal.data.curation_ledger import source_manifest_path
 from ser._internal.data.dataset_capabilities import list_dataset_capability_profiles
 from ser._internal.data.dataset_consents import load_persisted_dataset_consents
-from ser._internal.data.dataset_prepare import SUPPORTED_DATASETS, default_dataset_root
+from ser._internal.data.dataset_prepare import (
+    SUPPORTED_DATASETS,
+    default_dataset_root,
+    default_manifest_path,
+)
 from ser._internal.data.dataset_registry import upsert_dataset_registry_entry
 from ser.config import AppConfig
 
@@ -412,6 +417,63 @@ def test_run_dataset_uninstall_workflow_keep_files(tmp_path: Path) -> None:
     assert result.removed_dataset_roots == ()
     assert manifest_path.exists() is True
     assert dataset_root.exists() is True
+
+
+@pytest.mark.parametrize("dataset_id", ["ravdess", "crema-d"])
+@pytest.mark.parametrize("remove_files", [True, False])
+def test_run_dataset_uninstall_workflow_handles_source_manifests_of_curated_corpora(
+    tmp_path: Path, dataset_id: str, remove_files: bool
+) -> None:
+    settings = _settings(tmp_path)
+    dataset_root = tmp_path / "custom" / dataset_id
+    dataset_root.mkdir(parents=True)
+    registered = tmp_path / "custom" / f"{dataset_id}.jsonl"
+    default = default_manifest_path(settings, dataset_id)
+    default.parent.mkdir(parents=True)
+    manifests = (
+        registered,
+        source_manifest_path(registered),
+        default,
+        source_manifest_path(default),
+    )
+    for path in manifests:
+        path.write_text("{}", encoding="utf-8")
+    upsert_dataset_registry_entry(
+        settings=settings,
+        dataset_id=dataset_id,
+        dataset_root=dataset_root,
+        manifest_path=registered,
+        options={},
+    )
+
+    result = data_application.run_dataset_uninstall_workflow(
+        settings=settings, dataset_id=dataset_id, remove_files=remove_files
+    )
+
+    assert set(result.removed_manifest_paths) == (set(manifests) if remove_files else set())
+    assert [path.exists() for path in manifests] == [not remove_files] * len(manifests)
+
+
+def test_run_dataset_uninstall_workflow_leaves_source_named_files_of_other_corpora(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    manifest = default_manifest_path(settings, "mesd")
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}", encoding="utf-8")
+    source_manifest_path(manifest).write_text("{}", encoding="utf-8")
+    upsert_dataset_registry_entry(
+        settings=settings,
+        dataset_id="mesd",
+        dataset_root=tmp_path / "datasets" / "mesd",
+        manifest_path=manifest,
+        options={},
+    )
+
+    result = data_application.run_dataset_uninstall_workflow(settings=settings, dataset_id="mesd")
+
+    assert result.removed_manifest_paths == (manifest,)
+    assert source_manifest_path(manifest).exists()
 
 
 def test_run_dataset_uninstall_workflow_returns_not_registered(tmp_path: Path) -> None:

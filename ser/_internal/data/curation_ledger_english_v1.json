@@ -1,0 +1,56 @@
+{
+  "ledger_id": "english-duplicates",
+  "version": "2",
+  "entries": [
+    {
+      "corpus": "crema-d",
+      "dataset_revision": "v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV=387d831b6b63df157bef95de05ec61dbffc95da3",
+      "sample_id": "crema-d:AudioWAV/1006_TIE_HAP_XX.wav",
+      "normalized_audio_sha256": "bc47ee0e2c3d18065d6826cd40f13864854c3c4427b75305427cfdd4b95b9da3",
+      "reason": "conflicting_label_duplicate"
+    },
+    {
+      "corpus": "crema-d",
+      "dataset_revision": "v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV=387d831b6b63df157bef95de05ec61dbffc95da3",
+      "sample_id": "crema-d:AudioWAV/1006_TIE_NEU_XX.wav",
+      "normalized_audio_sha256": "bc47ee0e2c3d18065d6826cd40f13864854c3c4427b75305427cfdd4b95b9da3",
+      "reason": "conflicting_label_duplicate"
+    },
+    {
+      "corpus": "crema-d",
+      "dataset_revision": "v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV=387d831b6b63df157bef95de05ec61dbffc95da3",
+      "sample_id": "crema-d:AudioWAV/1013_WSI_DIS_XX.wav",
+      "normalized_audio_sha256": "b7bbc20af29c3c86382fb591c5cbaf1d101b5289661b6f190835b2b5f6cb1f5a",
+      "reason": "conflicting_label_duplicate"
+    },
+    {
+      "corpus": "crema-d",
+      "dataset_revision": "v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV=387d831b6b63df157bef95de05ec61dbffc95da3",
+      "sample_id": "crema-d:AudioWAV/1013_WSI_SAD_XX.wav",
+      "normalized_audio_sha256": "b7bbc20af29c3c86382fb591c5cbaf1d101b5289661b6f190835b2b5f6cb1f5a",
+      "reason": "conflicting_label_duplicate"
+    },
+    {
+      "corpus": "crema-d",
+      "dataset_revision": "v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV=387d831b6b63df157bef95de05ec61dbffc95da3",
+      "sample_id": "crema-d:AudioWAV/1017_IWW_ANG_XX.wav",
+      "normalized_audio_sha256": "d85eb630de1d013d75f29b205bbeeb5d5634fe0ea9d3317b682485d00bf5fe80",
+      "reason": "conflicting_label_duplicate"
+    },
+    {
+      "corpus": "crema-d",
+      "dataset_revision": "v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV=387d831b6b63df157bef95de05ec61dbffc95da3",
+      "sample_id": "crema-d:AudioWAV/1017_IWW_FEA_XX.wav",
+      "normalized_audio_sha256": "d85eb630de1d013d75f29b205bbeeb5d5634fe0ea9d3317b682485d00bf5fe80",
+      "reason": "conflicting_label_duplicate"
+    },
+    {
+      "corpus": "ravdess",
+      "dataset_revision": "10.5281/zenodo.1188976:Audio_Speech_Actors_01-24=54bfa7692eee656451c78063922e01633728d552",
+      "sample_id": "ravdess:Actor_07/03-01-03-01-02-02-07.wav",
+      "normalized_audio_sha256": "031400423adc7c880d9ef1b6b5c5a713ac47cff36c6be9ee69c599a1e4047476",
+      "reason": "exact_repeat_same_label",
+      "kept_sample_id": "ravdess:Actor_07/03-01-03-01-02-01-07.wav"
+    }
+  ]
+}
