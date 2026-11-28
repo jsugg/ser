@@ -118,15 +118,19 @@ source policy (`ser.bench.source-policy/v1`): one immutable JSON object with the
 `datasets`, which maps each dataset id to an entry with these keys:
 
 - every entry: `language` (BCP 47 tag), `role` (`train/dev/test`, `test-only candidate`,
-  `training-only` or `excluded`), `speaker_identity_verified` (whether every row's speaker
-  identity is verified at the pinned source revision) and `may_train` (below);
+  `training-only` or `excluded`), `licence_id` and `catalogue_policy` (the catalogue's, as in the
+  table above) and `may_train` (below);
+- a `train/dev/test` or `training-only` entry: `speaker_identity_verified` (whether every row's
+  speaker identity is verified at the pinned source revision); a candidate has no such key, as
+  its identity comes from D4-2 only (below);
 - a `train/dev/test` or `test-only candidate` entry: `label_set` and `labels` (4.1),
   `raw_category_source` (where the raw category is read), `normalisation` (`none` or `casefold`,
   4.1) and `raw_map` (every normalised raw category to its label id);
-- a `training-only` entry: `copy_of` (the original source), `copy_source` (the copy),
-  `official_split` (false), `introduced_label_rule` (the deterministic rule that tells a label the
-  copy introduced from a label of the original source) and `introduced_label_rows` (the number of
-  rows that rule selects at the pinned source revision);
+- a `training-only` entry: `copy_of` (the original source's URL), `copy_source` (the copy's
+  source URL), `copy_revision` (the copy's revision or checksum), `official_split` (false),
+  `introduced_label_rows` (the number of rows whose label the copy introduced rather than the
+  source) and `introduced_label_sample_ids_sha256` (the digest of their list, below);
+  `copy_revision` and `introduced_label_sample_ids_sha256` are null until pinned;
 - an `excluded` entry: `exclusion` (the ids of the exclusions below that apply).
 
 The policy file is the UTF-8 bytes of Python
@@ -134,16 +138,23 @@ The policy file is the UTF-8 bytes of Python
 source policy of `bench-v1` is the file whose lowercase hexadecimal SHA-256 is
 
 ```text
-55a422d51169c46cdf96ea46920c8ad4023a9f64381dcf183ee73b9187712a0a
+676e3bb6fccd89373237e31d873057231584d254f1f6f1387f52e33fa1621f2e
 ```
 
-and the manifest records that value as `source_policy_sha256`. A bundle is invalid, so its build
-fails and the harness refuses it, if that value differs; if its datasets are not exactly the
-policy's entries whose role is not `excluded`, less any candidate the admission route excludes; or
-if a dataset has a language, label set, raw category source, normalisation or map other than its
-entry's, a role other than the one its entry and the admission route give it, or a count of rows
-selected by `introduced_label_rule` other than `introduced_label_rows`. A change to the policy is a
-new protocol version.
+and the manifest records that value as `source_policy_sha256`. The digest is taken over the
+file's bytes as read, never over a re-serialisation of the decoded object; separately, those bytes
+must equal the canonical serialisation of the object they decode to, and every entry must have
+exactly the keys its role requires. A change to the policy is a new protocol version.
+
+**Bundle membership.** A bundle holds only policy entries, each bound exactly as its entry binds
+it: every `train/dev/test` entry; every candidate the admission route admits, and no other; a
+`training-only` entry or not, as its builder chooses; never an `excluded` entry. A bundle is
+invalid, so its build fails and the harness refuses it, if its `source_policy_sha256` differs from
+the value above or the policy file fails the checks above; if its datasets break that rule; if a
+dataset has a language, label set, raw category source, normalisation or map other than its
+entry's, or a role other than the one its entry and the admission route give it; if a dataset
+card's licence id or catalogue policy differs from its entry's; or if it holds a training-only
+entry that fails a check of the training-only paragraph below.
 
 The table lists the policy entries this document names. The policy may hold further entries that
 it does not list; every rule of this protocol applies to them through their role and properties,
@@ -161,30 +172,45 @@ category source and normalised as the entry says (4.1), and (b) whether each row
 individual speaker id. If (a) differs from the dataset's map in its policy entry (for `mesd`, also
 the map of section 4.1), the dataset is excluded until a new protocol version changes the map.
 Otherwise its role is train/dev/test if (b) holds, and test-only if not (section 5.4). The
-manifest records the D4-2 record's SHA-256. A third-party copy of a source is never a candidate. A
-dataset outside the source policy enters only through a new protocol version.
+manifest records the D4-2 record's SHA-256; the build and the harness hash the record's bytes and
+check that they match it and that the record is for that dataset at the source revision the
+manifest pins. A candidate whose record is missing or fails those checks is not admitted and is
+absent from the bundle; the bundle stays valid. The source policy asserts no speaker identity for
+a candidate: its identity, and so its role, come only from that record. A third-party copy of a
+source is never a candidate. A dataset outside the source policy enters only through a new
+protocol version.
 
 **Permission to train is separate from label qualification.** Which catalogued datasets may be
 used to train private models is fixed by the source policy, not by this document: an entry's
 `may_train`, and `may_train_unlisted` for a catalogued dataset without an entry. Every model
 trained for the benchmark is still fitted, tuned and calibrated on the split ledger's train and
 dev rows only (5.6). Whether a dataset's labels are benchmark ground truth is decided only by
-sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private.
+sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private;
+the catalogue policy of a policy entry is its `catalogue_policy`, that of any other catalogued
+dataset the catalogue's.
 
 **Training-only datasets.** An entry whose role is `training-only` is a third-party copy of a
 source, not its official release, with no per-clip speaker identity (`speaker_identity_verified`
-false) and no official split. It is in every bundle of this protocol version, in that role only,
-and is never rebound; under section 5.4 it is never in dev or test and never scored. Of its rows
-whose label the copy introduced rather than the source (its `introduced_label_rule`), the
-otherwise eligible rows are in train with `label: null` and reason `label_not_from_source`; an
-exclusion of section 2.1, 5.1 or 5.3 takes precedence, with its own reason. They are never gold
-labels (4.1), and a model that uses the introduced labels as targets says so in its provenance
-list (section 6.1). An official release of the source would be a different dataset and a new
-policy entry, so a new protocol version.
+false) and no official split. A bundle may leave it out. A bundle that holds it holds it in that
+role only, never rebound; under section 5.4 it is never in dev or test and never scored. Such a
+bundle is invalid if `copy_revision` or `introduced_label_sample_ids_sha256` is null, or if the
+entry's dataset card does not give `copy_source` as its source URL, `copy_revision` as its
+revision or checksum and `copy_of` as the source it copies. The rows whose label the copy
+introduced rather than the source are those whose `sample_id` is in the entry's introduced-label
+list: a file holding each such `sample_id` (2.1) once as UTF-8 followed by LF, in code-point order,
+with no other bytes, whose lowercase hexadecimal SHA-256 is `introduced_label_sample_ids_sha256`.
+Before the row exclusions of sections 2.1, 5.1 and 5.3, the build checks that digest, that every
+listed id is a `sample_id` of the entry's rows, and that the list holds `introduced_label_rows`
+ids; a failure invalidates the bundle. Of the listed rows, the otherwise eligible ones are in
+train with `label: null` and reason `label_not_from_source`; an exclusion of section 2.1, 5.1 or
+5.3 takes precedence, with its own reason. They are never gold labels (4.1), and a model that
+uses the introduced labels as targets says so in its provenance list (section 6.1). Pinning a null
+key is a policy change, and so is an official release of the source, which would be a different
+dataset and a new policy entry; each is a new protocol version.
 
 Each bundle dataset has a dataset card: source URL, revision or checksum, licence id, catalogue
-policy, native sample rate, row count, and the source collections and speakers it may share with
-other datasets.
+policy, native sample rate, row count, the source collections and speakers it may share with
+other datasets, and, for a third-party copy, the URL of the source it copies.
 
 ## 4. Label policy
 
@@ -363,7 +389,8 @@ other training.
 
 ## 6. Leakage audit
 
-The audit reads the manifest, both ledgers and, in a benchmark run, the model card (6.1). It runs
+The audit reads the manifest, the source policy (section 3), both ledgers and, in a benchmark run,
+the model card (6.1). It runs
 before every benchmark run and on its own. Checks, over all datasets together:
 
 | Check | Pass condition |
@@ -402,10 +429,11 @@ without speaker identity (5.4) also needs auditable separation: every stage's da
 source collection, none is that dataset's, and every training row is a known row; otherwise it
 carries `separation_unverified`. The flag
 `overlap_unverified` is set on a test dataset's results when the model card or publisher list
-shows training, at any stage, on a training-only entry of the source policy (section 3), whatever
-the evaluated bundle holds, and that entry's dataset card cannot rule out source recordings or
-speakers shared with that dataset. These flags remove the result from clean comparison; they are
-flags, not provenance levels.
+shows training, at any stage, on a training-only entry of the source policy (section 3), known
+as the copy at its `copy_source` of its `copy_of`, at any revision, whatever the evaluated bundle
+holds, and that entry's dataset card cannot rule out source recordings or speakers shared with
+that dataset; a bundle without the entry has no such card, so the flag is set. These flags remove
+the result from clean comparison; they are flags, not provenance levels.
 
 `verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
 owner's own recordings (E3-4) are free of overlap by construction; for a `declared` model they are
