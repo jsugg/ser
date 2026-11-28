@@ -27,8 +27,8 @@ demographic groups. No figure is pooled across datasets or languages.
 
 **Descriptive-only flags.** A result carrying a dataset flag (`identity_unresolved`, 5.2;
 `degenerate_label_set`, 4.3; `source_in_training`, 6) or a model flag (`provenance_unknown`,
-`test_overlap`, `overlap_unverified`, 6.1) is reported and never enters sections 10.2 to 10.5,
-with the single exception of the U11 comparator of section 9.
+`test_overlap`, `overlap_unverified`, `separation_unverified`, 6.1) is reported and never enters
+sections 10.2 to 10.5, with the single exception of the U11 comparator of section 9.
 
 The only earlier result (RAVDESS accuracy 58.6%, UAR 56.8%, `fast` profile) came from a split by
 clip, not by speaker, and is not comparable with any figure produced here.
@@ -49,14 +49,15 @@ the call options and timeout of section 2.2. Every row has a `sample_id`, assign
 bundle is built and never reused or renumbered within a bundle id:
 
 ```text
-sample_id = <dataset id> ":" <path> [ "#" <start> "-" <end> ]
+sample_id = <dataset id> ":" <path> [ "#" <start> "-" <end> ]  |  <dataset id> "!" <n>
 ```
 
 `<path>` is the source file's POSIX path relative to the dataset root (`/` separators, no leading
-`./`, Unicode NFC). The suffix is present only for a segment row: `<start>` and `<end>` are
-decimal integer frame indices at the file's native rate, without leading zeros, with
-`0 ≤ start < end ≤` the file's frame count. Two rows with the same `sample_id` fail the bundle
-build.
+`./`, Unicode NFC). The suffix is present only for a segment row: `<start>` and `<end>` are the
+source's frame indices at the file's native rate, as decimal integers without leading zeros; the
+id does not validate them. A source row whose path or bounds cannot be written in that form gets
+the source-row id `<dataset id> "!" <n>`, with `<n>` its zero-based position, in decimal, in the
+dataset's pinned source listing. Two rows with the same `sample_id` fail the bundle build.
 
 For every row the bundle builder and the harness:
 
@@ -67,8 +68,9 @@ For every row the bundle builder and the harness:
 4. resample to 16,000 Hz with the pinned resampler in float64; a file already at 16,000 Hz is not
    resampled.
 
-A row whose decode fails, whose segment bounds are invalid, or whose audio has zero frames or a
-non-finite sample is excluded when the bundle is built (ledger reason `decode_invalid`), so the
+A row with a source-row id, whose decode fails, whose segment bounds do not satisfy
+`0 ≤ start < end ≤` the decoded frame count, or whose audio has zero frames or a non-finite
+sample is excluded when the bundle is built (ledger reason `decode_invalid`), so the
 scored rows are the same for every model.
 
 ### 2.2 The call
@@ -127,9 +129,10 @@ train private models. Whether a dataset's labels are benchmark ground truth is d
 sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private.
 
 **The MSP-Podcast mirror is training-only.** It is not the official release and has no speaker
-identity and no official split; under section 5.4 it is training-only and never scored. Its
-56,157 rows whose label the mirror introduced rather than the source keep split `train` with
-`label: null` and reason `label_not_from_source`; they are never gold labels, and a model that uses
+identity and no official split; under section 5.4 it is training-only and never scored. Of its
+56,157 rows whose label the mirror introduced rather than the source, the otherwise eligible rows
+are in train with `label: null` and reason `label_not_from_source`; an exclusion of section 2.1,
+5.1 or 5.3 takes precedence, with its own reason. They are never gold labels, and a model that uses
 their mirror labels as targets says so in its provenance list (section 6.1). An official
 MSP-Podcast release would be a different dataset and a new table row.
 
@@ -187,7 +190,9 @@ For dataset `d` with label set `S_d` and model `m` with label set `M_m`:
 - the prediction is `ŷ_i = argmax_{a∈K} p_i(a)`; ties go to the label first in code-point order;
 - `mean_out_of_set_mass` = the mean of `1 − Σ_{b∈K} q_i(b)` over the rows with a valid vector.
 
-If `|K| ≤ 1` the result carries `degenerate_label_set`.
+If `|K*_d| ≤ 1` (below) the dataset carries `degenerate_label_set`, a flag set from the bundle
+alone. A model whose own `|K| ≤ 1` has that result reported as descriptive only; this never
+changes `D_ℓ` or any denominator.
 
 For selection and acceptance, the label set of dataset `d` is the same for every candidate:
 `K*_d = S_d ∩ ser-8-v1`, reduced to labels with at least one test row. Because an eligible model's
@@ -264,9 +269,10 @@ A dataset without per-clip speaker identity cannot be split, so it is used whole
 role, never split and never dev. By default it is **test-only**: none of it is used for fitting,
 tuning or calibration, and an official split it is distributed with is ignored (its official
 training part is not used for training). It counts for acceptance and selection like any other
-test set if it passes audit check A7 and the audio-hash checks of 5.1 and A4 against all training
-data. It is **training-only** only where the owner's licence decision assigns that role and its
-labels do not qualify for testing: today the MSP-Podcast mirror alone. A row without a node is
+test set if it passes audit check A7 and the audio-hash checks of 5.1 and A4, and a model's
+result on it also needs the separation evidence of 6.1. It is **training-only** only where the
+owner's licence decision assigns that role and its labels do not qualify for testing: today the
+MSP-Podcast mirror alone. A row without a node is
 test, reason `test_only_dataset`, in a test-only dataset; train, reason `training_only_dataset`,
 in a training-only dataset; otherwise excluded, reason `no_speaker_identity`.
 
@@ -286,8 +292,9 @@ including excluded rows, with exactly these keys:
 | `speaker_group` | string or null | group id of 5.2; null if the row has no node |
 | `split` | string | `train`, `dev`, `test` or `excluded` |
 
-The first applicable reason is recorded, in the order of sections 2.1, 3, 4.1, 5.1, 5.3, 5.4.
-Each line is the UTF-8 bytes of Python
+The first applicable reason is recorded, in the order of sections 2.1, 3, 4.1, 5.1, 5.3, 5.4,
+except that an exclusion reason precedes `label_not_from_source`. Each line is the UTF-8 bytes of
+Python
 `json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))` followed by LF,
 lines sorted by `(dataset, sample_id)` in code-point order. The **ledger digest** is the lowercase
 hexadecimal SHA-256 of the whole file. Rebuilding the bundle from the same sources must give the
@@ -332,13 +339,18 @@ calibration, including a base model's:
   Results carry `provenance_declared`;
 - **`unknown`**: anything else. Results carry `provenance_unknown`.
 
-The flag `test_overlap` is set on a dataset's results when, for a `verified` model, a listed row
+Whatever the level, every known row of every stage is checked: a bundle row, or an external file
+whose `audio_sha256` (2.3) the card lists. Demotion to `declared` never drops these checks on the
+part that can be audited. The flag `test_overlap` is set on a dataset's results when a known row
 is in that dataset's test partition, shares its speaker group with a test row, or has the
-`audio_sha256` of a test row; or, for any other model, its card or publisher list names that
-dataset, its source collection, or a speaker or recording of its test partition. The flag
+`audio_sha256` of a test row, or when the card or publisher list names that dataset, its source
+collection, or a speaker or recording of its test partition. A result on a test-only dataset
+without speaker identity (5.4) also needs auditable separation: every stage's data is listed by
+source collection, none is that dataset's, and every training row is a known row; otherwise it
+carries `separation_unverified`. The flag
 `overlap_unverified` is set on a test dataset's results when the model was trained on the
 MSP-Podcast mirror and the mirror's dataset card cannot rule out source recordings or speakers
-shared with that dataset. Both flags remove the result from clean comparison; they are flags, not
+shared with that dataset. These flags remove the result from clean comparison; they are flags, not
 provenance levels.
 
 `verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
@@ -434,8 +446,11 @@ not reliable.
   of units `idx_b`, with repetition. The report records the numpy version. The draws depend only on
   the dataset, never on the model, so every model and baseline sees the same resamples (paired).
 - **Metric on a resample:** the formulas of 8.1, over the resample's rows whose label is in the
-  scored set, with `K` reduced to labels that have at least one such row. A resample with no such
-  row, or (for ECE) no successful row, has no value.
+  scored set. Predictions, confidences and the full prediction columns stay those of the
+  comparison's original `K`; only true classes with no row in the draw are left out of the macro
+  averages (and `k`). No prediction is removed from a denominator or re-decided on fewer labels.
+  Check: two true `angry` rows predicted `angry` and `happy`, no true `happy` row: UAR `= 1/2`.
+  A resample with no such row, or (for ECE) no successful row, has no value.
 - **Interval:** if any resample has no value, the interval is null and flagged `ci_undefined`.
   Otherwise sort the `B` exact values `v_0 ≤ … ≤ v_{B−1}`; for `q` the lower and upper tail
   levels, `h = q·(B−1)`, value `= v_⌊h⌋ + (h − ⌊h⌋)·(v_⌈h⌉ − v_⌊h⌋)` (the "linear" percentile).
@@ -445,7 +460,8 @@ not reliable.
 ### 8.4 Per language, never pooled
 
 For benchmark language `ℓ`, the **required datasets** `D_ℓ` are its datasets with a train/dev/test
-or test-only role in the bundle that carry no dataset flag of section 1. `D_ℓ` depends only on
+or test-only role in the bundle that carry no dataset flag of section 1 (each set from the bundle
+alone: 5.2, 4.3 on `K*_d`, A7); model flags never change it. `D_ℓ` depends only on
 the bundle, is the same for every model and baseline, and is frozen in the selection plan (10.5).
 Each dataset is weighted equally whatever its size:
 
