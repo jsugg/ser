@@ -201,6 +201,18 @@ def test_blocked_decode_returns_before_kill_reap_or_restart(tmp_path: Path, gate
     gated.wait_state("ready")
 
 
+def test_received_outcome_clears_busy_before_releasing_call(tmp_path: Path, gated: Harness) -> None:
+    analyzer = load_artifact(write_artifact(tmp_path / "model.ser"), _CONFIG)
+    child = gated.children[0]
+    call = gated.pool.submit(analyzer.analyze, tone(0.5), sample_rate_hz=CANONICAL_RATE_HZ)
+    child.jobs.get(timeout=_WAIT)
+    with gated.supervisor._condition:
+        child.outcome(0.5)
+        gated.supervisor._drain_events()
+        assert gated.supervisor.state == "ready"
+    assert call.result(timeout=_WAIT)["status"] == "silent"
+
+
 def test_path_source_extends_deadline_and_scoring_keeps_feature_timing(
     tmp_path: Path, gated: Harness
 ) -> None:

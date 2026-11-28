@@ -16,6 +16,7 @@ import sys
 import time
 from collections import deque
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
@@ -78,14 +79,26 @@ class _Work:
     config: AnalysisConfig
 
 
+def _exit_on_parent_death(parent_sentinel: int) -> None:
+    from multiprocessing.connection import wait
+
+    wait([parent_sentinel])
+    os._exit(1)
+
+
 def _worker_main(
     connection: Connection,
     request: BackendLoadRequest,
     loader: BackendLoader,
     settings: WorkerSettings,
+    start_deadline: float,
 ) -> None:
     sys.dont_write_bytecode = True
     try:
+        parent = mp.parent_process()
+        if parent is not None:
+            # Spawn supplies a dedicated parent pipe, separate from the work connection.
+            Thread(target=_exit_on_parent_death, args=(parent.sentinel,), daemon=True).start()
         threads = str(settings.max_threads)
         for key in (
             "OMP_NUM_THREADS",
@@ -111,6 +124,9 @@ def _worker_main(
         with threadpool_limits(limits=settings.max_threads):
             backend = loader(request)
             try:
+                warm_up = getattr(backend, "warm_up", None)
+                if callable(warm_up):
+                    warm_up(deadline_monotonic_s=start_deadline)
                 connection.send(WorkerEvent("ready"))
                 while (work := connection.recv()) is not None:
                     if not isinstance(work, _Work):
@@ -266,29 +282,41 @@ def start_worker(
     ``settings.start_timeout_s``.
     """
     deadline = time.monotonic() + settings.start_timeout_s
-    context = mp.get_context("spawn")
-    parent, child = context.Pipe()
-    process = context.Process(
-        target=_worker_main, args=(child, request, loader, settings), daemon=True
-    )
-    try:
-        process.start()
-    except (OSError, ValueError, TypeError):
-        parent.close()
-        raise AnalysisModelLoadError("The analysis worker could not start.") from None
-    finally:
-        child.close()
-    worker = AnalysisWorker(process, parent)
-    ready = worker.next_event(until_monotonic_s=deadline)
-    if (
-        ready is not None
-        and ready.kind == "ready"
-        and ready.received_at is not None
-        and ready.received_at < deadline
-    ):
-        return worker
-    worker.stop(graceful=False)
-    raise AnalysisModelLoadError("The analysis worker did not become ready.") from None
+    with ExitStack() as cleanup:
+        context = mp.get_context("spawn")
+        parent, child = context.Pipe()
+        cleanup.callback(parent.close)
+        with child:
+            process = context.Process(
+                target=_worker_main, args=(child, request, loader, settings, deadline), daemon=True
+            )
+            process.start()
+        cleanup.callback(_kill_failed_start, process)
+        worker = AnalysisWorker(process, parent)
+        cleanup.pop_all()
+        started = False
+        try:
+            ready = worker.next_event(until_monotonic_s=deadline)
+            started = (
+                ready is not None
+                and ready.kind == "ready"
+                and ready.received_at is not None
+                and ready.received_at < deadline
+            )
+            if started:
+                return worker
+            raise AnalysisModelLoadError("The analysis worker did not become ready.") from None
+        finally:
+            if not started:
+                worker.stop(graceful=False)
+
+
+def _kill_failed_start(process: BaseProcess) -> None:
+    if process.is_alive():
+        process.kill()
+    process.join(timeout=0.5)
+    if not process.is_alive():
+        process.close()
 
 
 @dataclass(eq=False)
@@ -465,14 +493,19 @@ class WorkerSupervisor:
                 pending.predict_started_ns = event.stage_started_ns
             elif event.kind == "outcome" and event.outcome is not None:
                 pending.result = event.outcome
+                if not self._closing and pending.result.status != "timeout":
+                    self._state = "ready"
                 self._condition.notify_all()
                 return
 
     def _start(self, *, first: bool) -> None:
+        worker: AnalysisWorker | None = None
         try:
             worker = start_worker(self._request, self._loader, self._settings)
             worker.notify_on_event(self._wake)
-        except AnalysisModelLoadError:
+        except Exception:
+            if worker is not None:
+                worker.stop(graceful=False)
             if not first:
                 _LOGGER.warning("Analysis worker restart failed.")
             with self._condition:
@@ -560,6 +593,11 @@ class WorkerSupervisor:
 
         Idempotent.
         """
+        self.close_nowait()
+        self._thread.join()
+
+    def close_nowait(self) -> None:
+        """Ask the supervisor to stop without joining it on the caller's thread."""
         with self._condition:
             if not self._closing:
                 self._closing = True
@@ -567,7 +605,6 @@ class WorkerSupervisor:
                 while self._queued:
                     self._queued.popleft().closed = True
                 self._condition.notify_all()
-        self._thread.join()
 
 
 __all__ = [

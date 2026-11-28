@@ -189,15 +189,6 @@ def test_logging_and_warnings_are_left_alone(
     assert all(_SENTINEL not in message for message in caplog.messages)
 
 
-class _SharedDspContentLeak(AssertionError):
-    pass
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=_SharedDspContentLeak,
-    reason="Shared DSP logs dependency exceptions before analysis can sanitize them (ADR D14).",
-)
 def test_fast_dsp_failure_does_not_log_dependency_content(
     fast_model_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -208,8 +199,7 @@ def test_fast_dsp_failure_does_not_log_dependency_content(
     caplog.set_level(logging.DEBUG)
     with load_baseline(fast_model_path, INLINE) as analyzer:
         assert _analyse(analyzer, tone(1.0))["status"] == "model_error"
-    if any(_scripted_backend.SECRET in message for message in caplog.messages):
-        raise _SharedDspContentLeak("Shared DSP exposed exception text.")
+    assert all(_scripted_backend.SECRET not in message for message in caplog.messages)
 
 
 def test_results_are_deterministic(fast_model_path: Path) -> None:

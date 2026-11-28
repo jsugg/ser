@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -20,6 +19,7 @@ from ser._internal.analysis.errors import (
     AnalysisModelNotConformingError,
     AnalysisModelUnavailableError,
 )
+from ser._internal.analysis.legacy import load_legacy
 from ser.profiles import ProfileName
 from ser.runtime.contracts import (
     LicenceRecord,
@@ -55,6 +55,7 @@ class OpenedArtifact:
 
     metadata: ArtifactMetadata
     payload: bytes
+    legacy_version_mismatch: bool = False
 
 
 class ArtifactFormat(Protocol):
@@ -87,9 +88,7 @@ class LegacyPickleFormat:
 
     def open(self, data: bytes) -> OpenedArtifact:
         """Unpickles; call only after the caller opted in to a legacy baseline."""
-        from ser._internal.models.artifact_envelope import deserialize_model_artifact
-
-        model = deserialize_model_artifact(pickle.loads(data))
+        model, version_mismatch = load_legacy(data)
         metadata = model.artifact_metadata
         if metadata is None:
             raise ValueError("Missing legacy metadata.")
@@ -105,6 +104,7 @@ class LegacyPickleFormat:
                 model_revision=cast(str | None, metadata.get("model_revision")),
             ),
             data,
+            legacy_version_mismatch=version_mismatch,
         )
 
 

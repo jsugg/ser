@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import time
+import weakref
 from collections import deque
 from dataclasses import dataclass
 from threading import Condition
@@ -263,6 +264,7 @@ class UtteranceAnalyzer:
     def __init__(self, session: _LoadedSession, /) -> None:
         """Not part of the interface; use ``load``."""
         self._session = session
+        self._finalizer: weakref.finalize | None = None
 
     @classmethod
     def load(
@@ -276,6 +278,9 @@ class UtteranceAnalyzer:
         settings: AppConfig | None = None,
     ) -> Self:
         """Reads and verifies the model file once and starts the worker.
+
+        In scripts, call worker-mode ``load`` under ``if __name__ == "__main__":``
+        so the spawned worker can import the main module safely.
 
         Raises:
             AnalysisUsageError: Unsupported profile or invalid ``config``.
@@ -303,18 +308,26 @@ class UtteranceAnalyzer:
             config.max_threads if config.isolation == "worker" else None,
             feature_flags=settings.feature_flags,
         )
-        runner: _InlineSession | worker.WorkerSupervisor
+        worker_runner: worker.WorkerSupervisor | None = None
         if config.isolation == "inline":
-            runner = _InlineSession(request, loader)
+            runner: _InlineSession | worker.WorkerSupervisor = _InlineSession(request, loader)
         else:
-            runner = worker.WorkerSupervisor(
+            worker_runner = worker.WorkerSupervisor(
                 request,
                 loader,
                 worker.WorkerSettings(
                     config.max_threads, config.worker_nice, config.worker_start_timeout_s
                 ),
             )
-        return cls(_LoadedSession(manifest, config, runner))
+            runner = worker_runner
+        analyzer = cls(_LoadedSession(manifest, config, runner))
+        if worker_runner is not None:
+            analyzer._finalizer = weakref.finalize(analyzer, worker_runner.close_nowait)
+        if opened.legacy_version_mismatch:
+            _LOGGER.warning(
+                "Legacy analysis model was saved with a different scikit-learn version."
+            )
+        return analyzer
 
     @staticmethod
     def inspect_model(
@@ -400,6 +413,8 @@ class UtteranceAnalyzer:
         leaving a ``with`` block calls it.
         """
         self._session.runner.close()
+        if self._finalizer is not None:
+            self._finalizer.detach()
 
     def __enter__(self) -> Self:
         return self

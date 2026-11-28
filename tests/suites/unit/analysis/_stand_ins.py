@@ -35,10 +35,15 @@ CANONICAL_RATE_HZ = 16_000
 class FailingClassifier(MLPClassifier):
     """Fits normally and fails at prediction time, to provoke ``model_error``."""
 
+    _warmed = False
+
     def predict(self, X: object) -> NDArray[np.object_]:
         raise RuntimeError("stand-in prediction failure")
 
     def predict_proba(self, X: object) -> NDArray[np.float64]:
+        if not self._warmed:
+            self._warmed = True
+            return np.asarray(super().predict_proba(X), dtype=np.float64)
         raise RuntimeError("stand-in prediction failure")
 
 

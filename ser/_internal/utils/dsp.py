@@ -142,8 +142,8 @@ def extract_feature_from_signal(
                     axis=1,
                 )
                 feature_parts.append(np.asarray(tonnetz, dtype=np.float64))
-    except Exception as err:
-        logger.warning("Error extracting features from signal: %s", err)
+    except Exception:
+        logger.debug("Feature extraction failed.")
         raise
 
     if not feature_parts:

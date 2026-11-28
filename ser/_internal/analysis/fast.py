@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pickle
 import time
 from dataclasses import dataclass
 
@@ -16,15 +15,15 @@ from ser._internal.analysis.backend import (
     coverage_weighted_mean,
     frame_layout,
 )
+from ser._internal.analysis.legacy import capture_legacy_warnings, load_legacy
 from ser._internal.models.artifact_envelope import (
     DEFAULT_BACKEND_ID,
     DEFAULT_FRAME_SIZE_SECONDS,
     DEFAULT_FRAME_STRIDE_SECONDS,
     EmotionClassifier,
-    deserialize_model_artifact,
 )
 from ser._internal.repr.handcrafted import HandcraftedBackend
-from ser._internal.utils.audio_utils import CanonicalAudio
+from ser._internal.utils.audio_utils import CANONICAL_SAMPLE_RATE, CanonicalAudio
 from ser.runtime.contracts import LanguageHint
 
 
@@ -42,6 +41,17 @@ class FastBackend:
         self._model: EmotionClassifier | None = model
         self._labels = labels
         self._extractor = extractor
+
+    def warm_up(self, *, deadline_monotonic_s: float) -> None:
+        rate = CANONICAL_SAMPLE_RATE
+        duration = DEFAULT_FRAME_SIZE_SECONDS
+        t = np.arange(round(duration * rate), dtype=np.float64) / rate
+        samples = (0.25 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        audio = CanonicalAudio(samples, rate, rate, duration)
+        features = self.extract(audio, deadline_monotonic_s=deadline_monotonic_s)
+        if time.monotonic() >= deadline_monotonic_s:
+            raise TimeoutError
+        self.score(features, language=None, deadline_monotonic_s=deadline_monotonic_s)
 
     def extract(self, audio: CanonicalAudio, *, deadline_monotonic_s: float) -> _FastFeatures:
         spans = frame_layout(
@@ -73,7 +83,8 @@ class FastBackend:
     ) -> BackendScores:
         if not isinstance(features, _FastFeatures) or self._model is None:
             raise ValueError("Invalid fast analysis state.")
-        values = np.asarray(self._model.predict_proba(features.vectors), dtype=np.float64)
+        with capture_legacy_warnings():
+            values = np.asarray(self._model.predict_proba(features.vectors), dtype=np.float64)
         if values.shape != (len(features.spans), len(self._labels)):
             raise ValueError("Invalid fast probability shape.")
         frames = tuple(
@@ -89,7 +100,7 @@ class FastBackend:
 def load_fast(request: BackendLoadRequest) -> FastBackend:
     if request.artifact_format != "legacy-pickle" or not request.manifest.baseline:
         raise ValueError("No compatible fast payload format is registered.")
-    loaded = deserialize_model_artifact(pickle.loads(request.payload))
+    loaded, _ = load_legacy(request.payload)
     metadata = loaded.artifact_metadata
     extractor = HandcraftedBackend(feature_flags=request.feature_flags)
     if (

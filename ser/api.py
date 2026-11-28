@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -20,6 +21,7 @@ from ser._internal.analysis import (
     utterance_record_json_schema,
 )
 from ser._internal.config.schema import FeatureRuntimeBackendOverride
+from ser._internal.utils.logger import configure_logging
 from ser.config import (
     AccurateResearchRuntimeConfig,
     AccurateRuntimeConfig,
@@ -224,6 +226,8 @@ def infer(
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> InferenceExecution:
     """Runs inference using the active settings snapshot."""
+    if not logging.getLogger().handlers:
+        configure_logging()
     return _runtime_api.infer(
         file_path,
         profile=profile,

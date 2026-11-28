@@ -20,6 +20,7 @@ from typing import Literal
 
 _LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 _LOGGING_CONFIGURED = False
+logging.getLogger("ser").addHandler(logging.NullHandler())
 
 
 def _normalize_scope_value(value: str | None) -> str | None:
@@ -342,8 +343,6 @@ def configure_logging(level: str | int | None = None) -> int:
     return resolved_level
 
 
-def get_logger(name: str, level: str | int | None = None) -> logging.Logger:
-    """Creates or retrieves one logger without repeated global reconfiguration."""
-    if level is not None or not _LOGGING_CONFIGURED:
-        configure_logging(level)
+def get_logger(name: str) -> logging.Logger:
+    """Retrieves one logger without configuring application logging."""
     return logging.getLogger(name)
