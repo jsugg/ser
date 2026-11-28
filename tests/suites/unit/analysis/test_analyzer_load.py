@@ -73,7 +73,6 @@ def test_safe_artifact_manifest_is_its_verified_identity_and_licence(tmp_path: P
     assert_valid_record(record, manifest)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inspection_reads_the_licence_without_loading_the_model(
     tmp_path: Path, spies: Counter[str]
@@ -88,7 +87,6 @@ def test_inspection_reads_the_licence_without_loading_the_model(
     assert _scripted_backend.LOADS["inspected"] == 0
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_allow_list_hand_off_pins_the_inspected_bytes(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"labels": {"a": 1.0, "b": 0.0, "c": 0.0}})
@@ -116,7 +114,6 @@ _UNVERIFIABLE: dict[str, dict[str, Any]] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("allow_legacy_baseline", [False, True])
 @pytest.mark.parametrize("artifact", list(_UNVERIFIABLE.values()), ids=list(_UNVERIFIABLE))
@@ -131,7 +128,6 @@ def test_unverifiable_safe_artifacts_never_load(
         assert not isinstance(raised.value, AnalysisModelNotConformingError)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_model_without_a_pretrained_encoder_says_so(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", provenance="no-pretrained-encoder")
@@ -142,7 +138,6 @@ def test_a_model_without_a_pretrained_encoder_says_so(tmp_path: Path) -> None:
     assert manifest.provenance.encoder == "none"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("missing", ["model_id", "label_set_id"])
 def test_safe_artifacts_must_name_model_and_label_set(tmp_path: Path, missing: str) -> None:
@@ -155,7 +150,6 @@ def test_safe_artifacts_must_name_model_and_label_set(tmp_path: Path, missing: s
         load_artifact(path)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_an_artifact_for_another_profile_is_a_load_error(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", profile="medium")
@@ -192,7 +186,6 @@ def test_non_canonical_training_audio_is_a_baseline_on_opt_in_only(
     assert record["model_id"] == f"baseline:test-model@{sha256}"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_pickle_is_refused_before_it_is_unpickled(tmp_path: Path) -> None:
     path = write_booby_trapped_pickle(tmp_path / "model.pkl")
@@ -248,7 +241,6 @@ def test_baseline_ids_carry_the_digest_and_label_set_ids_follow_the_labels(
     assert seven.label_set_id != first.label_set_id
 
 
-@NOT_IMPLEMENTED
 def test_missing_model_file_fails_at_load(tmp_path: Path) -> None:
     missing = tmp_path / "missing-model-token-5d1e" / "ser_model.pkl"
 
@@ -259,7 +251,6 @@ def test_missing_model_file_fails_at_load(tmp_path: Path) -> None:
     assert "token-5d1e" not in "".join(traceback.format_exception(raised.value))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("reset_ambient_settings")
 def test_no_configured_model_fails_at_load_without_downloading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: IoGuard

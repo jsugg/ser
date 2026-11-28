@@ -7,12 +7,28 @@ on explicit opt-in, as baselines, and are refused before anything is unpickled.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import pickle
 from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
+from typing import Protocol, cast
 
+from ser._internal.analysis.errors import (
+    AnalysisModelLoadError,
+    AnalysisModelNotConformingError,
+    AnalysisModelUnavailableError,
+)
 from ser.profiles import ProfileName
-from ser.runtime.contracts import ModelFormat, ModelManifest, ModelProvenance, TrainingAudioForm
+from ser.runtime.contracts import (
+    LicenceRecord,
+    ModelFormat,
+    ModelIdentity,
+    ModelManifest,
+    ModelProvenance,
+    TrainingAudioForm,
+)
 
 
 @dataclass(frozen=True)
@@ -66,21 +82,59 @@ class LegacyPickleFormat:
         return "legacy-pickle"
 
     def claims(self, data: bytes) -> bool:
-        raise NotImplementedError("Legacy pickle reading is not implemented yet (brief A1-2).")
+        # SER's historical writer uses pickle's binary protocol.
+        return data.startswith(b"\x80")
 
     def open(self, data: bytes) -> OpenedArtifact:
         """Unpickles; call only after the caller opted in to a legacy baseline."""
-        raise NotImplementedError("Legacy pickle reading is not implemented yet (brief A1-2).")
+        from ser._internal.models.artifact_envelope import deserialize_model_artifact
+
+        model = deserialize_model_artifact(pickle.loads(data))
+        metadata = model.artifact_metadata
+        if metadata is None:
+            raise ValueError("Missing legacy metadata.")
+        return OpenedArtifact(
+            ArtifactMetadata(
+                profile=cast(ProfileName, metadata["profile"]),
+                backend_id=cast(str, metadata["backend_id"]),
+                model_id=None,
+                label_set_id=None,
+                labels=tuple(cast(list[str], metadata["labels"])),
+                training_audio=None,
+                provenance=None,
+                model_revision=cast(str | None, metadata.get("model_revision")),
+            ),
+            data,
+        )
 
 
 def artifact_formats() -> tuple[ArtifactFormat, ...]:
     """Formats analysis can read; P2-4 adds the safe format ahead of the legacy one."""
-    raise NotImplementedError("Artifact formats are registered by briefs P2-4 and A1-2.")
+    return (LegacyPickleFormat(),)
 
 
 def read_model_file(path: str | os.PathLike[str]) -> bytes:
     """The only read of a model file; its bytes are hashed and kept for restarts."""
-    raise NotImplementedError("Model file reading is not implemented yet (brief A1-2).")
+    try:
+        return Path(path).read_bytes()
+    except FileNotFoundError:
+        raise AnalysisModelUnavailableError("No model file is available.") from None
+    except (OSError, ValueError):
+        raise AnalysisModelLoadError("The model file could not be read.") from None
+
+
+_LICENCE_CLASSES = {"open", "non-commercial", "research-only", "academic-only"}
+
+
+def _complete_licence(record: object) -> bool:
+    return (
+        isinstance(record, LicenceRecord)
+        and all(
+            isinstance(value, str) and value.strip()
+            for value in (record.name, record.licence, record.source)
+        )
+        and record.licence_class in _LICENCE_CLASSES
+    )
 
 
 def open_model(
@@ -111,7 +165,70 @@ def open_model(
     ``model_sha256`` is the model's identity. A safe artifact's ``model_id`` is
     copied verbatim and is not promised unique: two different files may share it.
     """
-    raise NotImplementedError("Model verification is not implemented yet (brief A1-2).")
+    digest = hashlib.sha256(data).hexdigest()
+    if expected_sha256 is not None and digest != expected_sha256:
+        raise AnalysisModelLoadError("The model digest does not match.") from None
+
+    artifact_format = next((fmt for fmt in artifact_formats() if fmt.claims(data)), None)
+    if artifact_format is None:
+        raise AnalysisModelLoadError("Unrecognised model format.") from None
+    legacy = artifact_format.name == "legacy-pickle"
+    if legacy and not allow_legacy_baseline:
+        raise AnalysisModelNotConformingError(
+            "The legacy model requires baseline opt-in."
+        ) from None
+    try:
+        opened = artifact_format.open(data)
+    except MemoryError:
+        raise
+    except Exception:
+        raise AnalysisModelLoadError("The model artifact could not be opened.") from None
+
+    metadata = opened.metadata
+    provenance = metadata.provenance
+    model_id = metadata.model_id
+    label_set_id = metadata.label_set_id
+    if not legacy:
+        if (
+            provenance is None
+            or provenance.payload_sha256 != hashlib.sha256(opened.payload).hexdigest()
+        ):
+            raise AnalysisModelLoadError("The model payload lacks verified provenance.") from None
+        if (
+            (provenance.encoder != "none" and not _complete_licence(provenance.encoder))
+            or not provenance.datasets
+            or not all(map(_complete_licence, provenance.datasets))
+        ):
+            raise AnalysisModelLoadError("The model licence record is incomplete.") from None
+        if not model_id or not label_set_id:
+            raise AnalysisModelLoadError("The model or label set identifier is missing.") from None
+    if metadata.profile != profile:
+        raise AnalysisModelLoadError("The model does not match the requested profile.") from None
+    baseline = legacy or metadata.training_audio != TrainingAudioForm(16_000, 1, True)
+    if baseline:
+        if not allow_legacy_baseline:
+            raise AnalysisModelNotConformingError("The model requires baseline opt-in.") from None
+        name = model_id or metadata.model_revision or f"{profile}-{metadata.backend_id}"
+        model_id = f"baseline:{name}@{digest}"
+    if legacy:
+        encoded_labels = json.dumps(sorted(set(metadata.labels)), separators=(",", ":")).encode()
+        label_set_id = f"labels:{hashlib.sha256(encoded_labels).hexdigest()}"
+    if (
+        not model_id
+        or not label_set_id
+        or not all(not any(map(str.isspace, identifier)) for identifier in (model_id, label_set_id))
+    ):
+        raise AnalysisModelLoadError("The model identifiers are invalid.") from None
+    return (
+        ModelManifest(
+            identity=ModelIdentity(profile, model_id, digest, label_set_id, metadata.labels),
+            artifact_format=artifact_format.name,
+            training_audio=metadata.training_audio,
+            provenance=provenance,
+            baseline=baseline,
+        ),
+        opened,
+    )
 
 
 __all__ = [

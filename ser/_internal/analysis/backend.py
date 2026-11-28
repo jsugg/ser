@@ -71,7 +71,11 @@ type BackendLoader = Callable[[BackendLoadRequest], AnalysisBackend]
 
 def backend_loaders() -> Mapping[ProfileName, BackendLoader]:
     """Returns the loader for each profile that analysis supports."""
-    raise NotImplementedError("Analysis backends are not implemented yet (briefs A1-2, A1-4).")
+    return {"fast": _load_fast}
+
+
+def _load_fast(request: BackendLoadRequest) -> AnalysisBackend:
+    raise NotImplementedError("The fast analysis backend is not implemented yet.")
 
 
 def frame_layout(

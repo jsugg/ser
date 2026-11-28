@@ -58,7 +58,6 @@ _INVALID: dict[str, AnalysisConfig] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("bad_config", list(_INVALID.values()), ids=list(_INVALID))
 def test_invalid_configuration_is_a_usage_error(tmp_path: Path, bad_config: AnalysisConfig) -> None:
