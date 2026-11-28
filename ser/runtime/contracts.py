@@ -72,8 +72,10 @@ class AnalysisConfig:
     the model runs in one persistent child process at ``worker_nice`` with at most
     ``max_threads`` native threads and no visible GPU, and ``analyze`` returns
     ``timeout`` no later than its deadline. ``"inline"`` runs in the caller's
-    process, leaves its priority and thread pools alone, and checks the deadline
-    only between stages; it is for callers that isolate SER themselves.
+    process and checks the deadline only between stages; it is for callers that
+    isolate SER themselves. Inline never changes process-wide settings (priority,
+    thread pools, environment): the caller owns its process, so ``max_threads`` and
+    ``worker_nice`` apply in the worker only.
     """
 
     min_duration_s: float = 0.3
@@ -90,7 +92,11 @@ class AnalysisConfig:
 
 @dataclass(frozen=True)
 class ModelIdentity:
-    """Identity of the model an analyser loaded, as written into every record."""
+    """Identity of the model an analyser loaded, as written into every record.
+
+    ``model_sha256`` identifies the model. ``model_id`` is a label chosen by whoever
+    built the model and is not promised unique; key stored results on the pair.
+    """
 
     profile: ProfileName
     model_id: str
@@ -110,7 +116,11 @@ class TrainingAudioForm:
 
 @dataclass(frozen=True)
 class LicenceRecord:
-    """Licence of one encoder or dataset that went into a model."""
+    """Licence of one encoder or dataset that went into a model.
+
+    ``name`` is the identifier an allow-list matches on, such as a catalogue
+    dataset id. A safe artifact whose records leave any field empty does not load.
+    """
 
     name: str
     licence: str
@@ -120,10 +130,17 @@ class LicenceRecord:
 
 @dataclass(frozen=True)
 class ModelProvenance:
-    """Licence and origin record bound to the payload it describes."""
+    """Licence and origin record bound to the payload it describes.
+
+    ``encoder`` is the pretrained encoder's licence, or ``"none"`` when the artifact
+    states that no pretrained encoder was used; ``None`` means the artifact did not
+    say. ``datasets`` lists every training dataset. A safe artifact with ``None``
+    as ``encoder`` or no datasets is incomplete and does not load, so an inspected
+    or loaded manifest never carries either.
+    """
 
     payload_sha256: str
-    encoder: LicenceRecord | None
+    encoder: LicenceRecord | Literal["none"] | None
     datasets: tuple[LicenceRecord, ...]
 
 

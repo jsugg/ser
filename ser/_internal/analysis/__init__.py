@@ -2,6 +2,7 @@
 
 from ser._internal.analysis.analyzer import UtteranceAnalyzer
 from ser._internal.analysis.errors import (
+    AnalysisClosedError,
     AnalysisError,
     AnalysisModelLoadError,
     AnalysisModelNotConformingError,
@@ -11,6 +12,7 @@ from ser._internal.analysis.errors import (
 from ser._internal.analysis.record_schema import utterance_record_json_schema
 
 __all__ = [
+    "AnalysisClosedError",
     "AnalysisError",
     "AnalysisModelLoadError",
     "AnalysisModelNotConformingError",

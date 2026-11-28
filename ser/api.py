@@ -10,6 +10,7 @@ import ser._internal.api.data as _data_api
 import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
 from ser._internal.analysis import (
+    AnalysisClosedError,
     AnalysisError,
     AnalysisModelLoadError,
     AnalysisModelNotConformingError,
@@ -251,6 +252,7 @@ def run_startup_preflight(
 __all__ = [
     "AccurateResearchRuntimeConfig",
     "AccurateRuntimeConfig",
+    "AnalysisClosedError",
     "AnalysisConfig",
     "AnalysisError",
     "AnalysisIsolation",

@@ -18,6 +18,10 @@ class AnalysisUsageError(AnalysisError, ValueError):
     """The caller broke the call contract (argument types, values, or lifecycle)."""
 
 
+class AnalysisClosedError(AnalysisUsageError):
+    """``analyze`` was called after ``close()`` began, or was still queued when it began."""
+
+
 class AnalysisModelUnavailableError(AnalysisError):
     """No model file exists for the requested profile; nothing is downloaded."""
 
@@ -39,6 +43,7 @@ class AnalysisModelNotConformingError(AnalysisModelLoadError):
 
 
 __all__ = [
+    "AnalysisClosedError",
     "AnalysisError",
     "AnalysisModelLoadError",
     "AnalysisModelNotConformingError",

@@ -18,15 +18,16 @@ _NOT_IMPLEMENTED = "UtteranceAnalyzer is not implemented yet (brief A1-2)."
 
 
 class _LoadedSession:
-    """Verified model bytes, manifest, configuration and worker; built by ``load``."""
+    """Verified model bytes, manifest, configuration and worker supervisor; built by
+    ``load``."""
 
 
 class UtteranceAnalyzer:
     """Analyses single utterances with one model, loaded once.
 
     Create instances with ``UtteranceAnalyzer.load``. ``analyze`` is synchronous and
-    safe to call from several threads; calls on one instance run one at a time, and
-    time spent waiting counts towards the caller's deadline.
+    safe to call from several threads; calls on one instance run one at a time in
+    arrival order, and time spent waiting counts towards the caller's deadline.
     """
 
     def __init__(self, session: _LoadedSession, /) -> None:
@@ -103,15 +104,19 @@ class UtteranceAnalyzer:
     ) -> UtteranceRecord:
         """Analyses one utterance: an audio file path, or mono float32 samples and rate.
 
-        Bad audio yields a non-``ok`` status and a deadline yields ``timeout``. Raises
-        ``AnalysisUsageError`` only for caller mistakes and after ``close``.
+        Argument type, dtype, shape and rate are checked first and raise
+        ``AnalysisUsageError``. Bad audio yields a non-``ok`` status; a deadline
+        yields ``timeout`` no later than the deadline, and a result fully received
+        before it is returned. Raises ``AnalysisClosedError`` if ``close()`` began
+        before this call started.
         """
         raise NotImplementedError(_NOT_IMPLEMENTED)
 
     def close(self) -> None:
-        """Waits for a call in flight, then stops the worker; idempotent.
+        """Lets the call in flight finish or reach its deadline, then stops the worker.
 
-        Later ``analyze`` calls raise ``AnalysisUsageError``.
+        Queued calls and later calls raise ``AnalysisClosedError``. Idempotent;
+        leaving a ``with`` block calls it.
         """
         raise NotImplementedError(_NOT_IMPLEMENTED)
 

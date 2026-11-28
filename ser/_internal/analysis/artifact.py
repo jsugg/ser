@@ -19,7 +19,8 @@ from ser.runtime.contracts import ModelFormat, ModelManifest, ModelProvenance, T
 class ArtifactMetadata:
     """What a format reads from a model file before the payload is deserialised.
 
-    Safe artifacts must carry ``model_id`` and ``label_set_id``.
+    Safe artifacts must carry ``model_id`` and ``label_set_id``. ``model_revision``
+    is the legacy envelope's revision; safe formats leave it ``None``.
     """
 
     profile: ProfileName
@@ -29,6 +30,7 @@ class ArtifactMetadata:
     labels: tuple[str, ...]
     training_audio: TrainingAudioForm | None
     provenance: ModelProvenance | None
+    model_revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,12 +96,20 @@ def open_model(
     2. A legacy pickle without ``allow_legacy_baseline`` is refused unopened.
     3. A safe artifact must carry provenance whose ``payload_sha256`` matches the
        payload, even with the opt-in.
-    4. The profile must match; training audio that is not canonical, or unknown,
+    4. That provenance must be complete: ``encoder`` is a licence record or
+       ``"none"``, at least one dataset is listed, and every record has a
+       non-empty ``name``, ``licence`` and ``source`` and a known ``licence_class``.
+       Anything less raises ``AnalysisModelLoadError``, even with the opt-in.
+    5. A safe artifact must carry ``model_id`` and ``label_set_id``.
+    6. The profile must match; training audio that is not canonical, or unknown,
        needs the opt-in and makes the model a baseline.
-    5. Baseline ids are ``baseline:<name>@<model_sha256>``, where ``<name>`` is the
-       artifact's ``model_id`` or ``<profile>-<backend_id>``. A legacy file without
-       ``label_set_id`` gets ``labels:`` plus the SHA-256 of the sorted unique labels
-       as compact JSON.
+    7. Baseline ids are ``baseline:<name>@<model_sha256>``, where ``<name>`` is the
+       artifact's ``model_id``, else its ``model_revision``, else
+       ``<profile>-<backend_id>``. A legacy file without ``label_set_id`` gets
+       ``labels:`` plus the SHA-256 of the sorted unique labels as compact JSON.
+
+    ``model_sha256`` is the model's identity. A safe artifact's ``model_id`` is
+    copied verbatim and is not promised unique: two different files may share it.
     """
     raise NotImplementedError("Model verification is not implemented yet (brief A1-2).")
 

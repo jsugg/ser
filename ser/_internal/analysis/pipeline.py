@@ -38,8 +38,9 @@ class PipelineOutcome:
 def analysis_deadline_s(config: AnalysisConfig, duration_s: float | None) -> float:
     """Seconds from ``analyze`` entry to the deadline.
 
-    ``timeout_floor_s`` until the duration is known, then
-    ``max(timeout_floor_s, timeout_per_audio_second * duration_s)``.
+    ``max(timeout_floor_s, timeout_per_audio_second * duration_s)`` once the source
+    duration is known, ``timeout_floor_s`` before. Array input knows it at entry; a
+    path learns it while decoding, and the deadline is then extended once.
     """
     raise NotImplementedError("Deadlines are not implemented yet (brief A1-2).")
 
@@ -52,22 +53,37 @@ def run_pipeline(
     deadline_monotonic_s: Callable[[], float],
     report_duration: Callable[[float], None],
 ) -> PipelineOutcome:
-    """Decode, canonicalise, check limits, extract, score, validate.
+    """One call, in this order; the first step that decides the status ends it.
 
-    Silence: ``20 * log10(rms)`` of the canonical mono samples, full scale 1.0, before
-    any feature transform; ``silent`` when strictly below ``silence_rms_dbfs``.
-    ``features_ms`` covers decode, conversion and extraction, ``predict_ms`` covers
-    scoring; a stage that never started reports 0.
+    1. Argument checks raise ``AnalysisUsageError``; ``analyze`` does them first.
+    2. Decode a path (failure is ``unreadable``). A source with zero samples, or a
+       source duration outside ``[min_duration_s, max_duration_s]``, is
+       ``too_short`` or ``too_long`` without conversion.
+    3. Convert exactly once through ``audio_utils.to_canonical_audio``; a
+       ``ValueError`` there (non-finite samples) is ``unreadable``.
+    4. ``silent`` when ``20 * log10(rms)`` of the canonical mono samples, full scale
+       1.0, before any feature transform, is strictly below ``silence_rms_dbfs``.
+    5. Extract, score, and validate with ``validated_scores``.
+
+    ``duration_s`` and ``input_sample_rate_hz`` are the source's whenever known,
+    including for ``too_short`` and ``too_long``. ``report_duration`` is called
+    once, as soon as the source duration is known. Timing uses
+    ``time.monotonic_ns`` floored to whole milliseconds: ``features_ms`` covers
+    decode, conversion and extraction, ``predict_ms`` covers scoring; a stage that
+    never started reports 0.
     """
     raise NotImplementedError("The analysis pipeline is not implemented yet (brief A1-2).")
 
 
-def scores_are_valid(scores: BackendScores, labels: tuple[str, ...], duration_s: float) -> bool:
-    """Backend output the record may carry; anything else is ``model_error``.
+def validated_scores(
+    scores: BackendScores, labels: tuple[str, ...], duration_s: float
+) -> BackendScores | None:
+    """Backend output as the record carries it, or ``None`` for ``model_error``.
 
-    Utterance and frame scores have exactly ``labels`` as keys, are finite and
-    non-negative, and sum to 1 within 1e-6. Frames are sorted, lie in
-    ``[0, duration_s]``, and leave no gap from 0 to ``duration_s``.
+    Valid: utterance and frame scores have exactly ``labels`` as keys, each is
+    finite and in ``[0, 1]``, and each set sums to 1 within 1e-6; frames are sorted,
+    lie in ``[0, duration_s]``, and leave no gap from 0 to ``duration_s``. Valid
+    score sets are returned divided by their sum.
     """
     raise NotImplementedError("Score validation is not implemented yet (brief A1-2).")
 
@@ -82,6 +98,6 @@ __all__ = [
     "PipelineOutcome",
     "analysis_deadline_s",
     "run_pipeline",
-    "scores_are_valid",
     "top_label",
+    "validated_scores",
 ]

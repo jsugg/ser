@@ -222,6 +222,16 @@
           },
           "kind": "alias"
         },
+        "AnalysisClosedError": {
+          "contract": {
+            "bases": [
+              "AnalysisUsageError"
+            ],
+            "kind": "class",
+            "members": {}
+          },
+          "kind": "alias"
+        },
         "AnalysisConfig": {
           "contract": {
             "bases": [],
@@ -1289,7 +1299,7 @@
                 "value": null
               },
               "encoder": {
-                "annotation": "LicenceRecord | None",
+                "annotation": "LicenceRecord | Literal['none'] | None",
                 "kind": "attribute",
                 "value": null
               },

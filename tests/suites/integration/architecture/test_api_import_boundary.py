@@ -255,6 +255,7 @@ _TIER_ONE_PUBLIC_EXPORTS: dict[str, tuple[str, ...]] = {
     "ser.api": (
         "AccurateResearchRuntimeConfig",
         "AccurateRuntimeConfig",
+        "AnalysisClosedError",
         "AnalysisConfig",
         "AnalysisError",
         "AnalysisIsolation",

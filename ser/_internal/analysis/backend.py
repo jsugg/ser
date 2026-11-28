@@ -52,12 +52,16 @@ class AnalysisBackend(Protocol):
 
 @dataclass(frozen=True)
 class BackendLoadRequest:
-    """Everything a loader receives; sent to the worker process on every start."""
+    """Everything a loader receives; sent to the worker process on every start.
+
+    ``max_threads`` is ``None`` in inline isolation: a loader then leaves
+    process-wide thread settings alone. In the worker those are already capped.
+    """
 
     artifact_format: ModelFormat
     payload: bytes
     manifest: ModelManifest
-    max_threads: int
+    max_threads: int | None
     device: Literal["cpu"] = "cpu"
 
 
