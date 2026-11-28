@@ -2,7 +2,8 @@
 
 - Status: proposed. Interface, stubs and tests only; the implementation is brief A1-2.
 - Contract source: SER plan section 2.2, "The integration contract SER must meet", and checklist U1 to U14.
-- Revised after the independent review of 95b5eef. Rulings marked "lead" were settled by the lead of this work.
+- Revised after the independent review of 95b5eef and the re-check of ecbebaf. Rulings marked "lead" and
+  decisions D-a to D-g were settled by the lead of this work.
 
 ## Context
 
@@ -71,8 +72,8 @@ The `load` arguments:
 - `allow_legacy_baseline` opts into a non-conforming model;
 - `config` and `settings` override the defaults.
 
-The analyser is a context manager. `close()` waits for the call in flight and is idempotent. `analyze`
-after `close` raises `AnalysisUsageError`.
+The analyser is a context manager, and leaving the block is `close()`. The `close()` rules are in D3
+(lead decision D-a).
 
 **Reason**
 
@@ -84,66 +85,113 @@ A single route keeps the implementation seam out of the contract.
 - `test_analyzer_runtime.py::test_close_is_idempotent_and_ends_the_analyzer`
 - `test_analyzer_runtime.py::test_close_waits_for_the_call_in_flight`
 
-### D3. Hard deadline through a persistent worker process (lead ruling 2)
+### D3. Hard deadline through a persistent worker process (lead ruling 2; decisions D-a, D-b, D-d)
 
-**Rule: the deadline**
+**Rule: the deadline (D-b)**
 
-`analyze` returns no later than its deadline, whatever the backend is doing. The deadline is
-`max(timeout_floor_s, timeout_per_audio_second × duration_s)`. It is measured from entry to `analyze` and
-includes queueing behind other calls.
+`analyze` returns no later than its deadline, whatever the backend is doing. The deadline is measured
+from entry to `analyze` and includes queueing behind other calls. Its length is
+`max(timeout_floor_s, timeout_per_audio_second × duration_s)`, where `duration_s` is the source
+duration:
+- **Array input.** The duration is known at entry, so the formula applies from the start.
+- **A path.** The deadline starts at `timeout_floor_s`. When the worker reports the source duration
+  (from the header, or after decoding), the deadline is extended once to the formula's value. If the
+  floor passes first, the call is `timeout`.
 
-Until the duration is known, the floor applies. The default `isolation="worker"` meets the deadline as
-follows:
+**Rule: supervision (D-b)**
 
-- **The worker.** `load` reads the model bytes once, then spawns one child process, the worker. The
-  worker loads the backend and keeps it loaded. Calls on one analyser are sent to it one at a time.
-- **At the deadline.** The parent kills the worker with SIGKILL, so the call returns
-  `status: "timeout"` on time.
-- **Restart.** The parent starts a new worker from the bytes it kept, so the file is not read again. The
-  next call pays one reload. Load-once holds while the worker is healthy.
-- **A worker that dies.** If the worker dies during a call, that call returns `model_error`, and the
-  worker is replaced in the same way.
-- **During a restart.** A caller either waits for the restart or returns `timeout` at its own deadline,
-  whichever comes first. A call that times out while queued or waiting neither evicts the worker nor
-  cancels the restart.
-- **A restart that does not finish.** A restart that exceeds `worker_start_timeout_s` (default 60 s), or
-  fails, makes the waiting calls return `model_error`. The next call starts a new worker.
-- **The bound.** A caller never waits longer than its own deadline. After an eviction, no more than
-  `worker_start_timeout_s` passes before calls either succeed again or return `model_error`.
-- **Process settings.** The worker runs with `worker_nice` (default 19, lowest priority) and with native
-  thread pools capped at `max_threads` (default 2). All GPUs are hidden from it. A nice value can only be
+- The caller's wait is a bounded wait on "result or deadline", never a blocking receive
+  (`AnalysisWorker.next_event(until_monotonic_s=...)`).
+- Killing, reaping and restarting the worker run on the supervisor's own thread, never on a caller's
+  path.
+- Decoding a path happens in the worker, so a blocked decode is bounded like scoring.
+- **Tie between result and deadline.** A result fully received before the deadline is returned.
+  Otherwise the call returns `timeout`.
+
+**Rule: the worker**
+
+`load` reads the model bytes once, then spawns one child process, the worker. The worker loads the
+backend and keeps it loaded. Calls on one analyser are served one at a time, in arrival order.
+
+**Rule: states (D-a)**
+
+`WorkerSupervisor` in `worker.py` holds the states `starting`, `ready`, `busy`, `restarting`,
+`failed`, `closing` and `closed`.
+
+| From | Event | To |
+|---|---|---|
+| `starting` | the child is ready, and `load` returns | `ready` |
+| `starting` | the start fails, or exceeds `worker_start_timeout_s` | none: `load` raises `AnalysisModelLoadError` |
+| `ready` | a call is admitted and the child is alive | `busy` |
+| `ready` | a call is admitted and the child died while idle | `restarting`; the call waits |
+| `busy` | the outcome is fully received before the deadline | `ready` |
+| `busy` | the deadline passes; the call returns `timeout`, and the child is killed | `restarting` |
+| `busy` | the child dies; the call returns `model_error` | `restarting` |
+| `restarting` | the child is ready | `ready` |
+| `restarting` | the start fails, or exceeds `worker_start_timeout_s` | `failed` |
+| `failed` | a call is admitted; one new start attempt is made | `restarting` |
+| any open state | `close()` begins | `closing` |
+| `closing` | the call in flight has ended, and the child is stopped | `closed` |
+
+- **During a restart.** A call that arrives while the worker restarts waits for it, inside its own
+  deadline. It gets its result if the worker comes back, `timeout` if its own deadline passes first,
+  and `model_error` if the restart fails. A call that times out while queued or waiting neither evicts
+  the worker nor cancels the restart.
+- **Idle death.** A worker that dies while idle is restarted at the next call, in the same way. That
+  costs one reload, and there is no error unless the restart fails.
+- **A failed restart with no caller waiting.** It leaves the analyser `failed`. The next call triggers
+  one new restart attempt and reports `model_error` if that attempt fails too.
+- **Reload.** A restart starts from the bytes that `load` kept, so the file is not read again.
+  Load-once holds while the worker is healthy.
+- **Close.** These raise `AnalysisClosedError`, a subclass of `AnalysisUsageError`:
+  - a call that arrives after `close()` began;
+  - a queued call that had not started when `close()` began.
+
+  `close()` lets the call in flight finish or reach its deadline. It is idempotent.
+- **What a caller observes.** A caller never waits past its own deadline. After an eviction, within
+  `worker_start_timeout_s` calls either succeed again or return `model_error`.
+
+**Rule: process settings (D-d)**
+
+- **The worker.** It runs at `worker_nice` (default 19, the lowest priority). Its native thread pools
+  are capped at `max_threads` (default 2), and every GPU is hidden from it. A nice value can only be
   raised relative to the caller's, so the worker runs at `max(worker_nice, caller nice)`.
-
-**Rule: inline mode**
-
-`isolation="inline"` is an explicit opt-in for callers that isolate SER themselves. It runs the backend in
-the caller's process and checks the deadline only between stages, so it is **not** a hard bound.
-
-Inline mode leaves the caller's nice value alone. It applies the thread cap, which is process-wide in the
-native libraries.
+- **Inline mode.** `isolation="inline"` is an explicit opt-in for callers that isolate SER themselves.
+  It runs the backend in the caller's process and checks the deadline only between stages, so it is
+  **not** a hard bound.
+- **Inline never changes process-wide settings** (nice value, thread pools, environment): the caller
+  owns its process. `BackendLoadRequest.max_threads` is `None` inline, and a loader then leaves thread
+  settings alone.
 
 **Reason**
 
-Section 2.2 makes the deadline part of the contract, and U9 says nothing hangs past it. Only another
-process can stop a native call that is stuck. The owner has decided that SER runs in its own process at
-the lowest priority, beside its consumer. That decision does not remove the deadline; it makes the
-priority and the thread cap part of the configuration.
+- Section 2.2 makes the deadline part of the contract, and U9 says nothing hangs past it.
+- Only another process can stop a native call that is stuck, and only a wait that never blocks can
+  return on time while that process is killed.
+- Naming each state settles what a caller observes in every race; the alternative is an implementation
+  choice the consumer cannot see.
+- The owner has decided that SER runs in its own process at the lowest priority, beside its consumer.
+  That makes the worker's priority and thread cap part of the configuration. A process-wide cap applied
+  inline would change the caller's other work.
 
 **Reuse of what the repository has**
 
 - Reused:
   - the spawn start method, as `fast_public_boundary.py` uses through `mp.get_context` (line 260);
-  - `worker_lifecycle.terminate_worker_process` (line 136);
-  - `worker_lifecycle.recv_worker_message` (line 34).
+  - `worker_lifecycle.terminate_worker_process` (line 136), called on the supervisor thread only.
 - Not reused:
+  - `worker_lifecycle.recv_worker_message` (line 34), because it blocks;
   - `run_process_setup_compute_handshake` (`worker_lifecycle.py:150`), and the medium and accurate
     `run_with_process_timeout`: each starts one process per call, which breaks load-once;
   - `run_with_timeout` (`worker_lifecycle.py:98`), which is thread-based and cannot stop native code;
   - the module-global `_SINGLE_FLIGHT_REGISTRY` (`fast_public_boundary.py:65`), because instances are
-    independent (D11).
+    independent (D15).
 - Nothing in the repository sets a nice value or caps thread pools. The worker adds both.
 
 **Tests (`test_analyzer_deadline.py` unless named)**
+
+Real-clock tests allow 50 ms (`_SCHEDULING_SLACK_S`) for thread scheduling only. The rule allows no
+overrun. Event-driven tests with an injected clock are acceptance items (below).
 
 | Pins | Test |
 |---|---|
@@ -152,12 +200,13 @@ priority and the thread cap part of the configuration.
 | A hung backend returns `timeout` on time; one restart and one file read | `test_a_hung_backend_times_out_on_time_and_the_worker_comes_back` |
 | A queued call times out without evicting | `test_a_call_that_times_out_in_the_queue_does_not_evict_the_running_one` |
 | A dead worker | `test_a_worker_that_dies_is_a_model_error_and_is_replaced` |
-| A failed restart | `test_a_failed_restart_is_a_model_error_and_the_next_call_retries` |
+| A failed restart, then the retry | `test_a_failed_restart_is_a_model_error_and_the_next_call_retries` |
 | Inline is not a hard bound | `test_inline_isolation_checks_the_deadline_between_stages_only` |
 | Worker priority and thread cap | `test_analyzer_config.py::test_worker_runs_at_low_priority_with_capped_threads_and_no_gpu` |
 | Inline leaves the caller alone | `test_analyzer_config.py::test_inline_mode_leaves_the_caller_process_alone` |
+| Close and the closed error | `test_analyzer_runtime.py::test_close_is_idempotent_and_ends_the_analyzer`, `test_analyzer_runtime.py::test_close_waits_for_the_call_in_flight` |
 
-### D4. Models load through one artifact protocol with digest-bound provenance (lead ruling 3)
+### D4. Models load through one artifact protocol with digest-bound provenance (lead ruling 3; decision D-c)
 
 **Rule: the protocol**
 
@@ -176,9 +225,17 @@ The safe format is the seam that brief P2-4 fills.
 1. Match `expected_sha256` if given.
 2. Find the format that claims the bytes.
 3. Require provenance whose payload digest matches the payload.
-4. Require `model_id` and `label_set_id`.
-5. Require the artifact's profile to match.
-6. Require canonical training audio (D6).
+4. Require a complete licence record (decision D-c):
+   - `encoder` is the encoder's licence, or the explicit `"none"`, which means no pretrained encoder
+     was used;
+   - at least one training dataset is listed;
+   - every record has a non-empty `name` (the id an allow-list matches on), `licence` and `source`,
+     and a known `licence_class`.
+
+   An incomplete record is `AnalysisModelLoadError`, not a warning, even with the opt-in.
+5. Require `model_id` and `label_set_id`.
+6. Require the artifact's profile to match.
+7. Require canonical training audio (D6).
 
 **Rule: the licence allow-list hand-off**
 
@@ -195,39 +252,46 @@ It never satisfies provenance.
 **Reason**
 
 Section 2.2 rules out pickle and requires a licence gate before analysis. Binding the provenance to the
-digest means it describes the bytes that run.
+digest means it describes the bytes that run. An allow-list can only judge what is recorded, so a
+missing entry must stop the load rather than pass as "no restriction".
 
 **Tests (`test_analyzer_load.py`, with synthetic artifacts)**
 
 - `test_safe_artifact_manifest_is_its_verified_identity_and_licence`
 - `test_inspection_reads_the_licence_without_loading_the_model`
 - `test_allow_list_hand_off_pins_the_inspected_bytes`
-- `test_unverifiable_safe_artifacts_never_load`: tampered or missing provenance, with and without the opt-in
+- `test_unverifiable_safe_artifacts_never_load`: tampered, missing or incomplete provenance (encoder
+  unrecorded, no datasets, a dataset without id, licence or class), with and without the opt-in
+- `test_a_model_without_a_pretrained_encoder_says_so`
 - `test_safe_artifacts_must_name_model_and_label_set`
 - `test_an_artifact_for_another_profile_is_a_load_error`
 - `test_a_pickle_is_refused_before_it_is_unpickled`: a booby-trapped pickle
 
-### D5. Identity is one-to-one with the loaded bytes
+### D5. `model_sha256` is the identity; `model_id` is a label (decision D-c)
 
 **Rule**
 
-`model_sha256` is the SHA-256 of the bytes that were loaded, in full lower-case hex.
-
+- **Identity.** `model_sha256` is the SHA-256 of the bytes that were loaded, in full lower-case hex. It
+  is the identity of a model.
+- **`model_id`.** It is a label chosen by whoever built the model and is not promised unique. A safe
+  artifact's `model_id` is copied verbatim, so two different files may share it. A consumer keys stored
+  results on the pair (`model_id`, `model_sha256`).
 - **Safe artifacts.** These must carry `model_id` and `label_set_id`.
-- **Baselines.** The id is `baseline:<name>@<full sha256>`. `<name>` is the artifact's `model_id`, or
-  else the legacy `model_revision`, or else `<profile>-<backend_id>`.
+- **Baselines.** The id is `baseline:<name>@<full sha256>`. `<name>` is the artifact's `model_id`, else
+  the legacy envelope's `model_revision` (`ArtifactMetadata.model_revision`), else
+  `<profile>-<backend_id>`.
 - **Legacy label sets.** `label_set_id` is `"labels:" + sha256(json.dumps(sorted(set(labels)), separators=(",", ":")))`.
 
 **Reason**
 
-A 12-hex prefix is not guaranteed unique, and equal explicit ids could name unequal bytes. The canonical
-JSON form cannot collide the way a delimiter-joined list can.
+SER cannot make a builder's label unique; a digest is unique without coordination. A 12-hex prefix is
+not guaranteed unique. The canonical JSON form cannot collide the way a delimiter-joined list can.
 
 **Tests (`test_analyzer_load.py`)**
 
 - `test_legacy_pickle_loads_only_as_a_baseline_with_exact_ids`
 - `test_legacy_model_revision_names_the_baseline`
-- `test_model_files_differing_in_weights_or_labels_have_distinct_ids`
+- `test_baseline_ids_carry_the_digest_and_label_set_ids_follow_the_labels`
 
 ### D6. Canonical audio only; non-canonical models are baselines on opt-in (lead ruling 6)
 
@@ -264,9 +328,12 @@ Both input forms pass, in native channels and at the native rate, through
 `ser._internal.utils.audio_utils.to_canonical_audio(samples, sample_rate, *, channel_axis=1)`. That is
 brief M5-1's seam. It is frames-first, never guesses the layout, and raises `ValueError` on invalid input.
 
-`ser._internal.analysis.audio_input` calls it as `audio_utils.to_canonical_audio`, exactly once per call,
-and re-exports `CanonicalAudio` and `CANONICAL_SAMPLE_RATE` from the same module. Nothing mixes down or
-resamples before it. Training uses the same function.
+`ser._internal.analysis.audio_input` calls it as `audio_utils.to_canonical_audio`, and re-exports
+`CanonicalAudio` and `CANONICAL_SAMPLE_RATE` from the same module. Nothing mixes down or resamples
+before it. Training uses the same function.
+
+It is called exactly once for each call that passes step 2 of the input order in D11, and not at all
+otherwise (decision D-e).
 
 **Reason**
 
@@ -280,6 +347,7 @@ would make it something other than the shared train and inference conversion.
 | Native channels and rate reach the seam; mono 16 kHz comes out | `test_native_channels_and_rate_reach_the_shared_seam` (a spy at the seam) |
 | A signal-sensitive backend agrees within 0.05 across 8, 16, 44.1 and 48 kHz, for arrays and files | `test_every_input_rate_is_resampled_to_the_same_scores` |
 | Unequal stereo channels give the mix, not one channel | `test_stereo_is_mixed_by_the_canonical_conversion_not_by_dropping_a_channel` |
+| Empty and out-of-range sources never reach the seam | `test_out_of_range_sources_are_classified_before_conversion` |
 
 ### D8. Inputs and misuse
 
@@ -325,8 +393,11 @@ schema (`additionalProperties: false`). An unknown version raises `ValueError`.
 - **`dimensions`.** This is `null` in v1; real valence and arousal come with v2 (lead ruling 8).
 - **Failure statuses.** Any status other than `ok` carries `null` for `labels`, `top_label`, `confidence`
   and `frames`. It still carries every identity field, `audio` as far as known, and `timing_ms`.
-- **Timing.** `timing_ms.features` covers decode, conversion and extraction. `timing_ms.predict` covers
-  scoring. Both are whole milliseconds, and a stage that never started reports 0.
+- **Timing (decision D-f).** The clock is `time.monotonic_ns`, floored to whole milliseconds.
+  - `timing_ms.features` covers decode, conversion and extraction. `timing_ms.predict` covers scoring.
+  - A stage that never started reports 0.
+  - When the worker is killed or dies, a stage the worker reported finished keeps its time. The
+    interrupted stage runs until the parent stopped waiting.
 
 **Reason**
 
@@ -350,16 +421,20 @@ ruling 10). Schema checks and Python-type checks are separate assertions.
 
 ### D10. Scores have one authority; frames are descriptive (lead ruling 9)
 
-**Rule: scores**
+**Rule: scores (decision D-f)**
 
 The backend's utterance scores are the one authority for `labels`, `top_label` and `confidence`. Ties go
 to the alphabetically first label.
 
-Scores that the record may not carry make the status `model_error`. They are not renormalised. These are:
-- keys other than the label set;
-- values that are not finite, or are negative;
-- utterance or frame scores whose sum is off by more than 1e-6;
-- frames that leave a gap from 0 to the duration, or lie outside it.
+A backend's scores, for the utterance and for each frame, must meet all of these:
+- the keys are exactly the label set;
+- every value is finite and in `[0, 1]`;
+- the values sum to 1 within 1e-6.
+
+The frames must not leave a gap from 0 to the duration, and must not lie outside it.
+
+Anything else is `model_error`. Valid scores are divided by their sum before they are written, so every
+record satisfies the schema.
 
 **Rule: frames**
 
@@ -384,6 +459,7 @@ scores are uncalibrated.
 
 Pooled frame scores and separately calibrated utterance scores must not compete as authorities. A plain
 duration-weighted mean would overweight audio that overlapping windows cover several times.
+Renormalising only within 1e-6 removes rounding noise without hiding a broken backend.
 
 **Tests (`test_analyzer_record.py`, unless named)**
 
@@ -393,23 +469,31 @@ duration-weighted mean would overweight audio that overlapping windows cover sev
 | The pooling rule | `test_coverage_weighted_mean_weighs_every_instant_once`, `test_fast_utterance_scores_are_the_coverage_weighted_mean_of_its_frames` |
 | The tie-break | `test_ties_go_to_the_alphabetically_first_label` |
 | The backend is the authority | `test_backend_utterance_scores_are_the_authority_for_top_label` |
-| Invalid scores are `model_error` | `test_analyzer_statuses.py::test_invalid_backend_scores_are_a_model_error_not_renormalised` |
+| Invalid scores are `model_error`, including a value above 1 within the sum tolerance | `test_analyzer_statuses.py::test_invalid_backend_scores_are_a_model_error` |
+| Valid scores are renormalised | `test_valid_scores_are_renormalised_before_they_are_written` |
 
 ### D11. Statuses, exceptions and their order
 
-**Rule: statuses**
+**Rule: input order (decision D-e)**
 
-Bad audio gives a status. The checks run in order, and the first that applies wins:
+Each call goes through these steps in order. The first step that decides the outcome ends the call.
 
-| Status | When |
-|---|---|
-| `unreadable` | the file is missing, empty or a directory; its header or payload is truncated; it is not audio; or the samples include NaN or infinity |
-| `too_short` | the duration is below `min_duration_s` |
-| `too_long` | the duration is above `max_duration_s` |
-| `silent` | see D12 |
-| `timeout` | the deadline passed (D3) |
-| `model_error` | the backend raised, the worker died, or the scores are invalid (D10) |
-| `ok` | the analysis finished |
+1. **Validation.** Type, dtype, shape and sample rate are checked. A violation raises
+   `AnalysisUsageError` (D8).
+2. **Duration.** A path is first decoded, in the worker. A file that is missing, empty or a directory,
+   whose header or payload is truncated, or that is not audio, is `unreadable`. A valid-shape array with zero samples is `too_short`, without conversion. So is any
+   source whose duration is below `min_duration_s`. A source above `max_duration_s` is `too_long`,
+   without conversion. Both limits are inclusive.
+3. **Conversion.** The source is converted exactly once through the seam (D7). A `ValueError` from the
+   seam, as for NaN or infinite samples, is `unreadable`.
+4. **Silence.** It is decided on the canonical mono signal, by strict less-than (D12).
+5. **Scoring.** The backend scores the audio. If it raises, if the worker dies, or if the scores are
+   invalid (D10), the status is `model_error`. Otherwise it is `ok`.
+
+`timeout` can end any step (D3).
+
+`audio.duration_s` and `audio.input_sample_rate_hz` are the source's values whenever they are known,
+including on `too_short` and `too_long`. Otherwise they are `null`.
 
 **Rule: exceptions**
 
@@ -417,7 +501,8 @@ Programming errors and unusable models raise. All exceptions derive from `Analys
 
 | Exception | When |
 |---|---|
-| `AnalysisUsageError` | a misuse (D8); an invalid config; a profile without a backend; a call after `close` |
+| `AnalysisUsageError` | a misuse (D8); an invalid config; a profile without a backend |
+| `AnalysisClosedError`, a subclass of `AnalysisUsageError` | a call made, or still queued, when `close()` began (D3) |
 | `AnalysisModelUnavailableError` | no model is configured, or the file is missing. SER never downloads one |
 | `AnalysisModelLoadError` | the model cannot be read or started, or does not match its profile |
 | `AnalysisModelNotConformingError`, a subclass of `AnalysisModelLoadError` | the cases in D4 and D6 |
@@ -451,7 +536,7 @@ must be validated on real quiet recordings before anything relies on it; this is
 **Tests**
 
 `test_analyzer_config.py::test_limits_apply_exactly_at_their_boundaries` checks levels just above and just
-below the configured threshold.
+below the configured threshold. Exact equality is an acceptance item (below).
 
 ### D13. Configuration: enforced limits apart from measured targets (lead ruling 4)
 
@@ -501,14 +586,22 @@ the MB/MiB ambiguity. `worker_start_timeout_s` is new here and proposed.
 - **Network.** No network access, during `load` or `analyze`.
 - **Output.** Nothing goes to stdout or stderr, and no file is created or deleted, including temporary
   files.
-- **Logging and warnings.** No logger is reconfigured, and no handler is added. No warnings filter
-  changes, and no warning is emitted. Nothing is logged at WARNING or above on any path, and no log line
-  contains caller paths.
+- **Logging (decision D-g).**
+  - Analysis logs under `ser._internal.analysis`. SER sets no level and adds no handler, so the default
+    effective level is WARNING.
+  - A record at WARNING is written only for a worker eviction, death or failed restart. Every other
+    record is DEBUG; a healthy call writes nothing at WARNING or above.
+  - No record at any level, no exception message and no metric carries audio, file contents,
+    caller-supplied paths or backend content (backend exception text, features, scores). This holds in
+    the parent and in the worker.
+  - No warnings filter changes, and no warning is emitted.
 - **Determinism.** The same audio and the same model give the same record apart from `timing_ms`.
 
 **Reason**
 
 The consumer embeds SER beside a voice-reply path and must see neither side effects nor reloads.
+Section 2.2 sets the default level to warning and bans content from logs, errors and metrics. A
+restart is the one event an operator needs to see.
 
 **Tests (`test_analyzer_runtime.py`)**
 
@@ -523,8 +616,7 @@ The consumer embeds SER beside a voice-reply path and must see neither side effe
 **Gaps**
 
 Memory growth of under 5% across many calls is measured by the C7 harness, not here. The audit hook sees
-only the parent. In the worker, network isolation is pinned only through inline mode and the read-only
-`TMPDIR`.
+only the parent. The worker's load count, I/O, network and logs are acceptance items (below).
 
 ### D15. Synchronous and thread-safe; instances are independent
 
@@ -568,6 +660,47 @@ worker. Adding `medium` means registering one loader. `accurate` and `accurate-r
 
 `ser.api.infer()` keeps its behaviour, and this change does not deprecate it.
 
+## Acceptance items for the implementation
+
+The tests below cannot be proven tight while the analyser is a stub, because an expected failure hides
+any other error. Brief A1-2 makes each one real against the actual analyser, and the adversarial review
+checks each one.
+
+1. **Gated events (D3).**
+   - Inject the supervisor's clock.
+   - Add controllable gates for a blocked decode, a queued call, blocked scoring and a blocked restart.
+   - Assert each D3 transition, including the result-versus-deadline tie, idle death, a failed restart
+     with nobody waiting, and arrival order.
+   - Assert that the caller's return never waits on kill, reap or restart.
+2. **One real-process smoke test (D3).** A hung child returns `timeout` within the deadline plus
+   scheduling slack, and the next call succeeds.
+3. **Load count over 100 calls (D14).** The child's own model-load count, counted inside the worker, is
+   1 over 100 healthy calls. A wrapper count does not satisfy this.
+4. **Child isolation (D14).**
+   - The child makes no network connection.
+   - The child creates and deletes no files, with I/O observed in the child.
+   - `TMPDIR` is redirected to an empty directory that is still empty afterwards.
+5. **Content sentinels (D14, decision D-g).**
+   - Put a sentinel in the path, the backend's exception text and the backend's scores.
+   - Capture logs at every level, DEBUG included, in the parent and in the worker, plus exception
+     messages.
+   - Assert the sentinel appears in none of them.
+6. **Samples at the seam and at the backend (D7, D11).**
+   - Do this for array input and for an integer PCM file.
+   - The seam receives the source samples and rate.
+   - The backend receives exactly the seam's output.
+7. **Stereo cancellation (D7).** Opposite-phase stereo channels mix to silence and give `silent`, which
+   proves that the channels were mixed and not one dropped.
+8. **Exact silence equality (D12).** A signal whose canonical RMS equals the threshold exactly (for
+   example, full scale at 0 dBFS) is not `silent`.
+9. **Scores (D10).**
+   - Asymmetric frame windows, where the coverage-weighted mean differs from the plain mean.
+   - A tie, observed through a public record.
+   - Utterance and frame scores that disagree, so that the record follows the utterance scores.
+   - An invalid frame probability alongside valid utterance scores.
+10. **Context exit (D2).** Leaving a `with` block closes the analyser before any explicit `close()`; a
+    later redundant `close()` is a no-op.
+
 ## Hand-offs to other work
 
 - **The caller.** It schedules analysis off its reply path. A failed start is a typed exception from
@@ -592,4 +725,4 @@ worker. Adding `medium` means registering one loader. `accurate` and `accurate-r
 
 1. `worker_start_timeout_s=60.0` is proposed here and is not in the plan.
 2. -60 dBFS awaits validation on real quiet recordings (D12).
-3. Network isolation of the worker is only partly pinned (D14).
+3. Network and file isolation of the worker are pinned only through acceptance item 4.
