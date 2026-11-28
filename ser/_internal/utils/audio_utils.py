@@ -1,8 +1,9 @@
-"""Audio loading utilities with fallback between librosa and soundfile."""
+"""Audio loading and canonical waveform conversion utilities."""
 
 import logging
 import time
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 
 import librosa
@@ -13,8 +14,71 @@ from numpy.typing import NDArray
 from ser._internal.utils.logger import get_logger
 from ser.config import AudioReadConfig
 
+CANONICAL_SAMPLE_RATE = 16_000
+
 logger: logging.Logger = get_logger(__name__)
 _GIT_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+
+
+@dataclass(frozen=True)
+class CanonicalAudio:
+    """Canonical waveform with the source rate and unrounded duration."""
+
+    samples: NDArray[np.float32]
+    sample_rate: int
+    original_sample_rate: int
+    duration_seconds: float
+
+
+def to_canonical_audio(samples: NDArray[np.generic], sample_rate: int) -> CanonicalAudio:
+    """Convert mono or frames-first multichannel audio to 16 kHz mono float32.
+
+    PCM integers are scaled around digital silence. Float samples are clipped
+    to [-1, 1] before averaging channels, and resampler overshoot is clipped.
+    The output length rounds up to the next whole sample; duration is measured
+    from the input frame count and rate. The input array is not modified.
+
+    Raises:
+        ValueError: If the rate is not a positive integer or the waveform is
+            empty, not 1D or 2D, non-finite, or not integer or floating point.
+    """
+    if isinstance(sample_rate, bool) or not isinstance(sample_rate, (int, np.integer)):
+        raise ValueError("sample_rate must be a positive integer.")
+    source_rate = int(sample_rate)
+    if source_rate <= 0:
+        raise ValueError("sample_rate must be a positive integer.")
+    if samples.ndim not in (1, 2):
+        raise ValueError(f"Unsupported audio shape: {samples.shape}.")
+    if samples.size == 0:
+        raise ValueError("Audio must contain at least one sample.")
+
+    kind = samples.dtype.kind
+    if kind in ("i", "u"):
+        midpoint = 1 << (samples.dtype.itemsize * 8 - 1)
+        offset = midpoint if kind == "u" else 0
+        scaled = (samples.astype(np.float64) - float(offset)) / float(midpoint)
+    elif kind == "f":
+        if not np.all(np.isfinite(samples)):
+            raise ValueError("Audio samples must be finite.")
+        scaled = np.clip(samples, -1.0, 1.0)
+    else:
+        raise ValueError(f"Unsupported audio dtype: {samples.dtype}.")
+
+    mono = _to_mono(np.asarray(scaled, dtype=np.float32))
+    frame_count = samples.shape[0]
+    if source_rate != CANONICAL_SAMPLE_RATE:
+        length = (frame_count * CANONICAL_SAMPLE_RATE + source_rate - 1) // source_rate
+        resampled = librosa.resample(
+            mono,
+            orig_sr=source_rate,
+            target_sr=CANONICAL_SAMPLE_RATE,
+            res_type="soxr_hq",
+            fix=False,
+        )
+        mono = np.asarray(librosa.util.fix_length(resampled, size=length), dtype=np.float32)
+        np.clip(mono, -1.0, 1.0, out=mono)
+
+    return CanonicalAudio(mono, CANONICAL_SAMPLE_RATE, source_rate, frame_count / source_rate)
 
 
 class AudioIntegrityError(OSError):
