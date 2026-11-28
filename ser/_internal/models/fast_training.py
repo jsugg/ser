@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
 from ser._internal.data import Utterance
+from ser._internal.data.data_loader import CheckedFastData
+from ser._internal.features.feature_extractor import fast_feature_contract
+from ser._internal.models.dataset_splitting import (
+    fast_split_digest,
+    split_utterances,
+    split_utterances_three_way,
+)
 from ser._internal.models.training_orchestration import (
     build_training_robustness_provenance,
     current_training_state,
@@ -22,34 +29,20 @@ from ser._internal.models.training_orchestration import (
     validate_operation_plan,
 )
 from ser._internal.models.training_readiness import TrainingMode
-from ser.config import AppConfig
+from ser.config import AppConfig, FeatureFlags
 
 type EmotionClassifier = MLPClassifier | Pipeline
 type DatasetSplit = tuple[np.ndarray, np.ndarray, list[str], list[str]]
 
 
-class TrainingConfigLike(Protocol):
-    """Minimal training-settings shape required by fast training helpers."""
-
-    @property
-    def test_size(self) -> float: ...
-
-
-class ModelsConfigLike(Protocol):
-    """Minimal model-settings shape required by fast training helpers."""
-
-    @property
-    def training_report_file(self) -> Path: ...
-
-
-class SettingsLike(Protocol):
-    """Minimal settings contract required by fast training helpers."""
-
-    @property
-    def training(self) -> TrainingConfigLike: ...
-
-    @property
-    def models(self) -> ModelsConfigLike: ...
+def validate_fast_feature_contract(
+    metadata: Mapping[str, object] | None, flags: FeatureFlags
+) -> None:
+    expected = fast_feature_contract(flags)
+    if metadata is None or metadata.get("model_revision") != expected:
+        raise ValueError(
+            f"Incompatible fast feature contract: expected {expected!r}; retrain or prepare again."
+        )
 
 
 class TrainingEvaluationLike(Protocol):
@@ -123,7 +116,7 @@ class FastTrainingHooks:
     """Dependency hooks required by the extracted fast training workflow."""
 
     logger: logging.Logger
-    settings: SettingsLike
+    settings: AppConfig
     load_utterances: Callable[[], Sequence[Utterance] | None]
     ensure_dataset_consents_for_training: EnsureDatasetConsentsFn
     load_data: LoadDataFn
@@ -137,49 +130,66 @@ class FastTrainingHooks:
     persist_training_report: PersistTrainingReportFn
     default_backend_id: str
     default_profile_id: str
-    load_checked_data: Callable[[Sequence[Utterance]], DatasetSplit | None] | None = None
+    load_checked_data: Callable[[Sequence[Utterance]], CheckedFastData | None] | None = None
 
 
 def train_fast_model(*, hooks: FastTrainingHooks) -> None:
     """Runs the fast-profile training workflow via injected dependencies."""
     settings = hooks.settings
     utterances_for_consent = hooks.load_utterances()
-    if utterances_for_consent:
-        hooks.ensure_dataset_consents_for_training(
-            utterances=list(utterances_for_consent),
+    if not utterances_for_consent:
+        raise RuntimeError(
+            "Dataset not loaded: fast training requires labeled utterances with speaker identity."
         )
+    hooks.ensure_dataset_consents_for_training(utterances=list(utterances_for_consent))
+    revision = fast_feature_contract(settings.feature_flags)
 
     state = current_training_state()
     plan = None
     if state.operation.prepared_plan is not None:
         plan = validate_operation_plan(
-            settings=cast(AppConfig, settings),
+            settings=settings,
             backend_id=hooks.default_backend_id,
             model_id="builtin",
             device="cpu",
             dtype="float64",
         )
+    train_ids: list[str] = []
+    test_ids: list[str] = []
     if plan is not None:
         payload = read_prepared_feature_payload(plan)
+        validate_fast_feature_contract(payload.metadata, settings.feature_flags)
         x_train, x_test = payload.x_train, payload.x_test
         y_train, y_test = payload.y_train, payload.y_test
     else:
-        if hooks.load_checked_data is not None and state.utterances:
-            checked_loader = hooks.load_checked_data
-            data = prepare_until_quarantine_stable(
-                settings=cast(AppConfig, settings),
-                prepare=lambda: checked_loader(current_training_state().utterances),
-            )
-        else:
-            data = hooks.load_data(test_size=float(settings.training.test_size))
+        checked_loader = hooks.load_checked_data
+        if checked_loader is None:
+            raise RuntimeError("Fast training requires the speaker-checked feature loader.")
+        data = prepare_until_quarantine_stable(
+            settings=settings,
+            prepare=lambda: checked_loader(
+                current_training_state().utterances or utterances_for_consent
+            ),
+        )
         if data is None:
             hooks.logger.error("Dataset not loaded. Please load the dataset first.")
             raise RuntimeError("Dataset not loaded. Please load the dataset first.")
-        x_train, x_test, y_train, y_test = data
+        (x_train, x_test, y_train, y_test), train_ids, test_ids = data
+    inventory = list(state.utterances or utterances_for_consent)
+    partitions: dict[str, list[Utterance]]
+    if state.readiness is not None:
+        train, dev, test, _ = split_utterances_three_way(
+            samples=inventory, settings=settings, logger=hooks.logger
+        )
+        partitions = {"train": train, "dev": dev, "test": test}
+    else:
+        train, test, _ = split_utterances(samples=inventory, settings=settings, logger=hooks.logger)
+        partitions = {"train": train, "test": test}
+    split_digest = fast_split_digest(partitions)
     if state.operation.mode is TrainingMode.PREPARE_ONLY:
         readiness_utterances = list(state.utterances)
         publish_prepared_features(
-            settings=cast(AppConfig, settings),
+            settings=settings,
             backend_id=hooks.default_backend_id,
             model_id="builtin",
             device="cpu",
@@ -189,26 +199,25 @@ def train_fast_model(*, hooks: FastTrainingHooks) -> None:
             x_test=np.asarray(x_test, dtype=np.float64),
             y_train=y_train,
             y_test=y_test,
-            metadata={"split_metadata": {"strategy": "fast_data_loader"}},
+            metadata={
+                "model_revision": revision,
+                "split_digest": split_digest,
+                "train_meta": [{"sample_id": i} for i in train_ids],
+                "test_meta": [{"sample_id": i} for i in test_ids],
+            },
             cache_namespace="fast_features",
-            windowing_policy={"strategy": "utterance_handcrafted"},
+            windowing_policy={"strategy": "analysis_windows", "feature_contract": revision},
             noise_statistics={},
         )
         return
     if plan is None and state.readiness is not None and state.utterances:
-        from ser._internal.models.dataset_splitting import split_utterances  # noqa: TID251
         from ser._internal.models.training_orchestration import canonical_train_rows  # noqa: TID251
 
-        initial_train, _, _ = split_utterances(
-            samples=list(state.utterances),
-            settings=cast(AppConfig, settings),
-            logger=hooks.logger,
-        )
         x_train, y_train = canonical_train_rows(
-            settings=cast(AppConfig, settings),
+            settings=settings,
             x_train=np.asarray(x_train, dtype=np.float64),
             y_train=y_train,
-            train_sample_ids=[item.sample_id for item in initial_train],
+            train_sample_ids=train_ids,
         )
     model = hooks.create_classifier()
     hooks.logger.info(msg="Dataset loaded successfully.")
@@ -237,6 +246,8 @@ def train_fast_model(*, hooks: FastTrainingHooks) -> None:
         training_samples=int(x_train.shape[0]),
         labels=y_train,
         provenance=provenance,
+        model_revision=revision,
+        split_ledger_digest=split_digest,
     )
     artifact_metadata = hooks.extract_artifact_metadata(artifact)
     persisted_artifacts = hooks.persist_model_artifacts(model=model, artifact=artifact)
@@ -259,6 +270,19 @@ def train_fast_model(*, hooks: FastTrainingHooks) -> None:
         artifacts=persisted_artifacts,
         artifact_metadata=artifact_metadata,
         provenance=report_provenance,
+        data_controls={
+            "feature_contract": revision,
+            "split_digest": split_digest,
+            "speaker_overlap_count": 0,
+            "clip_counts": {name: len(clips) for name, clips in partitions.items()},
+            "evaluation_unit": "window",
+        },
+    )
+    skipped_clips = len(state.quarantine_records)
+    report.update(
+        dataset_corpus_samples=len(inventory) + skipped_clips,
+        dataset_effective_samples=len(inventory),
+        dataset_skipped_samples=skipped_clips,
     )
     hooks.persist_training_report(report, settings.models.training_report_file)
     hooks.logger.info(msg=f"Training report saved to {settings.models.training_report_file}")
