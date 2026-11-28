@@ -51,6 +51,7 @@ def write_model(
     profile: str = "fast",
     backend_id: str = "handcrafted",
     classifier_type: type[MLPClassifier] = MLPClassifier,
+    model_revision: str | None = None,
 ) -> Path:
     """Writes one pickle model envelope like the ones `ser --train` produces."""
     rng = np.random.default_rng(seed)
@@ -67,6 +68,7 @@ def write_model(
         labels=list(labels),
         backend_id=backend_id,
         profile=profile,
+        model_revision=model_revision,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pickle.dumps(artifact, protocol=pickle.HIGHEST_PROTOCOL))
@@ -86,6 +88,18 @@ def tone(
     signal = np.sin(2 * np.pi * 220.0 * t) + 0.5 * np.sin(2 * np.pi * 1330.0 * t)
     signal *= 0.6 + 0.4 * np.sin(2 * np.pi * 0.7 * t)
     return _scale_to_rms(signal, rms_dbfs)
+
+
+def sine(
+    frequency_hz: float,
+    seconds: float,
+    *,
+    sample_rate_hz: int = CANONICAL_RATE_HZ,
+    rms_dbfs: float = -20.0,
+) -> NDArray[np.float32]:
+    """One pure tone at a given RMS level."""
+    t = np.arange(round(seconds * sample_rate_hz), dtype=np.float64) / sample_rate_hz
+    return _scale_to_rms(np.sin(2 * np.pi * frequency_hz * t), rms_dbfs)
 
 
 def noise(

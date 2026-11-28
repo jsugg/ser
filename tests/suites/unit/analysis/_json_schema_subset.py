@@ -1,11 +1,13 @@
 """Validator for the JSON Schema keywords the ``ser.utterance/v1`` schema uses.
 
 The project has no JSON Schema library; this covers exactly the keywords in
-``SUPPORTED_KEYWORDS`` and refuses schemas that use any other.
+``SUPPORTED_KEYWORDS`` with Draft 2020-12 semantics and refuses schemas that use any
+other. It checks JSON values; Python types are checked by ``record_type_errors``.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from typing import cast
@@ -132,7 +134,8 @@ def _is_type(instance: object, name: str) -> bool:
     if name == "boolean":
         return isinstance(instance, bool)
     if name == "integer":
-        return isinstance(instance, int) and not isinstance(instance, bool)
+        # Draft 2020-12: any number with a zero fractional part, such as 310.0.
+        return _is_number(instance) and float(cast(float, instance)).is_integer()
     if name == "number":
         return _is_number(instance)
     if name == "string":
@@ -145,8 +148,12 @@ def _is_type(instance: object, name: str) -> bool:
 
 
 def _is_number(instance: object) -> bool:
-    return isinstance(instance, int | float) and not isinstance(instance, bool)
+    if isinstance(instance, bool) or not isinstance(instance, int | float):
+        return False
+    return not isinstance(instance, float) or math.isfinite(instance)
 
 
 def _json_equal(left: object, right: object) -> bool:
+    if _is_number(left) and _is_number(right):
+        return left == right
     return type(left) is type(right) and left == right
