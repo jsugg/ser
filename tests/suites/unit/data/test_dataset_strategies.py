@@ -195,9 +195,11 @@ def test_crema_d_download_publishes_only_validated_staging_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A validated checkout should atomically replace the pre-created empty root."""
+    commands: list[list[str]] = []
     monkeypatch.setattr(default_strategies.shutil, "which", lambda name: f"/fake/{name}")
 
     def _run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
         if command[1] == "clone":
             staging_root = Path(command[-1])
             (staging_root / ".git").mkdir(parents=True)
@@ -209,6 +211,11 @@ def test_crema_d_download_publishes_only_validated_staging_tree(
 
     _download_crema_d(CremaDDatasetStrategy(), dataset_root)
 
+    assert [command[1:] for command in commands[1:]] == [
+        ["lfs", "install", "--local", "--skip-repo"],
+        ["lfs", "pull"],
+        ["lfs", "checkout"],
+    ]
     assert (dataset_root / ".git").is_dir()
     assert (dataset_root / "AudioWAV" / "1001_IEO_HAP_LO.wav").is_file()
     assert not list(tmp_path.glob(".crema-d.staging-*"))
@@ -259,7 +266,7 @@ def test_crema_d_existing_git_checkout_is_repaired_and_revalidated(
     _download_crema_d(CremaDDatasetStrategy(), dataset_root)
 
     assert [command[1:] for command in commands] == [
-        ["lfs", "install", "--local"],
+        ["lfs", "install", "--local", "--skip-repo"],
         ["lfs", "pull"],
         ["lfs", "checkout"],
     ]
