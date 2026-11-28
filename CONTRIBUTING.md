@@ -134,7 +134,7 @@ Hardware-specific workflows are manual by default (`workflow_dispatch`) and are 
 Policy note:
 - Full support target: `darwin-x86_64-macos13-python3.12`.
 - Partial support target (fast profile only): `darwin-x86_64-macos13-python3.13`.
-- GitHub Actions uses `macos-15` hosted runners because `macos-13` hosted runners are unavailable.
+- GitHub Actions uses `macos-15` (Apple Silicon) and `macos-15-intel` (x86_64) hosted runners because `macos-13` hosted runners are unavailable.
 - macOS13 support evidence is collected through local validation.
 
 ## Pull Request Expectations

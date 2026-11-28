@@ -25,8 +25,19 @@ Platform policy note:
    - `main` evidence with accurate-research enabled:
      - run `22414258948` (`completed/success`, `main`, head SHA `27618a56eb9514d5df5553f7f1885c7d4f640689`).
 8. Runtime default policy is ratified:
-   - `fast` is default.
-   - `medium`, `accurate`, `accurate-research` remain opt-in lanes.
+   - `fast` is default (no selection flag needed; `--profile fast` selects it explicitly).
+   - `medium`, `accurate`, and `accurate-research` are selected via `--profile <name>` on the CLI
+     or via environment variables `SER_ENABLE_MEDIUM_PROFILE=true`,
+     `SER_ENABLE_ACCURATE_PROFILE=true`, and `SER_ENABLE_ACCURATE_RESEARCH_PROFILE=true`
+     respectively.
+   - Restricted-backend consent is separate from profile selection: `handcrafted`, `hf_xlsr`, and
+     `hf_whisper` are unrestricted, while `emotion2vec` (`accurate-research`) requires explicit
+     opt-in via an interactive TTY prompt, persisted consent (`--accept-all-restricted-backends`,
+     or `--accept-restricted-backends` when profile routing is active via `--profile`, `--file`, or
+     `SER_ENABLE_PROFILE_PIPELINE=true`), or per-run environment opt-in
+     (`SER_ENABLE_RESTRICTED_BACKENDS=true` or `SER_ALLOWED_RESTRICTED_BACKENDS` containing
+     `emotion2vec` or `*`). Persisted consents are stored in `restricted_backend_consents.json`
+     under `<SER_DATA_DIR>` (override: `SER_RESTRICTED_BACKENDS_CONSENT_FILE`).
 
 | Python | Install Mode | Profile | CLI Train | CLI Predict | Tests | Type/Lint | Notes |
 |---|---|---|---|---|---|---|---|
@@ -37,7 +48,7 @@ Platform policy note:
 | 3.12 | accurate extras | accurate | pass | blocked | pass | pass | Accurate path is implemented and artifact-backed predict evidence exists. CLI profile mode now resolves profile-specific artifact defaults and metadata-aware candidate selection across discovered `ser_model*.pkl|*.skops`; predict remains blocked when no compatible accurate artifact is available or runtime budgets/timeouts are exceeded for selected backend/model. |
 | 3.13 | accurate extras | accurate | pass | pass | pass | pass | `main` evidence captured in run `22414258948` with train+predict smoke passing for `--profile accurate`; 3.13 warning policy remains finalized (`pyright` warnings non-blocking when `errors=0`). Darwin x86_64 Python 3.13 remains partial/fast-oriented and not an officially supported non-fast runtime lane. |
 | 3.12 | full extras | accurate-research | blocked | blocked | pass | pass | CLI/profile plumbing and `emotion2vec` backend/runtime/training paths are implemented with restricted-license gating. CLI profile mode now uses metadata-aware artifact selection, but promotion remains blocked until at least one compatible accurate-research artifact and dedicated rollout/e2e evidence are captured. |
-| 3.13 | full extras | accurate-research | pass | pass | pass | pass | `main` evidence captured in run `22414258948` (`.github/workflows/linux-python-3_13-cli-validation.yml`, head SHA `27618a56eb9514d5df5553f7f1885c7d4f640689`). This lane requires `SER_ENABLE_ACCURATE_RESEARCH_PROFILE` plus restricted-backend opt-in (`SER_ENABLE_RESTRICTED_BACKENDS=true` or persisted consent). Darwin x86_64 Python 3.13 remains partial/fast-oriented; accurate-research runtime evidence is Linux 3.13-backed. |
+| 3.13 | full extras | accurate-research | pass | pass | pass | pass | `main` evidence captured in run `22414258948` (`.github/workflows/linux-python-3_13-cli-validation.yml`, head SHA `27618a56eb9514d5df5553f7f1885c7d4f640689`). Profile selection (`--profile accurate-research` or `SER_ENABLE_ACCURATE_RESEARCH_PROFILE=true`) is separate from restricted-backend consent for `emotion2vec`, which can be granted via the interactive TTY prompt, `--accept-all-restricted-backends`, `--accept-restricted-backends` (when profile routing is active via `--profile`, `--file`, or `SER_ENABLE_PROFILE_PIPELINE=true`), `SER_ENABLE_RESTRICTED_BACKENDS=true`, or `SER_ALLOWED_RESTRICTED_BACKENDS` containing `emotion2vec` (or `*`); persisted consent is recorded in `restricted_backend_consents.json`. Darwin x86_64 Python 3.13 remains partial/fast-oriented; accurate-research runtime evidence is Linux 3.13-backed. |
 
 ## Required Checks Per Row
 

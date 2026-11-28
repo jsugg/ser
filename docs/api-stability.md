@@ -17,11 +17,11 @@ helpers used by that workflow surface.
 
 ## Stability promise
 
-The SemVer compatibility promise starts with the first published distribution. From
-that point, symbols exported by tier-1 `__all__` declarations will not be removed or
-changed incompatibly without a major-version release.
+The SemVer compatibility promise starts with the first version released as a Git tag.
+From that point, symbols exported by tier-1 `__all__` declarations will not be removed
+or changed incompatibly without a major-version release.
 
-Before first publish, the same surfaces are still governed as if they were stable so
+Before that first tag, the same surfaces are still governed as if they were stable so
 that review catches compatibility drift early. Anything outside tier-1 is not a
 compatibility contract.
 
