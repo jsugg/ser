@@ -217,9 +217,10 @@ def test_builtin_ledger_holds_ids_and_hashes_only() -> None:
     assert all(entry.sample_id.split(":", 1)[0] for entry in load_builtin_curation_ledger().entries)
 
 
-def test_parser_rejects_non_hex_hashes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("digest", ["g" * 64, "AB" * 32, "a" * 63])
+def test_parser_rejects_non_hex_hashes(tmp_path: Path, digest: str) -> None:
     record = _ledger(_rows_with_duplicates(tmp_path)).to_record()
-    record["entries"][0]["normalized_audio_sha256"] = "g" * 64  # type: ignore[index]
+    record["entries"][0]["normalized_audio_sha256"] = digest  # type: ignore[index]
     path = tmp_path / "ledger.json"
     path.write_text(json.dumps(record), encoding="utf-8")
 
