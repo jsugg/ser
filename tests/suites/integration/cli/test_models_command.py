@@ -40,7 +40,12 @@ def test_convert_and_show_a_legacy_model(tmp_path: Path) -> None:
     assert not safe.exists()
     converted = _models("convert", "--trust-pickle", str(legacy), str(safe))
     assert converted.returncode == 0, converted.stderr
+    assert "Only convert files you trust" in converted.stderr
     data = safe.read_bytes()
+    assert _models("convert", "--trust-pickle", str(legacy), str(safe)).returncode == 1
+    assert safe.read_bytes() == data
+    invalid = _models("convert", "--trust-pickle", str(safe), str(tmp_path / "invalid.ser"))
+    assert invalid.returncode == 1 and "ser models convert:" in invalid.stderr
     probe = np.random.default_rng(42).normal(size=(18, 3))
     restored = verify_artifact(data).classifier
     expected_labels = model.predict(probe)
@@ -90,3 +95,52 @@ def test_show_prints_the_verified_licence_record(tmp_path: Path) -> None:
             "source": "https://example.org",
         }
     ]
+
+
+def test_converted_feature_subset_scores_in_worker(tmp_path: Path) -> None:
+    from ser.api import UtteranceAnalyzer
+
+    legacy, safe = tmp_path / "legacy.pkl", tmp_path / "model.ser"
+    x = np.random.default_rng(20).normal(size=(24, 12))
+    labels = ["calm", "happy"] * 12
+    model = MLPClassifier(solver="lbfgs", hidden_layer_sizes=(3,), random_state=20).fit(x, labels)
+    legacy.write_bytes(pickle.dumps(build_model_artifact(model, 12, len(x), labels)))
+    provenance = tmp_path / "provenance.json"
+    provenance.write_text(
+        json.dumps(
+            {
+                "datasets": [
+                    {
+                        "name": "fixture",
+                        "licence": "MIT",
+                        "source": "fixture",
+                        "licence_class": "open",
+                    }
+                ],
+                "training_audio": {
+                    "sample_rate_hz": 16000,
+                    "channels": 1,
+                    "canonical_conversion": True,
+                },
+            }
+        )
+    )
+    converted = _models(
+        "convert", "--trust-pickle", "--provenance", str(provenance), str(legacy), str(safe)
+    )
+    assert converted.returncode == 0, converted.stderr
+    features = json.loads(_models("show", str(safe)).stdout)["manifest"]["features"]
+    assert features["enabled"] == ["chroma"]
+    assert (
+        features["frame_size_seconds"],
+        features["frame_stride_seconds"],
+        features["pooling_strategy"],
+    ) == (3, 1, "mean")
+    with UtteranceAnalyzer.load(profile="fast", model_path=safe) as analyzer:
+        assert (
+            analyzer.analyze(
+                np.random.default_rng(1).uniform(-0.5, 0.5, 16000).astype(np.float32),
+                sample_rate_hz=16000,
+            )["status"]
+            == "ok"
+        )

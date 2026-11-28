@@ -10,6 +10,8 @@ binds the weights payload by SHA-256. These hashes detect corruption, not
 tampering by someone who can recompute them. Compare the entire file's
 SHA-256 against a digest received through a trusted channel for that case.
 
+The analyser reads this format by default. Training still writes legacy pickle until the training and CLI migration. Only regular files up to 8 MiB are accepted.
+
 The manifest records the model and label-set ids, ordered class labels, the
 handcrafted feature set and version, dimension and training audio form,
 and provenance: dataset identifiers, licence ids, classes and sources,
@@ -37,19 +39,27 @@ scikit-learn versions. A change to these operations must re-run the parity
 tests.
 
 Version 1 rejects unknown versions, including newer ones, and malformed
-or inconsistent state. A future M5-2 calibration record can be added as
-an optional manifest field covered by the same trailer. Absence means
-uncalibrated. If calibration changes how a score must be interpreted, an
-older reader must refuse that file; version a required change rather than
-silently returning uncalibrated scores.
+or inconsistent state. The manifest must include a `required` list. It is empty today.
+Readers reject unknown entries. M5-2 adds `"calibration"` to this list
+when it includes a calibration block, so older readers refuse that file.
+
+The reader verifies `label_set_id` as `labels:` followed by the SHA-256
+of the sorted labels encoded as compact ASCII-escaped JSON.
 
 The analyser's `model_id` is the publisher's name, not a content address.
 Its `model_sha256` hashes the entire file, including the trailer. The
 explicit baseline opt-in retains ADR 0001's baseline identity and licence
 rules. Pickle conversion is an explicit trusted-input operation; it
 executes pickle deserialization, unlike inspection and safe loading.
-Use `ser models convert --trust-pickle OLD.pkl NEW.ser` only with a
+Use `ser models convert --trust-pickle --provenance FILE OLD.pkl NEW.ser` only with a
 trusted legacy envelope, and `ser models show NEW.ser` to inspect it.
+
+The provenance JSON contains `datasets` (an array of records with `name`,
+`licence`, `licence_class` and `source`) and `training_audio` (an object
+with `sample_rate_hz`, `channels` and `canonical_conversion`). Conversion
+without this file preserves weights for inspection. The legacy feature
+dimension identifies the enabled handcrafted subset. Fast analysis uses
+the ADR 0001 three-second frames and one-second stride.
 
 ## Alternatives
 

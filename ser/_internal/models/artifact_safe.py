@@ -13,7 +13,6 @@ from typing import Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.special import expit
 
 from ser.runtime.contracts import LicenceClass, LicenceRecord, TrainingAudioForm
 
@@ -21,7 +20,7 @@ MAGIC = b"SER-MODEL\0"
 VERSION = 1
 _HEADER = struct.Struct(">10sII")
 _DIGEST_SIZE = hashlib.sha256().digest_size
-_MAX_FILE = 64 * 1024 * 1024
+MAX_FILE_SIZE = 8 * 1024 * 1024
 _MAX_MANIFEST = 256 * 1024
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _ACTIVATIONS = {"identity", "logistic", "tanh", "relu"}
@@ -171,8 +170,10 @@ class SafeClassifier:
         self.n_features_in_ = dimension
 
     def _scores(self, features: ArrayLike) -> _Array:
+        from scipy.special import expit
+
         values = np.asarray(features)
-        if values.dtype not in (np.float32, np.float64):
+        if values.dtype not in (np.float16, np.float32, np.float64):
             values = np.asarray(features, dtype=np.float64)
         if (
             values.ndim != 2
@@ -184,9 +185,9 @@ class SafeClassifier:
         if self._weights.mean is not None or self._weights.scale is not None:
             values = values.copy(order="K")
             if self._weights.mean is not None:
-                values -= self._weights.mean
+                values -= self._weights.mean.astype(values.dtype, copy=False)
             if self._weights.scale is not None:
-                values /= self._weights.scale
+                values /= self._weights.scale.astype(values.dtype, copy=False)
         for index, (coefs, bias) in enumerate(self._weights.layers):
             values = values @ coefs
             values += bias
@@ -234,6 +235,7 @@ class VerifiedArtifact:
     dimension: int
     training_audio: TrainingAudioForm | None
     datasets: tuple[LicenceRecord, ...]
+    enabled_features: tuple[str, ...] | None
     _weights: _Weights
 
     @property
@@ -268,14 +270,26 @@ def _audio(value: object) -> TrainingAudioForm | None:
     )
 
 
+def read_conversion_provenance(data: bytes) -> tuple[TrainingAudioForm, tuple[LicenceRecord, ...]]:
+    metadata = _decode_json(data, "conversion provenance")
+    audio = _audio(metadata.get("training_audio"))
+    datasets = tuple(
+        _licence(item) for item in _items(metadata.get("datasets"), "dataset licences")
+    )
+    if audio is None or not datasets:
+        raise _invalid("conversion provenance")
+    return audio, datasets
+
+
+def _label_set_id(labels: tuple[str, ...] | list[str]) -> str:
+    return "labels:" + hashlib.sha256(_encode_json(sorted(labels))).hexdigest()
+
+
 def verify_artifact(data: bytes) -> VerifiedArtifact:
     """Checks the envelope, provenance and weights before constructing a classifier."""
-    if len(data) < _HEADER.size + _DIGEST_SIZE or len(data) > _MAX_FILE:
+    if len(data) < len(MAGIC) + 4 or len(data) > MAX_FILE_SIZE:
         raise _invalid("format size")
-    body, trailer = memoryview(data)[:-_DIGEST_SIZE], data[-_DIGEST_SIZE:]
-    if hashlib.sha256(body).digest() != trailer:
-        raise ValueError("The safe model digest does not match.")
-    magic, version, manifest_size = _HEADER.unpack_from(body)
+    magic, version = struct.unpack_from(">10sI", data)
     if magic != MAGIC:
         raise _invalid("format magic")
     if version > VERSION:
@@ -284,6 +298,12 @@ def verify_artifact(data: bytes) -> VerifiedArtifact:
         )
     if version != VERSION:
         raise ValueError(f"Unsupported safe model format version {version}.")
+    if len(data) < _HEADER.size + _DIGEST_SIZE:
+        raise _invalid("format size")
+    body, trailer = memoryview(data)[:-_DIGEST_SIZE], data[-_DIGEST_SIZE:]
+    if hashlib.sha256(body).digest() != trailer:
+        raise ValueError("The safe model digest does not match.")
+    _, _, manifest_size = _HEADER.unpack_from(body)
     start = _HEADER.size + manifest_size
     if not 0 < manifest_size <= _MAX_MANIFEST or start >= len(body):
         raise _invalid("manifest length")
@@ -294,6 +314,8 @@ def verify_artifact(data: bytes) -> VerifiedArtifact:
     if type(manifest.get("format_version")) is not int or manifest["format_version"] != version:
         raise _invalid("manifest version")
 
+    if manifest.get("required") != [] or "calibration" in manifest:
+        raise _invalid("required extensions")
     model_id = _text(manifest.get("model_id"), "model id")
     label_set_id = _text(manifest.get("label_set_id"), "label set id")
     if any(c.isspace() for c in model_id + label_set_id):
@@ -301,6 +323,8 @@ def verify_artifact(data: bytes) -> VerifiedArtifact:
     labels = tuple(_text(label, "label") for label in _items(manifest.get("labels"), "labels"))
     if len(labels) < 2 or len(set(labels)) != len(labels):
         raise _invalid("labels")
+    if label_set_id != _label_set_id(labels):
+        raise _invalid("label set id")
     if manifest.get("profile") != "fast":
         raise _invalid("profile")
     features = _obj(manifest.get("features"), "feature contract")
@@ -316,6 +340,12 @@ def verify_artifact(data: bytes) -> VerifiedArtifact:
         if not enabled or enabled != [flag for flag in _FEATURES if flag in enabled]:
             raise _invalid("enabled features")
     dimension = _positive(features.get("dimension"), "feature dimension")
+    if (
+        features.get("frame_size_seconds"),
+        features.get("frame_stride_seconds"),
+        features.get("pooling_strategy"),
+    ) != (3.0, 1.0, "mean") or isinstance(features.get("frame_stride_seconds"), bool):
+        raise _invalid("fast frame layout")
     training_audio = _audio(features.get("training_audio"))
 
     provenance = _obj(manifest.get("provenance"), "provenance")
@@ -346,6 +376,7 @@ def verify_artifact(data: bytes) -> VerifiedArtifact:
         dimension,
         training_audio,
         datasets,
+        tuple(cast(list[str], flags)) if flags is not None else None,
         weights,
     )
 
@@ -365,6 +396,9 @@ def encode_model(
     model_id: str,
     training_audio: TrainingAudioForm | None = None,
     enabled_features: tuple[str, ...] | None = None,
+    frame_size_seconds: float = 3.0,
+    frame_stride_seconds: float = 1.0,
+    pooling_strategy: str = "mean",
     datasets: tuple[LicenceRecord, ...] = (),
     split_ledger_digest: str | None = None,
     ser_version: str | None = None,
@@ -409,15 +443,19 @@ def encode_model(
     manifest = _encode_json(
         {
             "format_version": VERSION,
+            "required": [],
             "profile": "fast",
             "model_id": model_id,
-            "label_set_id": f"labels:{hashlib.sha256(_encode_json(sorted(labels))).hexdigest()}",
+            "label_set_id": _label_set_id(labels),
             "labels": labels,
             "features": {
                 "set": "handcrafted",
                 "version": 1,
                 "dimension": int(model.coefs_[0].shape[0]),
                 "enabled": enabled_features,
+                "frame_size_seconds": frame_size_seconds,
+                "frame_stride_seconds": frame_stride_seconds,
+                "pooling_strategy": pooling_strategy,
                 "training_audio": asdict(training_audio) if training_audio is not None else None,
             },
             "provenance": {

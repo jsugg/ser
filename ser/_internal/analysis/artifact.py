@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import warnings
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol, cast
 
 from ser._internal.analysis.errors import (
@@ -43,6 +43,7 @@ class ArtifactMetadata:
     training_audio: TrainingAudioForm | None
     provenance: ModelProvenance | None
     model_revision: str | None = None
+    enabled_features: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ class SafeModelFormat:
                 model_id=verified.model_id,
                 label_set_id=verified.label_set_id,
                 labels=verified.labels,
+                enabled_features=verified.enabled_features,
                 training_audio=verified.training_audio,
                 provenance=ModelProvenance(
                     payload_sha256=hashlib.sha256(verified.payload).hexdigest(),
@@ -147,7 +149,20 @@ def artifact_formats() -> tuple[ArtifactFormat, ...]:
 def read_model_file(path: str | os.PathLike[str]) -> bytes:
     """The only read of a model file; its bytes are hashed and kept for restarts."""
     try:
-        return Path(path).read_bytes()
+        with open(
+            path,
+            "rb",
+            opener=lambda name, flags: os.open(name, flags | getattr(os, "O_NONBLOCK", 0)),
+        ) as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise AnalysisModelLoadError("The model must be a regular file.")
+            if info.st_size > artifact_safe.MAX_FILE_SIZE:
+                raise AnalysisModelLoadError("Invalid model file size.")
+            data = stream.read(artifact_safe.MAX_FILE_SIZE + 1)
+            if len(data) > artifact_safe.MAX_FILE_SIZE:
+                raise AnalysisModelLoadError("Invalid model file size.")
+            return data
     except FileNotFoundError:
         raise AnalysisModelUnavailableError("No model file is available.") from None
     except (OSError, ValueError):
@@ -211,8 +226,8 @@ def open_model(
     if legacy:
         warnings.warn(
             "Loading a legacy pickle analysis model is deprecated; use a safe model artifact.",
-            DeprecationWarning,
-            stacklevel=2,
+            FutureWarning,
+            stacklevel=4,
         )
         try:
             opened = artifact_format.open(data)
@@ -265,6 +280,7 @@ def open_model(
             training_audio=metadata.training_audio,
             provenance=provenance,
             baseline=baseline,
+            enabled_features=metadata.enabled_features,
         ),
         opened,
     )
