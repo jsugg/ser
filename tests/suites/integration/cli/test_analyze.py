@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import selectors
 import signal
 import subprocess
@@ -270,25 +271,72 @@ def test_batch_does_not_echo_unrecognized_arguments(tmp_path: Path) -> None:
 def test_batch_cleans_staging_after_kill_before_rename(tmp_path: Path, batch_model: Path) -> None:
     manifest = tmp_path / "input.jsonl"
     manifest.write_text('{"id":"clip","path":"audio/missing.wav"}\n')
-    out = tmp_path / "output[1].jsonl"
-    sidecar = out.with_name(f".{out.name}.lock")
-    other_staging = {
-        tmp_path / ".output1.jsonl.ser-batch-unrelated",
-        tmp_path / f".{out.name}.ser-batch-other.ser-batch-abandoned",
-    }
-    for staging in other_staging:
-        staging.write_bytes(b"other batch")
+    directory = tmp_path / "outputs"
+    directory.mkdir()
+    out = directory / "output[1].jsonl"
     args = ("--manifest", manifest, "--out", out, "--model", batch_model, "--allow-legacy-baseline")
     argv = [sys.executable, "-c", _PAUSE_BEFORE_RENAME, str(out), "analyze", *map(str, args)]
     _kill_after_event(argv, b"ready to rename")
     assert not out.exists()
-    (abandoned,) = set(tmp_path.iterdir()) - {manifest, sidecar} - other_staging
+    sidecar = out.with_name(f".{out.name}.lock")
+    (abandoned,) = set(directory.iterdir()) - {sidecar}
+    prefix = f".{out.name}.ser-batch-"
+    assert re.fullmatch(re.escape(prefix) + r"[a-z0-9_]{8}", abandoned.name)
+
+    files = [
+        ".output1.jsonl.ser-batch-abcd1234",
+        prefix + "x.ser-batch-abcd1234",
+        prefix + "x.lock",
+        prefix + "notes.txt",
+        prefix + "ABCd1234",
+        prefix + "abc",
+        prefix,
+    ]
+    for name in files:
+        (directory / name).write_bytes(b"keep")
+    link = directory / (prefix + "link1234")
+    link.symlink_to(manifest)
+    folder = directory / (prefix + "dir12345")
+    folder.mkdir()
+    (folder / "child").touch()
+    before = set(directory.iterdir())
+
     result = _run(*args)
     assert result.returncode == 0, result.stderr
     assert [row["id"] for row in _rows(out)] == ["clip"]
-    assert not abandoned.exists()
-    assert abandoned.name.startswith(f".{out.name}.ser-batch-")
-    assert all(staging.read_bytes() == b"other batch" for staging in other_staging)
+    assert before - set(directory.iterdir()) == {abandoned}
+    assert set(directory.iterdir()) - before == {out}
+    assert all((directory / name).read_bytes() == b"keep" for name in files)
+    assert link.readlink() == manifest and manifest.is_file()
+    assert (folder / "child").is_file()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="POSIX output locking")
+def test_batch_cleanup_preserves_other_writers_lock(tmp_path: Path) -> None:
+    manifest = tmp_path / "input.jsonl"
+    manifest.touch()
+    out = tmp_path / "out.jsonl"
+    live = tmp_path / "out.jsonl.ser-batch-x"
+    other = tmp_path / "other.jsonl"
+    lock = live.with_name(f".{live.name}.lock")
+    args = ["--manifest", str(manifest), "--out"]
+
+    def paused(path: Path) -> list[str]:
+        return [sys.executable, "-c", _PAUSE_BEFORE_RENAME, str(path), "analyze", *args, str(path)]
+
+    with (
+        _process_at_event(paused(live), b"ready to rename") as writer,
+        _process_at_event(paused(other), b"ready to rename") as independent,
+    ):
+        original_lock = lock.stat()
+        assert _run(*args, out).returncode == 0
+        contender = _run(*args, live)
+        writer.communicate(input=b"\n", timeout=30)
+        independent.communicate(input=b"\n", timeout=30)
+        assert (contender.returncode, writer.returncode, independent.returncode) == (2, 0, 0)
+        assert os.path.samestat(original_lock, lock.stat())
+    assert contender.stderr == "ser analyze: Another batch owns the output lock.\n"
+    assert live.read_bytes() == other.read_bytes() == out.read_bytes() == b""
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="POSIX output locking")

@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import re
+import secrets
 import shutil
 import stat
 import sys
-import tempfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Never, cast
+from typing import BinaryIO, Never, cast
 
 from ser.api import (
     UTTERANCE_SCHEMA_VERSION,
@@ -29,6 +30,11 @@ from ser.config import AppConfig
 
 _CHUNK_ROWS = 32
 _STAGING_MARKER = ".ser-batch-"
+_STAGING_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789_"
+_STAGING_LENGTH = 8
+_STAGING_NAME = re.compile(
+    rf"\.(.+){re.escape(_STAGING_MARKER)}[{_STAGING_ALPHABET}]{{{_STAGING_LENGTH}}}", re.DOTALL
+)
 _STATUSES = ("ok", "too_short", "too_long", "silent", "unreadable", "timeout", "model_error")
 
 
@@ -158,6 +164,8 @@ def _inputs(args: _BatchArgs) -> tuple[list[_InputRow], Path]:
         raise _InvalidBatch("The output directory must exist and be a directory.")
     parent = Path(os.path.realpath(args.out.parent, strict=True))
     out = parent / args.out.name
+    if _STAGING_NAME.fullmatch(out.name) or re.fullmatch(r"\..+\.lock", out.name, re.DOTALL):
+        raise _InvalidBatch("The output name is reserved.")
     if out.is_symlink() or any(
         path is not None and Path(os.path.realpath(path)) == out
         for path in (args.manifest, args.model)
@@ -228,7 +236,12 @@ def _output_lock(out: Path) -> Iterator[bool]:
         return
 
     lock = out.with_name(f".{out.name}.lock")
-    fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise _InvalidBatch("The output lock is a symbolic link.") from None
+        raise
     try:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -242,38 +255,48 @@ def _output_lock(out: Path) -> Iterator[bool]:
 def _remove_stale_staging(out: Path) -> None:
     with os.scandir(out.parent) as entries:
         for entry in entries:
-            owner, _, suffix = entry.name.rpartition(_STAGING_MARKER)
-            if owner == f".{out.name}" and suffix and entry.is_file(follow_symlinks=False):
+            match = _STAGING_NAME.fullmatch(entry.name)
+            if (
+                match
+                and match[1] == out.name
+                and stat.S_ISREG(entry.stat(follow_symlinks=False).st_mode)
+            ):
                 os.unlink(entry.path)
 
 
-def _staging_prefix(out: Path) -> str:
-    return f".{out.name}{_STAGING_MARKER}"
+@contextmanager
+def _staging_file(out: Path) -> Iterator[tuple[Path, BinaryIO]]:
+    while True:
+        suffix = "".join(secrets.choice(_STAGING_ALPHABET) for _ in range(_STAGING_LENGTH))
+        path = out.with_name(f".{out.name}{_STAGING_MARKER}{suffix}")
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        break
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            yield path, stream
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def _publish(out: Path, lines: list[bytes], *, has_checkpoint: bool) -> None:
-    staging: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=out.parent, prefix=_staging_prefix(out), delete=False
-        ) as stream:
-            staging = Path(stream.name)
-            mode = 0o600
-            if has_checkpoint:
-                with out.open("rb") as previous:
-                    mode = stat.S_IMODE(os.fstat(previous.fileno()).st_mode)
-                    shutil.copyfileobj(previous, stream)
-            stream.writelines(lines)
-            stream.flush()
-            if hasattr(os, "fchmod"):
-                os.fchmod(stream.fileno(), mode)
-            elif has_checkpoint:
-                os.chmod(staging, mode)
-            os.fsync(stream.fileno())
+    with _staging_file(out) as (staging, stream):
+        mode = 0o600
+        if has_checkpoint:
+            with out.open("rb") as previous:
+                mode = stat.S_IMODE(os.fstat(previous.fileno()).st_mode)
+                shutil.copyfileobj(previous, stream)
+        stream.writelines(lines)
+        stream.flush()
+        if hasattr(os, "fchmod"):
+            os.fchmod(stream.fileno(), mode)
+        elif has_checkpoint:
+            os.chmod(staging, mode)
+        os.fsync(stream.fileno())
+        stream.close()
         os.replace(staging, out)
-    finally:
-        if staging is not None:
-            staging.unlink(missing_ok=True)
 
 
 def _run(args: _BatchArgs, settings: AppConfig) -> None:
@@ -286,7 +309,7 @@ def _run(args: _BatchArgs, settings: AppConfig) -> None:
 
 def _run_batch(args: _BatchArgs, settings: AppConfig, rows: list[_InputRow], out: Path) -> None:
     checkpoint = _read_checkpoint(out, rows)
-    with tempfile.NamedTemporaryFile(dir=out.parent, prefix=_staging_prefix(out)):
+    with _staging_file(out):
         pass
     counts = checkpoint.statuses if checkpoint is not None else Counter()
     skipped = counts.total()

@@ -210,12 +210,37 @@ def test_batch_preserves_mode_on_partial_resume(
 
 
 @pytest.mark.usefixtures("no_model")
+@pytest.mark.parametrize("name", [".private.jsonl.lock", "..private.jsonl.ser-batch-abcd_123"])
+def test_batch_refuses_reserved_output(
+    manifest: Path, name: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest.write_bytes(b"")
+    assert _run("--manifest", manifest, "--out", manifest.parent / name) == 2
+    assert capsys.readouterr() == ("", "ser analyze: The output name is reserved.\n")
+    assert set(manifest.parent.iterdir()) == {manifest}
+
+
+@pytest.mark.usefixtures("no_model")
+def test_batch_refuses_symlink_lock(manifest: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    pytest.importorskip("fcntl")
+    manifest.write_bytes(b"")
+    out = manifest.parent / "out.jsonl"
+    lock = manifest.parent / ".out.jsonl.lock"
+    target = manifest.parent / "absent"
+    lock.symlink_to(target)
+    assert _run("--manifest", manifest, "--out", out) == 2
+    assert capsys.readouterr() == ("", "ser analyze: The output lock is a symbolic link.\n")
+    assert lock.readlink() == target
+    assert set(manifest.parent.iterdir()) == {manifest, lock}
+
+
+@pytest.mark.usefixtures("no_model")
 def test_batch_held_lock_leaves_staging_untouched(
     manifest: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fcntl = pytest.importorskip("fcntl")
     out = manifest.parent / "out.jsonl"
-    stale = manifest.parent / ".out.jsonl.ser-batch-abandoned"
+    stale = manifest.parent / ".out.jsonl.ser-batch-k3j9x_2q"
     stale.write_bytes(b"staging")
     with (manifest.parent / ".out.jsonl.lock").open("wb") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -231,7 +256,7 @@ def test_batch_removes_stale_staging_on_complete_resume(manifest: Path) -> None:
     manifest.write_bytes(b"")
     out = manifest.parent / "out.jsonl"
     out.touch()
-    stale = manifest.parent / ".out.jsonl.ser-batch-abandoned"
+    stale = manifest.parent / ".out.jsonl.ser-batch-k3j9x_2q"
     stale.touch()
     assert _run("--manifest", manifest, "--out", out) == 0
     assert not stale.exists()
@@ -244,7 +269,7 @@ def test_batch_without_fcntl_keeps_stale_staging(
     monkeypatch.setitem(sys.modules, "fcntl", None)
     manifest.write_bytes(b"")
     out = manifest.parent / "out.jsonl"
-    stale = manifest.parent / ".out.jsonl.ser-batch-abandoned"
+    stale = manifest.parent / ".out.jsonl.ser-batch-k3j9x_2q"
     stale.touch()
     assert _run("--manifest", manifest, "--out", out) == 0
     assert stale.exists()

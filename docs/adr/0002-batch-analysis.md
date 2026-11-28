@@ -29,17 +29,24 @@ On platforms with `fcntl`, SER acquires an exclusive, non-blocking `flock` on
 `.<output name>.lock` in the output directory before reading the checkpoint or
 loading the model. A competing writer exits 2 without writing output or loading
 a model. The lock lasts through the run. The sidecar stays in place so future
-writers lock the same file. On platforms without `fcntl`, the caller must ensure
+writers lock the same file. Leave the sidecar in place while a writer may run.
+SER opens it with `O_NOFOLLOW` and refuses a symlink with exit 2.
+On platforms without `fcntl`, the caller must ensure
 one writer per output. SER skips stale staging cleanup on those platforms.
 
 Publish each chunk of up to 32 rows by writing the prior output plus new rows to
-a staging file named `.<output name>.ser-batch-XXXX` in the output directory,
-where `XXXX` is a random suffix. SER flushes it with `fsync` and atomically
+a staging file in the output directory. Its name is the literal prefix
+`.<output name>.ser-batch-` followed by eight random characters from
+`[a-z0-9_]` (ASCII lowercase letters, digits and underscore). SER flushes it with `fsync` and atomically
 replaces the output. On POSIX a new output has mode `0600`, and a replacement
 inherits the existing output's mode. A reader sees a complete snapshot, and
 after SIGKILL at most one chunk is recomputed. At startup with the lock held,
-SER removes stale staging files belonging to that output. The sidecar and
-staging filenames are reserved for SER. The durability guarantee covers process
+SER removes only regular files whose entire name matches this output’s staging
+name. It checks the directory entry without following symlinks and leaves
+directories, symlinks, lock files and other outputs’ staging files in place.
+SER reserves `.<output name>.lock` and the exact staging name form above for
+every output. Using either form as `--out` exits 2 before any files are written.
+The durability guarantee covers process
 crashes. Put the output in an existing directory separate from the input audio
 directories. SER refuses an `--out` symlink.
 
@@ -77,6 +84,7 @@ platforms with `fcntl`.
 | `--dir` missing or other than a directory | 2 |
 | `--out` parent missing or other than a directory | 2 |
 | Existing `--out` symlink or other than a regular file | 2 |
+| Reserved lock or staging name as `--out`, or symlink at the lock path on a platform with `fcntl` | 2 |
 | Output directory cannot be written | 1 |
 
 An absent `--out` file is created on the first successful publish.
