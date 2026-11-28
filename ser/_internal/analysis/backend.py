@@ -87,7 +87,13 @@ def frame_layout(
     duration_s)``; frames are added until one reaches ``duration_s``. Audio no longer
     than one frame gives the single frame ``(0, duration_s)``.
     """
-    raise NotImplementedError("Frame layout is not implemented yet (brief A1-2).")
+    spans: list[tuple[float, float]] = []
+    while True:
+        start = len(spans) * stride_s
+        end = min(start + frame_size_s, duration_s)
+        spans.append((start, end))
+        if end == duration_s:
+            return tuple(spans)
 
 
 def coverage_weighted_mean(frames: tuple[BackendFrame, ...], duration_s: float) -> dict[str, float]:
@@ -96,7 +102,17 @@ def coverage_weighted_mean(frames: tuple[BackendFrame, ...], duration_s: float) 
     Frame ``f`` weighs ``w_f``, the integral over ``f`` of ``1 / c(t)``, where ``c(t)``
     counts the frames covering ``t``; the result is ``sum(w_f * p_f) / duration_s``.
     """
-    raise NotImplementedError("Fast pooling is not implemented yet (brief A1-2).")
+    edges = sorted({edge for frame in frames for edge in (frame.start_s, frame.end_s)})
+    totals = dict.fromkeys(frames[0].labels, 0.0)
+    for left, right in zip(edges, edges[1:], strict=False):
+        covering = [frame for frame in frames if frame.start_s <= left and frame.end_s >= right]
+        if not covering:
+            continue
+        weight = (right - left) / len(covering)
+        for frame in covering:
+            for label, probability in frame.labels.items():
+                totals[label] += weight * probability
+    return {label: total / duration_s for label, total in totals.items()}
 
 
 __all__ = [

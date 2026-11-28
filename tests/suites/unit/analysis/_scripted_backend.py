@@ -185,6 +185,9 @@ class ScriptedBackend:
         return {label: 1.0 / len(self._labels) for label in self._labels}
 
     def _frames(self, labels: dict[str, float], duration_s: float) -> tuple[BackendFrame, ...]:
+        frame_labels = self._script.get("frame_labels")
+        if isinstance(frame_labels, dict):
+            labels = dict(cast(Mapping[str, float], frame_labels))
         frames = self._script.get("frames")
         if frames == "gap":
             return (

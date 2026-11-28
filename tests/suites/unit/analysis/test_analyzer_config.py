@@ -93,7 +93,6 @@ _BOUNDARIES = [
 ]
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(("config", "samples", "expected"), _BOUNDARIES)
 def test_limits_apply_exactly_at_their_boundaries(
@@ -102,12 +101,23 @@ def test_limits_apply_exactly_at_their_boundaries(
     samples: NDArray[np.float32],
     expected: UtteranceStatus,
 ) -> None:
-    analyzer = load_artifact(write_artifact(tmp_path / "model.ser"), config)
-
-    record = analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)
+    with load_artifact(
+        write_artifact(tmp_path / "model.ser"),
+        dataclasses.replace(config or AnalysisConfig(), isolation="inline"),
+    ) as analyzer:
+        record = analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert record["status"] == expected
     assert_valid_record(record, analyzer.model_manifest)
+
+
+@pytest.mark.usefixtures("scripted")
+def test_exact_silence_threshold_is_not_silent(tmp_path: Path) -> None:
+    samples = np.ones(CANONICAL_RATE_HZ, dtype=np.float32)
+    with load_artifact(
+        write_artifact(tmp_path / "model.ser"), _with(isolation="inline", silence_rms_dbfs=0.0)
+    ) as analyzer:
+        assert analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
 
 
 @NOT_IMPLEMENTED
@@ -137,7 +147,6 @@ def test_worker_runs_at_low_priority_with_capped_threads_and_no_gpu(
     assert record["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inline_mode_leaves_the_caller_process_alone(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"probe": {}})

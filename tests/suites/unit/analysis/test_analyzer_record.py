@@ -56,7 +56,6 @@ def test_ok_record_meets_every_record_clause(fast_model_path: Path, seconds: flo
     }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize(
     ("duration_s", "expected"),
     [
@@ -102,39 +101,59 @@ def test_fast_utterance_scores_are_the_coverage_weighted_mean_of_its_frames(
     assert record["labels"] == pytest.approx(expected, abs=1e-6)
 
 
-@NOT_IMPLEMENTED
 def test_coverage_weighted_mean_weighs_every_instant_once() -> None:
     frames = (
-        BackendFrame(0.0, 2.0, {"a": 1.0, "b": 0.0}),
+        BackendFrame(0.0, 3.0, {"a": 1.0, "b": 0.0}),
         BackendFrame(1.0, 3.0, {"a": 0.0, "b": 1.0}),
     )
 
-    assert coverage_weighted_mean(frames, 3.0) == pytest.approx({"a": 0.5, "b": 0.5})
+    assert coverage_weighted_mean(frames, 3.0) == pytest.approx({"a": 2 / 3, "b": 1 / 3})
 
 
-@NOT_IMPLEMENTED
 def test_ties_go_to_the_alphabetically_first_label() -> None:
     assert top_label({"b": 0.4, "a": 0.4, "c": 0.2}) == ("a", 0.4)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_backend_utterance_scores_are_the_authority_for_top_label(tmp_path: Path) -> None:
-    script = {"labels": {"a": 0.2, "b": 0.5, "c": 0.3}}
-    analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script))
+    script = {
+        "labels": {"a": 0.2, "b": 0.5, "c": 0.3},
+        "frame_labels": {"a": 1.0, "b": 0.0, "c": 0.0},
+    }
+    analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script), INLINE)
 
     record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert record["labels"] == pytest.approx(script["labels"])
     assert record["top_label"] == "b"
     assert record["confidence"] == pytest.approx(0.5)
+    assert record["frames"] == [{"start_s": 0.0, "end_s": 1.0, "labels": script["frame_labels"]}]
 
 
-@NOT_IMPLEMENTED
+@pytest.mark.usefixtures("scripted")
+def test_public_record_breaks_score_ties_alphabetically(tmp_path: Path) -> None:
+    path = write_artifact(tmp_path / "model.ser", labels=("b", "a"))
+    with load_artifact(path, INLINE) as analyzer:
+        record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+
+    assert record["top_label"] == "a"
+    assert record["confidence"] == 0.5
+
+
+@pytest.mark.usefixtures("scripted")
+def test_invalid_frame_probability_rejects_valid_utterance_scores(tmp_path: Path) -> None:
+    script = {"frame_labels": {"a": 1.0000005, "b": 0.0, "c": 0.0}}
+    with load_artifact(write_artifact(tmp_path / "model.ser", script=script), INLINE) as analyzer:
+        record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+
+    assert record["status"] == "model_error"
+    assert_valid_record(record, analyzer.model_manifest)
+
+
 @pytest.mark.usefixtures("scripted")
 def test_valid_scores_are_renormalised_before_they_are_written(tmp_path: Path) -> None:
     script = {"labels": {"a": 0.2000004, "b": 0.5, "c": 0.3}}
-    analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script))
+    analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script), INLINE)
     total = math.fsum(script["labels"].values())
 
     record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
@@ -147,7 +166,6 @@ def test_valid_scores_are_renormalised_before_they_are_written(tmp_path: Path) -
             assert scores[label] == pytest.approx(value / total, rel=1e-12)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_timing_reports_features_and_predict_separately(tmp_path: Path) -> None:
     script = {"extract_sleep_s": 0.3, "score_sleep_s": 0.2}

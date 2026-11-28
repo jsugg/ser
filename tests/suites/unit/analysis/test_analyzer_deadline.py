@@ -56,7 +56,6 @@ def _until_settled(
     raise AssertionError("the worker never came back")
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize(
     ("duration_s", "expected_s"),
     [(None, 10.0), (0.3, 10.0), (5.0, 10.0), (5.5, 11.0), (120.0, 240.0)],
@@ -165,7 +164,6 @@ def test_a_failed_restart_is_a_model_error_and_the_next_call_retries(tmp_path: P
     assert recovered[-1]["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inline_isolation_checks_the_deadline_between_stages_only(tmp_path: Path) -> None:
     config = AnalysisConfig(isolation="inline", timeout_floor_s=0.5, timeout_per_audio_second=0.1)
