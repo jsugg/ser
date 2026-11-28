@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -263,6 +264,15 @@ def _dataset_root(rows: Sequence[Utterance]) -> Path | None:
     return None
 
 
+def _rebuild_command(corpus: str, rows: Sequence[Utterance]) -> str:
+    root = _dataset_root(rows)
+    root_arg = shlex.quote(str(root)) if root is not None else "<dataset root>"
+    return (
+        f"`ser data download --dataset {corpus} --skip-download --dataset-root {root_arg}`, "
+        "adding `--manifest-path <manifest>` when the manifest is not at the default path"
+    )
+
+
 def apply_curation_ledger(
     utterances: Sequence[Utterance],
     ledger: CurationLedger,
@@ -298,7 +308,9 @@ def apply_curation_ledger(
             if strict:
                 raise CurationLedgerError(
                     f"{entry.corpus} rows carry no dataset_revision, so the curation ledger "
-                    "cannot be matched to them; rebuild the manifest to record it."
+                    "cannot be matched to them; rebuild the manifest to record it with "
+                    + _rebuild_command(entry.corpus, rows_by_scope[(entry.corpus, None)])
+                    + "."
                 )
             unversioned.add(entry.corpus)
             continue
@@ -312,8 +324,9 @@ def apply_curation_ledger(
     for corpus in sorted(unversioned):
         logger.warning(
             "Curation ledger not applied to %s: its rows carry no dataset_revision; "
-            "rebuild the manifest.",
+            "rebuild the manifest with %s.",
             corpus,
+            _rebuild_command(corpus, rows_by_scope[(corpus, None)]),
         )
 
     excluded: dict[str, LedgerEntry] = {}

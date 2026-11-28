@@ -305,6 +305,20 @@ def test_strict_curation_rejects_rows_without_revision(tmp_path: Path) -> None:
         audit_dataset_recipe(rows, recipe=_recipe(), strict=True, curation=_ledger(rows))
 
 
+def test_legacy_manifest_error_names_the_rebuild_command(tmp_path: Path) -> None:
+    rows = [replace(row, dataset_revision=None) for row in _rows_with_duplicates(tmp_path)]
+
+    with pytest.raises(CurationLedgerError) as raised:
+        audit_dataset_recipe(rows, recipe=_recipe(), strict=True, curation=_ledger(rows))
+
+    message = str(raised.value)
+    assert (
+        f"`ser data download --dataset acted --skip-download --dataset-root {tmp_path}`"
+        in message
+    )
+    assert "--manifest-path" in message
+
+
 def test_strict_audit_names_the_rebuild_for_rows_without_revision(tmp_path: Path) -> None:
     rows = [replace(row, dataset_revision=None) for row in _rows_with_duplicates(tmp_path)]
 
