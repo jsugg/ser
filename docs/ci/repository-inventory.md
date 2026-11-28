@@ -16,15 +16,16 @@ SER resolves its default data and cache roots from platform conventions in
 | `<SER_DATA_DIR>` | `SER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/ser` | `~/Library/Application Support/ser` | `%APPDATA%\ser` |
 | `<SER_CACHE_DIR>` | `SER_CACHE_DIR` | `${XDG_CACHE_HOME:-~/.cache}/ser` | `~/Library/Caches/ser` | `%LOCALAPPDATA%\ser` |
 
-Subdirectories resolved relative to those roots:
+Default subdirectories resolved relative to those roots:
 
+- `<SER_DATA_DIR>/models/` — persisted model artifacts and training reports
+  (override: `SER_MODELS_DIR`; `ser/_internal/config/settings_inputs.py`)
+- `<SER_DATA_DIR>/transcripts/` — transcript exports
+  (override: `SER_TRANSCRIPTS_DIR`; `ser/_internal/config/settings_inputs.py`)
 - `<SER_DATA_DIR>/datasets/<dataset_id>/` — downloaded dataset trees
   (`ser/_internal/data/dataset_prepare.py:default_dataset_root`)
 - `<SER_DATA_DIR>/manifests/<dataset_id>.jsonl` — prepared utterance manifests
   (`ser/_internal/data/dataset_prepare.py:default_manifest_path`)
-- `<SER_DATA_DIR>/models/` — persisted model artifacts and training reports
-  (override: `SER_MODELS_DIR`)
-- `<SER_DATA_DIR>/transcripts/` — transcript exports (override: `SER_TRANSCRIPTS_DIR`)
 - `<SER_DATA_DIR>/.ser/dataset_registry.json` — registered dataset roots and manifest pointers
   (`ser/_internal/data/dataset_registry.py:_registry_path`)
 - `<SER_DATA_DIR>/.ser/dataset_consents.json` — persisted dataset policy/licence consents
@@ -33,9 +34,17 @@ Subdirectories resolved relative to those roots:
   (override: `SER_RESTRICTED_BACKENDS_CONSENT_FILE`;
   `ser/_internal/license_check.py:_consent_store_path`)
 - `<SER_CACHE_DIR>/model-cache/` — downloaded foundation-model weights
-  (override: `SER_MODEL_CACHE_DIR`)
+  (override: `SER_MODEL_CACHE_DIR`; `ser/_internal/config/settings_inputs.py`)
 - `<SER_CACHE_DIR>/tmp/` — temporary readiness reports, quarantine ledgers, and embedding caches
-  (override: `SER_TMP_DIR`)
+  (override: `SER_TMP_DIR`; `ser/_internal/config/settings_inputs.py`)
+
+Note on `SER_MODELS_DIR`: `default_dataset_root`, `default_manifest_path`, `_registry_path`,
+`_consents_path`, and `_consent_store_path` all anchor on `settings.models.folder.parent` rather
+than `SER_DATA_DIR` directly. When `SER_MODELS_DIR` is left at its default
+(`<SER_DATA_DIR>/models`), `settings.models.folder.parent` equals `<SER_DATA_DIR>`. If
+`SER_MODELS_DIR` is overridden to a different path, datasets, manifests, the dataset registry, and
+(unless overridden by `SER_DATASET_CONSENTS_FILE` / `SER_RESTRICTED_BACKENDS_CONSENT_FILE`) both
+consent stores move to `<SER_MODELS_DIR>/..`.
 
 ### Observed cache directory contents
 
@@ -124,12 +133,16 @@ catalogue; the three datasets below are registered in `ser/_internal/data/datase
   - Licence / policy in SER's catalogue: `msp-academic-license` / `academic_only`
     (`ser/_internal/data/dataset_prepare.py`, `ser/_internal/data/adapters/msp_podcast.py`).
     Training requires explicit persisted consent (`ser/_internal/data/dataset_consents.py`).
-  - Under SER's strict dataset recipe and audit policy (`docs/dataset-recipes.md`,
-    `ser/_internal/data/dataset_audit.py`), rows without a defensible speaker or session group are
-    routed to `ssl_only` and cannot enter supervised validation or test splits. Because the
-    third-party mirror omits speaker and official split columns (`labels.csv` contains only
-    `FileName` and `emotion`), its utterances are not eligible for supervised validation or test
-    under strict auditing.
+  - Under SER's strict dataset recipe audit (`docs/dataset-recipes.md`,
+    `ser/_internal/data/dataset_audit.py:audit_dataset_recipe`), the unmodified mirror adapter
+    output cannot pass strict audit: `ser/_internal/data/adapters/msp_podcast.py` constructs v1
+    utterances without `normalized_audio_sha256` or `dataset_revision`, so strict auditing raises
+    `DatasetAuditError` on missing audio hashes and dataset revisions before any split routing
+    occurs. During split routing (after duplicate-content quarantine, dropped/missing/quarantined
+    dispositions, and verified native-split assignment), otherwise eligible rows without a
+    defensible speaker or session identity group fall back to `ssl_only` and cannot enter
+    supervised validation or test splits; the third-party mirror's `labels.csv` contains only
+    `FileName` and `emotion` (no speaker or split columns).
 - **Files and bytes:** 149,451 files, 54,218,867,341 bytes total:
   - `audio/`: 149,307 extracted `.wav` files (27,187,404,694 bytes).
   - `repo/`: 141 snapshot files including parquet shards (26,863,699,805 bytes).
@@ -155,14 +168,14 @@ All files live under `<SER_DATA_DIR>/models/`.
 > via `pickle.dumps` (`ser/_internal/models/artifact_persistence.py:persist_pickle_artifact`).
 > Unpickling executes arbitrary code; **load these files only from a trusted source and after
 > verifying their SHA-256 digest**. Pickle artifacts are also sensitive to scikit-learn version
-> upgrades (the `.20261110-033919.bak` file is the pre-resave backup of `ser_model.pkl`).
+> upgrades.
 
 | File | Bytes | SHA-256 | Role |
 | --- | ---: | --- | --- |
 | `ser_model.pkl` | 1,954,441 | `4e96e1e12b593e82dffe782511f07c36386357007b03203f1b8d43d751b36178` | Active `fast` profile classifier pickle (schema v2) |
-| `ser_model.pkl.20261110-033919.bak` | 1,954,332 | `c0b8891ca38c0348999a7598d62324308b27e37bbd2d22fed273330e7ec51114` | Pre-resave backup of `ser_model.pkl` |
+| `ser_model.pkl.20261110-033919.bak` | 1,954,332 | `c0b8891ca38c0348999a7598d62324308b27e37bbd2d22fed273330e7ec51114` | Timestamped backup of `ser_model.pkl` |
 | `training_report.json` | 4,302 | `3bb724be632fde420f9e1f00abda356ff00822f612a779b0709208bbd8261c97` | Training metrics and provenance for `ser_model.pkl` |
-| `training_report.json.20261110-033919.bak` | 4,302 | `3bb724be632fde420f9e1f00abda356ff00822f612a779b0709208bbd8261c97` | Identical backup copy of `training_report.json` |
+| `training_report.json.20261110-033919.bak` | 4,302 | `3bb724be632fde420f9e1f00abda356ff00822f612a779b0709208bbd8261c97` | Timestamped backup copy of `training_report.json` (identical bytes) |
 
 ### Model metadata and reported metrics (`training_report.json`)
 
@@ -181,8 +194,19 @@ All files live under `<SER_DATA_DIR>/models/`.
 
 ## How to check a restore
 
-Set `SER_DATA_DIR` to the restored data directory (or use the platform default above), then run the
-following checks.
+The shell commands below are for POSIX shells on macOS and Linux. First initialize `SER_DATA_DIR`
+and `SER_CACHE_DIR` (if already set in your environment, those values are kept; if unset, they
+resolve to SER's platform defaults):
+
+```bash
+if [ "$(uname -s)" = "Darwin" ]; then
+  SER_DATA_DIR="${SER_DATA_DIR:-$HOME/Library/Application Support/ser}"
+  SER_CACHE_DIR="${SER_CACHE_DIR:-$HOME/Library/Caches/ser}"
+else
+  SER_DATA_DIR="${SER_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/ser}"
+  SER_CACHE_DIR="${SER_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ser}"
+fi
+```
 
 ### 1. Verify manifest line counts
 
@@ -204,14 +228,20 @@ shasum -a 256 \
   "$SER_DATA_DIR/models/ser_model.pkl" \
   "$SER_DATA_DIR/models/ser_model.pkl.20261110-033919.bak" \
   "$SER_DATA_DIR/models/training_report.json" \
+  "$SER_DATA_DIR/models/training_report.json.20261110-033919.bak" \
   "$SER_DATA_DIR/manifests/ravdess.jsonl" \
   "$SER_DATA_DIR/manifests/crema-d.jsonl" \
   "$SER_DATA_DIR/manifests/msp-podcast.jsonl"
 ```
 
-Compare each hash against the tables above. Note that manifest JSONL files embed absolute audio
-paths for the machine on which they were generated; if manifests are regenerated on a new machine,
-their SHA-256 will differ while their line counts must still equal `1440`, `7442`, and `142924`.
+Compare each hash against the tables above. All three dataset adapters serialize `audio_path`
+relative to `dataset_root` via `write_manifest_jsonl(..., base_dir=dataset_root)`
+(`ser/_internal/data/manifest_jsonl.py:write_manifest_jsonl`,
+`ser/_internal/data/manifest.py:Utterance.to_record`), so manifests do not embed machine-specific
+absolute paths; the snapshot hashes above match a byte-for-byte restore and remain comparable across
+machines unless regenerated under a different schema, ontology, or adapter revision. Machine-specific
+absolute paths do appear in `.ser/dataset_registry.json`, `datasets/ravdess/source_manifest.json`,
+`datasets/msp-podcast/manifest.json`, and `models/training_report.json`.
 
 ### 3. Verify CREMA-D pinned Git commit
 
@@ -221,19 +251,130 @@ git -C "$SER_DATA_DIR/datasets/crema-d" rev-parse HEAD
 
 Expected output: `1658cd342dff90010aa843eaeebd53610a08b1dc`.
 
-### 4. Recompute a dataset's file count, total bytes, and tree digest
+### 4. Verify audio WAV counts, CREMA-D folder counts, and cache counts (no hashing)
 
-This Python one-liner reproduces the exact TSV specification (SHA-256, byte size, relative POSIX
-path sorted in UTF-8 byte order, LF-terminated) and prints the file count, total bytes, and tree
-digest without creating temporary files:
+These checks validate file counts and byte totals quickly without re-hashing dataset audio (useful
+for both restores and fresh acquisitions where provenance JSON or Git packfiles may differ):
+
+```bash
+# Audio WAV counts per dataset (expected: ravdess=1440, crema-d=7442, msp-podcast=149307)
+python3 - "$SER_DATA_DIR/datasets" <<'PY'
+import os, pathlib, sys
+
+base = pathlib.Path(sys.argv[1])
+if not base.is_dir():
+    sys.exit(f"Dataset root directory not found: {base}")
+
+def _on_error(err: OSError) -> None:
+    raise err
+
+for dataset_id in ("ravdess", "crema-d", "msp-podcast"):
+    root = base / dataset_id
+    if not root.is_dir():
+        sys.exit(f"Dataset directory not found: {root}")
+    wavs = 0
+    for dirpath, _, filenames in os.walk(root, onerror=_on_error):
+        for fn in filenames:
+            if fn.lower().endswith(".wav"):
+                p = pathlib.Path(dirpath) / fn
+                if p.is_file() and not p.is_symlink():
+                    wavs += 1
+    print(f"{dataset_id}: wav_files={wavs}")
+PY
+```
+
+```bash
+# CREMA-D per-top-level-folder file counts and total bytes
+python3 - "$SER_DATA_DIR/datasets/crema-d" <<'PY'
+import os, pathlib, sys
+from collections import Counter
+
+root = pathlib.Path(sys.argv[1])
+if not root.is_dir():
+    sys.exit(f"CREMA-D directory not found: {root}")
+
+def _on_error(err: OSError) -> None:
+    raise err
+
+counts: Counter[str] = Counter()
+byte_totals: Counter[str] = Counter()
+for dirpath, _, filenames in os.walk(root, onerror=_on_error):
+    for fn in filenames:
+        p = pathlib.Path(dirpath) / fn
+        if p.is_file() and not p.is_symlink():
+            rel = p.relative_to(root).as_posix()
+            top = rel.split("/", 1)[0] if "/" in rel else "(root)"
+            counts[top] += 1
+            byte_totals[top] += p.stat().st_size
+
+for key in sorted(counts):
+    print(f"{key}: files={counts[key]} bytes={byte_totals[key]}")
+print(f"TOTAL: files={sum(counts.values())} bytes={sum(byte_totals.values())}")
+PY
+```
+
+```bash
+# Cache directory regular-file counts and total bytes
+python3 - "$SER_CACHE_DIR" <<'PY'
+import os, pathlib, sys
+
+cache_root = pathlib.Path(sys.argv[1])
+if not cache_root.is_dir():
+    sys.exit(f"Cache directory not found: {cache_root}")
+
+def _on_error(err: OSError) -> None:
+    raise err
+
+def stats(target: pathlib.Path) -> tuple[int, int]:
+    if target.is_file() and not target.is_symlink():
+        return 1, target.stat().st_size
+    n = b = 0
+    for dirpath, _, filenames in os.walk(target, onerror=_on_error):
+        for fn in filenames:
+            p = pathlib.Path(dirpath) / fn
+            if p.is_file() and not p.is_symlink():
+                n += 1
+                b += p.stat().st_size
+    return n, b
+
+entries = [
+    "model-cache/OpenAI/whisper/models--Systran--faster-distil-whisper-large-v3",
+    "model-cache/huggingface/models--facebook--wav2vec2-xls-r-300m",
+    "tmp/medium_embeddings/hf_xlsr/facebook__wav2vec2-xls-r-300m",
+    "tmp/training-readiness-accurate.json",
+    "tmp/training-readiness-medium.json",
+]
+for rel in entries:
+    target = cache_root / rel
+    if target.exists():
+        n, b = stats(target)
+        print(f"{rel}: files={n} bytes={b}")
+    else:
+        print(f"{rel}: MISSING")
+total_n, total_b = stats(cache_root)
+print(f"TOTAL: files={total_n} bytes={total_b}")
+PY
+```
+
+### 5. Recompute a dataset's file count, total bytes, and tree digest
+
+This Python script reproduces the exact TSV specification (SHA-256, byte size, relative POSIX path
+sorted in UTF-8 byte order, LF-terminated), fails on a missing root or traversal error, and prints
+the file count, total bytes, and tree digest without creating temporary files:
 
 ```bash
 python3 - "$SER_DATA_DIR/datasets/<dataset_id>" <<'PY'
 import hashlib, os, pathlib, sys
 
 root = pathlib.Path(sys.argv[1])
+if not root.is_dir():
+    sys.exit(f"Dataset directory not found: {root}")
+
+def _on_error(err: OSError) -> None:
+    raise err
+
 rels = []
-for dirpath, _, filenames in os.walk(root):
+for dirpath, _, filenames in os.walk(root, onerror=_on_error):
     for fn in filenames:
         p = pathlib.Path(dirpath) / fn
         if p.is_file() and not p.is_symlink():
@@ -267,11 +408,13 @@ those provenance JSON files or `.git/` packfiles differ from a byte-for-byte res
 - **Per-file listings:** Individual audio and repository file hashes (~195,576 files across the
   three datasets) are omitted to keep this document compact; the tree digests above commit to the
   complete file set of each dataset.
-- **Consent records:** Two local consent files exist in `<SER_DATA_DIR>` and are intentionally
-  excluded from this inventory beyond their purpose and referenced licence/policy identifiers:
-  - `<SER_DATA_DIR>/.ser/dataset_consents.json` — persists user acknowledgements of restricted
-    dataset policies (`academic_only`, `noncommercial`, `share_alike`) and licences
-    (`cc-by-nc-sa-4.0`, `msp-academic-license`, `odbl-1.0`).
-  - `<SER_DATA_DIR>/restricted_backend_consents.json` — persists user acknowledgements for
-    licence-restricted model backends (`emotion2vec`, licence id `other`).
-  - No timestamps, source fields, or other consent-record contents are published here.
+- **Consent records:** Two local consent files exist in `<SER_DATA_DIR>` (or `<SER_MODELS_DIR>/..`
+  when `SER_MODELS_DIR` is overridden) and are excluded from this inventory beyond their purpose
+  and the licence IDs defined in SER's public catalogue:
+  - `<SER_DATA_DIR>/.ser/dataset_consents.json` — persists local dataset policy/licence
+    acknowledgements (catalogue licence IDs for the inventoried datasets: `cc-by-nc-sa-4.0`,
+    `odbl-1.0`, `msp-academic-license`).
+  - `<SER_DATA_DIR>/restricted_backend_consents.json` — persists local restricted-backend licence
+    acknowledgements (catalogue restricted-backend licence ID: `other`).
+  - No local consent-record contents (accepted entries, timestamps, or source fields) are published
+    here.
