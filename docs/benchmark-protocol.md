@@ -146,15 +146,17 @@ file's bytes as read, never over a re-serialisation of the decoded object; separ
 must equal the canonical serialisation of the object they decode to, and every entry must have
 exactly the keys its role requires. A change to the policy is a new protocol version.
 
-**Bundle membership.** A bundle holds only policy entries, each bound exactly as its entry binds
-it: every `train/dev/test` entry; every candidate the admission route admits, and no other; a
-`training-only` entry or not, as its builder chooses; never an `excluded` entry. A bundle is
-invalid, so its build fails and the harness refuses it, if its `source_policy_sha256` differs from
-the value above or the policy file fails the checks above; if its datasets break that rule; if a
-dataset has a language, label set, raw category source, normalisation or map other than its
-entry's, or a role other than the one its entry and the admission route give it; if a dataset
-card's licence id or catalogue policy differs from its entry's; or if it holds a training-only
-entry that fails a check of the training-only paragraph below.
+**Bundle membership.** A bundle may hold any policy entries and no other datasets, each bound
+exactly as its entry binds it and never rebound: a candidate only if the admission route admits it;
+a `training-only` entry or not, as its builder chooses; never an `excluded` entry. Which datasets a
+decision needs is decided only by the language cohorts `D_ℓ` of section 8.4, taken from the bundle,
+and by 10.4: an empty cohort has null language values (8.5) and fails 10.4. A bundle is invalid, so
+its build fails and the harness refuses it, if its `source_policy_sha256` differs from the value
+above or the policy file fails the checks above; if its datasets break that rule; if a dataset has a
+language, label set, raw category source, normalisation or map other than its entry's, or a role
+other than the one its entry and the admission route give it; if a dataset card's licence id or
+catalogue policy differs from its entry's; or if it holds a training-only entry that fails a check
+of the training-only paragraph below.
 
 The table lists the policy entries this document names. The policy may hold further entries that
 it does not list; every rule of this protocol applies to them through their role and properties,
@@ -197,8 +199,10 @@ bundle is invalid if `copy_revision` or `introduced_label_sample_ids_sha256` is 
 entry's dataset card does not give `copy_source` as its source URL, `copy_revision` as its
 revision or checksum and `copy_of` as the source it copies. The rows whose label the copy
 introduced rather than the source are those whose `sample_id` is in the entry's introduced-label
-list: a file holding each such `sample_id` (2.1) once as UTF-8 followed by LF, in code-point order,
-with no other bytes, whose lowercase hexadecimal SHA-256 is `introduced_label_sample_ids_sha256`.
+list: a file holding one line for each such `sample_id` (2.1), once, the UTF-8 bytes of Python
+`json.dumps(sample_id, ensure_ascii=False, sort_keys=True, separators=(",", ":"))` followed by LF,
+lines sorted by the decoded id in code-point order, with no other bytes, whose lowercase
+hexadecimal SHA-256 is `introduced_label_sample_ids_sha256`.
 Before the row exclusions of sections 2.1, 5.1 and 5.3, the build checks that digest, that every
 listed id is a `sample_id` of the entry's rows, and that the list holds `introduced_label_rows`
 ids; a failure invalidates the bundle. Of the listed rows, the otherwise eligible ones are in
@@ -211,6 +215,13 @@ dataset and a new policy entry; each is a new protocol version.
 Each bundle dataset has a dataset card: source URL, revision or checksum, licence id, catalogue
 policy, native sample rate, row count, the source collections and speakers it may share with
 other datasets, and, for a third-party copy, the URL of the source it copies.
+
+A training-only entry that the bundle does not hold may have the same card supplied with an
+evaluation, beside the model card, for the overlap check of section 6.1. It is not a bundle input
+and the manifest does not pin it. The audit hashes the card's bytes as read and the report records
+that SHA-256 (section 11); the audit uses the card only if it gives `copy_source` as its source URL,
+`copy_revision` as its revision or checksum and `copy_of` as the source it copies, as a bundle
+card of that entry must, and otherwise treats it as absent.
 
 ## 4. Label policy
 
@@ -390,7 +401,7 @@ other training.
 ## 6. Leakage audit
 
 The audit reads the manifest, the source policy (section 3), both ledgers and, in a benchmark run,
-the model card (6.1). It runs
+the model card (6.1) and any dataset card supplied with it (section 3). It runs
 before every benchmark run and on its own. Checks, over all datasets together:
 
 | Check | Pass condition |
@@ -421,19 +432,20 @@ calibration, including a base model's:
 
 Whatever the level, every known row of every stage is checked: a bundle row, or an external file
 whose `audio_sha256` (2.3) the card lists. Demotion to `declared` never drops these checks on the
-part that can be audited. The flag `test_overlap` is set on a dataset's results when a known row
-is in that dataset's test partition, shares its speaker group with a test row, or has the
+part that can be audited. The flag `test_overlap` is set on a dataset's results when a known row is
+in that dataset's test partition, shares its speaker group with a test row, or has the
 `audio_sha256` of a test row, or when the card or publisher list names that dataset, its source
-collection, or a speaker or recording of its test partition. A result on a test-only dataset
-without speaker identity (5.4) also needs auditable separation: every stage's data is listed by
-source collection, none is that dataset's, and every training row is a known row; otherwise it
-carries `separation_unverified`. The flag
-`overlap_unverified` is set on a test dataset's results when the model card or publisher list
-shows training, at any stage, on a training-only entry of the source policy (section 3), known
-as the copy at its `copy_source` of its `copy_of`, at any revision, whatever the evaluated bundle
-holds, and that entry's dataset card cannot rule out source recordings or speakers shared with
-that dataset; a bundle without the entry has no such card, so the flag is set. These flags remove
-the result from clean comparison; they are flags, not provenance levels.
+collection, or a speaker or recording of its test partition. A result on a test-only dataset without
+speaker identity (5.4) also needs auditable separation: every stage's data is listed by source
+collection, none is that dataset's, and every training row is a known row; otherwise it carries
+`separation_unverified`. The flag `overlap_unverified` is set on a test dataset's results when the
+model card or publisher list shows training, at any stage, on a training-only entry of the source
+policy (section 3), known as the copy at its `copy_source` of its `copy_of`, at any revision,
+whatever the evaluated bundle holds, and that entry's dataset card cannot rule out source recordings
+or speakers shared with that dataset. That card is the bundle's card when the bundle holds the
+entry, and otherwise the card supplied with the evaluation (section 3); where neither exists, the
+flag is set. These flags remove the result from clean comparison; they are flags, not provenance
+levels.
 
 `verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
 owner's own recordings (E3-4) are free of overlap by construction; for a `declared` model they are
@@ -659,10 +671,11 @@ SHA-256, label set, provenance, distribution), the bundle (id, manifest SHA-256,
 split and identity ledger digests, and the code version (commit, clean tree, SER and numpy
 versions); for each configuration scored (model, `fast@16k`, `fast@native`), the call options,
 timeout, code revision and sample rates actually fed; every value of sections 8.2 and 8.4 with its
-interval and flags; the baselines of section 9; the audit output of 6.2 verbatim; the acceptance
-result of 10.4 by condition, with the E3-4 status; and, for every comparison, its basis, its cohort
-of datasets, its label set (`K*_d` or `K_AB`), and the SHA-256 of every input it reads, including
-the other candidate's predictions and card and the selection plan.
+interval and flags; the baselines of section 9; the audit output of 6.2 verbatim, and the SHA-256 of
+any dataset card supplied with the evaluation (section 3); the acceptance result of 10.4 by
+condition, with the E3-4 status; and, for every comparison, its basis, its cohort of datasets, its
+label set (`K*_d` or `K_AB`), and the SHA-256 of every input it reads, including the other
+candidate's predictions and card and the selection plan.
 
 Two runs on the same inputs produce byte-identical files, with no wall-clock time, host name, user
 name, absolute path or duration. Probabilities are archived losslessly: each returned value is
