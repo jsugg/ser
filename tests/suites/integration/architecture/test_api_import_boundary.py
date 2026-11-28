@@ -417,7 +417,7 @@ def test_root_package_exposes_metadata_version() -> None:
     """Root package should expose the installed package version."""
     import ser
 
-    assert ser.__version__ == "1.0.0"
+    assert ser.__version__ == "2.0.0"
 
 
 def test_root_package_uses_exact_metadata_fallback_without_heavy_imports(repo_root: Path) -> None:

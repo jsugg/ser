@@ -43,8 +43,8 @@ sequenceDiagram;
 
 ## Quickstart
 ### 1) Install
-Requirements: Python `3.12` or `3.13`, Git, and `ffmpeg` on `PATH`.
-Install from Git into an active virtual environment using pip or uv:
+Requirements: Python `3.12` or `3.13` and Git. Install the emotion-only `fast` core
+from Git into an active virtual environment using pip or uv:
 
 ```bash
 pip install "git+https://github.com/jsugg/ser.git"
@@ -58,8 +58,12 @@ This project is not published on PyPI. The PyPI package named `ser` is a
 different project. There are no Git tags yet; tagged versions will be listed
 here once the first tag is cut.
 
-To install an extra from Git, pass `"ser[medium] @ git+https://github.com/jsugg/ser.git"`
-or `"ser[full] @ git+https://github.com/jsugg/ser.git"` as the requirement to either installer.
+To install an extra, pass a requirement such as
+`"ser[transcript] @ git+https://github.com/jsugg/ser.git"` to either installer.
+Transcription is requested by default for batch inference; install `transcript`
+and put `ffmpeg` on `PATH`, or pass `--no-transcript` (`include_transcript=False`
+in Python). Install `medium` for the `medium` and `accurate` emotion profiles, or
+`full` for all profiles and transcription. `all` is an alias for `full`.
 
 For development, with uv and Make installed, clone the repo and run `make setup`
 to install the runtime and development dependencies and configure Git hooks:

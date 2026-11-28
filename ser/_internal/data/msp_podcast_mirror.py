@@ -279,14 +279,14 @@ def _load_hf_clients() -> tuple[type[Any], Any, Any]:
     except Exception as err:
         raise RuntimeError(
             "MSP mirror download requires dependency `huggingface_hub`. "
-            "Install it with `uv pip install huggingface_hub`."
+            "Install `ser[full]` (`uv sync --extra full` in a checkout)."
         ) from err
     try:
         pq = importlib.import_module("pyarrow.parquet")
     except Exception as err:
         raise RuntimeError(
             "MSP mirror extraction requires dependency `pyarrow`. "
-            "Install it with `uv pip install pyarrow`."
+            "Install `ser[full]` (`uv sync --extra full` in a checkout)."
         ) from err
     return HfApi, snapshot_download, pq
 

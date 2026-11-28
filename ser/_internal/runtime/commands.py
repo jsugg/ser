@@ -47,10 +47,16 @@ def classify_training_exception(err: Exception) -> WorkflowErrorDisposition:
         QuarantineBudgetExceeded,
         TrainingReadinessError,
     )
+    from ser._internal.runtime.registry import UnsupportedProfileError
 
     if isinstance(
         err,
-        (PreparedPlanError, QuarantineBudgetExceeded, TrainingReadinessError),
+        (
+            PreparedPlanError,
+            QuarantineBudgetExceeded,
+            TrainingReadinessError,
+            UnsupportedProfileError,
+        ),
     ):
         return WorkflowErrorDisposition(exit_code=2, message=str(err))
     return WorkflowErrorDisposition(
@@ -85,9 +91,12 @@ def classify_inference_exception(err: Exception) -> WorkflowErrorDisposition:
         MediumRuntimeDependencyError,
     )
     from ser._internal.runtime.registry import UnsupportedProfileError
-    from ser._internal.transcript.transcript_extractor import TranscriptionError
+    from ser._internal.transcript.transcript_extractor import (
+        TranscriptionDependencyError,
+        TranscriptionError,
+    )
 
-    if isinstance(err, UnsupportedProfileError):
+    if isinstance(err, (UnsupportedProfileError, TranscriptionDependencyError)):
         return WorkflowErrorDisposition(exit_code=2, message=str(err))
     if isinstance(
         err,

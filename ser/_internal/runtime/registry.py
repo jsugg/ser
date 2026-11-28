@@ -79,6 +79,7 @@ def resolve_runtime_capability(
 
     if missing_modules:
         dependency_list: str = ", ".join(missing_modules)
+        extra = "full" if profile == "accurate-research" else "medium"
         disable_hint = f" Disable `{profile_flag}` or keep `fast` profile." if profile_flag else ""
         return RuntimeCapability(
             profile=profile,
@@ -89,7 +90,8 @@ def resolve_runtime_capability(
             implementation_ready=implementation_ready,
             message=(
                 f"Runtime profile '{profile}' requires optional dependencies not "
-                f"currently available: {dependency_list}."
+                f"currently available: {dependency_list}. Install `ser[{extra}]` "
+                f"(`uv sync --extra {extra}` in a checkout) on a supported platform."
                 f"{disable_hint}"
             ),
         )
