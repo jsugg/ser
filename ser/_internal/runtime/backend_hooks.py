@@ -44,7 +44,9 @@ def _load_medium_inference_runner() -> MediumInferenceRunner | None:
     """Loads the concrete medium inference runner when implementation exists."""
     try:
         module = importlib.import_module("ser._internal.runtime.medium_inference")
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as err:
+        if err.name != "ser._internal.runtime.medium_inference":
+            raise
         return None
 
     runner = getattr(module, "run_medium_inference", None)
@@ -57,7 +59,9 @@ def _load_fast_inference_runner() -> FastInferenceRunner | None:
     """Loads the concrete fast inference runner when implementation exists."""
     try:
         module = importlib.import_module("ser._internal.runtime.fast_inference")
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as err:
+        if err.name != "ser._internal.runtime.fast_inference":
+            raise
         return None
 
     runner = getattr(module, "run_fast_inference", None)
@@ -70,7 +74,9 @@ def _load_accurate_inference_runner() -> AccurateInferenceRunner | None:
     """Loads the concrete accurate inference runner when implementation exists."""
     try:
         module = importlib.import_module("ser._internal.runtime.accurate_inference")
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as err:
+        if err.name != "ser._internal.runtime.accurate_inference":
+            raise
         return None
 
     runner = getattr(module, "run_accurate_inference", None)
@@ -83,7 +89,9 @@ def _load_accurate_research_inference_runner() -> AccurateResearchInferenceRunne
     """Loads the concrete accurate-research inference runner when available."""
     try:
         module = importlib.import_module("ser._internal.runtime.accurate_research_inference")
-    except ModuleNotFoundError:
+    except ModuleNotFoundError as err:
+        if err.name != "ser._internal.runtime.accurate_research_inference":
+            raise
         return None
 
     runner = getattr(module, "run_accurate_research_inference", None)

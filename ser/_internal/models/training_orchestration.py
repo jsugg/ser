@@ -21,6 +21,7 @@ from typing import TypeVar, cast
 import numpy as np
 from numpy.typing import NDArray
 
+import ser
 from ser.config import AppConfig
 from ser.profiles import resolve_profile_name
 
@@ -177,7 +178,7 @@ def _package_version() -> str:
     try:
         return version("ser")
     except PackageNotFoundError:
-        return "1.0.0"
+        return ser.__version__
 
 
 def _recipe_digest(settings: AppConfig) -> str:

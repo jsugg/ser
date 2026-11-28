@@ -18,6 +18,7 @@ from ser._internal.transcript.backends.base import (
     CompatibilityReport,
     TranscriptionBackendAdapter,
 )
+from ser._internal.transcript.backends.dependencies import transcription_extra_message
 from ser._internal.utils.logger import (
     DependencyLogPolicy,
     DependencyPolicyContext,
@@ -75,9 +76,8 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
                 CompatibilityIssue(
                     code="missing_dependency_faster_whisper",
                     message=(
-                        "Missing faster-whisper dependencies for transcription backend "
-                        "'faster_whisper'. Install faster-whisper (for example, "
-                        "`uv sync --extra full`) or switch to `stable_whisper`."
+                        "Missing faster-whisper dependencies. "
+                        + transcription_extra_message("faster_whisper")
                     ),
                     impact="blocking",
                 )
@@ -194,9 +194,8 @@ class FasterWhisperAdapter(TranscriptionBackendAdapter):
             faster_whisper_module = importlib.import_module("faster_whisper")
         except ModuleNotFoundError as err:
             raise RuntimeError(
-                "Missing faster-whisper dependencies for transcription backend "
-                "'faster_whisper'. Install faster-whisper (for example, "
-                "`uv sync --extra full`) or switch to `stable_whisper`."
+                "Missing faster-whisper dependencies. "
+                + transcription_extra_message("faster_whisper")
             ) from err
         whisper_model = getattr(faster_whisper_module, "WhisperModel", None)
         if whisper_model is None:
