@@ -1,15 +1,11 @@
-"""Model files: one read, one verified identity, one licence record (ADR 0001).
-
-The safe, pickle-free format and its packager belong to brief P2-4, which registers
-it in ``artifact_formats``. Legacy pickles are trusted plumbing only: they load only
-on explicit opt-in, as baselines, and are refused before anything is unpickled.
-"""
+"""Model files: one read, one verified identity, one licence record (ADR 0001)."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -19,7 +15,7 @@ from ser._internal.analysis.errors import (
     AnalysisModelNotConformingError,
     AnalysisModelUnavailableError,
 )
-from ser._internal.analysis.legacy import load_legacy
+from ser._internal.models import artifact_safe
 from ser.profiles import ProfileName
 from ser.runtime.contracts import (
     LicenceRecord,
@@ -75,6 +71,39 @@ class ArtifactFormat(Protocol):
         ...
 
 
+class SafeModelFormat:
+    """Data-only fast model format (ADR 0004)."""
+
+    @property
+    def name(self) -> ModelFormat:
+        return "safe"
+
+    def claims(self, data: bytes) -> bool:
+        return data.startswith(artifact_safe.MAGIC)
+
+    def open(self, data: bytes) -> OpenedArtifact:
+        try:
+            verified = artifact_safe.verify_artifact(data)
+        except ValueError as err:
+            raise AnalysisModelLoadError(str(err)) from None
+        return OpenedArtifact(
+            ArtifactMetadata(
+                profile="fast",
+                backend_id="handcrafted",
+                model_id=verified.model_id,
+                label_set_id=verified.label_set_id,
+                labels=verified.labels,
+                training_audio=verified.training_audio,
+                provenance=ModelProvenance(
+                    payload_sha256=hashlib.sha256(verified.payload).hexdigest(),
+                    encoder="none",
+                    datasets=verified.datasets,
+                ),
+            ),
+            verified.payload,
+        )
+
+
 class LegacyPickleFormat:
     """Model envelopes written by ``ser --train`` before brief P2-4."""
 
@@ -88,6 +117,8 @@ class LegacyPickleFormat:
 
     def open(self, data: bytes) -> OpenedArtifact:
         """Unpickles; call only after the caller opted in to a legacy baseline."""
+        from ser._internal.analysis.legacy import load_legacy
+
         model, version_mismatch = load_legacy(data)
         metadata = model.artifact_metadata
         if metadata is None:
@@ -109,8 +140,8 @@ class LegacyPickleFormat:
 
 
 def artifact_formats() -> tuple[ArtifactFormat, ...]:
-    """Formats analysis can read; P2-4 adds the safe format ahead of the legacy one."""
-    return (LegacyPickleFormat(),)
+    """Formats analysis can inspect and verify."""
+    return (SafeModelFormat(), LegacyPickleFormat())
 
 
 def read_model_file(path: str | os.PathLike[str]) -> bytes:
@@ -177,12 +208,20 @@ def open_model(
         raise AnalysisModelNotConformingError(
             "The legacy model requires baseline opt-in."
         ) from None
-    try:
+    if legacy:
+        warnings.warn(
+            "Loading a legacy pickle analysis model is deprecated; use a safe model artifact.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        try:
+            opened = artifact_format.open(data)
+        except MemoryError:
+            raise
+        except Exception:
+            raise AnalysisModelLoadError("The model artifact could not be opened.") from None
+    else:
         opened = artifact_format.open(data)
-    except MemoryError:
-        raise
-    except Exception:
-        raise AnalysisModelLoadError("The model artifact could not be opened.") from None
 
     metadata = opened.metadata
     provenance = metadata.provenance

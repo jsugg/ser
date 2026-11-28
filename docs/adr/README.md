@@ -14,6 +14,7 @@ The repository currently keeps its architecture guidance in these maintained doc
 ## Records
 
 - [ADR 0001: Utterance analysis interface](0001-utterance-analysis.md)
+- [ADR 0004: Data-only fast model artifacts](0004-model-artifact-format.md)
 
 ## How this directory should be used
 
