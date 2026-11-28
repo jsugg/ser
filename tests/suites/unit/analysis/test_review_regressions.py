@@ -173,7 +173,9 @@ def test_unexpected_restart_exception_sets_failed_and_can_retry(
         assert analyzer.analyze(tone(0.5), sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
 
 
-def _load_blocking(request: worker.BackendLoadRequest) -> _scripted_backend.ScriptedBackend:
+def _load_blocking(
+    request: worker.BackendLoadRequest, *, holds_gil: bool
+) -> _scripted_backend.ScriptedBackend:
     backend = _scripted_backend.load_scripted(request)
     original = backend.score
 
@@ -183,8 +185,8 @@ def _load_blocking(request: worker.BackendLoadRequest) -> _scripted_backend.Scri
         language: _scripted_backend.LanguageHint | None,
         deadline_monotonic_s: float,
     ) -> _scripted_backend.BackendScores:
-        if language in ("es", "de"):
-            pause = ctypes.PyDLL(None).pause if language == "de" else signal.pause
+        if language == "es":
+            pause = ctypes.PyDLL(None).pause if holds_gil else signal.pause
             os.write(1, f"{os.getpid()}\n".encode())
             pause()
         return original(features, language=language, deadline_monotonic_s=deadline_monotonic_s)
@@ -243,15 +245,16 @@ def test_restart_is_ready_to_score_before_admitting_next_call(
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX SIGKILL and pipe selection")
 @pytest.mark.parametrize(
-    "language",
+    "holds_gil",
     [
-        "es",
-        pytest.param("de", marks=pytest.mark.skipif(sys.platform != "linux", reason="Linux guard")),
+        False,
+        pytest.param(True, marks=pytest.mark.skipif(sys.platform != "linux", reason="Linux guard")),
     ],
     ids=["releases-gil", "holds-gil"],
 )
-def test_busy_worker_exits_when_parent_is_killed(language: str) -> None:
+def test_busy_worker_exits_when_parent_is_killed(holds_gil: bool) -> None:
     parent_code = """
+from functools import partial
 from tests.suites.unit.analysis.test_review_regressions import _load_blocking, tone
 from ser._internal.analysis.backend import BackendLoadRequest
 from ser._internal.analysis.pipeline import AnalysisJob
@@ -261,13 +264,14 @@ import sys, time
 identity = ModelIdentity('fast', 'test', '0' * 64, 'test', ('a', 'b', 'c'))
 manifest = ModelManifest(identity, 'safe', None, None, False)
 request = BackendLoadRequest('safe', b'{}', manifest, 2)
-runner = WorkerSupervisor(request, _load_blocking, WorkerSettings(2, 19, 10.0))
-runner.run(AnalysisJob(None, tone(0.5), 16000, sys.argv[1]),
+loader = partial(_load_blocking, holds_gil=sys.argv[1] == 'True')
+runner = WorkerSupervisor(request, loader, WorkerSettings(2, 19, 10.0))
+runner.run(AnalysisJob(None, tone(0.5), 16000, 'es'),
            entry_monotonic_s=time.monotonic(), known_duration_s=0.5,
            config=AnalysisConfig(timeout_floor_s=30.0))
 """
     with subprocess.Popen(
-        [sys.executable, "-c", parent_code, language], stdout=subprocess.PIPE
+        [sys.executable, "-c", parent_code, str(holds_gil)], stdout=subprocess.PIPE
     ) as parent:
         assert parent.stdout is not None
         worker_pid = None
