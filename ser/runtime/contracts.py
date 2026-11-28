@@ -157,4 +157,3 @@ class ModelManifest:
     training_audio: TrainingAudioForm | None
     provenance: ModelProvenance | None
     baseline: bool
-    enabled_features: tuple[str, ...] | None = None
