@@ -111,30 +111,36 @@ scored); **excluded** (not in the bundle).
 | `ravdess` | `en` | acted, 24 actors | yes (actor in filename) | `cc-by-nc-sa-4.0` (`noncommercial`) | train/dev/test |
 | `crema-d` | `en` | acted, 91 actors | yes (actor in filename) | `odbl-1.0` (`share_alike`) | train/dev/test |
 | `mesd` | `es` (Mexican) | acted | none known; verified by brief D4-2 | `cc-by-4.0` (`open`) | test-only candidate (admission rule below) |
-| `spanish-meacorpus-2023` | `es` | natural | none known; verified by D4-2 | `cc-by-nc-4.0` (`noncommercial`) | test-only candidate (admission rule below) |
 | `escorpus-pe` | `es` (Peruvian) | — | — | `cc-by-4.0` (`open`) | excluded: valence/arousal values only, no named emotion categories |
 | `coraa-ser` | `pt` (Brazilian) | natural, 933 clips | — | `custom-research-only` (`research_only`) | excluded: neutral / non-neutral labels only, and Portuguese is not a benchmark language |
-| `msp-podcast` third-party mirror | `en` | natural | no | `msp-academic-license` (`academic_only`) | training-only (below) |
 
-**Admission of `mesd` and `spanish-meacorpus-2023`.** These datasets are in the catalogue but not
-yet qualified. Each enters a bundle only through this route: brief D4-2 records, for the pinned
-source revision, (a) the raw category inventory and (b) whether each row carries an individual
-speaker id. If (a) differs from the dataset's map in section 4.1, the dataset is excluded until a
-new protocol version changes the map. Otherwise its role is train/dev/test if (b) holds, and
-test-only if not (section 5.4). The manifest records the D4-2 record's SHA-256. A dataset not
-listed in this table enters only through a new protocol version.
+**Binding of sources to roles.** The datasets of a bundle other than those in this table, the role
+of each, and the label set and raw-category map of each candidate (below) are recorded in the
+manifest, not in this document.
 
-**Permission to train is separate from label qualification.** All catalogued data may be used to
-train private models. Whether a dataset's labels are benchmark ground truth is decided only by
-sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private.
+**Admission of candidates.** `mesd`, and any other catalogued dataset the manifest binds to the
+candidate role, are not yet qualified. Each enters a bundle only through this route: brief D4-2
+records, for the pinned source revision, (a) the raw category inventory and (b) whether each row
+carries an individual speaker id. If (a) differs from the dataset's map (section 4.1; the
+manifest's for a candidate other than `mesd`), the dataset is excluded until a new protocol
+version changes the map. Otherwise its role is train/dev/test if (b) holds, and test-only if not
+(section 5.4). The manifest records the D4-2 record's SHA-256. A scored dataset that is neither
+in this table nor bound as a candidate in the manifest enters only through a new protocol
+version.
 
-**The MSP-Podcast mirror is training-only.** It is not the official release and has no speaker
-identity and no official split; under section 5.4 it is training-only and never scored. Of its
-56,157 rows whose label the mirror introduced rather than the source, the otherwise eligible rows
-are in train with `label: null` and reason `label_not_from_source`; an exclusion of section 2.1,
-5.1 or 5.3 takes precedence, with its own reason. They are never gold labels, and a model that uses
-their mirror labels as targets says so in its provenance list (section 6.1). An official
-MSP-Podcast release would be a different dataset and a new table row.
+**Permission to train is separate from label qualification.** This protocol does not decide
+whether a dataset may be used to train a model. Whether a dataset's labels are benchmark ground
+truth is decided only by sections 3 and 4. A model trained on any dataset whose catalogue policy
+is not `open` is private.
+
+**Training-only datasets.** A third-party copy of a source (not its official release) that has no
+speaker identity and no official split may be bound to the training-only role by the manifest
+(section 5.4); it is then never scored. Of its rows whose label the copy introduced rather than
+the source, the otherwise eligible rows are in train with `label: null` and reason
+`label_not_from_source`; an exclusion of section 2.1, 5.1 or 5.3 takes precedence, with its own
+reason. They are never gold labels, and a model that uses the introduced labels as targets says
+so in its provenance list (section 6.1). An official release of the source would be a different
+dataset.
 
 Each bundle dataset has a dataset card: source URL, revision or checksum, licence id, catalogue
 policy, native sample rate, row count, and the source collections and speakers it may share with
@@ -153,7 +159,6 @@ are always ordered by Unicode code point.
 | `ravdess-8-v1` | angry, calm, disgust, fearful, happy, neutral, sad, surprised | `ravdess` |
 | `crema-d-6-v1` | angry, disgust, fearful, happy, neutral, sad | `crema-d` |
 | `mesd-6-v1` | angry, disgust, fearful, happy, neutral, sad | `mesd` |
-| `spanish-meacorpus-2023-6-v1` | angry, disgust, fearful, happy, neutral, sad | `spanish-meacorpus-2023` |
 
 The label of a row is read from the raw source category at the pinned source revision, never from
 a label already converted by SER's catalogue (whose maps include aliases and coercions):
@@ -163,7 +168,10 @@ a label already converted by SER's catalogue (whose maps include aliases and coe
 | `ravdess` | third `-`-separated field of the file name | `01` neutral, `02` calm, `03` happy, `04` sad, `05` angry, `06` fearful, `07` disgust, `08` surprised |
 | `crema-d` | third `_`-separated field of the file name | `ANG` angry, `DIS` disgust, `FEA` fearful, `HAP` happy, `NEU` neutral, `SAD` sad |
 | `mesd` | category named by the source (D4-2 records where), case-folded | `anger` angry, `disgust` disgust, `fear` fearful, `happiness` happy, `neutral` neutral, `sadness` sad |
-| `spanish-meacorpus-2023` | category named by the source (D4-2 records where), case-folded | `anger` angry, `disgust` disgust, `fear` fearful, `joy` happy, `neutral` neutral, `sadness` sad |
+
+A candidate other than `mesd` (section 3) has the label set `<dataset id>-6-v1` (angry, disgust,
+fearful, happy, neutral, sad) and a raw-category map that is a one-to-one renaming (4.2) of the
+category named by the source; both are recorded in the manifest.
 
 A raw category not in its dataset's map is excluded for that dataset (ledger reason
 `label_not_scored`). Training-only rows are never scored, so they have no map and `label: null`.
@@ -271,9 +279,8 @@ tuning or calibration, and an official split it is distributed with is ignored (
 training part is not used for training). It counts for acceptance and selection like any other
 test set if it passes audit check A7 and the audio-hash checks of 5.1 and A4, and a model's
 result on it also needs the separation evidence of 6.1. It is **training-only** only where the
-owner's licence decision assigns that role and its labels do not qualify for testing: today the
-MSP-Podcast mirror alone. A row without a node is
-test, reason `test_only_dataset`, in a test-only dataset; train, reason `training_only_dataset`,
+manifest binds it to that role (section 3) and its labels do not qualify for testing. A row
+without a node is test, reason `test_only_dataset`, in a test-only dataset; train, reason `training_only_dataset`,
 in a training-only dataset; otherwise excluded, reason `no_speaker_identity`.
 
 ### 5.5 Split ledger and digest
@@ -348,10 +355,10 @@ collection, or a speaker or recording of its test partition. A result on a test-
 without speaker identity (5.4) also needs auditable separation: every stage's data is listed by
 source collection, none is that dataset's, and every training row is a known row; otherwise it
 carries `separation_unverified`. The flag
-`overlap_unverified` is set on a test dataset's results when the model was trained on the
-MSP-Podcast mirror and the mirror's dataset card cannot rule out source recordings or speakers
-shared with that dataset. These flags remove the result from clean comparison; they are flags, not
-provenance levels.
+`overlap_unverified` is set on a test dataset's results when the model was trained on a
+training-only dataset (section 3) whose dataset card cannot rule out source recordings or
+speakers shared with that dataset. These flags remove the result from clean comparison; they are
+flags, not provenance levels.
 
 `verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
 owner's own recordings (E3-4) are free of overlap by construction; for a `declared` model they are
@@ -742,8 +749,8 @@ test = S2.
 
 Only exact-content duplicates are detected, not re-encoded, trimmed or re-amplified copies or
 shared prompt texts. Acted corpora dominate; no conversational test set exists yet. If D4-2 finds
-no speaker identity in `mesd` and `spanish-meacorpus-2023`, Spanish is tested only on test-only
-datasets with utterance-level intervals, which overstate precision (8.3), and no model was fitted
+no speaker identity in `mesd` and in any other Spanish candidate, Spanish is tested only on
+test-only datasets with utterance-level intervals, which overstate precision (8.3), and no model was fitted
 on Spanish benchmark rows. `declared` provenance cannot be checked row by row. Intervals depend on
 numpy's PCG64 stream, hence the recorded numpy version. A wall-clock timeout can fail a row on a
 slow machine.
@@ -757,5 +764,5 @@ metrics, has no calibration or interval, and stamps wall-clock time.
 
 ## 15. Pending owner decisions
 
-None. The owner's decisions of 2026-11-28 (benchmark languages, use of catalogued data including
-the MSP-Podcast mirror, first model and output labels) are applied in sections 1, 3, 4.1 and 10.
+None. The owner's decisions of 2026-11-28 (benchmark languages, first model and output labels) are
+applied in sections 1, 3, 4.1 and 10.
