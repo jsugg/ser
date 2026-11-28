@@ -241,7 +241,7 @@ def write_curated_manifest(
     if curation_ledger is None:
         write_manifest_jsonl(output_path, utterances, base_dir=base_dir)
         return list(utterances)
-    curated = apply_curation_ledger(utterances, curation_ledger, strict=False)
+    curated = apply_curation_ledger(utterances, curation_ledger)
     write_manifest_jsonl(source_manifest_path(output_path), utterances, base_dir=base_dir)
     write_manifest_jsonl(output_path, curated.utterances, base_dir=base_dir)
     if curated.excluded:

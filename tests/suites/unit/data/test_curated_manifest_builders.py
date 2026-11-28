@@ -14,6 +14,8 @@ import soundfile as sf
 import ser._internal.data.adapters.crema_d as crema_d
 import ser._internal.data.adapters.ravdess as ravdess
 import ser._internal.data.data_loader as dl
+import ser._internal.data.dataset_prepare as dp
+import ser._internal.data.strategies.default as strategies
 import ser.config as config
 from ser._internal.data.curation_ledger import (
     CurationLedger,
@@ -155,12 +157,18 @@ def test_ravdess_builder_writes_curated_and_source_manifests_with_provenance(
         )
 
 
-def test_ravdess_builder_leaves_revision_unset_for_an_unverified_tree(tmp_path: Path) -> None:
+def test_ravdess_curated_build_from_an_unverified_tree_fails_before_writing(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "ravdess"
     ledger, _tree = _ravdess_tree(root)
     output = tmp_path / "manifests" / "ravdess.jsonl"
 
-    _build_ravdess(root, output, ledger)
+    with pytest.raises(CurationLedgerError, match="does not match Zenodo record 1188976"):
+        _build_ravdess(root, output, ledger)
+    assert not output.exists() and not source_manifest_path(output).exists()
+
+    _build_ravdess(root, output, None)
 
     rows = load_manifest_jsonl(output, ontology=_ontology(), base_dir=root)
     assert len(rows) == 14
@@ -182,25 +190,36 @@ def test_ravdess_builder_without_ledger_writes_the_raw_manifest(
     assert not source_manifest_path(output).exists()
 
 
-def test_crema_d_builder_derives_revision_from_the_lfs_tree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = tmp_path / "crema-d"
+def _crema_d_tree(root: Path) -> tuple[CurationLedger, str]:
     audio = root / "AudioWAV"
     for actor in range(1001, 1007):
         _write_wav(audio / f"{actor}_IEO_HAP_XX.wav", actor)
         _write_wav(audio / f"{actor}_IEO_SAD_XX.wav", actor + 100)
     (audio / "1001_TIE_SAD_XX.wav").write_bytes((audio / "1001_IEO_HAP_XX.wav").read_bytes())
-    revision = crema_d.CREMA_D_DATASET_REVISION
     ledger = CurationLedger(
         ledger_id="fixture",
         version="1",
         entries=tuple(
-            _entry("crema-d", revision, root, rel, "conflicting_label_duplicate")
+            _entry(
+                "crema-d",
+                crema_d.CREMA_D_DATASET_REVISION,
+                root,
+                rel,
+                "conflicting_label_duplicate",
+            )
             for rel in ("AudioWAV/1001_IEO_HAP_XX.wav", "AudioWAV/1001_TIE_SAD_XX.wav")
         ),
     )
     tree = git_tree_sha1({path.name: git_lfs_pointer_sha1(path) for path in audio.glob("*.wav")})
+    return ledger, tree
+
+
+def test_crema_d_builder_derives_revision_from_the_lfs_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "crema-d"
+    ledger, tree = _crema_d_tree(root)
+    revision = crema_d.CREMA_D_DATASET_REVISION
     output = tmp_path / "manifests" / "crema-d.jsonl"
 
     def build() -> list[str | None]:
@@ -217,11 +236,69 @@ def test_crema_d_builder_derives_revision_from_the_lfs_tree(
         rows = load_manifest_jsonl(output, ontology=_ontology(), base_dir=root)
         return [row.dataset_revision for row in rows]
 
-    assert set(build()) == {None}
+    with pytest.raises(CurationLedgerError, match="does not match release v1.0"):
+        build()
+    assert not output.exists() and not source_manifest_path(output).exists()
     monkeypatch.setattr(crema_d, "CREMA_D_AUDIO_TREE_SHA1", tree)
     revisions = build()
     assert set(revisions) == {revision} and len(revisions) == 11
     assert len(source_manifest_path(output).read_text(encoding="utf-8").splitlines()) == 13
+
+
+def _prepare_crema_d(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ledger: CurationLedger,
+    registered: list[dict[str, object]],
+) -> Path:
+    monkeypatch.setattr(strategies, "load_builtin_curation_ledger", lambda: ledger)
+    monkeypatch.setattr(
+        dp, "upsert_dataset_registry_entry", lambda **kwargs: registered.append(kwargs)
+    )
+    manifest = tmp_path / "manifests" / "crema-d.jsonl"
+    dp.prepare_dataset_manifest(
+        settings=cast(
+            AppConfig,
+            SimpleNamespace(
+                data_loader=SimpleNamespace(max_failed_file_ratio=0.5), default_language="en"
+            ),
+        ),
+        dataset_id="crema-d",
+        dataset_root=tmp_path / "crema-d",
+        ontology=_ontology(),
+        manifest_path=manifest,
+    )
+    return manifest
+
+
+def test_crema_d_curated_build_from_an_unverified_tree_writes_and_registers_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger, _tree = _crema_d_tree(tmp_path / "crema-d")
+    registered: list[dict[str, object]] = []
+
+    with pytest.raises(CurationLedgerError, match="does not match release v1.0"):
+        _prepare_crema_d(tmp_path, monkeypatch, ledger, registered)
+
+    assert list((tmp_path / "manifests").iterdir()) == []
+    assert registered == []
+
+
+def test_crema_d_curated_build_ignores_a_non_audio_file_in_the_release_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger, tree = _crema_d_tree(tmp_path / "crema-d")
+    (tmp_path / "crema-d" / "AudioWAV" / "notes.txt").write_text("notes", encoding="utf-8")
+    monkeypatch.setattr(crema_d, "CREMA_D_AUDIO_TREE_SHA1", tree)
+
+    registered: list[dict[str, object]] = []
+
+    manifest = _prepare_crema_d(tmp_path, monkeypatch, ledger, registered)
+
+    assert [entry["manifest_path"] for entry in registered] == [manifest]
+    rows = load_manifest_jsonl(manifest, ontology=_ontology(), base_dir=tmp_path / "crema-d")
+    assert len(rows) == 11
+    assert {row.dataset_revision for row in rows} == {crema_d.CREMA_D_DATASET_REVISION}
 
 
 def test_builtin_ledger_names_the_pinned_source_revisions() -> None:

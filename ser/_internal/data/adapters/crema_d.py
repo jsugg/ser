@@ -11,6 +11,7 @@ import soundfile as sf
 
 from ser._internal.data.curation_ledger import (
     CurationLedger,
+    CurationLedgerError,
     git_lfs_pointer_sha1,
     git_tree_sha1,
     stamp_manifest_provenance,
@@ -268,28 +269,39 @@ def build_crema_d_utterances(
     return utterances
 
 
-def _verified_crema_d_revision(dataset_root: Path) -> str | None:
-    """Returns the pinned revision when AudioWAV matches the v1.0 release tree."""
-    audio_dir = dataset_root.expanduser() / "AudioWAV"
-    tree = (
-        git_tree_sha1(
+def _verified_crema_d_revision(
+    dataset_root: Path, dataset_glob_pattern: str, *, required: bool
+) -> str | None:
+    """Returns the pinned revision when the audio the manifest reads is the v1.0 AudioWAV tree.
+
+    Only files matched by the build glob enter the tree, so files that never become rows,
+    such as notes, leave it unchanged. When ``required``, a mismatch raises instead.
+    """
+    root = dataset_root.expanduser()
+    audio_dir = root / "AudioWAV"
+    try:
+        tree: str | None = git_tree_sha1(
             {
                 path.relative_to(audio_dir).as_posix(): git_lfs_pointer_sha1(path)
-                for path in audio_dir.rglob("*")
+                for path in root.glob(dataset_glob_pattern)
                 if path.is_file()
             }
         )
-        if audio_dir.is_dir()
-        else None
-    )
+    except ValueError:
+        tree = None
     if tree == CREMA_D_AUDIO_TREE_SHA1:
         return CREMA_D_DATASET_REVISION
-    logger.warning(
-        "CREMA-D AudioWAV tree %s does not match release v1.0 (%s); "
-        "dataset_revision is left unset.",
-        tree,
-        CREMA_D_AUDIO_TREE_SHA1,
+    mismatch = (
+        f"CREMA-D audio tree {tree} under {audio_dir} does not match release v1.0 "
+        f"({CREMA_D_AUDIO_TREE_SHA1})"
     )
+    if required:
+        raise CurationLedgerError(
+            f"{mismatch}, so the curation ledger cannot be applied; no manifest was written. "
+            "Restore the v1.0 WAV files (remove added ones, restore changed ones, or "
+            "download the dataset again) and rerun the build."
+        )
+    logger.warning("%s; dataset_revision is left unset.", mismatch)
     return None
 
 
@@ -307,7 +319,8 @@ def build_crema_d_manifest_jsonl(
     """Builds utterances with content hashes and verified revision, then writes them.
 
     With a curation ledger the curated rows go to ``output_path`` and the source rows to
-    its ``.source.jsonl`` sibling.
+    its ``.source.jsonl`` sibling; a tree that is not the pinned release then fails
+    before anything is written.
     """
 
     utterances = build_crema_d_utterances(
@@ -320,9 +333,10 @@ def build_crema_d_manifest_jsonl(
     )
     if utterances is None:
         return None
-    stamped = stamp_manifest_provenance(
-        utterances, dataset_revision=_verified_crema_d_revision(dataset_root)
+    revision = _verified_crema_d_revision(
+        dataset_root, dataset_glob_pattern, required=curation_ledger is not None
     )
+    stamped = stamp_manifest_provenance(utterances, dataset_revision=revision)
     return write_curated_manifest(
         stamped,
         output_path=output_path,

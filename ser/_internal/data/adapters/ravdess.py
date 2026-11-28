@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ser._internal.data.curation_ledger import (
     CurationLedger,
+    CurationLedgerError,
     git_blob_sha1,
     git_tree_sha1,
     stamp_manifest_provenance,
@@ -144,11 +145,16 @@ def build_ravdess_utterances(
     return utterances
 
 
-def _verified_ravdess_revision(dataset_root: Path, dataset_glob_pattern: str) -> str | None:
-    """Returns the pinned revision when the audio tree matches the Zenodo speech archive."""
+def _verified_ravdess_revision(
+    dataset_root: Path, dataset_glob_pattern: str, *, required: bool
+) -> str | None:
+    """Returns the pinned revision when the audio tree matches the Zenodo speech archive.
+
+    When ``required``, a mismatch raises instead.
+    """
     root = dataset_root.expanduser()
     try:
-        tree = git_tree_sha1(
+        tree: str | None = git_tree_sha1(
             {
                 Path(path).relative_to(root).as_posix(): git_blob_sha1(Path(path))
                 for path in glob.glob(dataset_glob_pattern)
@@ -158,12 +164,17 @@ def _verified_ravdess_revision(dataset_root: Path, dataset_glob_pattern: str) ->
         tree = None
     if tree == RAVDESS_AUDIO_TREE_SHA1:
         return RAVDESS_DATASET_REVISION
-    logger.warning(
-        "RAVDESS audio tree %s does not match Zenodo record 1188976 (%s); "
-        "dataset_revision is left unset.",
-        tree,
-        RAVDESS_AUDIO_TREE_SHA1,
+    mismatch = (
+        f"RAVDESS audio tree {tree} under {root} does not match Zenodo record 1188976 "
+        f"({RAVDESS_AUDIO_TREE_SHA1})"
     )
+    if required:
+        raise CurationLedgerError(
+            f"{mismatch}, so the curation ledger cannot be applied; no manifest was written. "
+            "Restore the Audio_Speech_Actors_01-24 WAV files (remove added ones, restore "
+            "changed ones, or download the dataset again) and rerun the build."
+        )
+    logger.warning("%s; dataset_revision is left unset.", mismatch)
     return None
 
 
@@ -181,7 +192,8 @@ def build_ravdess_manifest_jsonl(
     """Builds utterances with content hashes and verified revision, then writes them.
 
     With a curation ledger the curated rows go to ``output_path`` and the source rows to
-    its ``.source.jsonl`` sibling.
+    its ``.source.jsonl`` sibling; a tree that is not the pinned release then fails
+    before anything is written.
     """
 
     utterances = build_ravdess_utterances(
@@ -194,10 +206,10 @@ def build_ravdess_manifest_jsonl(
     )
     if utterances is None:
         return None
-    stamped = stamp_manifest_provenance(
-        utterances,
-        dataset_revision=_verified_ravdess_revision(dataset_root, dataset_glob_pattern),
+    revision = _verified_ravdess_revision(
+        dataset_root, dataset_glob_pattern, required=curation_ledger is not None
     )
+    stamped = stamp_manifest_provenance(utterances, dataset_revision=revision)
     return write_curated_manifest(
         stamped,
         output_path=output_path,
