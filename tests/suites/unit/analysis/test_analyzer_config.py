@@ -13,7 +13,6 @@ import threadpoolctl
 from numpy.typing import NDArray
 from tests.suites.unit.analysis._contract import (
     INLINE,
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
 )
@@ -58,7 +57,6 @@ _INVALID: dict[str, AnalysisConfig] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("bad_config", list(_INVALID.values()), ids=list(_INVALID))
 def test_invalid_configuration_is_a_usage_error(tmp_path: Path, bad_config: AnalysisConfig) -> None:
@@ -94,7 +92,6 @@ _BOUNDARIES = [
 ]
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(("config", "samples", "expected"), _BOUNDARIES)
 def test_limits_apply_exactly_at_their_boundaries(
@@ -103,26 +100,39 @@ def test_limits_apply_exactly_at_their_boundaries(
     samples: NDArray[np.float32],
     expected: UtteranceStatus,
 ) -> None:
-    analyzer = load_artifact(write_artifact(tmp_path / "model.ser"), config)
-
-    record = analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)
+    with load_artifact(
+        write_artifact(tmp_path / "model.ser"),
+        dataclasses.replace(config or AnalysisConfig(), isolation="inline"),
+    ) as analyzer:
+        record = analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert record["status"] == expected
     assert_valid_record(record, analyzer.model_manifest)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
+def test_exact_silence_threshold_is_not_silent(tmp_path: Path) -> None:
+    samples = np.ones(CANONICAL_RATE_HZ, dtype=np.float32)
+    with load_artifact(
+        write_artifact(tmp_path / "model.ser"), _with(isolation="inline", silence_rms_dbfs=0.0)
+    ) as analyzer:
+        assert analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
+
+
+@pytest.mark.usefixtures("virtual_analysis_time")
 def test_performance_targets_are_not_enforced(tmp_path: Path) -> None:
-    path = write_artifact(tmp_path / "model.ser", script={"extract_sleep_s": 1.0})
-    analyzer = load_artifact(path, _targets(p95_real_time_factor=0.1, cold_start_s=0.01))
+    path = write_artifact(tmp_path / "model.ser", script={"extract_elapsed_s": 1.0})
+    config = dataclasses.replace(
+        _targets(p95_real_time_factor=0.1, cold_start_s=0.01), isolation="inline"
+    )
+    analyzer = load_artifact(path, config)
 
     record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert record["status"] == "ok"
+    assert record["timing_ms"]["features"] == 1_000
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(("nice", "threads"), [(19, 2), (5, 1)], ids=["default", "custom"])
 def test_worker_runs_at_low_priority_with_capped_threads_and_no_gpu(
@@ -138,7 +148,6 @@ def test_worker_runs_at_low_priority_with_capped_threads_and_no_gpu(
     assert record["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inline_mode_leaves_the_caller_process_alone(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"probe": {}})

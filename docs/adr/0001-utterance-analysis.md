@@ -28,6 +28,9 @@ with UtteranceAnalyzer.load(profile="fast", model_path=path,
     record = analyzer.analyze(samples, sample_rate_hz=48_000, language="es")
 ```
 
+In a script, put the worker-mode `load` call under `if __name__ == "__main__":`
+so Python's spawn process can import the main module safely.
+
 ## Decisions
 
 Each decision gives the rule, then the reason, then the tests that pin it.
@@ -617,6 +620,13 @@ restart is the one event an operator needs to see.
 
 Memory growth of under 5% across many calls is measured by the C7 harness, not here. The audit hook sees
 only the parent. The worker's load count, I/O, network and logs are acceptance items (below).
+
+The parent-pipe watcher needs the Python interpreter lock. On POSIX, a job also arms a kernel
+alarm through its deadline, rounded up to a whole second, plus one second of grace. This bounds
+a job that holds the lock after its parent dies without changing the caller's deadline. Linux
+also has a kernel parent-death signal. On other platforms, a lock-holding hang outside an active
+job (for example during warm-up or shutdown), or on a platform without `signal.alarm`, has no
+such backstop.
 
 ### D15. Synchronous and thread-safe; instances are independent
 

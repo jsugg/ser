@@ -20,6 +20,7 @@ from ser._internal.analysis import (
     utterance_record_json_schema,
 )
 from ser._internal.config.schema import FeatureRuntimeBackendOverride
+from ser._internal.utils.logger import ensure_workflow_logging as _ensure_workflow_logging
 from ser.config import (
     AccurateResearchRuntimeConfig,
     AccurateRuntimeConfig,
@@ -103,6 +104,7 @@ def _resolve_boundary_settings(settings: AppConfig | None) -> AppConfig:
 
 def list_datasets() -> tuple[str, ...]:
     """Returns all supported dataset identifiers in deterministic order."""
+    _ensure_workflow_logging()
     return _data_api.list_datasets()
 
 
@@ -111,6 +113,7 @@ def list_registered_datasets(
     settings: AppConfig | None = None,
 ) -> tuple[DatasetRegistryRecord, ...]:
     """Returns registered dataset records using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _data_api.list_registered_datasets(settings=_resolve_boundary_settings(settings))
 
 
@@ -119,6 +122,7 @@ def list_dataset_registry_health_issues(
     settings: AppConfig | None = None,
 ) -> tuple[DatasetRegistryHealthIssueRecord, ...]:
     """Returns dataset registry health issues using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _data_api.list_dataset_registry_health_issues(
         settings=_resolve_boundary_settings(settings)
     )
@@ -129,6 +133,7 @@ def show_dataset_consents(
     settings: AppConfig | None = None,
 ) -> DatasetConsents:
     """Returns persisted dataset consents using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _data_api.show_dataset_consents(settings=_resolve_boundary_settings(settings))
 
 
@@ -140,6 +145,7 @@ def configure_dataset_consents(
     source: str = "ser.api.configure_dataset_consents",
 ) -> DatasetConsents:
     """Persists dataset consents using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _data_api.configure_dataset_consents(
         accept_policy_ids=accept_policy_ids,
         accept_license_ids=accept_license_ids,
@@ -164,6 +170,7 @@ def prepare_dataset(
     settings: AppConfig | None = None,
 ) -> DatasetPrepareResult:
     """Runs programmatic dataset preparation using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _data_api.prepare_dataset(
         dataset_id=dataset_id,
         dataset_root=dataset_root,
@@ -182,6 +189,7 @@ def prepare_dataset(
 
 def list_profiles() -> tuple[ProfileName, ...]:
     """Returns all registered runtime profile names."""
+    _ensure_workflow_logging()
     return _runtime_api.list_profiles()
 
 
@@ -191,6 +199,7 @@ def load_profile(
     settings: AppConfig | None = None,
 ) -> None:
     """Validates one runtime profile using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _runtime_api.load_profile(
         profile,
         settings=_resolve_boundary_settings(settings),
@@ -204,6 +213,7 @@ def train(
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> None:
     """Runs training using the active settings snapshot via the runtime pipeline."""
+    _ensure_workflow_logging()
     return _runtime_api.train(
         profile=profile,
         settings=_resolve_boundary_settings(settings),
@@ -224,6 +234,7 @@ def infer(
     pipeline_builder: RuntimePipelineBuilder | None = None,
 ) -> InferenceExecution:
     """Runs inference using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _runtime_api.infer(
         file_path,
         profile=profile,
@@ -243,6 +254,7 @@ def run_startup_preflight(
     settings: AppConfig | None = None,
 ) -> DiagnosticReport:
     """Runs structured startup diagnostics using the active settings snapshot."""
+    _ensure_workflow_logging()
     return _diagnostics_api.run_startup_preflight(
         settings=_resolve_boundary_settings(settings),
         include_transcription_checks=include_transcription_checks,

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 from tests.suites.unit.analysis._contract import (
     INLINE,
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
     load_baseline,
@@ -19,6 +19,26 @@ from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, tone, write
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
 from ser.api import AnalysisConfig
+
+
+@pytest.mark.usefixtures("scripted")
+def test_oversized_wav_reports_source_without_reading_samples(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wav = write_wav(tmp_path / "long.wav", tone(2.0))
+
+    def unexpected_read(*args: object, **kwargs: object) -> None:
+        pytest.fail("The decoder read samples past its configured source duration limit.")
+
+    monkeypatch.setattr(sf.SoundFile, "read", unexpected_read)
+    with load_artifact(
+        write_artifact(tmp_path / "model.ser"),
+        AnalysisConfig(isolation="inline", max_duration_s=1.0),
+    ) as analyzer:
+        record = analyzer.analyze(wav)
+
+    assert record["status"] == "too_long"
+    assert record["audio"] == {"duration_s": 2.0, "input_sample_rate_hz": CANONICAL_RATE_HZ}
 
 
 def _missing(directory: Path) -> Path:
@@ -45,6 +65,15 @@ def _truncated_payload(directory: Path) -> Path:
     return path
 
 
+def _truncated_data_chunk(directory: Path) -> Path:
+    whole = write_wav(directory / "whole.wav", tone(1.0), subtype="PCM_16").read_bytes()
+    truncated = bytearray(whole[: len(whole) // 2])
+    truncated[4:8] = (len(truncated) - 8).to_bytes(4, "little")
+    path = directory / "short-data-chunk.wav"
+    path.write_bytes(truncated)
+    return path
+
+
 def _not_audio(directory: Path) -> Path:
     path = directory / "text.wav"
     path.write_bytes(b"this is not audio\n" * 64)
@@ -57,11 +86,26 @@ def _directory(directory: Path) -> Path:
     return path
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize(
     "make_path",
-    [_missing, _empty, _truncated_header, _truncated_payload, _not_audio, _directory],
-    ids=["missing", "empty", "truncated-header", "truncated-payload", "not-audio", "directory"],
+    [
+        _missing,
+        _empty,
+        _truncated_header,
+        _truncated_payload,
+        _truncated_data_chunk,
+        _not_audio,
+        _directory,
+    ],
+    ids=[
+        "missing",
+        "empty",
+        "truncated-header",
+        "truncated-payload",
+        "truncated-data-chunk",
+        "not-audio",
+        "directory",
+    ],
 )
 def test_undecodable_files_are_unreadable(
     tmp_path: Path, fast_model_path: Path, make_path: Callable[[Path], Path]
@@ -76,7 +120,6 @@ def test_undecodable_files_are_unreadable(
     assert record["audio"] == {"duration_s": None, "input_sample_rate_hz": None}
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf], ids=["nan", "inf", "-inf"])
 def test_non_finite_samples_are_unreadable(fast_model_path: Path, bad_value: float) -> None:
     samples = tone(2.0)
@@ -90,7 +133,6 @@ def test_non_finite_samples_are_unreadable(fast_model_path: Path, bad_value: flo
     assert record["audio"]["input_sample_rate_hz"] == CANONICAL_RATE_HZ
 
 
-@NOT_IMPLEMENTED
 def test_a_failing_legacy_model_is_a_model_error(failing_model_path: Path) -> None:
     analyzer = load_baseline(failing_model_path)
 
@@ -100,7 +142,6 @@ def test_a_failing_legacy_model_is_a_model_error(failing_model_path: Path) -> No
     assert_valid_record(record, analyzer.model_manifest)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("config", [AnalysisConfig(), INLINE], ids=["worker", "inline"])
 def test_a_raising_backend_is_a_model_error_that_leaks_nothing(
@@ -131,7 +172,6 @@ _INVALID_SCORES: dict[str, Mapping[str, object]] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("script", list(_INVALID_SCORES.values()), ids=list(_INVALID_SCORES))
 def test_invalid_backend_scores_are_a_model_error(

@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from tests.suites.unit.analysis import _scripted_backend
 from tests.suites.unit.analysis._contract import (
-    NOT_IMPLEMENTED,
     IoGuard,
     assert_valid_record,
     load_artifact,
@@ -47,7 +46,6 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_safe_artifact_manifest_is_its_verified_identity_and_licence(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser")
@@ -73,7 +71,6 @@ def test_safe_artifact_manifest_is_its_verified_identity_and_licence(tmp_path: P
     assert_valid_record(record, manifest)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inspection_reads_the_licence_without_loading_the_model(
     tmp_path: Path, spies: Counter[str]
@@ -88,7 +85,6 @@ def test_inspection_reads_the_licence_without_loading_the_model(
     assert _scripted_backend.LOADS["inspected"] == 0
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_allow_list_hand_off_pins_the_inspected_bytes(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"labels": {"a": 1.0, "b": 0.0, "c": 0.0}})
@@ -116,7 +112,6 @@ _UNVERIFIABLE: dict[str, dict[str, Any]] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("allow_legacy_baseline", [False, True])
 @pytest.mark.parametrize("artifact", list(_UNVERIFIABLE.values()), ids=list(_UNVERIFIABLE))
@@ -131,7 +126,6 @@ def test_unverifiable_safe_artifacts_never_load(
         assert not isinstance(raised.value, AnalysisModelNotConformingError)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_model_without_a_pretrained_encoder_says_so(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", provenance="no-pretrained-encoder")
@@ -142,7 +136,6 @@ def test_a_model_without_a_pretrained_encoder_says_so(tmp_path: Path) -> None:
     assert manifest.provenance.encoder == "none"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("missing", ["model_id", "label_set_id"])
 def test_safe_artifacts_must_name_model_and_label_set(tmp_path: Path, missing: str) -> None:
@@ -155,7 +148,6 @@ def test_safe_artifacts_must_name_model_and_label_set(tmp_path: Path, missing: s
         load_artifact(path)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_an_artifact_for_another_profile_is_a_load_error(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", profile="medium")
@@ -164,7 +156,6 @@ def test_an_artifact_for_another_profile_is_a_load_error(tmp_path: Path) -> None
         load_artifact(path)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(
     "training_audio",
@@ -184,15 +175,15 @@ def test_non_canonical_training_audio_is_a_baseline_on_opt_in_only(
 
     with pytest.raises(AnalysisModelNotConformingError):
         load_artifact(path)
-    analyzer = UtteranceAnalyzer.load(profile="fast", model_path=path, allow_legacy_baseline=True)
-
-    assert analyzer.model_manifest.baseline is True
-    assert analyzer.model_manifest.identity.model_id == f"baseline:test-model@{sha256}"
-    record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+    with UtteranceAnalyzer.load(
+        profile="fast", model_path=path, allow_legacy_baseline=True
+    ) as analyzer:
+        assert analyzer.model_manifest.baseline is True
+        assert analyzer.model_manifest.identity.model_id == f"baseline:test-model@{sha256}"
+        record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
     assert record["model_id"] == f"baseline:test-model@{sha256}"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_pickle_is_refused_before_it_is_unpickled(tmp_path: Path) -> None:
     path = write_booby_trapped_pickle(tmp_path / "model.pkl")
@@ -206,7 +197,6 @@ def test_a_pickle_is_refused_before_it_is_unpickled(tmp_path: Path) -> None:
     assert TRAP["fired"] is False
 
 
-@NOT_IMPLEMENTED
 def test_legacy_pickle_loads_only_as_a_baseline_with_exact_ids(fast_model_path: Path) -> None:
     sha256 = _sha256(fast_model_path.read_bytes())
     canonical_labels = json.dumps(sorted(set(LABELS)), separators=(",", ":")).encode()
@@ -225,7 +215,6 @@ def test_legacy_pickle_loads_only_as_a_baseline_with_exact_ids(fast_model_path: 
     assert manifest.identity.labels == LABELS
 
 
-@NOT_IMPLEMENTED
 def test_legacy_model_revision_names_the_baseline(revision_model_path: Path) -> None:
     sha256 = _sha256(revision_model_path.read_bytes())
 
@@ -234,7 +223,6 @@ def test_legacy_model_revision_names_the_baseline(revision_model_path: Path) -> 
     assert manifest.identity.model_id == f"baseline:rev-7@{sha256}"
 
 
-@NOT_IMPLEMENTED
 def test_baseline_ids_carry_the_digest_and_label_set_ids_follow_the_labels(
     fast_model_path: Path, other_fast_model_path: Path, seven_label_model_path: Path
 ) -> None:
@@ -248,7 +236,6 @@ def test_baseline_ids_carry_the_digest_and_label_set_ids_follow_the_labels(
     assert seven.label_set_id != first.label_set_id
 
 
-@NOT_IMPLEMENTED
 def test_missing_model_file_fails_at_load(tmp_path: Path) -> None:
     missing = tmp_path / "missing-model-token-5d1e" / "ser_model.pkl"
 
@@ -259,7 +246,6 @@ def test_missing_model_file_fails_at_load(tmp_path: Path) -> None:
     assert "token-5d1e" not in "".join(traceback.format_exception(raised.value))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("reset_ambient_settings")
 def test_no_configured_model_fails_at_load_without_downloading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: IoGuard
@@ -274,7 +260,6 @@ def test_no_configured_model_fails_at_load_without_downloading(
     assert guard.network == []
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("kind", ["other-profile", "feature-size", "corrupt"])
 def test_incompatible_legacy_files_are_load_errors_with_clean_tracebacks(
     incompatible_model_paths: dict[str, Path], kind: str
@@ -287,7 +272,6 @@ def test_incompatible_legacy_files_are_load_errors_with_clean_tracebacks(
     assert "token-91c2" not in "".join(traceback.format_exception(error))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_backend_that_cannot_start_is_a_load_error(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"fail_load": True})
@@ -298,7 +282,6 @@ def test_a_backend_that_cannot_start_is_a_load_error(tmp_path: Path) -> None:
     assert _scripted_backend.SECRET not in "".join(traceback.format_exception(raised.value))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("profile", ["accurate", "accurate-research"])
 def test_profile_without_an_analysis_backend_is_a_usage_error(
     fast_model_path: Path, profile: ProfileName
@@ -309,15 +292,14 @@ def test_profile_without_an_analysis_backend_is_a_usage_error(
         )
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_second_backend_serves_its_own_profile(tmp_path: Path) -> None:
     path = write_artifact(
         tmp_path / "medium.ser", profile="medium", backend_id="scripted-medium", model_id="m-1"
     )
 
-    analyzer = UtteranceAnalyzer.load(profile="medium", model_path=path)
-    record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+    with UtteranceAnalyzer.load(profile="medium", model_path=path) as analyzer:
+        record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert analyzer.model_manifest.identity.profile == "medium"
     assert record["status"] == "ok" and record["model_id"] == "m-1"

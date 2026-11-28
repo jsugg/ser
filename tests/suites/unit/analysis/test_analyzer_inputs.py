@@ -10,13 +10,12 @@ import numpy as np
 import pytest
 from tests.suites.unit.analysis._contract import (
     INLINE,
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
     load_baseline,
     without_timing,
 )
-from tests.suites.unit.analysis._scripted_backend import CENTROID_LABELS, LANGUAGE_LABELS
+from tests.suites.unit.analysis._scripted_backend import CALLS, CENTROID_LABELS, LANGUAGE_LABELS
 from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, sine, tone, write_wav
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
@@ -31,7 +30,6 @@ def _centroid_model(tmp_path: Path, config: AnalysisConfig | None = None) -> Utt
     return load_artifact(path, config)
 
 
-@NOT_IMPLEMENTED
 def test_wav_path_may_be_str_or_pathlike(tmp_path: Path, fast_model_path: Path) -> None:
     wav = write_wav(tmp_path / "clip.wav", tone(2.0))
     analyzer = load_baseline(fast_model_path)
@@ -44,7 +42,6 @@ def test_wav_path_may_be_str_or_pathlike(tmp_path: Path, fast_model_path: Path) 
     assert without_timing(from_str) == without_timing(from_path)
 
 
-@NOT_IMPLEMENTED
 def test_samples_and_float_wav_of_the_same_audio_give_the_same_record(
     tmp_path: Path, fast_model_path: Path
 ) -> None:
@@ -59,7 +56,6 @@ def test_samples_and_float_wav_of_the_same_audio_give_the_same_record(
     assert without_timing(from_samples) == without_timing(from_file)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("rate", [8_000, 44_100, 48_000])
 def test_every_input_rate_is_resampled_to_the_same_scores(tmp_path: Path, rate: int) -> None:
@@ -78,7 +74,6 @@ def test_every_input_rate_is_resampled_to_the_same_scores(tmp_path: Path, rate: 
         assert record["audio"]["duration_s"] == pytest.approx(2.0, abs=1e-3)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_stereo_is_mixed_by_the_canonical_conversion_not_by_dropping_a_channel(
     tmp_path: Path,
@@ -97,7 +92,6 @@ def test_stereo_is_mixed_by_the_canonical_conversion_not_by_dropping_a_channel(
     assert abs(from_stereo["labels"]["high"] - from_left["labels"]["high"]) > 0.1
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_native_channels_and_rate_reach_the_shared_seam(
     tmp_path: Path, canonical_calls: list[tuple[object, ...]]
@@ -124,7 +118,6 @@ _OUT_OF_RANGE = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(
     ("count", "expected"), list(_OUT_OF_RANGE.values()), ids=list(_OUT_OF_RANGE)
@@ -142,7 +135,44 @@ def test_out_of_range_sources_are_classified_before_conversion(
     assert canonical_calls == []
 
 
-@NOT_IMPLEMENTED
+@pytest.mark.usefixtures("scripted")
+@pytest.mark.parametrize("as_file", [False, True], ids=["array", "pcm16"])
+def test_source_and_canonical_samples_reach_their_respective_boundaries(
+    tmp_path: Path, canonical_calls: list[tuple[object, ...]], as_file: bool
+) -> None:
+    rate = 8_000
+    pcm = np.tile(np.array([1_024, -2_048, 4_096, -8_192], dtype=np.int16), 1_000)
+    samples = pcm.astype(np.float32) / np.float32(32_768)
+    path = write_artifact(tmp_path / "model.ser", script={"record": "samples"})
+    with load_artifact(path, INLINE) as analyzer:
+        if as_file:
+            wav = write_wav(tmp_path / "clip.wav", samples, sample_rate_hz=rate, subtype="PCM_16")
+            record = analyzer.analyze(wav)
+        else:
+            record = analyzer.analyze(samples, sample_rate_hz=rate)
+
+    assert record["status"] == "ok"
+    [(source, source_rate, axis, canonical)] = canonical_calls
+    assert isinstance(source, np.ndarray)
+    if source.dtype == np.int16:
+        np.testing.assert_array_equal(source.reshape(-1), pcm)
+    else:
+        np.testing.assert_array_equal(source.reshape(-1), samples)
+    assert (source_rate, axis) == (rate, 1)
+    assert isinstance(canonical, CanonicalAudio)
+    [received] = CALLS["samples"]
+    assert received.sample_rate == CANONICAL_RATE_HZ
+    np.testing.assert_array_equal(received.samples, canonical.samples)
+
+
+@pytest.mark.usefixtures("scripted")
+def test_opposite_stereo_channels_cancel_to_silence(tmp_path: Path) -> None:
+    samples = sine(600.0, 1.0)
+    stereo = write_wav(tmp_path / "stereo.wav", np.stack([samples, -samples], axis=1))
+    with _centroid_model(tmp_path, INLINE) as analyzer:
+        assert analyzer.analyze(stereo)["status"] == "silent"
+
+
 def test_integer_pcm_wav_is_accepted(tmp_path: Path, fast_model_path: Path) -> None:
     wav = write_wav(tmp_path / "clip.wav", tone(2.0), subtype="PCM_16")
     analyzer = load_baseline(fast_model_path)
@@ -150,7 +180,6 @@ def test_integer_pcm_wav_is_accepted(tmp_path: Path, fast_model_path: Path) -> N
     assert analyzer.analyze(wav)["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("language", [None, "en", "es", "pt"])
 def test_the_language_hint_reaches_the_backend(
@@ -166,12 +195,13 @@ def test_the_language_hint_reaches_the_backend(
     assert record["top_label"] == (language or "none")
 
 
-@NOT_IMPLEMENTED
-def test_unknown_language_hint_is_a_usage_error(fast_model_path: Path) -> None:
-    analyzer: Any = load_baseline(fast_model_path)
+@pytest.mark.usefixtures("scripted")
+@pytest.mark.parametrize("language", ["fr", np.array(["en", "es"])], ids=["unknown", "array"])
+def test_unknown_language_hint_is_a_usage_error(tmp_path: Path, language: object) -> None:
+    analyzer: Any = load_artifact(write_artifact(tmp_path / "model.ser"), INLINE)
 
     with pytest.raises(AnalysisUsageError):
-        analyzer.analyze(tone(2.0), sample_rate_hz=CANONICAL_RATE_HZ, language="fr")
+        analyzer.analyze(tone(2.0), sample_rate_hz=CANONICAL_RATE_HZ, language=language)
 
 
 # Typed loosely so that calls the signature rejects can still be made.
@@ -197,7 +227,6 @@ _MISUSES: dict[str, Misuse] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("misuse", list(_MISUSES.values()), ids=list(_MISUSES))
 def test_malformed_arguments_are_usage_errors(
     tmp_path: Path, fast_model_path: Path, misuse: Misuse

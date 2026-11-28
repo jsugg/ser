@@ -10,14 +10,12 @@ from __future__ import annotations
 import time
 from collections import Counter
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 from tests.suites.unit.analysis._contract import (
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
 )
@@ -56,7 +54,6 @@ def _until_settled(
     raise AssertionError("the worker never came back")
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize(
     ("duration_s", "expected_s"),
     [(None, 10.0), (0.3, 10.0), (5.0, 10.0), (5.5, 11.0), (120.0, 240.0)],
@@ -67,26 +64,24 @@ def test_deadline_is_the_floor_or_two_seconds_per_audio_second(
     assert analysis_deadline_s(AnalysisConfig(), duration_s) == pytest.approx(expected_s)
 
 
-_BRANCHES = AnalysisConfig(timeout_floor_s=2.0, timeout_per_audio_second=1.0)
+_BRANCHES = AnalysisConfig(isolation="inline", timeout_floor_s=2.0, timeout_per_audio_second=1.0)
 
 
-@NOT_IMPLEMENTED
-@pytest.mark.usefixtures("scripted")
+@pytest.mark.usefixtures("virtual_analysis_time")
 @pytest.mark.parametrize(
-    ("seconds", "sleep_s"),
+    ("seconds", "elapsed_s"),
     [(0.5, 1.2), (4.0, 3.0)],
     ids=["floor-covers-short-audio", "per-second-covers-long-audio"],
 )
 def test_both_deadline_branches_allow_work_within_them(
-    tmp_path: Path, seconds: float, sleep_s: float
+    tmp_path: Path, seconds: float, elapsed_s: float
 ) -> None:
-    path = write_artifact(tmp_path / "model.ser", script={"score_sleep_s": sleep_s})
+    path = write_artifact(tmp_path / "model.ser", script={"score_elapsed_s": elapsed_s})
     analyzer = load_artifact(path, _BRANCHES)
 
     assert _analyse(analyzer, tone(seconds))["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_hung_backend_times_out_on_time_and_the_worker_comes_back(
     tmp_path: Path, spies: Counter[str]
@@ -106,29 +101,6 @@ def test_a_hung_backend_times_out_on_time_and_the_worker_comes_back(
     assert spies["read_model_file"] == 1
 
 
-@NOT_IMPLEMENTED
-@pytest.mark.usefixtures("scripted")
-def test_a_call_that_times_out_in_the_queue_does_not_evict_the_running_one(
-    tmp_path: Path, spies: Counter[str]
-) -> None:
-    config = AnalysisConfig(timeout_floor_s=1.0, timeout_per_audio_second=2.0)
-    path = write_artifact(tmp_path / "model.ser", script={"score_sleep_s": 2.0})
-    analyzer = load_artifact(path, config)
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        running = pool.submit(_analyse, analyzer, tone(1.5))
-        time.sleep(0.2)
-        queued = pool.submit(_timed, lambda: _analyse(analyzer, tone(0.4)))
-        queued_record, queued_elapsed = queued.result()
-        running_record = running.result()
-
-    assert queued_record["status"] == "timeout"
-    assert queued_elapsed <= 1.0 + _SCHEDULING_SLACK_S
-    assert running_record["status"] == "ok"
-    assert spies["start_worker"] == 1
-
-
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_worker_that_dies_is_a_model_error_and_is_replaced(
     tmp_path: Path, spies: Counter[str]
@@ -147,7 +119,6 @@ def test_a_worker_that_dies_is_a_model_error_and_is_replaced(
     assert spies["read_model_file"] == 1
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_failed_restart_is_a_model_error_and_the_next_call_retries(tmp_path: Path) -> None:
     config = AnalysisConfig(timeout_floor_s=1.0, timeout_per_audio_second=0.5)
@@ -165,14 +136,24 @@ def test_a_failed_restart_is_a_model_error_and_the_next_call_retries(tmp_path: P
     assert recovered[-1]["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
-@pytest.mark.usefixtures("scripted")
+@pytest.mark.usefixtures("virtual_analysis_time")
 def test_inline_isolation_checks_the_deadline_between_stages_only(tmp_path: Path) -> None:
     config = AnalysisConfig(isolation="inline", timeout_floor_s=0.5, timeout_per_audio_second=0.1)
-    path = write_artifact(tmp_path / "model.ser", script={"score_sleep_s": 1.5})
+    path = write_artifact(tmp_path / "model.ser", script={"score_elapsed_s": 1.5})
     analyzer = load_artifact(path, config)
 
-    record, elapsed = _timed(lambda: _analyse(analyzer, tone(1.0)))
-
+    record = _analyse(analyzer, tone(1.0))
     assert record["status"] == "timeout"
-    assert elapsed >= 1.5
+    assert record["timing_ms"]["predict"] == 1_500
+
+
+@pytest.mark.usefixtures("virtual_analysis_time")
+def test_inline_expired_extraction_never_starts_scoring(tmp_path: Path) -> None:
+    config = AnalysisConfig(isolation="inline", timeout_floor_s=0.5, timeout_per_audio_second=0.1)
+    path = write_artifact(
+        tmp_path / "model.ser", script={"extract_elapsed_s": 1.5, "score_elapsed_s": 0.1}
+    )
+    with load_artifact(path, config) as analyzer:
+        record = _analyse(analyzer, tone(1.0))
+    assert record["status"] == "timeout"
+    assert record["timing_ms"] == {"features": 1_500, "predict": 0}

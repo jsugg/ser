@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 from tests.suites.unit.analysis import _scripted_backend
-from tests.suites.unit.analysis._contract import IoGuard, io_guard, read_only_directory
+from tests.suites.unit.analysis._contract import _ANALYZERS, IoGuard, io_guard, read_only_directory
 from tests.suites.unit.analysis._stand_ins import (
     CANONICAL_RATE_HZ,
     LABELS,
@@ -25,12 +25,20 @@ from tests.suites.unit.analysis._stand_ins import (
 )
 from tests.suites.unit.analysis._synthetic_artifacts import SyntheticSafeFormat
 
+import ser._internal.analysis.analyzer as analyzer_module
 import ser._internal.analysis.artifact as artifact_module
 import ser._internal.analysis.backend as backend_module
+import ser._internal.analysis.pipeline as pipeline_module
 import ser._internal.analysis.worker as worker_module
 from ser._internal.features.feature_extractor import extract_feature_from_signal
 from ser._internal.utils import audio_utils
 from ser._internal.utils.audio_utils import CanonicalAudio
+
+
+@pytest.fixture(autouse=True)
+def close_analyzers() -> Iterator[None]:
+    yield
+    _ANALYZERS.close()
 
 
 @pytest.fixture(scope="session")
@@ -109,6 +117,29 @@ def scripted(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
     for held in _scripted_backend.GATES.values():
         held.release.set()
+
+
+class VirtualTime:
+    def __init__(self) -> None:
+        self.ns = 100_000_000_000
+
+    def advance(self, seconds: float) -> None:
+        self.ns += round(seconds * 1_000_000_000)
+
+    def monotonic_ns(self) -> int:
+        return self.ns
+
+    def monotonic(self) -> float:
+        return self.ns / 1_000_000_000
+
+
+@pytest.fixture
+def virtual_analysis_time(monkeypatch: pytest.MonkeyPatch, scripted: None) -> VirtualTime:
+    clock = VirtualTime()
+    monkeypatch.setattr(pipeline_module, "time", clock)
+    monkeypatch.setattr(analyzer_module, "time", clock)
+    monkeypatch.setattr(_scripted_backend, "advance_time", clock.advance)
+    return clock
 
 
 @pytest.fixture

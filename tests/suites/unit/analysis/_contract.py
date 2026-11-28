@@ -11,11 +11,12 @@ from __future__ import annotations
 import json
 import math
 import os
+import stat
 import sys
 import types
 import typing
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,12 +33,7 @@ from ser.api import (
 
 PROBABILITY_SUM_TOLERANCE = 1e-6
 INLINE = AnalysisConfig(isolation="inline")
-
-NOT_IMPLEMENTED = pytest.mark.xfail(
-    strict=True,
-    raises=NotImplementedError,
-    reason="UtteranceAnalyzer is a stub until brief A1-2; remove this marker then.",
-)
+_ANALYZERS = ExitStack()
 
 
 def load_baseline(
@@ -45,8 +41,10 @@ def load_baseline(
     config: AnalysisConfig | None = None,
 ) -> UtteranceAnalyzer:
     """Loads a legacy ``fast`` pickle, which only loads as an explicit baseline."""
-    return UtteranceAnalyzer.load(
-        profile="fast", model_path=model_path, allow_legacy_baseline=True, config=config
+    return _ANALYZERS.enter_context(
+        UtteranceAnalyzer.load(
+            profile="fast", model_path=model_path, allow_legacy_baseline=True, config=config
+        )
     )
 
 
@@ -55,7 +53,9 @@ def load_artifact(
     config: AnalysisConfig | None = None,
 ) -> UtteranceAnalyzer:
     """Loads a synthetic safe artifact as a conforming ``fast`` model."""
-    return UtteranceAnalyzer.load(profile="fast", model_path=model_path, config=config)
+    return _ANALYZERS.enter_context(
+        UtteranceAnalyzer.load(profile="fast", model_path=model_path, config=config)
+    )
 
 
 def assert_valid_record(record: UtteranceRecord, manifest: ModelManifest) -> None:
@@ -195,6 +195,12 @@ class IoGuard:
             return
         if event == "open":
             path, mode, flags = args
+            if isinstance(path, int):
+                try:
+                    if not stat.S_ISREG(os.fstat(path).st_mode):
+                        return
+                except OSError:
+                    return
             writing = (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
                 isinstance(flags, int) and flags & _WRITE_FLAGS
             )

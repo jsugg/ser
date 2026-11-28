@@ -35,11 +35,27 @@ CANONICAL_RATE_HZ = 16_000
 class FailingClassifier(MLPClassifier):
     """Fits normally and fails at prediction time, to provoke ``model_error``."""
 
+    _warmed = False
+
     def predict(self, X: object) -> NDArray[np.object_]:
         raise RuntimeError("stand-in prediction failure")
 
     def predict_proba(self, X: object) -> NDArray[np.float64]:
+        if not self._warmed:
+            self._warmed = True
+            return np.asarray(super().predict_proba(X), dtype=np.float64)
         raise RuntimeError("stand-in prediction failure")
+
+
+class WindowClassifier(MLPClassifier):
+    """Gives the first window a different class from all subsequent windows."""
+
+    def predict_proba(self, X: object) -> NDArray[np.float64]:
+        assert isinstance(X, np.ndarray)
+        probabilities = np.zeros((len(X), 2), dtype=np.float64)
+        probabilities[0, 0] = 1.0
+        probabilities[1:, 1] = 1.0
+        return probabilities
 
 
 def write_model(
