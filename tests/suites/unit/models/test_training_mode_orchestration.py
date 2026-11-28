@@ -301,6 +301,7 @@ def test_encoding_quarantine_rechecks_canonical_dev_support(tmp_path: Path) -> N
             "fixture",
             tmp_path / f"{index}.wav",
             "calm" if index % 2 == 0 else "happy",
+            speaker_id=f"actor-{index // 2}",
         )
         for index in range(12)
     )
@@ -482,30 +483,21 @@ def test_fast_preparation_consumes_exactly_the_checked_utterance_view(
 ) -> None:
     settings = _settings()
     checked = [
-        Utterance(1, "calm-1", "fixture", tmp_path / "one.wav", "calm"),
-        Utterance(1, "calm-2", "fixture", tmp_path / "two.wav", "calm"),
-        Utterance(1, "happy-1", "fixture", tmp_path / "three.wav", "happy"),
-        Utterance(1, "happy-2", "fixture", tmp_path / "four.wav", "happy"),
+        Utterance(1, "calm-1", "fixture", tmp_path / "one.wav", "calm", speaker_id="a"),
+        Utterance(1, "calm-2", "fixture", tmp_path / "two.wav", "calm", speaker_id="b"),
+        Utterance(1, "happy-1", "fixture", tmp_path / "three.wav", "happy", speaker_id="a"),
+        Utterance(1, "happy-2", "fixture", tmp_path / "four.wav", "happy", speaker_id="b"),
     ]
     reads: list[str] = []
 
-    def _read(path: str, **_kwargs: object) -> tuple[np.ndarray, int]:
-        reads.append(path)
-        return np.ones(80, dtype=np.float32), 8000
+    def _vectors(sample: Utterance, **_kwargs: object) -> np.ndarray:
+        reads.append(str(sample.audio_path))
+        return np.ones((1, 3), dtype=np.float64)
 
-    class _Backend:
-        def __init__(self, **_kwargs: object) -> None:
-            pass
-
-        def extract_vector(self, *, audio: np.ndarray, sample_rate: int) -> np.ndarray:
-            assert sample_rate == 8000
-            return np.asarray([float(audio.size)], dtype=np.float64)
-
-    monkeypatch.setattr(data_loader, "read_audio_file", _read)
-    monkeypatch.setattr(data_loader, "HandcraftedBackend", _Backend)
+    monkeypatch.setattr(data_loader, "fast_training_vectors", _vectors)
     split = data_loader.load_checked_fast_data(utterances=checked, settings=settings)
     assert split is not None
-    x_train, x_test, y_train, y_test = split
+    x_train, x_test, y_train, y_test = split.matrices
     assert x_train.shape[0] + x_test.shape[0] == len(checked)
     assert sorted(reads) == sorted(str(item.audio_path) for item in checked)
     assert sorted([*y_train, *y_test]) == ["calm", "calm", "happy", "happy"]
@@ -529,6 +521,7 @@ def test_operation_level_plan_validation_recomputes_trusted_expectations(
             "fixture",
             tmp_path / f"{index}.wav",
             "calm" if index % 2 == 0 else "happy",
+            speaker_id=f"actor-{index // 2}",
         )
         for index in range(8)
     )
@@ -646,6 +639,7 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
             "fixture",
             tmp_path / f"{index}.wav",
             "calm" if index % 2 == 0 else "happy",
+            speaker_id=f"actor-{index // 2}",
         )
         for index in range(8)
     )
@@ -687,8 +681,10 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
     ) -> fast_training.PersistedArtifactsLike:
         raise AssertionError("prepare-only persisted a model")
 
-    def _ignore_training_report(report: dict[str, object], path: Path) -> None:
-        del report, path
+    reports: list[dict[str, object]] = []
+
+    def _capture_training_report(report: dict[str, object], path: Path) -> None:
+        reports.append(report)
 
     hooks = fast_training.FastTrainingHooks(
         logger=orchestration.logger,
@@ -696,7 +692,9 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
         load_utterances=lambda: utterances,
         ensure_dataset_consents_for_training=lambda *, utterances: None,
         load_data=lambda *, test_size: split,
-        load_checked_data=lambda _utterances: split,
+        load_checked_data=lambda _utterances: data_loader.CheckedFastData(
+            split, [s.sample_id for s in initial_train], [s.sample_id for s in initial_test]
+        ),
         create_classifier=_create_classifier,
         evaluate_training_predictions=_unexpected_evaluation,
         build_provenance_metadata=lambda **_kwargs: {},
@@ -704,7 +702,7 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
         extract_artifact_metadata=lambda _artifact: {},
         persist_model_artifacts=_unexpected_persistence,
         build_training_report=lambda **_kwargs: {},
-        persist_training_report=_ignore_training_report,
+        persist_training_report=_capture_training_report,
         default_backend_id="handcrafted",
         default_profile_id="fast",
     )
@@ -771,6 +769,11 @@ def test_fast_prepare_only_publishes_three_way_plan_without_classifier(
         state.utterances = utterances
         fast_training.train_fast_model(hooks=_training_hooks())
 
+    assert len(reports) == 2
+    for report in reports:
+        assert report["dataset_corpus_samples"] == len(utterances)
+        assert report["dataset_effective_samples"] == len(utterances)
+        assert report["dataset_skipped_samples"] == 0
     assert len(captures) == 2
     np.testing.assert_array_equal(captures[0][0], captures[1][0])
     assert captures[0][1] == captures[1][1]
@@ -794,6 +797,7 @@ def test_prepared_plan_matches_full_fresh_partition_and_noise_provenance(
             "fixture",
             tmp_path / f"{index}.wav",
             "calm" if index % 2 == 0 else "happy",
+            speaker_id=f"actor-{index // 2}",
         )
         for index in range(8)
     )
@@ -901,6 +905,7 @@ def test_prepared_payload_validation_rejects_semantic_shape_tampering(tmp_path: 
             "fixture",
             tmp_path / f"{index}.wav",
             "calm" if index % 2 == 0 else "happy",
+            speaker_id=f"actor-{index // 2}",
         )
         for index in range(8)
     )

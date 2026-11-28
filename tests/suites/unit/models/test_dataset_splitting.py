@@ -6,7 +6,7 @@ import logging
 import time
 from pathlib import Path
 
-from ser._internal.config.schema import DatasetConfig, TrainingConfig
+from ser._internal.config.schema import DatasetConfig, RuntimeFlags, TrainingConfig
 from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser._internal.models.dataset_splitting import (
     _partition_speakers,
@@ -23,6 +23,7 @@ def _settings(tmp_path: Path, *, test_size: float = 0.25, dev_size: float = 0.20
         tmp_folder=tmp_path / "tmp",
         dataset=DatasetConfig(folder=tmp_path),
         training=TrainingConfig(test_size=test_size, dev_size=dev_size),
+        runtime_flags=RuntimeFlags(medium_profile=True),
     )
 
 
