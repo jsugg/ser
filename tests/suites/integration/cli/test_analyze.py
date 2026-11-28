@@ -228,19 +228,28 @@ def test_batch_does_not_echo_unrecognized_arguments(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="SIGKILL process-resume proof")
-def test_batch_killed_before_first_rename_publishes_nothing(
-    tmp_path: Path, batch_model: Path
-) -> None:
+def test_batch_cleans_staging_after_kill_before_rename(tmp_path: Path, batch_model: Path) -> None:
     manifest = tmp_path / "input.jsonl"
     manifest.write_text('{"id":"clip","path":"audio/missing.wav"}\n')
-    out = tmp_path / "output.jsonl"
+    out = tmp_path / "output[1].jsonl"
+    sidecar = out.with_name(f".{out.name}.lock")
+    other_staging = {
+        tmp_path / ".output1.jsonl.ser-batch-unrelated",
+        tmp_path / f".{out.name}.ser-batch-other.ser-batch-abandoned",
+    }
+    for staging in other_staging:
+        staging.write_bytes(b"other batch")
     args = ("--manifest", manifest, "--out", out, "--model", batch_model, "--allow-legacy-baseline")
     argv = [sys.executable, "-c", _PAUSE_BEFORE_RENAME, str(out), "analyze", *map(str, args)]
     _kill_after_event(argv, b"ready to rename")
     assert not out.exists()
+    (abandoned,) = set(tmp_path.iterdir()) - {manifest, sidecar} - other_staging
     result = _run(*args)
     assert result.returncode == 0, result.stderr
     assert [row["id"] for row in _rows(out)] == ["clip"]
+    assert not abandoned.exists()
+    assert abandoned.name.startswith(f".{out.name}.ser-batch-")
+    assert all(staging.read_bytes() == b"other batch" for staging in other_staging)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="POSIX output locking")

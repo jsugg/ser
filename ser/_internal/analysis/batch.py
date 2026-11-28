@@ -28,6 +28,7 @@ from ser.api import (
 from ser.config import AppConfig
 
 _CHUNK_ROWS = 32
+_STAGING_MARKER = ".ser-batch-"
 _STATUSES = ("ok", "too_short", "too_long", "silent", "unreadable", "timeout", "model_error")
 
 
@@ -234,11 +235,19 @@ def _output_lock(out: Path) -> Iterator[bool]:
         os.close(fd)
 
 
+def _remove_stale_staging(out: Path) -> None:
+    with os.scandir(out.parent) as entries:
+        for entry in entries:
+            owner, _, suffix = entry.name.rpartition(_STAGING_MARKER)
+            if owner == f".{out.name}" and suffix and entry.is_file(follow_symlinks=False):
+                os.unlink(entry.path)
+
+
 def _publish(out: Path, lines: list[bytes], *, has_checkpoint: bool) -> None:
     staging: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            dir=out.parent, prefix=".ser-batch-", delete=False
+            dir=out.parent, prefix=f".{out.name}{_STAGING_MARKER}", delete=False
         ) as stream:
             staging = Path(stream.name)
             if has_checkpoint:
@@ -255,7 +264,9 @@ def _publish(out: Path, lines: list[bytes], *, has_checkpoint: bool) -> None:
 
 def _run(args: _BatchArgs, settings: AppConfig) -> None:
     rows, out = _inputs(args)
-    with _output_lock(out):
+    with _output_lock(out) as locked:
+        if locked:
+            _remove_stale_staging(out)
         _run_batch(args, settings, rows, out)
 
 
