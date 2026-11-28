@@ -24,10 +24,10 @@ def capture_legacy_warnings() -> Iterator[list[warnings.WarningMessage]]:
 
 
 def load_legacy(data: bytes) -> tuple[LoadedModel, bool]:
-    from sklearn.exceptions import InconsistentVersionWarning
-
-    from ser._internal.models.artifact_envelope import deserialize_model_artifact
-
     with capture_legacy_warnings() as caught:
+        from sklearn.exceptions import InconsistentVersionWarning
+
+        from ser._internal.models.artifact_envelope import deserialize_model_artifact
+
         loaded = deserialize_model_artifact(pickle.loads(data))
     return loaded, any(isinstance(item.message, InconsistentVersionWarning) for item in caught)
