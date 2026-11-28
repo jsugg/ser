@@ -6,12 +6,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+import numpy as np
 import pytest
+import soundfile as sf
 
 import ser.__main__ as cli
+import ser._internal.data.adapters.ravdess as ravdess_adapter
+import ser._internal.data.strategies.default as default_strategies
 import ser._internal.models.emotion_model as emotion_model
 import ser.config as config_module
 from ser._internal.config.schema import profile_artifact_file_names
+from ser._internal.data.curation_ledger import CurationLedger, git_blob_sha1, git_tree_sha1
 from ser._internal.license_check import load_persisted_backend_consents
 from ser._internal.runtime.accurate_inference import AccurateRuntimeDependencyError
 from ser._internal.runtime.commands import WorkflowErrorDisposition, classify_training_exception
@@ -1396,8 +1401,26 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     dataset_root = tmp_path / "datasets" / "ravdess"
     (dataset_root / "Actor_01").mkdir(parents=True, exist_ok=True)
     (dataset_root / "Actor_02").mkdir(parents=True, exist_ok=True)
-    (dataset_root / "Actor_01" / "03-01-03-01-01-01-01.wav").write_bytes(b"")
-    (dataset_root / "Actor_02" / "03-01-04-01-01-01-02.wav").write_bytes(b"")
+    for seed, rel in enumerate(
+        ("Actor_01/03-01-03-01-01-01-01.wav", "Actor_02/03-01-04-01-01-01-02.wav")
+    ):
+        rng = np.random.default_rng(seed)
+        sf.write(dataset_root / rel, rng.uniform(-0.5, 0.5, 400).astype(np.float32), 16_000)
+    monkeypatch.setattr(
+        ravdess_adapter,
+        "RAVDESS_AUDIO_TREE_SHA1",
+        git_tree_sha1(
+            {
+                path.relative_to(dataset_root).as_posix(): git_blob_sha1(path)
+                for path in dataset_root.rglob("*.wav")
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        default_strategies,
+        "load_builtin_curation_ledger",
+        lambda: CurationLedger(ledger_id="fixture", version="1", entries=()),
+    )
     manifest_path = tmp_path / "manifests" / "ravdess.jsonl"
 
     settings = cast(
