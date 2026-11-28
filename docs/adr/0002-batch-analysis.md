@@ -92,3 +92,6 @@ Diagnostics never include paths, IDs, exception text, or audio. `--progress`
 reports count-only progress, which can include rows not yet committed.
 `--summary` reports rows read, analysed this run, skipped, and status totals
 across both groups. Both write to stderr, not stdout.
+
+With `--allow-legacy-baseline`, loading the model prints one line on stderr saying
+that legacy pickle models are deprecated; a safe model file prints nothing.

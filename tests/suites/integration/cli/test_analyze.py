@@ -172,7 +172,11 @@ def test_batch_directory_is_sorted_and_quiet(tmp_path: Path, batch_model: Path) 
     out = tmp_path / "output.jsonl"
     result = _run("--dir", audio, "--out", out, "--model", batch_model, "--allow-legacy-baseline")
     assert result.returncode == 0, result.stderr
-    assert result.stdout == result.stderr == ""
+    assert result.stdout == ""
+    assert result.stderr == (
+        "ser analyze: Loading a legacy pickle analysis model is deprecated; "
+        "use a safe model artifact.\n"
+    )
     assert [row["id"] for row in _rows(out)] == ["a.wav", "b.WAV"]
 
 

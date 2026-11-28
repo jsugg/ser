@@ -11,6 +11,7 @@ import secrets
 import shutil
 import stat
 import sys
+import warnings
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -307,6 +308,15 @@ def _run(args: _BatchArgs, settings: AppConfig) -> None:
         _run_batch(args, settings, rows, out)
 
 
+def _report_load_warnings(raised: Sequence[warnings.WarningMessage]) -> None:
+    """Prints a model deprecation as one line and passes other warnings on."""
+    for item in raised:
+        if issubclass(item.category, FutureWarning):
+            print(f"ser analyze: {item.message}", file=sys.stderr, flush=True)
+        else:
+            warnings.warn_explicit(item.message, item.category, item.filename, item.lineno)
+
+
 def _run_batch(args: _BatchArgs, settings: AppConfig, rows: list[_InputRow], out: Path) -> None:
     checkpoint = _read_checkpoint(out, rows)
     with _staging_file(out):
@@ -315,14 +325,18 @@ def _run_batch(args: _BatchArgs, settings: AppConfig, rows: list[_InputRow], out
     skipped = counts.total()
     has_checkpoint = checkpoint is not None
     if skipped < len(rows):
-        with UtteranceAnalyzer.load(
-            profile="fast",
-            model_path=args.model,
-            expected_sha256=checkpoint.model_sha256 if checkpoint is not None else None,
-            allow_legacy_baseline=args.allow_legacy_baseline,
-            config=AnalysisConfig(max_threads=args.threads),
-            settings=settings,
-        ) as analyzer:
+        with warnings.catch_warnings(record=True) as raised:
+            warnings.simplefilter("always")
+            loaded = UtteranceAnalyzer.load(
+                profile="fast",
+                model_path=args.model,
+                expected_sha256=checkpoint.model_sha256 if checkpoint is not None else None,
+                allow_legacy_baseline=args.allow_legacy_baseline,
+                config=AnalysisConfig(max_threads=args.threads),
+                settings=settings,
+            )
+        _report_load_warnings(raised)
+        with loaded as analyzer:
             chunk: list[bytes] = []
             for index in range(skipped, len(rows)):
                 row = rows[index]
