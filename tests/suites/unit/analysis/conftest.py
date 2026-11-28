@@ -26,11 +26,11 @@ from tests.suites.unit.analysis._stand_ins import (
 from tests.suites.unit.analysis._synthetic_artifacts import SyntheticSafeFormat
 
 import ser._internal.analysis.artifact as artifact_module
-import ser._internal.analysis.audio_input as audio_input_module
 import ser._internal.analysis.backend as backend_module
 import ser._internal.analysis.worker as worker_module
-from ser._internal.analysis.audio_input import CanonicalAudio
 from ser._internal.features.feature_extractor import extract_feature_from_signal
+from ser._internal.utils import audio_utils
+from ser._internal.utils.audio_utils import CanonicalAudio
 
 
 @pytest.fixture(scope="session")
@@ -137,16 +137,16 @@ def spies(monkeypatch: pytest.MonkeyPatch) -> Counter[str]:
 def canonical_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
     """Records every call of the shared conversion seam and what it returned."""
     calls: list[tuple[object, ...]] = []
-    original = audio_input_module.to_canonical_audio
+    original = audio_utils.to_canonical_audio
 
     def spy(
-        samples: NDArray[np.floating], sample_rate: int, *, channel_axis: int = 1
+        samples: NDArray[np.generic], sample_rate: int, *, channel_axis: int = 1
     ) -> CanonicalAudio:
         result = original(samples, sample_rate, channel_axis=channel_axis)
         calls.append((samples, sample_rate, channel_axis, result))
         return result
 
-    monkeypatch.setattr(audio_input_module, "to_canonical_audio", spy)
+    monkeypatch.setattr(audio_utils, "to_canonical_audio", spy)
     return calls
 
 

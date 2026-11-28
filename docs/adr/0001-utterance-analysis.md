@@ -264,11 +264,9 @@ Both input forms pass, in native channels and at the native rate, through
 `ser._internal.utils.audio_utils.to_canonical_audio(samples, sample_rate, *, channel_axis=1)`. That is
 brief M5-1's seam. It is frames-first, never guesses the layout, and raises `ValueError` on invalid input.
 
-The analyser calls it through `ser._internal.analysis.audio_input` exactly once per call. Nothing mixes
-down or resamples before it. Training uses the same function.
-
-Until M5-1 merges, `audio_input` holds a placeholder with the same signature. The lead merges `main` into
-this branch when M5-1 lands.
+`ser._internal.analysis.audio_input` calls it as `audio_utils.to_canonical_audio`, exactly once per call,
+and re-exports `CanonicalAudio` and `CANONICAL_SAMPLE_RATE` from the same module. Nothing mixes down or
+resamples before it. Training uses the same function.
 
 **Reason**
 
@@ -594,5 +592,4 @@ worker. Adding `medium` means registering one loader. `accurate` and `accurate-r
 
 1. `worker_start_timeout_s=60.0` is proposed here and is not in the plan.
 2. -60 dBFS awaits validation on real quiet recordings (D12).
-3. The `to_canonical_audio` placeholder is replaced when M5-1 merges (D7).
-4. Network isolation of the worker is only partly pinned (D14).
+3. Network isolation of the worker is only partly pinned (D14).

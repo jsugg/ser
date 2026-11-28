@@ -3,7 +3,7 @@
 Tests reach the interface through ``ser.api`` only. Internal modules appear solely as
 monkeypatch targets, which the implementation must call through their module
 (``artifact.read_model_file``, ``artifact.artifact_formats``,
-``backend.backend_loaders``, ``worker.start_worker``, ``audio_input.to_canonical_audio``).
+``backend.backend_loaders``, ``worker.start_worker``, ``audio_utils.to_canonical_audio``).
 """
 
 from __future__ import annotations

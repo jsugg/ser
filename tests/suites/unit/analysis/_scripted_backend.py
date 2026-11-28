@@ -21,8 +21,8 @@ import numpy as np
 import threadpoolctl
 from numpy.typing import NDArray
 
-from ser._internal.analysis.audio_input import CanonicalAudio
 from ser._internal.analysis.backend import BackendFrame, BackendLoadRequest, BackendScores
+from ser._internal.utils.audio_utils import CanonicalAudio
 from ser.runtime.contracts import LanguageHint
 
 CENTROID_LABELS: tuple[str, ...] = ("high", "low")

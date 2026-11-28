@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from ser._internal.analysis.audio_input import CanonicalAudio
+from ser._internal.utils.audio_utils import CanonicalAudio
 from ser.profiles import ProfileName
 from ser.runtime.contracts import LanguageHint, ModelFormat, ModelManifest
 

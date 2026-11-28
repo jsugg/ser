@@ -20,7 +20,7 @@ from tests.suites.unit.analysis._scripted_backend import CENTROID_LABELS, LANGUA
 from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, sine, tone, write_wav
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
-from ser._internal.analysis.audio_input import CanonicalAudio
+from ser._internal.utils.audio_utils import CanonicalAudio
 from ser.api import AnalysisConfig, AnalysisUsageError, LanguageHint, UtteranceAnalyzer
 
 
