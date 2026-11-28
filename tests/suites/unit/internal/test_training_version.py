@@ -12,6 +12,6 @@ def test_metadata_free_training_version(monkeypatch: pytest.MonkeyPatch) -> None
     def missing(distribution: str) -> str:
         raise PackageNotFoundError(distribution)
 
-    monkeypatch.setattr(ser, "__version__", "0.0.0.dev0")
+    monkeypatch.setattr(ser, "__version__", "7.7.7+fallback")
     monkeypatch.setattr(training_orchestration, "version", missing)
-    assert training_orchestration._package_version() == ser.__version__
+    assert training_orchestration._package_version() == "7.7.7+fallback"
