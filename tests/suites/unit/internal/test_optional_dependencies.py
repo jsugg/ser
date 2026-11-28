@@ -3,6 +3,7 @@
 import importlib
 import importlib.util
 import re
+import sys
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
@@ -143,3 +144,34 @@ def test_fast_runner_does_not_hide_a_broken_core_install(monkeypatch: pytest.Mon
     monkeypatch.setattr(importlib, "import_module", broken_runner)
     with pytest.raises(ModuleNotFoundError, match="missing core library"):
         api.load_profile("fast")
+
+
+@pytest.mark.parametrize(
+    ("backend", "missing"),
+    [
+        ("stable_whisper", "stable_whisper"),
+        ("stable_whisper", "whisper"),
+        ("stable_whisper", "torch"),
+        ("stable_whisper", "torchaudio"),
+        ("stable_whisper", "demucs"),
+        ("faster_whisper", "faster_whisper"),
+        ("faster_whisper", "ctranslate2"),
+        ("faster_whisper", "onnxruntime"),
+        ("faster_whisper", "huggingface_hub"),
+    ],
+)
+def test_one_missing_transcription_dependency(
+    backend: TranscriptionBackendId, missing: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ser._internal.transcript.backends.dependencies import missing_transcription_dependencies
+
+    monkeypatch.delitem(sys.modules, missing, raising=False)
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name: None if name == missing else ModuleSpec(name, None),
+    )
+    message = missing_transcription_dependencies(backend, use_demucs=missing == "demucs")
+    assert message is not None
+    assert "ser[transcript]" in message
+    assert message.endswith(f"Missing: {missing}.")
