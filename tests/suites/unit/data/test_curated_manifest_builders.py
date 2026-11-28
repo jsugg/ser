@@ -110,8 +110,8 @@ def _ravdess_tree(root: Path) -> tuple[CurationLedger, str]:
     return ledger, tree
 
 
-def _build_ravdess(root: Path, output: Path, ledger: CurationLedger | None) -> None:
-    ravdess.build_ravdess_manifest_jsonl(
+def _build_ravdess(root: Path, output: Path, ledger: CurationLedger | None) -> object:
+    return ravdess.build_ravdess_manifest_jsonl(
         dataset_root=root,
         dataset_glob_pattern=str(root / "Actor_*" / "*.wav"),
         emotion_code_map={"03": "happy", "04": "sad"},
@@ -299,6 +299,62 @@ def test_crema_d_curated_build_ignores_a_non_audio_file_in_the_release_tree(
     rows = load_manifest_jsonl(manifest, ontology=_ontology(), base_dir=tmp_path / "crema-d")
     assert len(rows) == 11
     assert {row.dataset_revision for row in rows} == {crema_d.CREMA_D_DATASET_REVISION}
+
+
+@pytest.mark.parametrize("corpus", ["ravdess", "crema-d"])
+def test_curated_single_class_subset_gets_the_release_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corpus: str
+) -> None:
+    root = tmp_path / corpus
+    output = tmp_path / "manifests" / f"{corpus}.jsonl"
+    if corpus == "ravdess":
+        ledger, _tree = _ravdess_tree(root)
+        for path in root.glob("Actor_*/03-01-04-*.wav"):
+            path.unlink()
+        subset = git_tree_sha1(
+            {path.relative_to(root).as_posix(): git_blob_sha1(path) for path in root.rglob("*.wav")}
+        )
+        module, constant, release = ravdess, "RAVDESS_AUDIO_TREE_SHA1", "Zenodo record 1188976"
+
+        def build() -> object:
+            return _build_ravdess(root, output, ledger)
+
+    else:
+        ledger, _tree = _crema_d_tree(root)
+        for path in (root / "AudioWAV").glob("*_SAD_*.wav"):
+            path.unlink()
+        subset = git_tree_sha1(
+            {path.name: git_lfs_pointer_sha1(path) for path in (root / "AudioWAV").glob("*.wav")}
+        )
+        module, constant, release = crema_d, "CREMA_D_AUDIO_TREE_SHA1", "release v1.0"
+
+        def build() -> object:
+            return crema_d.build_crema_d_manifest_jsonl(
+                dataset_root=root,
+                dataset_glob_pattern="AudioWAV/**/*.wav",
+                emotion_code_map={"HAP": "happy", "SAD": "sad"},
+                default_language="en",
+                ontology=_ontology(),
+                max_failed_file_ratio=0.5,
+                output_path=output,
+                curation_ledger=ledger,
+            )
+
+    with pytest.raises(CurationLedgerError, match=f"does not match {release}"):
+        build()
+    assert not output.exists() and not source_manifest_path(output).exists()
+
+    monkeypatch.setattr(module, constant, subset)
+
+    assert build() is None
+    assert not output.exists() and not source_manifest_path(output).exists()
+
+
+def test_ravdess_curated_build_without_audio_files_writes_nothing(tmp_path: Path) -> None:
+    output = tmp_path / "manifests" / "ravdess.jsonl"
+
+    assert _build_ravdess(tmp_path / "ravdess", output, load_builtin_curation_ledger()) is None
+    assert not output.exists()
 
 
 def test_builtin_ledger_names_the_pinned_source_revisions() -> None:

@@ -332,6 +332,8 @@ def build_crema_d_manifest_jsonl(
         max_failed_file_ratio=max_failed_file_ratio,
     )
     if utterances is None:
+        if curation_ledger is not None:
+            _verified_crema_d_revision(dataset_root, dataset_glob_pattern, required=True)
         return None
     revision = _verified_crema_d_revision(
         dataset_root, dataset_glob_pattern, required=curation_ledger is not None
