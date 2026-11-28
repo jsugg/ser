@@ -53,7 +53,7 @@ setup_args=(--python "$python_version" --frozen --skip-git-hooks)
 if [[ "$run_accurate_research" == "true" ]]; then
   setup_args+=(--extra full)
 else
-  setup_args+=(--extra medium)
+  setup_args+=(--extra medium --extra transcript)
 fi
 if [[ "$include_dev" == "false" ]]; then
   setup_args+=(--no-dev)

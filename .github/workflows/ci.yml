@@ -155,7 +155,7 @@ jobs:
       - name: Enforce Python 3.13 organized workflow suites
         if: matrix.python-version == '3.13'
         run: >
-          uv run --frozen --python ${{ matrix.python-version }} --extra dev --extra medium pytest -q
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q
           tests/suites
           --junitxml=reports/pytest/pytest-suites-${{ matrix.python-version }}.xml
 

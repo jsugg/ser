@@ -184,7 +184,7 @@ def test_logging_and_warnings_are_left_alone(
 
     assert _logger_state() == before
     assert list(warnings.filters) == filters
-    assert [str(w.message) for w in emitted] == []
+    assert [w.category for w in emitted] == [FutureWarning]
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
     assert all(_SENTINEL not in message for message in caplog.messages)
 

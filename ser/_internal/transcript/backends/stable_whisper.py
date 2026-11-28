@@ -25,6 +25,7 @@ from ser._internal.transcript.backends.base import (
     CompatibilityReport,
     TranscriptionBackendAdapter,
 )
+from ser._internal.transcript.backends.dependencies import transcription_extra_message
 from ser._internal.transcript.backends.stable_whisper_admission_runtime import (
     is_compatibility_activation_error,
     is_retryable_precision_failure,
@@ -217,8 +218,8 @@ def _check_stable_whisper_compatibility(
             CompatibilityIssue(
                 code="missing_dependency_stable_whisper",
                 message=(
-                    "Missing stable-whisper dependencies. Ensure project dependencies "
-                    "are installed."
+                    "Missing stable-whisper dependencies. "
+                    + transcription_extra_message("stable_whisper")
                 ),
                 impact="blocking",
             )
@@ -433,8 +434,8 @@ def _load_stable_whisper_runtime_model(
                 stable_whisper = importlib.import_module("stable_whisper")
             except ModuleNotFoundError as err:
                 raise RuntimeError(
-                    "Missing stable-whisper dependencies. Ensure project dependencies "
-                    "are installed."
+                    "Missing stable-whisper dependencies. "
+                    + transcription_extra_message("stable_whisper")
                 ) from err
 
             load_model = getattr(stable_whisper, "load_model", None)
