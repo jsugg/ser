@@ -8,6 +8,11 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
+from ser._internal.data.curation_ledger import (
+    CurationExclusion,
+    CurationLedger,
+    apply_curation_ledger,
+)
 from ser._internal.data.manifest import SplitName, Utterance
 from ser._internal.data.recipe import (
     DatasetRecipe,
@@ -62,6 +67,7 @@ class DatasetAuditReport:
     seed: int
     counters: dict[str, int]
     ledger: tuple[SplitLedgerEntry, ...]
+    curation_excluded: tuple[CurationExclusion, ...] = ()
 
 
 def _canonical_manifest_digest(utterances: list[Utterance]) -> str:
@@ -162,13 +168,23 @@ def audit_dataset_recipe(
     recipe: DatasetRecipe,
     seed: int = 17,
     strict: bool = True,
+    curation: CurationLedger | None = None,
 ) -> DatasetAuditReport:
     """Audits all rows, deduplicates content, and builds per-corpus split assignments.
 
     Strict mode rejects missing revisions or hashes, duplicate content, leakage, and a
-    primary task with fewer than two populated classes.
+    primary task with fewer than two populated classes. A curation ledger removes its
+    listed rows before auditing; they are counted and listed in the report.
     """
     recipe.validate()
+    curation_excluded: tuple[CurationExclusion, ...] = ()
+    if curation is not None:
+        repeated = [key for key, n in Counter(row.sample_id for row in utterances).items() if n > 1]
+        if repeated:
+            raise DatasetAuditError(f"Duplicate sample_id {repeated[0]!r} across manifests.")
+        curated = apply_curation_ledger(utterances, curation)
+        utterances = list(curated.utterances)
+        curation_excluded = curated.excluded
     sample_ids: set[str] = set()
     content_samples: defaultdict[str, list[str]] = defaultdict(list)
     routes: list[RoutedUtterance] = []
@@ -275,6 +291,8 @@ def audit_dataset_recipe(
 
     if sum(counters.values()) != len(utterances):
         raise DatasetAuditError("Internal audit accounting did not classify every manifest row.")
+    if curation_excluded:
+        counters["curation_excluded"] = len(curation_excluded)
     _validate_partition_isolation(entries)
     if strict:
         utterance_by_id = {utterance.sample_id: utterance for utterance in utterances}
@@ -310,4 +328,5 @@ def audit_dataset_recipe(
         seed=seed,
         counters=dict(sorted(counters.items())),
         ledger=tuple(sorted(entries, key=lambda row: row.sample_id)),
+        curation_excluded=curation_excluded,
     )
