@@ -1762,15 +1762,16 @@ def _probe_directory(path: Path) -> None:
         destination.unlink(missing_ok=True)
 
 
-def _available_memory_bytes() -> int:
-    """Returns memory obtainable without swapping, or 0 when the host cannot report it.
+def _available_memory_bytes() -> int | None:
+    """Returns memory obtainable without swapping, or None when the host cannot report it.
 
     Free memory excludes reclaimable page cache and is routinely tiny on healthy hosts.
     """
     try:
-        return max(int(psutil.virtual_memory().available), 0)
-    except (OSError, RuntimeError, AttributeError, ValueError):
-        return 0
+        available_bytes = int(psutil.virtual_memory().available)
+    except (OSError, RuntimeError, AttributeError, TypeError, ValueError):
+        return None
+    return available_bytes if available_bytes >= 0 else None
 
 
 def _resource_findings(settings: AppConfig, sample_count: int) -> list[ReadinessFinding]:
@@ -1829,7 +1830,17 @@ def _resource_findings(settings: AppConfig, sample_count: int) -> list[Readiness
         )
     available_memory = _available_memory_bytes()
     required_memory = max(512 * 1024 * 1024, sample_count * 2 * 1024 * 1024)
-    if available_memory and available_memory < required_memory:
+    if available_memory is None:
+        findings.append(
+            ReadinessFinding(
+                check="filesystem_resources",
+                reason_code=FailureReasonCode.RESOURCE_LIMIT,
+                severity=FailureSeverity.WARNING,
+                message="Available memory could not be determined; memory check skipped.",
+                blocking=False,
+            )
+        )
+    elif available_memory < required_memory:
         findings.append(
             ReadinessFinding(
                 check="filesystem_resources",
