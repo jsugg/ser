@@ -343,6 +343,12 @@ def configure_logging(level: str | int | None = None) -> int:
     return resolved_level
 
 
+def ensure_workflow_logging() -> None:
+    """Set up legacy workflow output only when the caller has no root handlers."""
+    if not logging.getLogger().handlers:
+        configure_logging()
+
+
 def get_logger(name: str, level: str | int | None = None) -> logging.Logger:
     """Retrieves one logger, configuring logging only for an explicit level."""
     if level is not None:

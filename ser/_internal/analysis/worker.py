@@ -10,6 +10,7 @@ thread-based ``run_with_timeout`` (it cannot stop native code).
 from __future__ import annotations
 
 import logging
+import math
 import multiprocessing as mp
 import os
 import signal
@@ -39,6 +40,7 @@ from ser._internal.runtime.worker_lifecycle import terminate_worker_process
 from ser.runtime.contracts import AnalysisConfig
 
 _LOGGER = logging.getLogger(__name__)
+_JOB_ALARM_GRACE_S = 1
 
 type WorkerState = Literal["starting", "ready", "busy", "restarting", "failed", "closing", "closed"]
 
@@ -135,6 +137,9 @@ def _worker_main(
         if hasattr(os, "nice"):
             current_nice = os.nice(0)
             os.nice(max(0, settings.nice - current_nice))
+        if hasattr(signal, "alarm"):
+            signal.signal(signal.SIGALRM, signal.SIG_DFL)
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGALRM})
         with threadpool_limits(limits=settings.max_threads):
             backend = loader(request)
             try:
@@ -161,13 +166,18 @@ def _run_work(
     work: _Work,
 ) -> None:
     deadline = work.deadline
-    if time.monotonic() < deadline:
-        connection.send(WorkerEvent("started", stage_started_ns=time.monotonic_ns()))
+    alarm = getattr(signal, "alarm", None)
+
+    def arm_alarm() -> None:
+        if alarm is not None:
+            remaining = max(0.0, deadline - time.monotonic())
+            alarm(math.ceil(remaining) + _JOB_ALARM_GRACE_S)
 
     def report_source(duration: float, rate: int) -> None:
         nonlocal deadline
         if time.monotonic() < deadline:
             deadline = work.entry + analysis_deadline_s(work.config, duration)
+            arm_alarm()
         connection.send(WorkerEvent("source", duration_s=duration, input_sample_rate_hz=rate))
 
     def report_features(features_ms: int, predict_ns: int) -> None:
@@ -175,16 +185,23 @@ def _run_work(
             WorkerEvent("features", features_ms=features_ms, stage_started_ns=predict_ns)
         )
 
-    result = run_pipeline(
-        backend,
-        work.job,
-        work.config,
-        deadline_monotonic_s=lambda: deadline,
-        report_duration=report_source,
-        labels=labels,
-        report_features=report_features,
-    )
-    connection.send(WorkerEvent("outcome", outcome=result))
+    arm_alarm()
+    try:
+        if time.monotonic() < deadline:
+            connection.send(WorkerEvent("started", stage_started_ns=time.monotonic_ns()))
+        result = run_pipeline(
+            backend,
+            work.job,
+            work.config,
+            deadline_monotonic_s=lambda: deadline,
+            report_duration=report_source,
+            labels=labels,
+            report_features=report_features,
+        )
+        connection.send(WorkerEvent("outcome", outcome=result))
+    finally:
+        if alarm is not None:
+            alarm(0)
 
 
 class AnalysisWorker:

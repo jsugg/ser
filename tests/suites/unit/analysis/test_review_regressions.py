@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import gc
+import json
 import logging
 import os
 import pickle
@@ -11,10 +12,14 @@ import selectors
 import signal
 import subprocess
 import sys
+import time
 import warnings
 import weakref
+from collections.abc import Callable
 from multiprocessing.connection import wait
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -27,6 +32,7 @@ from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, tone, write
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
 from ser._internal.analysis import worker
+from ser._internal.analysis.pipeline import AnalysisJob, PipelineOutcome
 from ser.api import AnalysisConfig, UtteranceAnalyzer
 
 
@@ -60,6 +66,72 @@ assert any(isinstance(h, logging.NullHandler) for h in logging.getLogger('ser').
     )
     assert result.returncode == 0, result.stderr
     assert (result.stdout, result.stderr) == ("", "")
+
+
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize(
+    ("name", "delegate", "args", "kwargs"),
+    [
+        ("configure_dataset_consents", "_data_api", (), {}),
+        ("infer", "_runtime_api", ("unused.wav",), {}),
+        ("list_dataset_registry_health_issues", "_data_api", (), {}),
+        ("list_datasets", "_data_api", (), {}),
+        ("list_profiles", "_runtime_api", (), {}),
+        ("list_registered_datasets", "_data_api", (), {}),
+        ("load_profile", "_runtime_api", ("fast",), {}),
+        ("prepare_dataset", "_data_api", (), {"dataset_id": "unused"}),
+        ("run_startup_preflight", "_diagnostics_api", (), {"include_transcription_checks": False}),
+        ("show_dataset_consents", "_data_api", (), {}),
+        ("train", "_runtime_api", (), {}),
+    ],
+)
+def test_workflow_logging_defaults_preserve_caller_configuration(
+    configured: bool, name: str, delegate: str, args: tuple[str, ...], kwargs: dict[str, object]
+) -> None:
+    probe = """
+import json, logging, os, sys
+os.environ['LOG_LEVEL'] = 'INFO'
+root = logging.getLogger()
+name, delegate, args, kwargs, configured = json.loads(sys.argv[1])
+if configured:
+    root.setLevel(logging.WARNING)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.ERROR)
+    handler.setFormatter(logging.Formatter('CALLER %(message)s'))
+    root.addHandler(handler)
+def snapshot():
+    return root.level, [(h, h.level, h.formatter) for h in root.handlers]
+before = snapshot()
+from ser import api
+assert snapshot() == before
+
+def emit(*args, **kwargs):
+    log = logging.getLogger('ser.workflow_probe')
+    log.warning('workflow warning')
+    log.error('workflow error')
+
+# Exercise the public boundary without running training, downloads or consent writes.
+setattr(getattr(api, delegate), name, emit)
+getattr(api, name)(*args, **kwargs)
+if configured:
+    assert snapshot() == before
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe, json.dumps([name, delegate, args, kwargs, configured])],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stdout
+    if configured:
+        assert result.stderr == "CALLER workflow error\n"
+    else:
+        assert [line.partition(" - ")[2] for line in result.stderr.splitlines()] == [
+            "WARNING - ser.workflow_probe - workflow warning",
+            "ERROR - ser.workflow_probe - workflow error",
+        ]
 
 
 @pytest.mark.parametrize("config", [INLINE, AnalysisConfig()], ids=["inline", "worker"])
@@ -174,7 +246,7 @@ def test_unexpected_restart_exception_sets_failed_and_can_retry(
 
 
 def _load_blocking(
-    request: worker.BackendLoadRequest, *, holds_gil: bool
+    request: worker.BackendLoadRequest, *, holds_gil: bool, watcher_only: bool
 ) -> _scripted_backend.ScriptedBackend:
     backend = _scripted_backend.load_scripted(request)
     original = backend.score
@@ -187,12 +259,30 @@ def _load_blocking(
     ) -> _scripted_backend.BackendScores:
         if language == "es":
             pause = ctypes.PyDLL(None).pause if holds_gil else signal.pause
+            if watcher_only:
+                # Ensure only the parent-pipe watcher can stop this worker.
+                signal.alarm(0)
             os.write(1, f"{os.getpid()}\n".encode())
             pause()
         return original(features, language=language, deadline_monotonic_s=deadline_monotonic_s)
 
     backend.score = score  # type: ignore[method-assign]
     return backend
+
+
+def _portable_loader(holds_gil: bool) -> worker.BackendLoader:
+    from functools import partial
+
+    worker._arm_linux_parent_death = lambda expected_parent_pid: None
+    return partial(_load_blocking, holds_gil=holds_gil, watcher_only=not holds_gil)
+
+
+class _PortableLoader:
+    def __init__(self, holds_gil: bool) -> None:
+        self._holds_gil = holds_gil
+
+    def __reduce__(self) -> tuple[Callable[[bool], worker.BackendLoader], tuple[bool]]:
+        return _portable_loader, (self._holds_gil,)
 
 
 class _WarmupBackend(_scripted_backend.ScriptedBackend):
@@ -243,19 +333,59 @@ def test_restart_is_ready_to_score_before_admitting_next_call(
         assert analyzer.analyze(samples, sample_rate_hz=16_000)["status"] == "ok"
 
 
+@pytest.mark.skipif(not hasattr(signal, "alarm"), reason="requires POSIX alarm")
+def test_job_alarm_tracks_path_deadline_and_disarms_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from multiprocessing import Pipe
+
+    alarms: list[int] = []
+    monkeypatch.setattr(signal, "alarm", alarms.append)
+    monkeypatch.setattr(
+        worker, "time", SimpleNamespace(monotonic=lambda: 10.25, monotonic_ns=lambda: 0)
+    )
+
+    def fail_after_source(
+        *args: object, report_duration: Callable[[float, int], None], **kwargs: object
+    ) -> PipelineOutcome:
+        report_duration(4.0, 16_000)
+        raise RuntimeError("job failed")
+
+    monkeypatch.setattr(worker, "run_pipeline", fail_after_source)
+    parent, child = Pipe()
+    with parent, child, pytest.raises(RuntimeError, match="job failed"):
+        worker._run_work(
+            child,
+            Mock(spec=worker.AnalysisBackend),
+            ("a", "b", "c"),
+            worker._Work(
+                AnalysisJob("clip.wav", None, None, None),
+                10.0,
+                11.0,
+                AnalysisConfig(timeout_floor_s=1.0, timeout_per_audio_second=2.0),
+            ),
+        )
+    assert alarms == [2, 9, 0]
+
+
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX SIGKILL and pipe selection")
 @pytest.mark.parametrize(
-    "holds_gil",
+    ("holds_gil", "disable_linux_guard"),
     [
-        False,
-        pytest.param(True, marks=pytest.mark.skipif(sys.platform != "linux", reason="Linux guard")),
+        (False, True),
+        (True, True),
+        pytest.param(
+            True, False, marks=pytest.mark.skipif(sys.platform != "linux", reason="Linux guard")
+        ),
     ],
-    ids=["releases-gil", "holds-gil"],
+    ids=["watcher", "alarm", "linux-guard"],
 )
-def test_busy_worker_exits_when_parent_is_killed(holds_gil: bool) -> None:
+def test_busy_worker_exits_when_parent_is_killed(
+    holds_gil: bool, disable_linux_guard: bool, record_property: Callable[[str, object], None]
+) -> None:
     parent_code = """
 from functools import partial
-from tests.suites.unit.analysis.test_review_regressions import _load_blocking, tone
+from tests.suites.unit.analysis.test_review_regressions import _load_blocking, _PortableLoader, tone
 from ser._internal.analysis.backend import BackendLoadRequest
 from ser._internal.analysis.pipeline import AnalysisJob
 from ser._internal.analysis.worker import WorkerSettings, WorkerSupervisor
@@ -264,14 +394,19 @@ import sys, time
 identity = ModelIdentity('fast', 'test', '0' * 64, 'test', ('a', 'b', 'c'))
 manifest = ModelManifest(identity, 'safe', None, None, False)
 request = BackendLoadRequest('safe', b'{}', manifest, 2)
-loader = partial(_load_blocking, holds_gil=sys.argv[1] == 'True')
+holds_gil = sys.argv[1] == 'True'
+disable_linux_guard = sys.argv[2] == 'True'
+loader = partial(_load_blocking, holds_gil=holds_gil, watcher_only=not holds_gil)
+if disable_linux_guard:
+    loader = _PortableLoader(holds_gil)
 runner = WorkerSupervisor(request, loader, WorkerSettings(2, 19, 10.0))
 runner.run(AnalysisJob(None, tone(0.5), 16000, 'es'),
            entry_monotonic_s=time.monotonic(), known_duration_s=0.5,
-           config=AnalysisConfig(timeout_floor_s=30.0))
+           config=AnalysisConfig(timeout_floor_s=1.5 if disable_linux_guard and holds_gil else 30.0))
 """
     with subprocess.Popen(
-        [sys.executable, "-c", parent_code, str(holds_gil)], stdout=subprocess.PIPE
+        [sys.executable, "-c", parent_code, str(holds_gil), str(disable_linux_guard)],
+        stdout=subprocess.PIPE,
     ) as parent:
         assert parent.stdout is not None
         worker_pid = None
@@ -280,8 +415,11 @@ runner.run(AnalysisJob(None, tone(0.5), 16000, 'es'),
                 selector.register(parent.stdout, selectors.EVENT_READ)
                 assert selector.select(12), "worker did not enter scoring"
                 worker_pid = int(parent.stdout.readline())
+            assert parent.poll() is None
             parent.kill()
+            started = time.monotonic()
             parent.communicate(timeout=4)
+            record_property("parent_kill_to_worker_exit_seconds", time.monotonic() - started)
             worker_pid = None
         finally:
             if parent.poll() is None:
