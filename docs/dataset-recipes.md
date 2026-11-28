@@ -41,9 +41,13 @@ emotions map to the same emotions in SER's ontology. There are no per-clip speak
 The dataset root's `mesd-dispositions.csv` accounts for every source file, including the
 288 naturalness-reduced WAVs, one byte-identical copy, and two non-audio files.
 `mesd-SHA256SUMS` records raw-file hashes relative to `raw/mesd-v5`; the manifest records
-normalized PCM hashes separately.
+normalized PCM hashes separately. Preparation verifies the extracted inventory against
+a pinned SHA-256 before writing these artifacts. The disposition ledger is authoritative:
+the download-time `labels.csv` lists filename labels before deduplication, and
+`source_manifest.json` reports acquisition counts, not test-set membership.
 
-The training loader excludes MESD. The benchmark can load its JSONL directly: every row
+The training loader excludes MESD. Load its JSONL with the MESD dataset root as
+`base_dir` to resolve the relative audio paths. Every row
 has the project-assigned `split: test`, not a source `native_split`. The recipe audit
 honors a complete explicit split assignment even without speaker IDs; without it, these
 rows land in `ssl_only`. MESD alone cannot satisfy strict training audit requirements.
