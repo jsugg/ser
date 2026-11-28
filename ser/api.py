@@ -9,6 +9,15 @@ from typing import Protocol
 import ser._internal.api.data as _data_api
 import ser._internal.api.diagnostics as _diagnostics_api
 import ser._internal.api.runtime as _runtime_api
+from ser._internal.analysis import (
+    AnalysisError,
+    AnalysisModelLoadError,
+    AnalysisModelNotConformingError,
+    AnalysisModelUnavailableError,
+    AnalysisUsageError,
+    UtteranceAnalyzer,
+    utterance_record_json_schema,
+)
 from ser._internal.config.schema import FeatureRuntimeBackendOverride
 from ser.config import (
     AccurateResearchRuntimeConfig,
@@ -37,8 +46,33 @@ from ser.config import (
 from ser.diagnostics.domain import DiagnosticFinding, DiagnosticReport, DiagnosticSeverity
 from ser.domain import DatasetConsents, EmotionSegment, TimelineEntry, TranscriptWord
 from ser.profiles import ProfileName
-from ser.runtime.contracts import InferenceExecution, InferenceRequest, SubtitleFormat
-from ser.runtime.schema import FramePrediction, InferenceResult, SegmentPrediction
+from ser.runtime.contracts import (
+    AnalysisConfig,
+    AnalysisIsolation,
+    AnalysisTargets,
+    InferenceExecution,
+    InferenceRequest,
+    LanguageHint,
+    LicenceClass,
+    LicenceRecord,
+    ModelFormat,
+    ModelIdentity,
+    ModelManifest,
+    ModelProvenance,
+    SubtitleFormat,
+    TrainingAudioForm,
+)
+from ser.runtime.schema import (
+    UTTERANCE_SCHEMA_VERSION,
+    FramePrediction,
+    InferenceResult,
+    SegmentPrediction,
+    UtteranceAudio,
+    UtteranceFrame,
+    UtteranceRecord,
+    UtteranceStatus,
+    UtteranceTiming,
+)
 
 ComplianceMode = _data_api.ComplianceMode
 DatasetPrepareResult = _data_api.DatasetPrepareResult
@@ -217,6 +251,14 @@ def run_startup_preflight(
 __all__ = [
     "AccurateResearchRuntimeConfig",
     "AccurateRuntimeConfig",
+    "AnalysisConfig",
+    "AnalysisError",
+    "AnalysisIsolation",
+    "AnalysisModelLoadError",
+    "AnalysisModelNotConformingError",
+    "AnalysisModelUnavailableError",
+    "AnalysisTargets",
+    "AnalysisUsageError",
     "AppConfig",
     "AudioReadConfig",
     "ComplianceMode",
@@ -238,8 +280,15 @@ __all__ = [
     "InferenceExecution",
     "InferenceRequest",
     "InferenceResult",
+    "LanguageHint",
+    "LicenceClass",
+    "LicenceRecord",
     "MediumRuntimeConfig",
     "MediumTrainingConfig",
+    "ModelFormat",
+    "ModelIdentity",
+    "ModelManifest",
+    "ModelProvenance",
     "ModelsConfig",
     "NeuralNetConfig",
     "ProfileName",
@@ -253,9 +302,17 @@ __all__ = [
     "TimelineConfig",
     "TimelineEntry",
     "TorchRuntimeConfig",
+    "TrainingAudioForm",
     "TrainingConfig",
     "TranscriptWord",
     "TranscriptionConfig",
+    "UTTERANCE_SCHEMA_VERSION",
+    "UtteranceAnalyzer",
+    "UtteranceAudio",
+    "UtteranceFrame",
+    "UtteranceRecord",
+    "UtteranceStatus",
+    "UtteranceTiming",
     "WhisperModelConfig",
     "configure_dataset_consents",
     "infer",
@@ -268,4 +325,5 @@ __all__ = [
     "run_startup_preflight",
     "show_dataset_consents",
     "train",
+    "utterance_record_json_schema",
 ]

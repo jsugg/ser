@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from typing import Literal
 
 from ser.runtime.schema import UTTERANCE_SCHEMA_VERSION
 
@@ -116,14 +117,26 @@ _UTTERANCE_RECORD_SCHEMA: dict[str, object] = {
 }
 
 
-def utterance_record_json_schema() -> dict[str, object]:
-    """Returns a fresh copy of the ``ser.utterance/v1`` JSON Schema.
+_SCHEMAS: dict[str, dict[str, object]] = {UTTERANCE_SCHEMA_VERSION: _UTTERANCE_RECORD_SCHEMA}
 
-    Constraints JSON Schema cannot express (probabilities summing to 1, ``top_label``
-    being the most probable label, frames lying inside the audio) are stated in
-    docs/adr/0001-utterance-analysis.md.
+
+def utterance_record_json_schema(
+    schema_version: Literal["ser.utterance/v1"] = UTTERANCE_SCHEMA_VERSION,
+) -> dict[str, object]:
+    """Returns a fresh copy of the JSON Schema of one record version.
+
+    Every published version stays available here, so that older records remain
+    readable. Constraints JSON Schema cannot express (probabilities summing to 1,
+    ``top_label`` being the most probable label, frames covering the audio) are
+    stated in docs/adr/0001-utterance-analysis.md.
+
+    Raises:
+        ValueError: ``schema_version`` is not a published version.
     """
-    return copy.deepcopy(_UTTERANCE_RECORD_SCHEMA)
+    schema = _SCHEMAS.get(schema_version)
+    if schema is None:
+        raise ValueError("Unknown utterance record schema version.")
+    return copy.deepcopy(schema)
 
 
 __all__ = ["utterance_record_json_schema"]

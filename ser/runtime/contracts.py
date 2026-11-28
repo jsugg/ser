@@ -46,14 +46,34 @@ type BackendInferenceCallable = Callable[[InferenceRequest], InferenceResult]
 
 
 type LanguageHint = Literal["en", "es", "pt"]
+type AnalysisIsolation = Literal["worker", "inline"]
+type ModelFormat = Literal["safe", "legacy-pickle"]
+type LicenceClass = Literal["open", "non-commercial", "research-only", "academic-only"]
+
+
+@dataclass(frozen=True)
+class AnalysisTargets:
+    """Performance goals for utterance analysis, measured by the benchmark harness.
+
+    Analysis never enforces these; a slow call still returns its record. The
+    defaults stand until measured otherwise (owner decision of 2026-11-28).
+    """
+
+    p95_real_time_factor: float = 0.5
+    cold_start_s: float = 20.0
+    steady_memory_bytes: int = 1_000_000_000
 
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """Limits for utterance analysis.
+    """Limits that analysis enforces, and how the model process runs.
 
-    The defaults are the proposed values of the integration contract and await the
-    owner's decision; change them here only.
+    Analysis is CPU-only; this is policy, not an option. In ``"worker"`` isolation
+    the model runs in one persistent child process at ``worker_nice`` with at most
+    ``max_threads`` native threads and no visible GPU, and ``analyze`` returns
+    ``timeout`` no later than its deadline. ``"inline"`` runs in the caller's
+    process, leaves its priority and thread pools alone, and checks the deadline
+    only between stages; it is for callers that isolate SER themselves.
     """
 
     min_duration_s: float = 0.3
@@ -61,8 +81,11 @@ class AnalysisConfig:
     timeout_floor_s: float = 10.0
     timeout_per_audio_second: float = 2.0
     silence_rms_dbfs: float = -60.0
+    isolation: AnalysisIsolation = "worker"
     max_threads: int = 2
-    memory_budget_mb: int = 1024
+    worker_nice: int = 19
+    worker_start_timeout_s: float = 60.0
+    targets: AnalysisTargets = field(default_factory=AnalysisTargets)
 
 
 @dataclass(frozen=True)
@@ -74,3 +97,46 @@ class ModelIdentity:
     model_sha256: str
     label_set_id: str
     labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TrainingAudioForm:
+    """Audio form a model was trained on, as recorded in its artifact."""
+
+    sample_rate_hz: int
+    channels: int
+    canonical_conversion: bool
+
+
+@dataclass(frozen=True)
+class LicenceRecord:
+    """Licence of one encoder or dataset that went into a model."""
+
+    name: str
+    licence: str
+    licence_class: LicenceClass
+    source: str
+
+
+@dataclass(frozen=True)
+class ModelProvenance:
+    """Licence and origin record bound to the payload it describes."""
+
+    payload_sha256: str
+    encoder: LicenceRecord | None
+    datasets: tuple[LicenceRecord, ...]
+
+
+@dataclass(frozen=True)
+class ModelManifest:
+    """What a verified model file is, readable before any analysis runs.
+
+    ``baseline`` models (legacy pickles, or audio forms other than canonical) load
+    only on explicit opt-in and carry a ``baseline:`` prefix in their ``model_id``.
+    """
+
+    identity: ModelIdentity
+    artifact_format: ModelFormat
+    training_audio: TrainingAudioForm | None
+    provenance: ModelProvenance | None
+    baseline: bool

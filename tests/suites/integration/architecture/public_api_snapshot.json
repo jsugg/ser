@@ -222,6 +222,148 @@
           },
           "kind": "alias"
         },
+        "AnalysisConfig": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "isolation": {
+                "annotation": "AnalysisIsolation",
+                "kind": "attribute",
+                "value": "'worker'"
+              },
+              "max_duration_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "120.0"
+              },
+              "max_threads": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "2"
+              },
+              "min_duration_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.3"
+              },
+              "silence_rms_dbfs": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "-60.0"
+              },
+              "targets": {
+                "annotation": "AnalysisTargets",
+                "kind": "attribute",
+                "value": "field(default_factory=AnalysisTargets)"
+              },
+              "timeout_floor_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "10.0"
+              },
+              "timeout_per_audio_second": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "2.0"
+              },
+              "worker_nice": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "19"
+              },
+              "worker_start_timeout_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "60.0"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "AnalysisError": {
+          "contract": {
+            "bases": [
+              "Exception"
+            ],
+            "kind": "class",
+            "members": {}
+          },
+          "kind": "alias"
+        },
+        "AnalysisIsolation": {
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['worker', 'inline']"
+          },
+          "kind": "alias"
+        },
+        "AnalysisModelLoadError": {
+          "contract": {
+            "bases": [
+              "AnalysisError"
+            ],
+            "kind": "class",
+            "members": {}
+          },
+          "kind": "alias"
+        },
+        "AnalysisModelNotConformingError": {
+          "contract": {
+            "bases": [
+              "AnalysisModelLoadError"
+            ],
+            "kind": "class",
+            "members": {}
+          },
+          "kind": "alias"
+        },
+        "AnalysisModelUnavailableError": {
+          "contract": {
+            "bases": [
+              "AnalysisError"
+            ],
+            "kind": "class",
+            "members": {}
+          },
+          "kind": "alias"
+        },
+        "AnalysisTargets": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "cold_start_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "20.0"
+              },
+              "p95_real_time_factor": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": "0.5"
+              },
+              "steady_memory_bytes": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": "1000000000"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "AnalysisUsageError": {
+          "contract": {
+            "bases": [
+              "AnalysisError",
+              "ValueError"
+            ],
+            "kind": "class",
+            "members": {}
+          },
+          "kind": "alias"
+        },
         "AppConfig": {
           "contract": {
             "bases": [],
@@ -930,6 +1072,51 @@
           },
           "kind": "alias"
         },
+        "LanguageHint": {
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['en', 'es', 'pt']"
+          },
+          "kind": "alias"
+        },
+        "LicenceClass": {
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['open', 'non-commercial', 'research-only', 'academic-only']"
+          },
+          "kind": "alias"
+        },
+        "LicenceRecord": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "licence": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "licence_class": {
+                "annotation": "LicenceClass",
+                "kind": "attribute",
+                "value": null
+              },
+              "name": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "source": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
         "MediumRuntimeConfig": {
           "contract": {
             "bases": [
@@ -1010,6 +1197,106 @@
                 "annotation": "float",
                 "kind": "attribute",
                 "value": "0.0"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "ModelFormat": {
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['safe', 'legacy-pickle']"
+          },
+          "kind": "alias"
+        },
+        "ModelIdentity": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "label_set_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "labels": {
+                "annotation": "tuple[str, ...]",
+                "kind": "attribute",
+                "value": null
+              },
+              "model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "model_sha256": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "profile": {
+                "annotation": "ProfileName",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "ModelManifest": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "artifact_format": {
+                "annotation": "ModelFormat",
+                "kind": "attribute",
+                "value": null
+              },
+              "baseline": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": null
+              },
+              "identity": {
+                "annotation": "ModelIdentity",
+                "kind": "attribute",
+                "value": null
+              },
+              "provenance": {
+                "annotation": "ModelProvenance | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "training_audio": {
+                "annotation": "TrainingAudioForm | None",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "ModelProvenance": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "datasets": {
+                "annotation": "tuple[LicenceRecord, ...]",
+                "kind": "attribute",
+                "value": null
+              },
+              "encoder": {
+                "annotation": "LicenceRecord | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "payload_sha256": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
               }
             }
           },
@@ -1399,6 +1686,30 @@
           },
           "kind": "alias"
         },
+        "TrainingAudioForm": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "canonical_conversion": {
+                "annotation": "bool",
+                "kind": "attribute",
+                "value": null
+              },
+              "channels": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
+              },
+              "sample_rate_hz": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
         "TrainingConfig": {
           "contract": {
             "bases": [],
@@ -1518,6 +1829,304 @@
                 "annotation": "bool",
                 "kind": "attribute",
                 "value": "field(default_factory=_default_fast_transcription_use_vad)"
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "UTTERANCE_SCHEMA_VERSION": {
+          "contract": {
+            "annotation": "Final",
+            "kind": "attribute",
+            "value": "'ser.utterance/v1'"
+          },
+          "kind": "alias"
+        },
+        "UtteranceAnalyzer": {
+          "contract": {
+            "bases": [],
+            "kind": "class",
+            "members": {
+              "analyze": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "self"
+                  },
+                  {
+                    "annotation": "str | os.PathLike[str] | NDArray[np.float32]",
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "audio"
+                  },
+                  {
+                    "annotation": "int | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "sample_rate_hz"
+                  },
+                  {
+                    "annotation": "LanguageHint | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "language"
+                  }
+                ],
+                "returns": "UtteranceRecord",
+                "signature": "(self, audio: str | os.PathLike[str] | NDArray[np.float32], *, sample_rate_hz: int | None = None, language: LanguageHint | None = None) -> UtteranceRecord"
+              },
+              "close": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "self"
+                  }
+                ],
+                "returns": "None",
+                "signature": "(self) -> None"
+              },
+              "inspect_model": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": "ProfileName",
+                    "default": null,
+                    "kind": "keyword-only",
+                    "name": "profile"
+                  },
+                  {
+                    "annotation": "str | os.PathLike[str] | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "model_path"
+                  },
+                  {
+                    "annotation": "bool",
+                    "default": "False",
+                    "kind": "keyword-only",
+                    "name": "allow_legacy_baseline"
+                  },
+                  {
+                    "annotation": "AppConfig | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "settings"
+                  }
+                ],
+                "returns": "ModelManifest",
+                "signature": "(*, profile: ProfileName, model_path: str | os.PathLike[str] | None = None, allow_legacy_baseline: bool = False, settings: AppConfig | None = None) -> ModelManifest"
+              },
+              "load": {
+                "kind": "function",
+                "parameters": [
+                  {
+                    "annotation": null,
+                    "default": null,
+                    "kind": "positional or keyword",
+                    "name": "cls"
+                  },
+                  {
+                    "annotation": "ProfileName",
+                    "default": null,
+                    "kind": "keyword-only",
+                    "name": "profile"
+                  },
+                  {
+                    "annotation": "str | os.PathLike[str] | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "model_path"
+                  },
+                  {
+                    "annotation": "str | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "expected_sha256"
+                  },
+                  {
+                    "annotation": "bool",
+                    "default": "False",
+                    "kind": "keyword-only",
+                    "name": "allow_legacy_baseline"
+                  },
+                  {
+                    "annotation": "AnalysisConfig | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "config"
+                  },
+                  {
+                    "annotation": "AppConfig | None",
+                    "default": "None",
+                    "kind": "keyword-only",
+                    "name": "settings"
+                  }
+                ],
+                "returns": "Self",
+                "signature": "(cls, *, profile: ProfileName, model_path: str | os.PathLike[str] | None = None, expected_sha256: str | None = None, allow_legacy_baseline: bool = False, config: AnalysisConfig | None = None, settings: AppConfig | None = None) -> Self"
+              },
+              "model_manifest": {
+                "annotation": "ModelManifest",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "UtteranceAudio": {
+          "contract": {
+            "bases": [
+              "TypedDict"
+            ],
+            "kind": "class",
+            "members": {
+              "duration_s": {
+                "annotation": "float | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "input_sample_rate_hz": {
+                "annotation": "int | None",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "UtteranceFrame": {
+          "contract": {
+            "bases": [
+              "TypedDict"
+            ],
+            "kind": "class",
+            "members": {
+              "end_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              },
+              "labels": {
+                "annotation": "dict[str, float]",
+                "kind": "attribute",
+                "value": null
+              },
+              "start_s": {
+                "annotation": "float",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "UtteranceRecord": {
+          "contract": {
+            "bases": [
+              "TypedDict"
+            ],
+            "kind": "class",
+            "members": {
+              "audio": {
+                "annotation": "UtteranceAudio",
+                "kind": "attribute",
+                "value": null
+              },
+              "confidence": {
+                "annotation": "float | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "dimensions": {
+                "annotation": "None",
+                "kind": "attribute",
+                "value": null
+              },
+              "frames": {
+                "annotation": "list[UtteranceFrame] | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "label_set_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "labels": {
+                "annotation": "dict[str, float] | None",
+                "kind": "attribute",
+                "value": null
+              },
+              "model_id": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "model_sha256": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "schema_version": {
+                "annotation": "Literal['ser.utterance/v1']",
+                "kind": "attribute",
+                "value": null
+              },
+              "ser_version": {
+                "annotation": "str",
+                "kind": "attribute",
+                "value": null
+              },
+              "status": {
+                "annotation": "UtteranceStatus",
+                "kind": "attribute",
+                "value": null
+              },
+              "timing_ms": {
+                "annotation": "UtteranceTiming",
+                "kind": "attribute",
+                "value": null
+              },
+              "top_label": {
+                "annotation": "str | None",
+                "kind": "attribute",
+                "value": null
+              }
+            }
+          },
+          "kind": "alias"
+        },
+        "UtteranceStatus": {
+          "contract": {
+            "annotation": null,
+            "kind": "type alias",
+            "value": "Literal['ok', 'too_short', 'too_long', 'silent', 'unreadable', 'timeout', 'model_error']"
+          },
+          "kind": "alias"
+        },
+        "UtteranceTiming": {
+          "contract": {
+            "bases": [
+              "TypedDict"
+            ],
+            "kind": "class",
+            "members": {
+              "features": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
+              },
+              "predict": {
+                "annotation": "int",
+                "kind": "attribute",
+                "value": null
               }
             }
           },
@@ -1826,6 +2435,22 @@
           ],
           "returns": "None",
           "signature": "(*, profile: ProfileName | None = None, settings: AppConfig | None = None, pipeline_builder: RuntimePipelineBuilder | None = None) -> None"
+        },
+        "utterance_record_json_schema": {
+          "contract": {
+            "kind": "function",
+            "parameters": [
+              {
+                "annotation": "Literal['ser.utterance/v1']",
+                "default": "UTTERANCE_SCHEMA_VERSION",
+                "kind": "positional or keyword",
+                "name": "schema_version"
+              }
+            ],
+            "returns": "dict[str, object]",
+            "signature": "(schema_version: Literal['ser.utterance/v1'] = UTTERANCE_SCHEMA_VERSION) -> dict[str, object]"
+          },
+          "kind": "alias"
         }
       },
       "source": "explicit __all__"

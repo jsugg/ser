@@ -1,4 +1,10 @@
-"""Decoding seam between caller input and the canonical 16 kHz mono form."""
+"""Caller audio in, canonical audio out, through the one shared conversion seam.
+
+``to_canonical_audio``, ``CanonicalAudio`` and ``CANONICAL_SAMPLE_RATE`` below are
+placeholders with the signature of ``ser._internal.utils.audio_utils`` (brief M5-1).
+When that lands, replace them with an import of the same names; analysis must call
+``to_canonical_audio`` through this module so that tests can observe the seam.
+"""
 
 from __future__ import annotations
 
@@ -8,33 +14,61 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+CANONICAL_SAMPLE_RATE = 16_000
+
 
 @dataclass(frozen=True)
-class DecodedUtterance:
-    """Caller audio before canonical conversion, with the facts the record reports."""
+class CanonicalAudio:
+    """Mono float32 audio at ``CANONICAL_SAMPLE_RATE``."""
 
     samples: NDArray[np.float32]
-    input_sample_rate_hz: int
-    duration_s: float
+    sample_rate: int
+    original_sample_rate: int
+    duration_seconds: float
+
+
+def to_canonical_audio(
+    samples: NDArray[np.floating],
+    sample_rate: int,
+    *,
+    channel_axis: int = 1,
+) -> CanonicalAudio:
+    """Placeholder for the shared train/infer conversion of brief M5-1."""
+    raise NotImplementedError("Canonical audio conversion lands with brief M5-1.")
 
 
 @dataclass(frozen=True)
-class UnreadableUtterance:
+class DecodedAudio:
+    """Audio as stored: native rate, frames first, every channel kept."""
+
+    samples: NDArray[np.float32]
+    sample_rate_hz: int
+
+
+@dataclass(frozen=True)
+class UnreadableAudio:
     """Input that could not be decoded; carries no path and no exception text."""
 
 
-def decode_file(path: str | os.PathLike[str]) -> DecodedUtterance | UnreadableUtterance:
-    """Reads one audio file at its native rate, mixing channels down to mono."""
+def decode_file(path: str | os.PathLike[str]) -> DecodedAudio | UnreadableAudio:
+    """Reads one audio file without mixing channels or resampling.
+
+    A file whose data is shorter than its header declares is unreadable.
+    """
     raise NotImplementedError("Utterance decoding is not implemented yet (brief A1-2).")
 
 
-def to_canonical(utterance: DecodedUtterance) -> NDArray[np.float32]:
-    """The only place where analysis converts audio to 16 kHz mono float32.
-
-    Delegates to the canonical conversion owned by WS5 (brief M5-1); this module
-    must not resample on its own.
-    """
+def canonicalize(audio: DecodedAudio) -> CanonicalAudio:
+    """Converts decoded audio with ``to_canonical_audio``; never resamples itself."""
     raise NotImplementedError("Canonical conversion wiring is not implemented yet (brief A1-2).")
 
 
-__all__ = ["DecodedUtterance", "UnreadableUtterance", "decode_file", "to_canonical"]
+__all__ = [
+    "CANONICAL_SAMPLE_RATE",
+    "CanonicalAudio",
+    "DecodedAudio",
+    "UnreadableAudio",
+    "canonicalize",
+    "decode_file",
+    "to_canonical_audio",
+]

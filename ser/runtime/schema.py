@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import Final, Literal, TypedDict
 
 from ser.domain import EmotionSegment
 
@@ -54,7 +54,7 @@ def to_legacy_emotion_segments(result: InferenceResult) -> list[EmotionSegment]:
     ]
 
 
-UTTERANCE_SCHEMA_VERSION = "ser.utterance/v1"
+UTTERANCE_SCHEMA_VERSION: Final = "ser.utterance/v1"
 
 type UtteranceStatus = Literal[
     "ok",
@@ -96,7 +96,7 @@ class UtteranceRecord(TypedDict):
     ``confidence`` and ``frames``.
     """
 
-    schema_version: str
+    schema_version: Literal["ser.utterance/v1"]
     ser_version: str
     model_id: str
     model_sha256: str
