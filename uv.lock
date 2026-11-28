@@ -2,10 +2,10 @@ version = 1
 revision = 5
 requires-python = ">=3.12, <3.14"
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
     "python_full_version >= '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
     "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 
 [[package]]
@@ -1026,8 +1026,8 @@ name = "llvmlite"
 version = "0.46.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/74/cd/08ae687ba099c7e3d21fe2ea536500563ef1943c5105bf6ab4ee3829f68e/llvmlite-0.46.0.tar.gz", hash = "sha256:227c9fd6d09dce2783c18b754b7cd9d9b3b3515210c46acc2d3c5badd9870ceb", size = 193456, upload-time = "2025-12-08T18:15:36.295Z" }
 wheels = [
@@ -1084,7 +1084,7 @@ wheels = [
 
 [[package]]
 name = "modelscope"
-version = "1.38.0"
+version = "1.40.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -1095,24 +1095,25 @@ dependencies = [
     { name = "tqdm" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/74/3f/de174f7c89f694d9266bdb95a90a5ff4b6f8a2dab7f54f34522c83616061/modelscope-1.38.0.tar.gz", hash = "sha256:0ad2a1d62eb20298e816037cea32151c213d19213debe42cfd7ff9da61e02cb6", size = 4544441, upload-time = "2026-07-01T02:33:15.508Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ab/4b/125735c03a503a3a7148af1afafd1e319dd055e0508f3d942ffee83e8582/modelscope-1.40.3.tar.gz", hash = "sha256:d0659a670f314ced9c5c8d3c13803dc3705b381a40ed1c3a0c45a16c31580ec6", size = 4567460, upload-time = "2026-11-09T09:44:41.226Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/f7/e1665e4631ce9edf9be22646d925ecbfb817abef9cf29f131c67462237f5/modelscope-1.38.0-py3-none-any.whl", hash = "sha256:edaaa60d3b280b260c8574b176a1439739a04cc44d6d426ae8eeee2888c5e9a8", size = 6034687, upload-time = "2026-07-01T02:33:12.352Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/89/13e64797471146fa4060c0ece96a80eb0aedf81359a9b3eca18382f6046d/modelscope-1.40.3-py3-none-any.whl", hash = "sha256:a2d9e239e58de7c1162da4a54472defb98f4c076900dd7ebfed3370c694e2cb8", size = 6062711, upload-time = "2026-11-09T09:44:38.286Z" },
 ]
 
 [[package]]
 name = "modelscope-hub"
-version = "0.1.7"
+version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "cryptography" },
     { name = "filelock" },
     { name = "requests" },
     { name = "tqdm" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/cb/6b9d3fcbcd09db6cdd7f1e0fd60be2998c99db07be28f37982c0dbd14496/modelscope_hub-0.1.7.tar.gz", hash = "sha256:b78730f3923cf13d5fbc56c6224a5ba617bf111a562fe3808c03e34c3c07840f", size = 126616, upload-time = "2026-07-07T07:35:36.465Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/2f/f7b97b416bdad687593599f29b1c27059f1cd875a250f32da0ee39916f09/modelscope_hub-0.7.2.tar.gz", hash = "sha256:1903a27eea2faacf61e8d24276e64991782b6dbda1f9b01cd0dfed905017390c", size = 436976, upload-time = "2026-11-24T09:12:00.757Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/19/3554c99cfc633cca2ffab2cfc3c8cb064fa17f88bcb68afee7a81957ccc8/modelscope_hub-0.1.7-py3-none-any.whl", hash = "sha256:907e5da4d8b050277a3cbd79d1c2df4f723b549ba38f573f4ffb6d1cd1525349", size = 135758, upload-time = "2026-07-07T07:35:35.283Z" },
+    { url = "https://files.pythonhosted.org/packages/22/c9/78b770e7321bd3e0a683682d0ab4043df5e299d3957c7b47d88f6b58e41e/modelscope_hub-0.7.2-py3-none-any.whl", hash = "sha256:546166bb89b48386de3b34d2c323d0a762aa53aaa0d1522ece00fb0f003c87c3", size = 311693, upload-time = "2026-11-24T09:11:59.079Z" },
 ]
 
 [[package]]
@@ -1252,8 +1253,8 @@ name = "numba"
 version = "0.63.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 dependencies = [
     { name = "llvmlite", version = "0.46.0", source = { registry = "https://pypi.org/simple" } },
@@ -1278,7 +1279,7 @@ version = "1.26.4"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/65/6e/09db70a523a96d25e115e71cc56a6f9031e7b8cd166c1ac8438307c14058/numpy-1.26.4.tar.gz", hash = "sha256:2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010", size = 15786129, upload-time = "2024-02-06T00:26:44.495Z" }
 wheels = [
@@ -1297,7 +1298,7 @@ name = "numpy"
 version = "2.3.5"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
     "python_full_version >= '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/65/21b3bc86aac7b8f2862db1e808f1ea22b028e30a225a34a5ede9bf8678f2/numpy-2.3.5.tar.gz", hash = "sha256:784db1dcdab56bf0517743e746dfb0f885fc68d948aba86eeec2cba234bdf1c0", size = 20584950, upload-time = "2025-11-16T22:52:42.067Z" }
@@ -1511,8 +1512,8 @@ name = "onnxruntime"
 version = "1.24.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 dependencies = [
     { name = "flatbuffers" },
@@ -1546,7 +1547,7 @@ dependencies = [
     { name = "numba", version = "0.62.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "numba", version = "0.63.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')" },
     { name = "tiktoken" },
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
@@ -1561,7 +1562,7 @@ version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')" },
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
     { name = "torchaudio", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
@@ -2228,7 +2229,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.10.1,<27.0.0" },
     { name = "colored", specifier = ">=2.2.4,<3.0.0" },
     { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=7.6.0,<8.0.0" },
-    { name = "demucs", marker = "(python_full_version < '3.13' or platform_machine != 'x86_64' or sys_platform != 'darwin') and extra == 'transcript'", specifier = ">=4.0.1,<5.0.0" },
+    { name = "demucs", marker = "(python_full_version < '3.13' and extra == 'transcript') or (platform_machine != 'x86_64' and extra == 'transcript') or (sys_platform != 'darwin' and extra == 'transcript')", specifier = ">=4.0.1,<5.0.0" },
     { name = "faster-whisper", marker = "extra == 'transcript'", specifier = ">=1.1.1,<2.0.0" },
     { name = "funasr", marker = "extra == 'full'", specifier = ">=1.3.1,<2.0.0" },
     { name = "griffe", marker = "extra == 'dev'", specifier = ">=2.1.0,<3.0.0" },
@@ -2236,17 +2237,17 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.170.15,<7.0.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=8.0.1,<9.0.0" },
     { name = "librosa", specifier = ">=0.11.0,<0.12.0" },
-    { name = "modelscope", marker = "extra == 'full'", specifier = ">=1.38.0,<2.0.0" },
+    { name = "modelscope", marker = "extra == 'full'", specifier = ">=1.40.3,<2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.4.1,<3.0.0" },
     { name = "numba", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = ">=0.62,<0.63" },
-    { name = "numba", marker = "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')", specifier = ">=0.62,<0.67" },
-    { name = "numba", marker = "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')", specifier = ">=0.63,<0.67" },
+    { name = "numba", marker = "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')", specifier = ">=0.62,<0.67" },
+    { name = "numba", marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')", specifier = ">=0.63,<0.67" },
     { name = "numpy", marker = "python_full_version < '3.13'", specifier = ">=1.26.2,<3.0.0" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.0.0,<3.0.0" },
     { name = "numpy", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'medium'", specifier = ">=1.26.2,<2.0.0" },
     { name = "numpy", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'transcript'", specifier = ">=1.26.2,<2.0.0" },
     { name = "onnxruntime", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'transcript'", specifier = ">=1.14,<1.24" },
-    { name = "openai-whisper", marker = "(python_full_version < '3.13' or platform_machine != 'x86_64' or sys_platform != 'darwin') and extra == 'transcript'", specifier = ">=20250625,<20260000" },
+    { name = "openai-whisper", marker = "(python_full_version < '3.13' and extra == 'transcript') or (platform_machine != 'x86_64' and extra == 'transcript') or (sys_platform != 'darwin' and extra == 'transcript')", specifier = ">=20250625,<20260000" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0,<5.0.0" },
     { name = "psutil", specifier = ">=7.2.2,<8.0.0" },
     { name = "pyarrow", marker = "extra == 'full'", specifier = ">=26.0.1,<27.0.0" },
@@ -2261,14 +2262,14 @@ requires-dist = [
     { name = "ser", extras = ["full"], marker = "extra == 'all'" },
     { name = "ser", extras = ["transcript", "medium"], marker = "extra == 'full'" },
     { name = "soundfile", specifier = ">=0.14.0,<1.0.0" },
-    { name = "stable-ts", marker = "(python_full_version < '3.13' or platform_machine != 'x86_64' or sys_platform != 'darwin') and extra == 'transcript'", specifier = ">=2.19.1,<3.0.0" },
+    { name = "stable-ts", marker = "(python_full_version < '3.13' and extra == 'transcript') or (platform_machine != 'x86_64' and extra == 'transcript') or (sys_platform != 'darwin' and extra == 'transcript')", specifier = ">=2.19.1,<3.0.0" },
     { name = "torch", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'medium'", specifier = ">=2.2,<=2.2.2" },
     { name = "torch", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'transcript'", specifier = ">=2.2,<=2.2.2" },
-    { name = "torch", marker = "python_full_version >= '3.13' and ((platform_machine != 'x86_64' and extra == 'medium') or (sys_platform != 'darwin' and extra == 'medium'))", specifier = ">=2.6,<3.0.0" },
-    { name = "torch", marker = "python_full_version >= '3.13' and ((platform_machine != 'x86_64' and extra == 'transcript') or (sys_platform != 'darwin' and extra == 'transcript'))", specifier = ">=2.6,<3.0.0" },
-    { name = "torch", marker = "python_full_version < '3.13' and ((platform_machine != 'x86_64' and extra == 'medium') or (sys_platform != 'darwin' and extra == 'medium'))", specifier = ">=2.2,<3.0.0" },
-    { name = "torch", marker = "python_full_version < '3.13' and ((platform_machine != 'x86_64' and extra == 'transcript') or (sys_platform != 'darwin' and extra == 'transcript'))", specifier = ">=2.2,<3.0.0" },
-    { name = "transformers", marker = "(python_full_version < '3.13' or platform_machine != 'x86_64' or sys_platform != 'darwin') and extra == 'medium'", specifier = ">=4.49.0,<5.0.0" },
+    { name = "torch", marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64' and extra == 'medium') or (python_full_version >= '3.13' and sys_platform != 'darwin' and extra == 'medium')", specifier = ">=2.6,<3.0.0" },
+    { name = "torch", marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64' and extra == 'transcript') or (python_full_version >= '3.13' and sys_platform != 'darwin' and extra == 'transcript')", specifier = ">=2.6,<3.0.0" },
+    { name = "torch", marker = "(python_full_version < '3.13' and platform_machine != 'x86_64' and extra == 'medium') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra == 'medium')", specifier = ">=2.2,<3.0.0" },
+    { name = "torch", marker = "(python_full_version < '3.13' and platform_machine != 'x86_64' and extra == 'transcript') or (python_full_version < '3.13' and sys_platform != 'darwin' and extra == 'transcript')", specifier = ">=2.2,<3.0.0" },
+    { name = "transformers", marker = "(python_full_version < '3.13' and extra == 'medium') or (platform_machine != 'x86_64' and extra == 'medium') or (sys_platform != 'darwin' and extra == 'medium')", specifier = ">=4.49.0,<5.0.0" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12,<7.0.0" },
 ]
 provides-extras = ["dev", "transcript", "medium", "full", "all"]
@@ -2345,7 +2346,7 @@ version = "2.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')" },
     { name = "openai-whisper" },
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
     { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
@@ -2530,8 +2531,8 @@ name = "torch"
 version = "2.10.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 dependencies = [
     { name = "cuda-bindings", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -2612,8 +2613,8 @@ name = "torchaudio"
 version = "2.10.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
-    "python_full_version < '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
+    "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')",
+    "(python_full_version < '3.13' and platform_machine != 'x86_64') or (python_full_version < '3.13' and sys_platform != 'darwin')",
 ]
 dependencies = [
     { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" } },
@@ -2653,7 +2654,7 @@ dependencies = [
     { name = "filelock" },
     { name = "huggingface-hub" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and (platform_machine != 'x86_64' or sys_platform != 'darwin')" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.13' and platform_machine != 'x86_64') or (python_full_version >= '3.13' and sys_platform != 'darwin')" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "regex" },
