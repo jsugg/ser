@@ -11,6 +11,10 @@ The repository currently keeps its architecture guidance in these maintained doc
 - [`../subsystem-dependency-map.md`](../subsystem-dependency-map.md): subsystem dependency directions and soft-boundary policy
 - [`../refactor-hotspot-checks.md`](../refactor-hotspot-checks.md): hotspot inventory for careful refactors
 
+## Records
+
+- [ADR 0001: Utterance analysis interface](0001-utterance-analysis.md)
+
 ## How this directory should be used
 
 When a future change materially alters architectural direction, add a numbered ADR Markdown file here and link it from this index. Until then, the documents above are the authoritative architecture references for contributors.
