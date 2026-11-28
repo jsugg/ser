@@ -377,10 +377,20 @@ def test_curated_rows_pass_with_excluded_clips_absent(tmp_path: Path) -> None:
         audit_dataset_recipe(curated, recipe=_recipe(), strict=True, curation=ledger)
 
 
-def test_missing_keeper_row_fails_even_when_its_file_exists(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "keeper_change",
+    [None, {"corpus": "other"}, {"dataset_revision": "fixture-r2"}],
+    ids=["absent", "wrong-corpus", "wrong-revision"],
+)
+def test_missing_keeper_row_fails_even_when_its_file_exists(
+    tmp_path: Path, keeper_change: dict[str, str] | None
+) -> None:
     rows = _rows_with_duplicates(tmp_path)
     dropped = {"acted:a.wav", "acted:e.wav", "acted:f.wav", "acted:c.wav"}
     curated = [row for row in rows if row.sample_id not in dropped]
+    if keeper_change is not None:
+        keeper = next(row for row in rows if row.sample_id == "acted:c.wav")
+        curated.append(replace(keeper, **keeper_change))
     assert (tmp_path / "c.wav").is_file()
 
     with pytest.raises(CurationLedgerError, match="kept clip 'acted:c.wav' is not a row"):
