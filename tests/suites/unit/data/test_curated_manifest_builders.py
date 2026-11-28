@@ -350,6 +350,40 @@ def test_curated_single_class_subset_gets_the_release_diagnostic(
     assert not output.exists() and not source_manifest_path(output).exists()
 
 
+@pytest.mark.parametrize("corpus", ["ravdess", "crema-d"])
+def test_unverified_tree_message_names_a_fresh_download(tmp_path: Path, corpus: str) -> None:
+    root = tmp_path / corpus
+    output = tmp_path / "manifests" / f"{corpus}.jsonl"
+    if corpus == "ravdess":
+        ledger, _tree = _ravdess_tree(root)
+        files = "Audio_Speech_Actors_01-24"
+    else:
+        ledger, _tree = _crema_d_tree(root)
+        files = "v1.0"
+
+    with pytest.raises(CurationLedgerError) as error:
+        if corpus == "ravdess":
+            _build_ravdess(root, output, ledger)
+        else:
+            crema_d.build_crema_d_manifest_jsonl(
+                dataset_root=root,
+                dataset_glob_pattern="AudioWAV/**/*.wav",
+                emotion_code_map={"HAP": "happy", "SAD": "sad"},
+                default_language="en",
+                ontology=_ontology(),
+                max_failed_file_ratio=0.5,
+                output_path=output,
+                curation_ledger=ledger,
+            )
+
+    assert str(error.value).endswith(
+        f"no manifest was written. Restore the {files} WAV files (remove added ones, restore "
+        f"changed ones) and rerun the build, or download a fresh copy with `ser data download "
+        f"--dataset {corpus} --dataset-root <new directory>`; downloading again into {root} "
+        "keeps the files already there."
+    )
+
+
 def test_ravdess_curated_build_without_audio_files_writes_nothing(tmp_path: Path) -> None:
     output = tmp_path / "manifests" / "ravdess.jsonl"
 

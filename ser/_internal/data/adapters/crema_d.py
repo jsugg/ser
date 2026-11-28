@@ -298,8 +298,10 @@ def _verified_crema_d_revision(
     if required:
         raise CurationLedgerError(
             f"{mismatch}, so the curation ledger cannot be applied; no manifest was written. "
-            "Restore the v1.0 WAV files (remove added ones, restore changed ones, or "
-            "download the dataset again) and rerun the build."
+            "Restore the v1.0 WAV files (remove added ones, restore changed ones) and rerun "
+            "the build, or download a fresh copy with `ser data download --dataset crema-d "
+            "--dataset-root <new directory>`; downloading again into "
+            f"{root} keeps the files already there."
         )
     logger.warning("%s; dataset_revision is left unset.", mismatch)
     return None

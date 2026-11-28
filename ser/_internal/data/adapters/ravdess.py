@@ -172,7 +172,9 @@ def _verified_ravdess_revision(
         raise CurationLedgerError(
             f"{mismatch}, so the curation ledger cannot be applied; no manifest was written. "
             "Restore the Audio_Speech_Actors_01-24 WAV files (remove added ones, restore "
-            "changed ones, or download the dataset again) and rerun the build."
+            "changed ones) and rerun the build, or download a fresh copy with `ser data "
+            "download --dataset ravdess --dataset-root <new directory>`; downloading again "
+            f"into {root} keeps the files already there."
         )
     logger.warning("%s; dataset_revision is left unset.", mismatch)
     return None
