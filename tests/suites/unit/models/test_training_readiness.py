@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType, ModuleType
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
@@ -28,6 +28,7 @@ from ser._internal.models.training_readiness import (  # noqa: TID251
     FailureDisposition,
     FailureReasonCode,
     FailureScope,
+    FailureSeverity,
     OptionalArtifactError,
     PreparedPlan,
     PreparedPlanError,
@@ -60,6 +61,11 @@ from ser._internal.utils.audio_utils import (  # noqa: TID251
     AudioIntegrityError,
 )
 from ser.config import AppConfig
+
+if TYPE_CHECKING:
+    from tests.suites.unit.models.conftest import ReadinessHost
+
+pytestmark = pytest.mark.usefixtures("readiness_host")
 
 
 def _settings(tmp_path: Path, *, ratio: float = 0.5) -> AppConfig:
@@ -161,6 +167,80 @@ def test_valid_tiny_audio_inventory_passes_and_writes_atomic_report(tmp_path: Pa
     assert resolved == tuple(samples)
     assert report_path.is_file()
     assert not list(report_path.parent.glob(f".{report_path.name}.*"))
+
+
+_MIB = 1024 * 1024
+
+
+def _memory_findings(report: ReadinessReport) -> list[tuple[FailureSeverity, bool, str]]:
+    return [
+        (finding.severity, finding.blocking, finding.message)
+        for finding in report.findings
+        if finding.reason_code is FailureReasonCode.RESOURCE_LIMIT and "memory" in finding.message
+    ]
+
+
+def _readiness_report(tmp_path: Path) -> ReadinessReport:
+    report, _ = run_training_readiness(
+        settings=_settings(tmp_path),
+        load_utterances=lambda: _inventory(tmp_path),
+        report_path=tmp_path / "reports" / "readiness.json",
+    )
+    return report
+
+
+def test_readiness_ignores_low_free_memory_when_page_cache_is_reclaimable(
+    tmp_path: Path,
+    readiness_host: ReadinessHost,
+) -> None:
+    """A Linux host with little MemFree but ample MemAvailable is ready to train."""
+    readiness_host.free_memory_bytes = 300 * _MIB
+    readiness_host.available_memory_bytes = 11 * 1024 * _MIB
+
+    report = _readiness_report(tmp_path)
+
+    assert [finding.message for finding in report.findings if finding.blocking] == []
+    assert report.ready is True
+
+
+@pytest.mark.parametrize("available_mib", [200, 0], ids=["low", "zero"])
+def test_readiness_blocks_when_available_memory_is_below_requirement(
+    tmp_path: Path,
+    readiness_host: ReadinessHost,
+    available_mib: int,
+) -> None:
+    readiness_host.free_memory_bytes = available_mib * _MIB
+    readiness_host.available_memory_bytes = available_mib * _MIB
+
+    report = _readiness_report(tmp_path)
+
+    assert report.ready is False
+    assert _memory_findings(report) == [
+        (
+            FailureSeverity.ERROR,
+            True,
+            f"Available memory {available_mib * _MIB} is below conservative requirement "
+            f"{512 * _MIB}.",
+        )
+    ]
+
+
+def test_readiness_reports_unreadable_memory_without_blocking(
+    tmp_path: Path,
+    readiness_host: ReadinessHost,
+) -> None:
+    readiness_host.memory_error = OSError("memory statistics unavailable")
+
+    report = _readiness_report(tmp_path)
+
+    assert report.ready is True
+    assert _memory_findings(report) == [
+        (
+            FailureSeverity.WARNING,
+            False,
+            "Available memory could not be determined; memory check skipped.",
+        )
+    ]
 
 
 def test_readiness_logs_start_phase_and_done_events(

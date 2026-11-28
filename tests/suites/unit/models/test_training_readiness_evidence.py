@@ -41,6 +41,8 @@ from ser._internal.models.training_readiness import (  # noqa: TID251
 from ser._internal.utils.audio_utils import AudioDecodeError  # noqa: TID251
 from ser.config import AppConfig
 
+pytestmark = pytest.mark.usefixtures("readiness_host")
+
 
 def _settings(tmp_path: Path) -> AppConfig:
     """Builds an isolated readiness configuration with explicit budgets."""

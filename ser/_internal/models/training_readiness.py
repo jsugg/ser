@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import numpy as np
+import psutil
 import soundfile as sf
 
 from ser.config import AppConfig
@@ -1761,6 +1762,18 @@ def _probe_directory(path: Path) -> None:
         destination.unlink(missing_ok=True)
 
 
+def _available_memory_bytes() -> int | None:
+    """Returns memory obtainable without swapping, or None when the host cannot report it.
+
+    Free memory excludes reclaimable page cache and is routinely tiny on healthy hosts.
+    """
+    try:
+        available_bytes = int(psutil.virtual_memory().available)
+    except (OSError, RuntimeError, AttributeError, TypeError, ValueError):
+        return None
+    return available_bytes if available_bytes >= 0 else None
+
+
 def _resource_findings(settings: AppConfig, sample_count: int) -> list[ReadinessFinding]:
     findings: list[ReadinessFinding] = []
     required_paths = {
@@ -1815,12 +1828,19 @@ def _resource_findings(settings: AppConfig, sample_count: int) -> list[Readiness
                 blocking=True,
             )
         )
-    try:
-        available_memory = int(os.sysconf("SC_AVPHYS_PAGES")) * int(os.sysconf("SC_PAGE_SIZE"))
-    except (OSError, ValueError, TypeError):
-        available_memory = 0
+    available_memory = _available_memory_bytes()
     required_memory = max(512 * 1024 * 1024, sample_count * 2 * 1024 * 1024)
-    if available_memory and available_memory < required_memory:
+    if available_memory is None:
+        findings.append(
+            ReadinessFinding(
+                check="filesystem_resources",
+                reason_code=FailureReasonCode.RESOURCE_LIMIT,
+                severity=FailureSeverity.WARNING,
+                message="Available memory could not be determined; memory check skipped.",
+                blocking=False,
+            )
+        )
+    elif available_memory < required_memory:
         findings.append(
             ReadinessFinding(
                 check="filesystem_resources",
