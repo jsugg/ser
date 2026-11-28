@@ -125,6 +125,7 @@ _INVALID_SCORES: dict[str, Mapping[str, object]] = {
     "extra-label": {"labels": {"a": 0.4, "b": 0.3, "c": 0.2, "d": 0.1}},
     "sum-low": {"labels": {"a": 0.3, "b": 0.3, "c": 0.3}},
     "sum-high": {"labels": {"a": 0.5, "b": 0.5, "c": 0.01}},
+    "above-one-within-sum-tolerance": {"labels": {"a": 1.0000005, "b": 0.0, "c": 0.0}},
     "frame-gap": {"frames": "gap"},
     "frame-outside": {"frames": "outside"},
 }
@@ -133,7 +134,7 @@ _INVALID_SCORES: dict[str, Mapping[str, object]] = {
 @NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("script", list(_INVALID_SCORES.values()), ids=list(_INVALID_SCORES))
-def test_invalid_backend_scores_are_a_model_error_not_renormalised(
+def test_invalid_backend_scores_are_a_model_error(
     tmp_path: Path, script: Mapping[str, object]
 ) -> None:
     analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script))

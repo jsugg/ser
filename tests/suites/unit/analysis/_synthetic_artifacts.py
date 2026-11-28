@@ -44,7 +44,16 @@ RESEARCH_DATASET: Mapping[str, str] = {
     "source": "generated",
 }
 
-type ProvenanceMode = Literal["valid", "missing", "tampered"]
+# ``encoder-unrecorded`` omits the encoder; ``no-pretrained-encoder`` states there is none.
+type ProvenanceMode = Literal[
+    "valid", "missing", "tampered", "encoder-unrecorded", "no-pretrained-encoder"
+]
+
+
+_ENCODER_ENTRIES: Mapping[str, object] = {
+    "encoder-unrecorded": None,
+    "no-pretrained-encoder": "none",
+}
 
 
 def write_artifact(
@@ -75,7 +84,7 @@ def write_artifact(
             if provenance == "missing"
             else {
                 "payload_sha256": payload_sha256,
-                "encoder": dict(OPEN_ENCODER),
+                "encoder": _ENCODER_ENTRIES.get(provenance, dict(OPEN_ENCODER)),
                 "datasets": [dict(dataset) for dataset in datasets],
             }
         ),
@@ -143,7 +152,7 @@ def _provenance(raw: dict[str, object]) -> ModelProvenance:
     encoder = raw["encoder"]
     return ModelProvenance(
         payload_sha256=cast(str, raw["payload_sha256"]),
-        encoder=None if encoder is None else _licence(encoder),
+        encoder=None if encoder is None else "none" if encoder == "none" else _licence(encoder),
         datasets=tuple(_licence(dataset) for dataset in cast(list[object], raw["datasets"])),
     )
 

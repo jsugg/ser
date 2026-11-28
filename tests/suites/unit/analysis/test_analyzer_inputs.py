@@ -116,6 +116,32 @@ def test_native_channels_and_rate_reach_the_shared_seam(
     assert result.sample_rate == CANONICAL_RATE_HZ and result.samples.ndim == 1
 
 
+_RATE_44K = 44_100
+_OUT_OF_RANGE = {
+    "empty": (0, "too_short"),
+    "below-min": (round(0.3 * _RATE_44K) - 1, "too_short"),
+    "above-max": (120 * _RATE_44K + 1, "too_long"),
+}
+
+
+@NOT_IMPLEMENTED
+@pytest.mark.usefixtures("scripted")
+@pytest.mark.parametrize(
+    ("count", "expected"), list(_OUT_OF_RANGE.values()), ids=list(_OUT_OF_RANGE)
+)
+def test_out_of_range_sources_are_classified_before_conversion(
+    tmp_path: Path, canonical_calls: list[tuple[object, ...]], count: int, expected: str
+) -> None:
+    analyzer = _centroid_model(tmp_path, INLINE)
+
+    record = analyzer.analyze(np.zeros(count, dtype=np.float32), sample_rate_hz=_RATE_44K)
+
+    assert record["status"] == expected
+    assert record["audio"]["duration_s"] == pytest.approx(count / _RATE_44K, abs=1e-9)
+    assert record["audio"]["input_sample_rate_hz"] == _RATE_44K
+    assert canonical_calls == []
+
+
 @NOT_IMPLEMENTED
 def test_integer_pcm_wav_is_accepted(tmp_path: Path, fast_model_path: Path) -> None:
     wav = write_wav(tmp_path / "clip.wav", tone(2.0), subtype="PCM_16")

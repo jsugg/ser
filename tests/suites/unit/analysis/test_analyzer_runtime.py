@@ -24,7 +24,7 @@ from tests.suites.unit.analysis._contract import (
 from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, noise, tone, write_wav
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
-from ser.api import AnalysisConfig, AnalysisUsageError, UtteranceAnalyzer, UtteranceRecord
+from ser.api import AnalysisClosedError, AnalysisConfig, UtteranceAnalyzer, UtteranceRecord
 
 _MODES = pytest.mark.parametrize("config", [AnalysisConfig(), INLINE], ids=["worker", "inline"])
 _SENTINEL = "caller-path-token-3f7a"
@@ -262,7 +262,7 @@ def test_close_is_idempotent_and_ends_the_analyzer(
         assert _analyse(analyzer, tone(1.0))["status"] == "ok"
     analyzer.close()
 
-    with pytest.raises(AnalysisUsageError):
+    with pytest.raises(AnalysisClosedError):
         _analyse(analyzer, tone(1.0))
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import types
 import typing
 from collections.abc import Callable
@@ -125,6 +126,15 @@ def test_integral_floats_are_json_integers_but_not_record_ints() -> None:
 
     assert validate(record, utterance_record_json_schema()) == []
     assert record_type_errors(record) != []
+
+
+@pytest.mark.parametrize(
+    ("instance", "valid"),
+    [(310, True), (310.0, True), (10**400, True), (310.5, False), (True, False), (math.inf, False)],
+    ids=["int", "integral-float", "huge-int", "fraction", "bool", "infinity"],
+)
+def test_the_integer_rule_follows_draft_2020_12(instance: object, valid: bool) -> None:
+    assert (validate(instance, {"type": "integer"}) == []) is valid
 
 
 def test_schema_uses_only_checked_keywords() -> None:

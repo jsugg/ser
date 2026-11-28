@@ -7,6 +7,7 @@ import json
 import traceback
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import pytest
 from tests.suites.unit.analysis import _scripted_backend
@@ -19,9 +20,9 @@ from tests.suites.unit.analysis._contract import (
 )
 from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, LABELS, tone
 from tests.suites.unit.analysis._synthetic_artifacts import (
+    RESEARCH_DATASET,
     SCRIPTED_LABELS,
     TRAP,
-    ProvenanceMode,
     payload_of,
     write_artifact,
     write_booby_trapped_pickle,
@@ -104,19 +105,41 @@ def test_allow_list_hand_off_pins_the_inspected_bytes(tmp_path: Path) -> None:
         UtteranceAnalyzer.load(profile="fast", model_path=path, expected_sha256=pinned)
 
 
+_UNVERIFIABLE: dict[str, dict[str, Any]] = {
+    "tampered": {"provenance": "tampered"},
+    "missing": {"provenance": "missing"},
+    "encoder-unrecorded": {"provenance": "encoder-unrecorded"},
+    "no-datasets": {"datasets": ()},
+    "dataset-without-id": {"datasets": ({**RESEARCH_DATASET, "name": ""},)},
+    "dataset-without-licence": {"datasets": ({**RESEARCH_DATASET, "licence": ""},)},
+    "dataset-without-class": {"datasets": ({**RESEARCH_DATASET, "licence_class": ""},)},
+}
+
+
 @NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("allow_legacy_baseline", [False, True])
-@pytest.mark.parametrize("provenance", ["tampered", "missing"])
+@pytest.mark.parametrize("artifact", list(_UNVERIFIABLE.values()), ids=list(_UNVERIFIABLE))
 def test_unverifiable_safe_artifacts_never_load(
-    tmp_path: Path, provenance: ProvenanceMode, allow_legacy_baseline: bool
+    tmp_path: Path, artifact: dict[str, Any], allow_legacy_baseline: bool
 ) -> None:
-    path = write_artifact(tmp_path / "model.ser", provenance=provenance)
+    path = write_artifact(tmp_path / "model.ser", **artifact)
 
     for attempt in (UtteranceAnalyzer.inspect_model, UtteranceAnalyzer.load):
         with pytest.raises(AnalysisModelLoadError) as raised:
             attempt(profile="fast", model_path=path, allow_legacy_baseline=allow_legacy_baseline)
         assert not isinstance(raised.value, AnalysisModelNotConformingError)
+
+
+@NOT_IMPLEMENTED
+@pytest.mark.usefixtures("scripted")
+def test_a_model_without_a_pretrained_encoder_says_so(tmp_path: Path) -> None:
+    path = write_artifact(tmp_path / "model.ser", provenance="no-pretrained-encoder")
+
+    manifest = UtteranceAnalyzer.inspect_model(profile="fast", model_path=path)
+
+    assert manifest.provenance is not None
+    assert manifest.provenance.encoder == "none"
 
 
 @NOT_IMPLEMENTED
@@ -212,13 +235,14 @@ def test_legacy_model_revision_names_the_baseline(revision_model_path: Path) -> 
 
 
 @NOT_IMPLEMENTED
-def test_model_files_differing_in_weights_or_labels_have_distinct_ids(
+def test_baseline_ids_carry_the_digest_and_label_set_ids_follow_the_labels(
     fast_model_path: Path, other_fast_model_path: Path, seven_label_model_path: Path
 ) -> None:
     first = load_baseline(fast_model_path).model_manifest.identity
     other = load_baseline(other_fast_model_path).model_manifest.identity
     seven = load_baseline(seven_label_model_path).model_manifest.identity
 
+    assert other.model_sha256 != first.model_sha256
     assert other.model_id != first.model_id
     assert other.label_set_id == first.label_set_id
     assert seven.label_set_id != first.label_set_id

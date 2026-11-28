@@ -27,7 +27,8 @@ from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 from ser._internal.analysis.pipeline import analysis_deadline_s
 from ser.api import AnalysisConfig, UtteranceAnalyzer, UtteranceRecord
 
-_MARGIN_S = 0.5
+# The contract allows no overrun; this only absorbs thread scheduling on a real clock.
+_SCHEDULING_SLACK_S = 0.05
 
 
 def _timed(call: Callable[[], UtteranceRecord]) -> tuple[UtteranceRecord, float]:
@@ -48,7 +49,7 @@ def _until_settled(
     give_up = time.monotonic() + config.worker_start_timeout_s + 10.0
     while time.monotonic() < give_up:
         record, elapsed = _timed(lambda: _analyse(analyzer, samples))
-        assert elapsed <= config.timeout_floor_s + _MARGIN_S
+        assert elapsed <= config.timeout_floor_s + _SCHEDULING_SLACK_S
         records.append(record)
         if record["status"] != "timeout":
             return records
@@ -98,7 +99,7 @@ def test_a_hung_backend_times_out_on_time_and_the_worker_comes_back(
     recovered = _until_settled(analyzer, tone(0.5), config)
 
     assert hung["status"] == "timeout"
-    assert elapsed <= 1.0 + _MARGIN_S
+    assert elapsed <= 1.0 + _SCHEDULING_SLACK_S
     assert_valid_record(hung, analyzer.model_manifest)
     assert recovered[-1]["status"] == "ok"
     assert spies["start_worker"] == 2
@@ -122,7 +123,7 @@ def test_a_call_that_times_out_in_the_queue_does_not_evict_the_running_one(
         running_record = running.result()
 
     assert queued_record["status"] == "timeout"
-    assert queued_elapsed <= 1.0 + _MARGIN_S
+    assert queued_elapsed <= 1.0 + _SCHEDULING_SLACK_S
     assert running_record["status"] == "ok"
     assert spies["start_worker"] == 1
 

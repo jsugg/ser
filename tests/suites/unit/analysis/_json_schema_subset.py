@@ -135,7 +135,11 @@ def _is_type(instance: object, name: str) -> bool:
         return isinstance(instance, bool)
     if name == "integer":
         # Draft 2020-12: any number with a zero fractional part, such as 310.0.
-        return _is_number(instance) and float(cast(float, instance)).is_integer()
+        if isinstance(instance, bool):
+            return False
+        if isinstance(instance, int):
+            return True
+        return isinstance(instance, float) and math.isfinite(instance) and instance.is_integer()
     if name == "number":
         return _is_number(instance)
     if name == "string":

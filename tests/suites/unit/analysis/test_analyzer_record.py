@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -67,7 +68,9 @@ def test_ok_record_meets_every_record_clause(fast_model_path: Path, seconds: flo
 def test_fast_frame_layout(duration_s: float, expected: tuple[tuple[float, float], ...]) -> None:
     layout = frame_layout(duration_s, frame_size_s=_FAST_FRAME_S, stride_s=_FAST_STRIDE_S)
 
-    assert layout == pytest.approx(expected)
+    assert len(layout) == len(expected)
+    for span, wanted in zip(layout, expected, strict=True):
+        assert span == pytest.approx(wanted)
 
 
 @NOT_IMPLEMENTED
@@ -79,7 +82,9 @@ def test_fast_records_use_the_fast_frame_layout(fast_model_path: Path) -> None:
     assert record["frames"] is not None
     spans = tuple((frame["start_s"], frame["end_s"]) for frame in record["frames"])
     expected = frame_layout(7.3, frame_size_s=_FAST_FRAME_S, stride_s=_FAST_STRIDE_S)
-    assert spans == pytest.approx(expected, abs=1e-3)
+    assert len(spans) == len(expected)
+    for span, wanted in zip(spans, expected, strict=True):
+        assert span == pytest.approx(wanted, abs=1e-3)
 
 
 @NOT_IMPLEMENTED
@@ -123,6 +128,23 @@ def test_backend_utterance_scores_are_the_authority_for_top_label(tmp_path: Path
     assert record["labels"] == pytest.approx(script["labels"])
     assert record["top_label"] == "b"
     assert record["confidence"] == pytest.approx(0.5)
+
+
+@NOT_IMPLEMENTED
+@pytest.mark.usefixtures("scripted")
+def test_valid_scores_are_renormalised_before_they_are_written(tmp_path: Path) -> None:
+    script = {"labels": {"a": 0.2000004, "b": 0.5, "c": 0.3}}
+    analyzer = load_artifact(write_artifact(tmp_path / "model.ser", script=script))
+    total = math.fsum(script["labels"].values())
+
+    record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+
+    assert record["status"] == "ok"
+    assert record["labels"] is not None and record["frames"] is not None
+    for scores in [record["labels"], *(frame["labels"] for frame in record["frames"])]:
+        assert math.fsum(scores.values()) == pytest.approx(1.0, abs=1e-12)
+        for label, value in script["labels"].items():
+            assert scores[label] == pytest.approx(value / total, rel=1e-12)
 
 
 @NOT_IMPLEMENTED
