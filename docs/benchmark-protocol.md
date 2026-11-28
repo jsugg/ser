@@ -111,36 +111,76 @@ scored); **excluded** (not in the bundle).
 | `ravdess` | `en` | acted, 24 actors | yes (actor in filename) | `cc-by-nc-sa-4.0` (`noncommercial`) | train/dev/test |
 | `crema-d` | `en` | acted, 91 actors | yes (actor in filename) | `odbl-1.0` (`share_alike`) | train/dev/test |
 | `mesd` | `es` (Mexican) | acted | none known; verified by brief D4-2 | `cc-by-4.0` (`open`) | test-only candidate (admission rule below) |
-| `escorpus-pe` | `es` (Peruvian) | — | — | `cc-by-4.0` (`open`) | excluded: valence/arousal values only, no named emotion categories |
-| `coraa-ser` | `pt` (Brazilian) | natural, 933 clips | — | `custom-research-only` (`research_only`) | excluded: neutral / non-neutral labels only, and Portuguese is not a benchmark language |
 
-**Binding of sources to roles.** The datasets of a bundle other than those in this table, the role
-of each, and the label set and raw-category map of each candidate (below) are recorded in the
-manifest, not in this document.
+**Source policy.** The datasets of `bench-v1`, their roles and their label maps are fixed by its
+source policy (`ser.bench.source-policy/v1`): one immutable JSON object with the keys `schema`
+(that id), `nonce` (32 random bytes in lowercase hexadecimal), `may_train_unlisted` (below) and
+`datasets`, which maps each dataset id to an entry with these keys:
 
-**Admission of candidates.** `mesd`, and any other catalogued dataset the manifest binds to the
-candidate role, are not yet qualified. Each enters a bundle only through this route: brief D4-2
-records, for the pinned source revision, (a) the raw category inventory and (b) whether each row
-carries an individual speaker id. If (a) differs from the dataset's map (section 4.1; the
-manifest's for a candidate other than `mesd`), the dataset is excluded until a new protocol
-version changes the map. Otherwise its role is train/dev/test if (b) holds, and test-only if not
-(section 5.4). The manifest records the D4-2 record's SHA-256. A scored dataset that is neither
-in this table nor bound as a candidate in the manifest enters only through a new protocol
-version.
+- every entry: `language` (BCP 47 tag), `role` (`train/dev/test`, `test-only candidate`,
+  `training-only` or `excluded`), `speaker_identity_verified` (whether every row's speaker
+  identity is verified at the pinned source revision) and `may_train` (below);
+- a `train/dev/test` or `test-only candidate` entry: `label_set` and `labels` (4.1),
+  `raw_category_source` (where the raw category is read), `normalisation` (`none` or `casefold`,
+  4.1) and `raw_map` (every normalised raw category to its label id);
+- a `training-only` entry: `copy_of` (the original source), `copy_source` (the copy),
+  `official_split` (false), `introduced_label_rule` (the deterministic rule that tells a label the
+  copy introduced from a label of the original source) and `introduced_label_rows` (the number of
+  rows that rule selects at the pinned source revision);
+- an `excluded` entry: `exclusion` (the ids of the exclusions below that apply).
 
-**Permission to train is separate from label qualification.** This protocol does not decide
-whether a dataset may be used to train a model. Whether a dataset's labels are benchmark ground
-truth is decided only by sections 3 and 4. A model trained on any dataset whose catalogue policy
-is not `open` is private.
+The policy file is the UTF-8 bytes of Python
+`json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))` followed by LF. The
+source policy of `bench-v1` is the file whose lowercase hexadecimal SHA-256 is
 
-**Training-only datasets.** A third-party copy of a source (not its official release) that has no
-speaker identity and no official split may be bound to the training-only role by the manifest
-(section 5.4); it is then never scored. Of its rows whose label the copy introduced rather than
-the source, the otherwise eligible rows are in train with `label: null` and reason
-`label_not_from_source`; an exclusion of section 2.1, 5.1 or 5.3 takes precedence, with its own
-reason. They are never gold labels, and a model that uses the introduced labels as targets says
-so in its provenance list (section 6.1). An official release of the source would be a different
-dataset.
+```text
+55a422d51169c46cdf96ea46920c8ad4023a9f64381dcf183ee73b9187712a0a
+```
+
+and the manifest records that value as `source_policy_sha256`. A bundle is invalid, so its build
+fails and the harness refuses it, if that value differs; if its datasets are not exactly the
+policy's entries whose role is not `excluded`, less any candidate the admission route excludes; or
+if a dataset has a language, label set, raw category source, normalisation or map other than its
+entry's, a role other than the one its entry and the admission route give it, or a count of rows
+selected by `introduced_label_rule` other than `introduced_label_rows`. A change to the policy is a
+new protocol version.
+
+The table lists the policy entries this document names. The policy may hold further entries that
+it does not list; every rule of this protocol applies to them through their role and properties,
+and no dataset outside the policy enters a bundle under this protocol version.
+
+**Exclusions.** An entry is `excluded` when its source has dimensional values only and no named
+emotion categories (`no_named_categories`), when its language is not a benchmark language
+(`not_benchmark_language`), or when it names fewer emotion categories than the six labels of a
+candidate (4.1; `too_few_categories`).
+
+**Admission of candidates.** `mesd` and every other entry whose role is `test-only candidate` are
+in the catalogue but not yet qualified. Each enters a bundle only through this route: brief D4-2
+records, for the pinned source revision, (a) the raw category inventory, read from the entry's raw
+category source and normalised as the entry says (4.1), and (b) whether each row carries an
+individual speaker id. If (a) differs from the dataset's map in its policy entry (for `mesd`, also
+the map of section 4.1), the dataset is excluded until a new protocol version changes the map.
+Otherwise its role is train/dev/test if (b) holds, and test-only if not (section 5.4). The
+manifest records the D4-2 record's SHA-256. A third-party copy of a source is never a candidate. A
+dataset outside the source policy enters only through a new protocol version.
+
+**Permission to train is separate from label qualification.** Which catalogued datasets may be
+used to train private models is fixed by the source policy, not by this document: an entry's
+`may_train`, and `may_train_unlisted` for a catalogued dataset without an entry. Every model
+trained for the benchmark is still fitted, tuned and calibrated on the split ledger's train and
+dev rows only (5.6). Whether a dataset's labels are benchmark ground truth is decided only by
+sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private.
+
+**Training-only datasets.** An entry whose role is `training-only` is a third-party copy of a
+source, not its official release, with no per-clip speaker identity (`speaker_identity_verified`
+false) and no official split. It is in every bundle of this protocol version, in that role only,
+and is never rebound; under section 5.4 it is never in dev or test and never scored. Of its rows
+whose label the copy introduced rather than the source (its `introduced_label_rule`), the
+otherwise eligible rows are in train with `label: null` and reason `label_not_from_source`; an
+exclusion of section 2.1, 5.1 or 5.3 takes precedence, with its own reason. They are never gold
+labels (4.1), and a model that uses the introduced labels as targets says so in its provenance
+list (section 6.1). An official release of the source would be a different dataset and a new
+policy entry, so a new protocol version.
 
 Each bundle dataset has a dataset card: source URL, revision or checksum, licence id, catalogue
 policy, native sample rate, row count, and the source collections and speakers it may share with
@@ -169,9 +209,14 @@ a label already converted by SER's catalogue (whose maps include aliases and coe
 | `crema-d` | third `_`-separated field of the file name | `ANG` angry, `DIS` disgust, `FEA` fearful, `HAP` happy, `NEU` neutral, `SAD` sad |
 | `mesd` | category named by the source (D4-2 records where), case-folded | `anger` angry, `disgust` disgust, `fear` fearful, `happiness` happy, `neutral` neutral, `sadness` sad |
 
-A candidate other than `mesd` (section 3) has the label set `<dataset id>-6-v1` (angry, disgust,
-fearful, happy, neutral, sad) and a raw-category map that is a one-to-one renaming (4.2) of the
-category named by the source; both are recorded in the manifest.
+A candidate that this table does not list (section 3) has the label set `<dataset id>-6-v1`
+(angry, disgust, fearful, happy, neutral, sad); its raw category source, normalisation and complete
+raw-category map, a one-to-one renaming (4.2), are those of its source-policy entry. Case-folded,
+and the normalisation `casefold`, mean Python `str.casefold()` applied to the raw value as read,
+with no other change, alike to the D4-2 inventory and to every row.
+
+A label that a third-party copy of a source introduced rather than the original source is never a
+gold label, in any dataset or role: its row has `label: null` and is never scored.
 
 A raw category not in its dataset's map is excluded for that dataset (ledger reason
 `label_not_scored`). Training-only rows are never scored, so they have no map and `label: null`.
@@ -279,8 +324,9 @@ tuning or calibration, and an official split it is distributed with is ignored (
 training part is not used for training). It counts for acceptance and selection like any other
 test set if it passes audit check A7 and the audio-hash checks of 5.1 and A4, and a model's
 result on it also needs the separation evidence of 6.1. It is **training-only** only where the
-manifest binds it to that role (section 3) and its labels do not qualify for testing. A row
-without a node is test, reason `test_only_dataset`, in a test-only dataset; train, reason `training_only_dataset`,
+source policy (section 3) assigns that role and its labels do not qualify for testing; it is then
+never in dev or test and never scored. A row without a node is
+test, reason `test_only_dataset`, in a test-only dataset; train, reason `training_only_dataset`,
 in a training-only dataset; otherwise excluded, reason `no_speaker_identity`.
 
 ### 5.5 Split ledger and digest
@@ -355,8 +401,9 @@ collection, or a speaker or recording of its test partition. A result on a test-
 without speaker identity (5.4) also needs auditable separation: every stage's data is listed by
 source collection, none is that dataset's, and every training row is a known row; otherwise it
 carries `separation_unverified`. The flag
-`overlap_unverified` is set on a test dataset's results when the model was trained on a
-training-only dataset (section 3) whose dataset card cannot rule out source recordings or
+`overlap_unverified` is set on a test dataset's results when the model card or publisher list
+shows training, at any stage, on a training-only entry of the source policy (section 3), whatever
+the evaluated bundle holds, and that entry's dataset card cannot rule out source recordings or
 speakers shared with that dataset. These flags remove the result from clean comparison; they are
 flags, not provenance levels.
 
@@ -749,9 +796,9 @@ test = S2.
 
 Only exact-content duplicates are detected, not re-encoded, trimmed or re-amplified copies or
 shared prompt texts. Acted corpora dominate; no conversational test set exists yet. If D4-2 finds
-no speaker identity in `mesd` and in any other Spanish candidate, Spanish is tested only on
-test-only datasets with utterance-level intervals, which overstate precision (8.3), and no model was fitted
-on Spanish benchmark rows. `declared` provenance cannot be checked row by row. Intervals depend on
+no speaker identity in any Spanish dataset admitted for scoring, Spanish is tested only on test-only
+datasets with utterance-level intervals, which overstate precision (8.3), and their rows are
+withheld from fitting. `declared` provenance cannot be checked row by row. Intervals depend on
 numpy's PCG64 stream, hence the recorded numpy version. A wall-clock timeout can fail a row on a
 slow machine.
 
@@ -764,5 +811,5 @@ metrics, has no calibration or interval, and stamps wall-clock time.
 
 ## 15. Pending owner decisions
 
-None. The owner's decisions of 2026-11-28 (benchmark languages, first model and output labels) are
-applied in sections 1, 3, 4.1 and 10.
+None. The decisions that govern sources are recorded in the source policy (section 3) and in the
+project's private record; the rules that apply them are in sections 1, 3, 4.1 and 10.
