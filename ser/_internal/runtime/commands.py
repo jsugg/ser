@@ -233,14 +233,18 @@ def run_transcription_runtime_calibration_workflow(
     calibration_profiles: str,
 ) -> RuntimeCalibrationResult:
     """Runs runtime calibration workflow with CLI-equivalent argument handling."""
+    from ser._internal.transcript.backends.dependencies import require_transcription_dependencies
     from ser._internal.transcript.profiling import (
         parse_calibration_profiles,
         run_transcription_runtime_calibration,
+        runtime_calibration_candidates,
     )
 
     if calibration_iterations <= 0:
         raise ValueError("--calibration-iterations must be greater than zero.")
     calibration_profile_names = parse_calibration_profiles(calibration_profiles)
+    for candidate in runtime_calibration_candidates(calibration_profile_names):
+        require_transcription_dependencies(candidate.backend_id, use_demucs=candidate.use_demucs)
     return run_transcription_runtime_calibration(
         calibration_file=calibration_file,
         language=language,
@@ -281,6 +285,8 @@ def run_transcription_runtime_calibration_command(
     run_calibration_cli: _CalibrationRunner,
 ) -> tuple[RuntimeCalibrationResult | None, WorkflowErrorDisposition | None]:
     """Runs CLI calibration and maps failures to workflow exit dispositions."""
+    from ser._internal.transcript.transcript_extractor import TranscriptionDependencyError
+
     try:
         calibration_result = run_calibration_cli(
             file_path=file_path,
@@ -288,7 +294,7 @@ def run_transcription_runtime_calibration_command(
             calibration_iterations=calibration_iterations,
             calibration_profiles=calibration_profiles,
         )
-    except (ValueError, FileNotFoundError) as err:
+    except (ValueError, FileNotFoundError, TranscriptionDependencyError) as err:
         return (
             None,
             WorkflowErrorDisposition(

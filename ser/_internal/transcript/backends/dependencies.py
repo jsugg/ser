@@ -42,3 +42,14 @@ def missing_transcription_dependencies(
     if not missing:
         return None
     return f"{transcription_extra_message(backend_id)} Missing: {', '.join(missing)}."
+
+
+def require_transcription_dependencies(
+    backend_id: TranscriptionBackendId, *, use_demucs: bool
+) -> None:
+    """Raises an install error before starting work for a transcription request."""
+    message = missing_transcription_dependencies(backend_id, use_demucs=use_demucs)
+    if message is not None:
+        from ser._internal.transcript.transcript_extractor import TranscriptionDependencyError
+
+        raise TranscriptionDependencyError(message)

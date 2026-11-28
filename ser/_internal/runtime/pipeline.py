@@ -27,7 +27,7 @@ from ser._internal.runtime.registry import (
     ensure_profile_supported,
     resolve_runtime_capability,
 )
-from ser._internal.transcript.backends.dependencies import missing_transcription_dependencies
+from ser._internal.transcript.backends.dependencies import require_transcription_dependencies
 from ser._internal.utils.logger import get_logger
 from ser._internal.utils.subtitles import resolve_subtitle_export_request
 from ser._internal.utils.transcription_compat import (
@@ -313,13 +313,9 @@ def create_runtime_pipeline(settings: AppConfig) -> RuntimePipeline:
     ) = resolve_profile_transcription_config(capability.profile)
 
     def check_transcription_dependencies() -> None:
-        from ser._internal.transcript.transcript_extractor import TranscriptionDependencyError
-
-        message = missing_transcription_dependencies(
+        require_transcription_dependencies(
             transcription_backend_id, use_demucs=transcription_use_demucs
         )
-        if message is not None:
-            raise TranscriptionDependencyError(message)
 
     def extract_transcript_for_profile(
         file_path: str,
