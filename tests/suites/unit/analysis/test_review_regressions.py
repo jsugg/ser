@@ -154,7 +154,7 @@ def test_legacy_version_mismatch_is_one_content_free_log(
             profile="fast", model_path=path, allow_legacy_baseline=True, config=config
         ) as analyzer:
             assert analyzer.analyze(tone(0.5), sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
-    assert not caught
+    assert [w.category for w in caught] == [FutureWarning]
     assert capfd.readouterr() == ("", "")
     assert caplog.messages == [
         "Legacy analysis model was saved with a different scikit-learn version."
@@ -184,7 +184,7 @@ def test_legacy_scoring_warnings_do_not_escape(
             profile="fast", model_path=path, allow_legacy_baseline=True, config=config
         ) as analyzer:
             assert analyzer.analyze(tone(0.5), sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
-    assert not caught
+    assert [w.category for w in caught] == [FutureWarning]
     assert capfd.readouterr() == ("", "")
 
 

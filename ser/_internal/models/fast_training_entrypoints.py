@@ -6,7 +6,12 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import Protocol
 
-from ser._internal.models.fast_training import FastTrainingHooks, train_fast_model
+from ser._internal.models.artifact_envelope import LoadedModel
+from ser._internal.models.fast_training import (
+    FastTrainingHooks,
+    train_fast_model,
+    validate_fast_feature_contract,
+)
 from ser._internal.runtime.environment_plan import ProcessEnvDelta
 from ser.config import AppConfig
 
@@ -16,6 +21,17 @@ class RuntimeEnvironmentPlanLike(Protocol):
 
     @property
     def torch_runtime(self) -> ProcessEnvDelta: ...
+
+
+def load_fast_model_for_evaluation(settings: AppConfig) -> LoadedModel:
+    """Load a trusted trained artifact only if its feature semantics match this evaluator."""
+    from ser._internal.models.emotion_model import load_model
+
+    loaded = load_model(
+        settings=settings, expected_profile="fast", expected_backend_id="handcrafted"
+    )
+    validate_fast_feature_contract(loaded.artifact_metadata, settings.feature_flags)
+    return loaded
 
 
 def train_model(

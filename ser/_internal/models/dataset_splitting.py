@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from hashlib import sha1
+from hashlib import sha1, sha256
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -15,6 +16,73 @@ from ser._internal.data import LabeledAudioSample, Utterance
 from ser._internal.data.data_loader import extract_ravdess_speaker_id_from_path
 from ser._internal.train.eval import grouped_train_test_split
 from ser.config import AppConfig
+from ser.profiles import resolve_profile_name
+
+
+def _fast_speaker(sample: Utterance) -> str:
+    speaker = sample.speaker_id
+    if not speaker or not speaker.strip():
+        raise ValueError(f"Fast training requires speaker identity for {sample.sample_id!r}.")
+    return speaker
+
+
+def fast_split_digest(partitions: Mapping[str, Sequence[Utterance]]) -> str:
+    """Validate identities and hash the sorted clip-to-partition ledger."""
+    owners: dict[str, str] = {}
+    clips: dict[str, str] = {}
+    for partition, samples in partitions.items():
+        for sample in samples:
+            speaker = _fast_speaker(sample)
+            if owners.setdefault(speaker, partition) != partition:
+                raise ValueError(f"Fast training speaker overlap across partitions: {speaker!r}.")
+            if sample.sample_id in clips:
+                raise ValueError(f"Duplicate fast training clip ID {sample.sample_id!r}.")
+            clips[sample.sample_id] = partition
+    return sha256(json.dumps(sorted(clips.items()), separators=(",", ":")).encode()).hexdigest()
+
+
+def _fast_group_split(
+    samples: list[Utterance], settings: AppConfig
+) -> tuple[list[Utterance], list[Utterance], MediumSplitMetadata]:
+    """Choose a seeded speaker holdout minimizing missing labels, then label imbalance."""
+    speakers = sorted({_fast_speaker(s) for s in samples})
+    if len(speakers) < 2:
+        raise ValueError("Fast training requires at least two distinct speakers to split.")
+    labels = sorted({s.require_label() for s in samples})
+    index = {speaker: i for i, speaker in enumerate(speakers)}
+    classes = {label: i for i, label in enumerate(labels)}
+    counts = np.zeros((len(speakers), len(labels)), dtype=np.int64)
+    for s in samples:
+        counts[index[_fast_speaker(s)], classes[s.require_label()]] += 1
+    total = counts.sum(axis=0)
+    fraction = settings.training.test_size
+    if not 0 < fraction < 1:
+        raise ValueError("test_size must be between zero and one.")
+    size = max(1, min(len(speakers) - 1, round(len(speakers) * fraction)))
+    rng = np.random.default_rng(settings.training.random_state)
+    best = (len(labels) + 1, float("inf"))
+    held: set[str] = set()
+    for _ in range(128):
+        chosen = rng.choice(len(speakers), size, replace=False)
+        support = counts[chosen].sum(axis=0)
+        score = (
+            int(np.count_nonzero((support == 0) | (support == total))),
+            float(np.mean(np.abs(support / total - fraction))),
+        )
+        if score < best:
+            held = {speakers[i] for i in chosen}
+            best = score
+    train: list[Utterance] = []
+    test: list[Utterance] = []
+    for s in samples:
+        (test if _fast_speaker(s) in held else train).append(s)
+    return (
+        train,
+        test,
+        MediumSplitMetadata(
+            "stratified_speaker_holdout", True, 1.0, len(speakers) - len(held), len(held), 0
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -261,6 +329,10 @@ def split_utterances(
     if len(samples) < 2:
         raise RuntimeError("Training requires at least two labeled audio files.")
 
+    fast = resolve_profile_name(settings) == "fast"
+    if fast:
+        fast_split_digest({"inventory": samples})
+        samples = sorted(samples, key=lambda s: s.sample_id)
     labels: list[str] = [utterance.require_label() for utterance in samples]
     speaker_ids: list[str | None] = [
         resolve_corpus_scoped_speaker_id(utterance) for utterance in samples
@@ -273,6 +345,8 @@ def split_utterances(
         train_split = [utterance for utterance in samples if utterance.split in {"train", "dev"}]
         test_split = [utterance for utterance in samples if utterance.split == "test"]
         if train_split and test_split:
+            if fast:
+                fast_split_digest({"train": train_split, "test": test_split})
             train_speakers = _partition_speakers(
                 train_split, samples=samples, speaker_ids=speaker_ids
             )
@@ -284,13 +358,16 @@ def split_utterances(
                 test_split,
                 MediumSplitMetadata(
                     split_strategy="manifest_split",
-                    speaker_grouped=False,
+                    speaker_grouped=fast,
                     speaker_id_coverage=speaker_coverage,
                     train_unique_speakers=len(train_speakers),
                     test_unique_speakers=len(test_speakers),
                     speaker_overlap_count=len(train_speakers.intersection(test_speakers)),
                 ),
             )
+
+    if fast:
+        return _fast_group_split(samples, settings)
 
     can_group_by_speaker = (
         len(resolved_speaker_ids) == len(samples) and len(set(resolved_speaker_ids)) >= 2
@@ -376,6 +453,11 @@ def split_utterances_three_way(
         dev = [item for item in samples if item.split == "dev"]
         test = [item for item in samples if item.split == "test"]
         if train and dev and test:
+            if resolve_profile_name(settings) == "fast":
+                fast_split_digest({"train": train, "dev": dev, "test": test})
+                train.sort(key=lambda s: s.sample_id)
+                dev.sort(key=lambda s: s.sample_id)
+                test.sort(key=lambda s: s.sample_id)
             _, _, metadata = split_utterances(samples=samples, settings=settings, logger=logger)
             return train, dev, test, replace(metadata, split_strategy="manifest_three_way_split")
     initial_train, test, metadata = split_utterances(
