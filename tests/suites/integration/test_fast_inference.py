@@ -16,6 +16,7 @@ import ser.config as config
 from ser._internal.features.feature_extractor import fast_feature_contract
 from ser._internal.models import emotion_model
 from ser._internal.runtime import fast_public_boundary as fast_boundary
+from ser._internal.runtime.commands import classify_inference_exception
 from ser._internal.runtime.fast_inference import (
     FastInferenceTimeoutError,
     FastModelLoadError,
@@ -26,6 +27,11 @@ from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("reset_ambient_settings")]
+
+
+_CONTRACT_REFUSAL = (
+    "This fast model was trained on canonical audio. This command path does not score it yet."
+)
 
 
 def _fast_metadata(
@@ -111,16 +117,51 @@ def test_fast_inference_checks_model_feature_contract(
     if canonical:
         with pytest.raises(
             FastModelLoadError,
-            match=re.escape(
-                "This fast model was trained on canonical audio. "
-                "This command path does not score it yet."
-            ),
+            match=re.escape(_CONTRACT_REFUSAL),
         ):
             run_fast_inference(request, settings)
         assert scored == []
     else:
         assert run_fast_inference(request, settings) == expected
         assert scored == ["sample.wav"]
+
+
+@pytest.mark.parametrize("canonical", [True, False], ids=["canonical", "legacy"])
+def test_isolated_worker_checks_contract_during_setup(
+    monkeypatch: pytest.MonkeyPatch, canonical: bool
+) -> None:
+    settings = config.reload_settings()
+    metadata = _fast_metadata()
+    if canonical:
+        metadata["model_revision"] = fast_feature_contract(settings.feature_flags)
+    _patch_fast_prerequisites(monkeypatch, metadata=metadata)
+    payload = fast_boundary.FastProcessPayload(
+        InferenceRequest(file_path="sample.wav", language="en", save_transcript=False), settings
+    )
+
+    if canonical:
+        with pytest.raises(fast_boundary.FastModelLoadError) as refused:
+            fast_boundary._prepare_fast_process_operation(payload)
+        assert str(refused.value) == _CONTRACT_REFUSAL
+    else:
+        prepared = fast_boundary._prepare_fast_process_operation(payload)
+        assert prepared.loaded_model.artifact_metadata == metadata
+
+
+def test_isolated_model_refusal_reaches_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SER_ENABLE_PROFILE_PIPELINE", "true")
+    monkeypatch.setenv("SER_FAST_PROCESS_ISOLATION", "true")
+
+    def refuse(**_kwargs: object) -> InferenceResult:
+        raise FastModelLoadError(_CONTRACT_REFUSAL)
+
+    monkeypatch.setattr(fast_boundary, "_run_with_process_timeout_impl", refuse)
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    with pytest.raises(FastModelLoadError) as refused:
+        run_fast_inference(request, config.reload_settings())
+    disposition = classify_inference_exception(refused.value)
+    assert disposition.exit_code == 2
+    assert disposition.message == _CONTRACT_REFUSAL
 
 
 def test_fast_timeout_retries_up_to_configured_budget(
