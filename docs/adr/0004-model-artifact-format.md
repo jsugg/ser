@@ -16,9 +16,10 @@ The manifest records the model and label-set ids, ordered class labels, the
 handcrafted feature set and version, dimension and training audio form,
 and provenance: dataset identifiers, licence ids, classes and sources,
 encoder licence or `none`, split ledger digest, SER version and creation
-time. Historical conversions do not invent facts absent from the source.
-Their unavailable fields are null or empty. They are inspectable and useful
-for prediction parity but are not accepted as conforming analysis models.
+time. Conversions without a provenance file leave the training audio form
+null and the dataset list empty. The weights remain available for parity
+checks. A conforming analysis model requires complete dataset licences,
+canonical training audio and a feature subset that matches the weights.
 
 The `fast` trainer fits a `Pipeline` with `StandardScaler` then
 `MLPClassifier`. The converter also supports a bare `MLPClassifier`, which
@@ -50,7 +51,7 @@ The analyser's `model_id` is the publisher's name, not a content address.
 Its `model_sha256` hashes the entire file, including the trailer. The
 explicit baseline opt-in retains ADR 0001's baseline identity and licence
 rules. Pickle conversion is an explicit trusted-input operation; it
-executes pickle deserialization, unlike inspection and safe loading.
+deserializes the legacy envelope. Safe inspection and loading read only data.
 Use `ser models convert --trust-pickle --provenance FILE OLD.pkl NEW.ser` only with a
 trusted legacy envelope, and `ser models show NEW.ser` to inspect it.
 
