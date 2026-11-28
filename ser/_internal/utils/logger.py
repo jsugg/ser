@@ -343,6 +343,8 @@ def configure_logging(level: str | int | None = None) -> int:
     return resolved_level
 
 
-def get_logger(name: str) -> logging.Logger:
-    """Retrieves one logger without configuring application logging."""
+def get_logger(name: str, level: str | int | None = None) -> logging.Logger:
+    """Retrieves one logger, configuring logging only for an explicit level."""
+    if level is not None:
+        configure_logging(level)
     return logging.getLogger(name)
