@@ -182,7 +182,7 @@ def audit_dataset_recipe(
         repeated = [key for key, n in Counter(row.sample_id for row in utterances).items() if n > 1]
         if repeated:
             raise DatasetAuditError(f"Duplicate sample_id {repeated[0]!r} across manifests.")
-        curated = apply_curation_ledger(utterances, curation)
+        curated = apply_curation_ledger(utterances, curation, strict=strict)
         utterances = list(curated.utterances)
         curation_excluded = curated.excluded
     sample_ids: set[str] = set()
@@ -213,13 +213,15 @@ def audit_dataset_recipe(
         )
     if strict and missing_hash_ids:
         raise DatasetAuditError(
-            f"normalized_audio_sha256 is missing for {len(missing_hash_ids)} row(s)."
+            f"normalized_audio_sha256 is missing for {len(missing_hash_ids)} row(s); "
+            "rebuild the manifest to record it."
         )
     if strict:
         missing_revisions = [row.sample_id for row in utterances if row.dataset_revision is None]
         if missing_revisions:
             raise DatasetAuditError(
-                f"dataset_revision is missing for {len(missing_revisions)} row(s)."
+                f"dataset_revision is missing for {len(missing_revisions)} row(s); "
+                "rebuild the manifest to record it."
             )
 
     counters: Counter[str] = Counter(route.disposition for route in routes)

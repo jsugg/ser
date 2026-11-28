@@ -17,6 +17,7 @@ from ser._internal.data.adapters.crema_d import (
 )
 from ser._internal.data.adapters.msp_podcast import build_msp_podcast_manifest_jsonl
 from ser._internal.data.adapters.ravdess import build_ravdess_manifest_jsonl
+from ser._internal.data.curation_ledger import load_builtin_curation_ledger
 from ser._internal.data.msp_podcast_mirror import (
     DEFAULT_MSP_MIRROR_AUDIO_SUBDIR,
     DEFAULT_MSP_MIRROR_LABELS_FILE,
@@ -173,6 +174,7 @@ class RavdessDatasetStrategy:
             ontology=ontology,
             max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
             output_path=manifest_path,
+            curation_ledger=load_builtin_curation_ledger(),
         )
         if utterances is None:
             return PreparedManifestResult(manifest_paths=(), options=options)
@@ -291,6 +293,7 @@ class CremaDDatasetStrategy:
             ontology=ontology,
             max_failed_file_ratio=settings.data_loader.max_failed_file_ratio,
             output_path=manifest_path,
+            curation_ledger=load_builtin_curation_ledger(),
         )
         if utterances is None:
             return PreparedManifestResult(manifest_paths=(), options=options)

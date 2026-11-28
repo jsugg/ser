@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 from typing import Literal, cast, get_args
@@ -15,10 +16,18 @@ import numpy as np
 import soundfile as sf
 
 from ser._internal.data.manifest import Utterance
+from ser._internal.data.manifest_jsonl import write_manifest_jsonl
+from ser._internal.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 type CurationReason = Literal["conflicting_label_duplicate", "exact_repeat_same_label"]
 CURATION_REASONS: frozenset[str] = frozenset(get_args(CurationReason.__value__))
 _BUILTIN_LEDGER_PATH = Path(__file__).with_name("curation_ledger_english_v1.json")
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+_LFS_POINTER_TEMPLATE = (
+    "version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize {size}\n"
+)
 
 
 class CurationLedgerError(ValueError):
@@ -65,14 +74,12 @@ class CurationLedger:
     ledger_id: str
     version: str
     entries: tuple[LedgerEntry, ...]
-    revisions: dict[str, str] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, object]:
         """Returns a deterministic JSON-compatible record."""
         return {
             "ledger_id": self.ledger_id,
             "version": self.version,
-            "revisions": dict(sorted(self.revisions.items())),
             "entries": [entry.to_record() for entry in self.entries],
         }
 
@@ -98,9 +105,8 @@ def _parse_ledger(payload: object) -> CurationLedger:
     if not isinstance(payload, dict):
         raise CurationLedgerError("Curation ledger root must be a JSON object.")
     raw_entries = payload.get("entries")
-    raw_revisions = payload.get("revisions", {})
-    if not isinstance(raw_entries, list) or not isinstance(raw_revisions, dict):
-        raise CurationLedgerError("Curation ledger needs an 'entries' list and 'revisions' map.")
+    if not isinstance(raw_entries, list):
+        raise CurationLedgerError("Curation ledger needs an 'entries' list.")
     entries: list[LedgerEntry] = []
     for raw in raw_entries:
         if not isinstance(raw, dict):
@@ -114,7 +120,7 @@ def _parse_ledger(payload: object) -> CurationLedger:
                 "kept_sample_id is required for, and only valid with, exact_repeat_same_label."
             )
         digest = cast(str, _text(raw, "normalized_audio_sha256"))
-        if len(digest) != 64 or digest != digest.lower():
+        if not _SHA256_PATTERN.fullmatch(digest):
             raise CurationLedgerError("Ledger hashes must be 64 lowercase hexadecimal characters.")
         entries.append(
             LedgerEntry(
@@ -126,12 +132,10 @@ def _parse_ledger(payload: object) -> CurationLedger:
                 kept_sample_id=kept,
             )
         )
-    revisions = {str(key): str(value) for key, value in raw_revisions.items()}
     return CurationLedger(
         ledger_id=cast(str, _text(payload, "ledger_id")),
         version=cast(str, _text(payload, "version")),
         entries=tuple(entries),
-        revisions=revisions,
     )
 
 
@@ -161,95 +165,240 @@ def normalized_audio_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def stamp_curated_corpora(
-    utterances: Sequence[Utterance], ledger: CurationLedger | None = None
+def git_blob_sha1(path: Path) -> bytes:
+    """Returns the git blob id of a file's bytes."""
+    digest = hashlib.sha1(f"blob {path.stat().st_size}\0".encode("ascii"))
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.digest()
+
+
+def git_lfs_pointer_sha1(path: Path) -> bytes:
+    """Returns the git blob id of the Git LFS pointer that tracks a file."""
+    with path.open("rb") as handle:
+        oid = hashlib.file_digest(handle, "sha256").hexdigest()
+    pointer = _LFS_POINTER_TEMPLATE.format(oid=oid, size=path.stat().st_size).encode("ascii")
+    return hashlib.sha1(f"blob {len(pointer)}\0".encode("ascii") + pointer).digest()
+
+
+def git_tree_sha1(blobs: Mapping[str, bytes]) -> str:
+    """Returns the git tree id of regular files keyed by POSIX path relative to the tree."""
+    files: dict[str, bytes] = {}
+    subtrees: defaultdict[str, dict[str, bytes]] = defaultdict(dict)
+    for rel, oid in blobs.items():
+        head, _, rest = rel.partition("/")
+        if rest:
+            subtrees[head][rest] = oid
+        else:
+            files[head] = oid
+    entries = [(name.encode(), b"100644 " + name.encode(), oid) for name, oid in files.items()]
+    entries.extend(
+        ((name + "/").encode(), b"40000 " + name.encode(), bytes.fromhex(git_tree_sha1(tree)))
+        for name, tree in subtrees.items()
+    )
+    body = b"".join(header + b"\0" + oid for _key, header, oid in sorted(entries))
+    return hashlib.sha1(f"tree {len(body)}\0".encode("ascii") + body).hexdigest()
+
+
+def stamp_manifest_provenance(
+    utterances: Sequence[Utterance], *, dataset_revision: str | None
 ) -> list[Utterance]:
-    """Fills a missing hash and revision on rows of corpora the ledger covers."""
-    active = ledger if ledger is not None else load_builtin_curation_ledger()
-    stamped: list[Utterance] = []
-    for row in utterances:
-        revision = active.revisions.get(row.corpus)
-        if revision is None:
-            stamped.append(row)
-            continue
-        if row.normalized_audio_sha256 is None:
-            row = replace(row, normalized_audio_sha256=normalized_audio_sha256(row.audio_path))
-        if row.dataset_revision is None:
-            row = replace(row, dataset_revision=revision)
-        stamped.append(row)
-    return stamped
+    """Records each row's current content hash and the verified dataset revision."""
+    return [
+        replace(
+            row,
+            normalized_audio_sha256=normalized_audio_sha256(row.audio_path),
+            dataset_revision=dataset_revision,
+        )
+        for row in utterances
+    ]
+
+
+def source_manifest_path(manifest_path: Path) -> Path:
+    """Returns where the uncurated rows of a curated manifest are written."""
+    return manifest_path.with_name(f"{manifest_path.stem}.source{manifest_path.suffix}")
+
+
+def write_curated_manifest(
+    utterances: Sequence[Utterance],
+    *,
+    output_path: Path,
+    base_dir: Path,
+    curation_ledger: CurationLedger | None,
+) -> list[Utterance]:
+    """Writes the ledger-curated rows to ``output_path`` and the source rows beside it.
+
+    Without a ledger the source rows are written to ``output_path`` alone.
+    """
+    if curation_ledger is None:
+        write_manifest_jsonl(output_path, utterances, base_dir=base_dir)
+        return list(utterances)
+    curated = apply_curation_ledger(utterances, curation_ledger, strict=False)
+    write_manifest_jsonl(source_manifest_path(output_path), utterances, base_dir=base_dir)
+    write_manifest_jsonl(output_path, curated.utterances, base_dir=base_dir)
+    if curated.excluded:
+        logger.info(
+            "Curation ledger excluded %d row(s) from %s: %s",
+            len(curated.excluded),
+            output_path.name,
+            "; ".join(f"{item.sample_id} ({item.reason})" for item in curated.excluded),
+        )
+    return list(curated.utterances)
+
+
+def _dataset_root(rows: Sequence[Utterance]) -> Path | None:
+    for row in rows:
+        relative = row.sample_id.partition(":")[2]
+        text = row.audio_path.as_posix()
+        if relative and text.endswith(f"/{relative}"):
+            return Path(text[: -len(relative) - 1])
+    return None
 
 
 def apply_curation_ledger(
-    utterances: Sequence[Utterance], ledger: CurationLedger
+    utterances: Sequence[Utterance], ledger: CurationLedger, *, strict: bool = True
 ) -> CurationResult:
-    """Drops ledger-listed rows after checking every entry against the data.
+    """Drops ledger-listed rows after checking every entry against the rows and the media.
 
-    Entries for a corpus revision that is not among the rows are not applicable and are
-    skipped. Applicable entries must name an existing clip with a matching hash, and must
-    resolve a real duplicate group; otherwise the ledger is stale and raises.
+    Entries for a corpus that is not loaded are skipped. For a loaded corpus every entry
+    must match the corpus and revision of the rows, name a clip whose current media still
+    has the recorded content, and cover its whole duplicate group. A listed clip may be
+    absent from the rows, as in a curated manifest; its file under the dataset root is
+    checked instead. Rows without a dataset revision cannot be matched: strict mode
+    rejects them, otherwise their corpus is left uncurated.
     """
     by_id = {row.sample_id: row for row in utterances}
-    present = {(row.corpus, row.dataset_revision) for row in utterances}
-    by_hash: defaultdict[str, list[Utterance]] = defaultdict(list)
+    rows_by_scope: defaultdict[tuple[str, str | None], list[Utterance]] = defaultdict(list)
     for row in utterances:
-        if row.normalized_audio_sha256 is not None:
-            by_hash[row.normalized_audio_sha256].append(row)
+        rows_by_scope[(row.corpus, row.dataset_revision)].append(row)
+    loaded: defaultdict[str, set[str | None]] = defaultdict(set)
+    for corpus, revision in rows_by_scope:
+        loaded[corpus].add(revision)
 
-    excluded_ids: dict[str, CurationReason] = {}
+    applicable: list[LedgerEntry] = []
+    unversioned: set[str] = set()
     for entry in ledger.entries:
-        if (entry.corpus, entry.dataset_revision) not in present:
+        revisions = loaded.get(entry.corpus)
+        if revisions is None:
             continue
-        found = by_id.get(entry.sample_id)
-        if found is None or found.dataset_revision != entry.dataset_revision:
+        if None in revisions:
+            if strict:
+                raise CurationLedgerError(
+                    f"{entry.corpus} rows carry no dataset_revision, so the curation ledger "
+                    "cannot be matched to them; rebuild the manifest to record it."
+                )
+            unversioned.add(entry.corpus)
+            continue
+        if entry.dataset_revision not in revisions:
             raise CurationLedgerError(
-                f"Ledger entry {entry.sample_id!r} does not exist in {entry.corpus} "
-                f"revision {entry.dataset_revision!r}."
+                f"Ledger entry {entry.sample_id!r} is for {entry.corpus} revision "
+                f"{entry.dataset_revision!r}, but the loaded rows carry "
+                f"{sorted(cast(set[str], revisions))}."
             )
-        if found.normalized_audio_sha256 != entry.normalized_audio_sha256:
+        applicable.append(entry)
+    for corpus in sorted(unversioned):
+        logger.warning(
+            "Curation ledger not applied to %s: its rows carry no dataset_revision; "
+            "rebuild the manifest.",
+            corpus,
+        )
+
+    excluded: dict[str, LedgerEntry] = {}
+    for entry in applicable:
+        if entry.sample_id in excluded:
+            raise CurationLedgerError(f"Ledger lists {entry.sample_id!r} more than once.")
+        excluded[entry.sample_id] = entry
+    if {entry.kept_sample_id for entry in applicable} & excluded.keys():
+        raise CurationLedgerError("A clip named as kept is also excluded by the ledger.")
+
+    roots: dict[tuple[str, str], Path | None] = {}
+    current: dict[Path, str] = {}
+
+    def clip_path(corpus: str, revision: str, sample_id: str) -> Path:
+        row = by_id.get(sample_id)
+        if row is not None and (row.corpus, row.dataset_revision) == (corpus, revision):
+            return row.audio_path
+        if row is None and sample_id.startswith(f"{corpus}:"):
+            if (corpus, revision) not in roots:
+                roots[(corpus, revision)] = _dataset_root(rows_by_scope[(corpus, revision)])
+            root = roots[(corpus, revision)]
+            if root is not None and (root / sample_id.partition(":")[2]).is_file():
+                return root / sample_id.partition(":")[2]
+        raise CurationLedgerError(
+            f"Ledger entry {sample_id!r} does not exist in {corpus} revision {revision!r}."
+        )
+
+    def verify_media(sample_id: str, path: Path, expected: str) -> None:
+        if path not in current:
+            current[path] = normalized_audio_sha256(path)
+        if current[path] != expected:
+            raise CurationLedgerError(
+                f"Media of {sample_id!r} changed since its hash was recorded: expected "
+                f"{expected}, found {current[path]}. Rebuild the manifest and review the ledger."
+            )
+
+    groups: defaultdict[tuple[str, str, str], list[LedgerEntry]] = defaultdict(list)
+    for entry in applicable:
+        path = clip_path(entry.corpus, entry.dataset_revision, entry.sample_id)
+        found = by_id.get(entry.sample_id)
+        if found is not None and found.normalized_audio_sha256 != entry.normalized_audio_sha256:
             raise CurationLedgerError(
                 f"Ledger hash mismatch for {entry.sample_id!r}: ledger "
                 f"{entry.normalized_audio_sha256}, data {found.normalized_audio_sha256}."
             )
-        group = by_hash[entry.normalized_audio_sha256]
-        if len(group) < 2:
-            raise CurationLedgerError(
-                f"Ledger entry {entry.sample_id!r} is unused: no other clip shares its content."
-            )
-        if entry.reason == "conflicting_label_duplicate":
-            if len({member.label for member in group}) < 2:
+        verify_media(entry.sample_id, path, entry.normalized_audio_sha256)
+        groups[(entry.corpus, entry.dataset_revision, entry.normalized_audio_sha256)].append(entry)
+
+    for (corpus, revision, digest), members in groups.items():
+        peers = [
+            row
+            for row in rows_by_scope[(corpus, revision)]
+            if row.normalized_audio_sha256 == digest
+        ]
+        for row in peers:
+            verify_media(row.sample_id, row.audio_path, digest)
+        listed = {entry.sample_id for entry in members}
+        reasons = {entry.reason for entry in members}
+        if len(reasons) > 1:
+            raise CurationLedgerError(f"Ledger mixes curation reasons for content {digest}.")
+        if reasons == {"conflicting_label_duplicate"}:
+            unlisted = sorted(row.sample_id for row in peers if row.sample_id not in listed)
+            if unlisted:
                 raise CurationLedgerError(
-                    f"Ledger entry {entry.sample_id!r} is not a conflicting duplicate: "
+                    f"Ledger excludes only part of the conflicting-label group {digest}: "
+                    f"{unlisted[0]!r} is not listed. Exclude every clip of the group."
+                )
+            if len(listed) < 2:
+                raise CurationLedgerError(
+                    f"Ledger entry {members[0].sample_id!r} is unused: no other clip shares "
+                    "its content."
+                )
+            if len(peers) == len(listed) and len({row.label for row in peers}) < 2:
+                raise CurationLedgerError(
+                    f"Ledger entry {members[0].sample_id!r} is not a conflicting duplicate: "
                     "all clips with this content share one label."
                 )
-        else:
-            kept = by_id.get(cast(str, entry.kept_sample_id))
-            if (
-                kept is None
-                or kept.normalized_audio_sha256 != entry.normalized_audio_sha256
-                or kept.label != found.label
+            continue
+        for entry in members:
+            kept_id = cast(str, entry.kept_sample_id)
+            kept_path = clip_path(corpus, revision, kept_id)
+            kept = by_id.get(kept_id)
+            found = by_id.get(entry.sample_id)
+            if kept is not None and (
+                kept.normalized_audio_sha256 != digest
+                or (found is not None and kept.label != found.label)
             ):
                 raise CurationLedgerError(
-                    f"Ledger entry {entry.sample_id!r} names kept clip "
-                    f"{entry.kept_sample_id!r} that is missing, differs in content, or "
-                    "carries another label."
+                    f"Ledger entry {entry.sample_id!r} names kept clip {kept_id!r} that "
+                    "differs in content or carries another label."
                 )
-        if entry.sample_id in excluded_ids:
-            raise CurationLedgerError(f"Ledger lists {entry.sample_id!r} more than once.")
-        excluded_ids[entry.sample_id] = entry.reason
+            verify_media(kept_id, kept_path, digest)
 
-    kept_ids = {
-        entry.kept_sample_id
-        for entry in ledger.entries
-        if entry.sample_id in excluded_ids and entry.kept_sample_id is not None
-    }
-    if kept_ids & excluded_ids.keys():
-        raise CurationLedgerError("A clip named as kept is also excluded by the ledger.")
     return CurationResult(
-        utterances=tuple(row for row in utterances if row.sample_id not in excluded_ids),
+        utterances=tuple(row for row in utterances if row.sample_id not in excluded),
         excluded=tuple(
-            CurationExclusion(sample_id=row.sample_id, reason=excluded_ids[row.sample_id])
-            for row in sorted(utterances, key=lambda item: item.sample_id)
-            if row.sample_id in excluded_ids
+            CurationExclusion(sample_id=sample_id, reason=excluded[sample_id].reason)
+            for sample_id in sorted(excluded)
         ),
     )

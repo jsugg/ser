@@ -17,10 +17,7 @@ from sklearn.model_selection import train_test_split
 
 from ser._internal.data.adapters.ravdess import build_ravdess_utterances
 from ser._internal.data.catalog.public_datasets import MESD_CORPUS_ID
-from ser._internal.data.curation_ledger import (
-    load_builtin_curation_ledger,
-    stamp_curated_corpora,
-)
+from ser._internal.data.curation_ledger import load_builtin_curation_ledger
 from ser._internal.data.dataset_audit import audit_dataset_recipe
 from ser._internal.data.dataset_prepare import (
     prepare_from_registry_entry,
@@ -86,14 +83,12 @@ def _load_utterances_for_settings(
             )
         if isinstance(dataset_recipe, str):
             recipe = load_dataset_recipe(dataset_recipe)
-            curation = load_builtin_curation_ledger()
-            utterances = stamp_curated_corpora(utterances, curation)
             report = audit_dataset_recipe(
                 utterances,
                 recipe=recipe,
                 seed=settings.training.random_state,
                 strict=strict_dataset_audit,
-                curation=curation,
+                curation=load_builtin_curation_ledger(),
             )
             if report.curation_excluded:
                 logger.info(

@@ -9,8 +9,14 @@ from pathlib import Path
 
 import soundfile as sf
 
+from ser._internal.data.curation_ledger import (
+    CurationLedger,
+    git_lfs_pointer_sha1,
+    git_tree_sha1,
+    stamp_manifest_provenance,
+    write_curated_manifest,
+)
 from ser._internal.data.manifest import Utterance
-from ser._internal.data.manifest_jsonl import write_manifest_jsonl
 from ser._internal.data.ontology import LabelOntology, remap_label
 from ser._internal.utils.logger import get_logger
 
@@ -20,6 +26,10 @@ CREMA_D_CORPUS_ID = "crema-d"
 CREMA_D_DATASET_POLICY_ID = "share_alike"
 CREMA_D_DATASET_LICENSE_ID = "odbl-1.0"
 CREMA_D_SOURCE_URL = "https://github.com/CheyneyComputerScience/CREMA-D"
+CREMA_D_AUDIO_TREE_SHA1 = "387d831b6b63df157bef95de05ec61dbffc95da3"
+CREMA_D_DATASET_REVISION = (
+    f"v1.0@f3b8611a309886568dfa957141775b2e05add04a:AudioWAV={CREMA_D_AUDIO_TREE_SHA1}"
+)
 _GIT_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
 _MIN_WAV_FILE_BYTES = 44
 
@@ -258,6 +268,31 @@ def build_crema_d_utterances(
     return utterances
 
 
+def _verified_crema_d_revision(dataset_root: Path) -> str | None:
+    """Returns the pinned revision when AudioWAV matches the v1.0 release tree."""
+    audio_dir = dataset_root.expanduser() / "AudioWAV"
+    tree = (
+        git_tree_sha1(
+            {
+                path.relative_to(audio_dir).as_posix(): git_lfs_pointer_sha1(path)
+                for path in audio_dir.rglob("*")
+                if path.is_file()
+            }
+        )
+        if audio_dir.is_dir()
+        else None
+    )
+    if tree == CREMA_D_AUDIO_TREE_SHA1:
+        return CREMA_D_DATASET_REVISION
+    logger.warning(
+        "CREMA-D AudioWAV tree %s does not match release v1.0 (%s); "
+        "dataset_revision is left unset.",
+        tree,
+        CREMA_D_AUDIO_TREE_SHA1,
+    )
+    return None
+
+
 def build_crema_d_manifest_jsonl(
     *,
     dataset_root: Path,
@@ -267,8 +302,13 @@ def build_crema_d_manifest_jsonl(
     ontology: LabelOntology,
     max_failed_file_ratio: float,
     output_path: Path,
+    curation_ledger: CurationLedger | None = None,
 ) -> list[Utterance] | None:
-    """Builds utterances and persists a CREMA-D JSONL manifest."""
+    """Builds utterances with content hashes and verified revision, then writes them.
+
+    With a curation ledger the curated rows go to ``output_path`` and the source rows to
+    its ``.source.jsonl`` sibling.
+    """
 
     utterances = build_crema_d_utterances(
         dataset_root=dataset_root,
@@ -280,5 +320,12 @@ def build_crema_d_manifest_jsonl(
     )
     if utterances is None:
         return None
-    write_manifest_jsonl(output_path, utterances, base_dir=dataset_root)
-    return utterances
+    stamped = stamp_manifest_provenance(
+        utterances, dataset_revision=_verified_crema_d_revision(dataset_root)
+    )
+    return write_curated_manifest(
+        stamped,
+        output_path=output_path,
+        base_dir=dataset_root,
+        curation_ledger=curation_ledger,
+    )

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,15 +18,16 @@ from ser._internal.data.curation_ledger import (
     CurationLedgerError,
     LedgerEntry,
     apply_curation_ledger,
+    git_blob_sha1,
+    git_lfs_pointer_sha1,
+    git_tree_sha1,
     load_builtin_curation_ledger,
     load_curation_ledger,
     normalized_audio_sha256,
-    stamp_curated_corpora,
 )
 from ser._internal.data.dataset_audit import DatasetAuditError, audit_dataset_recipe
 from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance
 from ser._internal.data.recipe import CorpusRecipe, DatasetRecipe
-from ser._internal.models.training_readiness import normalized_pcm_digest
 
 _REVISION = "fixture-r1"
 
@@ -143,6 +147,7 @@ def test_hash_mismatch_is_an_error(tmp_path: Path) -> None:
 def test_entry_for_missing_clip_is_an_error(tmp_path: Path) -> None:
     rows = _rows_with_duplicates(tmp_path)
     ledger = _ledger(rows)
+    (tmp_path / "f.wav").unlink()
 
     with pytest.raises(CurationLedgerError, match="does not exist"):
         apply_curation_ledger([row for row in rows if row.sample_id != "acted:f.wav"], ledger)
@@ -170,15 +175,19 @@ def test_conflicting_reason_requires_differing_labels(tmp_path: Path) -> None:
     rows = _rows_with_duplicates(tmp_path)
     ledger = _ledger(rows)
     wrong = replace(ledger.entries[2], reason="conflicting_label_duplicate", kept_sample_id=None)
+    keeper = _entry(rows[2], "conflicting_label_duplicate")
 
     with pytest.raises(CurationLedgerError, match="label"):
-        apply_curation_ledger(rows, replace(ledger, entries=(*ledger.entries[:2], wrong)))
+        apply_curation_ledger(rows, replace(ledger, entries=(*ledger.entries[:2], wrong, keeper)))
 
 
-def test_entries_for_other_revisions_are_ignored(tmp_path: Path) -> None:
+def test_entries_for_a_corpus_that_is_not_loaded_are_skipped(tmp_path: Path) -> None:
     rows = _rows_with_duplicates(tmp_path)
     ledger = _ledger(rows)
-    other = [replace(row, dataset_revision="fixture-r2") for row in rows]
+    other = [
+        replace(row, corpus="spoken", sample_id=f"spoken:{row.audio_path.name}", speaker_id=None)
+        for row in rows
+    ]
 
     result = apply_curation_ledger(other, ledger)
 
@@ -207,18 +216,155 @@ def test_builtin_ledger_holds_ids_and_hashes_only() -> None:
     assert all(entry.sample_id.split(":", 1)[0] for entry in load_builtin_curation_ledger().entries)
 
 
-def test_stamp_fills_hash_and_revision_for_curated_corpora_only(tmp_path: Path) -> None:
-    _write_wav(tmp_path / "x.wav", 9)
-    covered = replace(
-        _row(tmp_path, "x", "happy", "s1", None),
-        corpus="ravdess",
-        sample_id="ravdess:x.wav",
-        dataset_revision=None,
+def test_parser_rejects_non_hex_hashes(tmp_path: Path) -> None:
+    record = _ledger(_rows_with_duplicates(tmp_path)).to_record()
+    record["entries"][0]["normalized_audio_sha256"] = "g" * 64  # type: ignore[index]
+    path = tmp_path / "ledger.json"
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(CurationLedgerError, match="hexadecimal"):
+        load_curation_ledger(path)
+
+
+def test_repeated_exclusion_is_an_error(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    ledger = _ledger(rows)
+
+    with pytest.raises(CurationLedgerError, match="more than once"):
+        apply_curation_ledger(rows, replace(ledger, entries=(*ledger.entries, ledger.entries[2])))
+
+
+def test_named_keeper_that_is_also_excluded_is_an_error(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    (tmp_path / "g.wav").write_bytes((tmp_path / "c.wav").read_bytes())
+    by_id = {row.sample_id: row for row in rows}
+    rows.append(
+        replace(by_id["acted:f.wav"], sample_id="acted:g.wav", audio_path=tmp_path / "g.wav")
     )
-    other = replace(covered, corpus="acted", sample_id="acted:x.wav")
+    ledger = _ledger(rows)
+    keeper_dropped = _entry(by_id["acted:c.wav"], "exact_repeat_same_label", kept="acted:g.wav")
 
-    stamped_covered, stamped_other = stamp_curated_corpora([covered, other])
+    with pytest.raises(CurationLedgerError, match="kept"):
+        apply_curation_ledger(rows, replace(ledger, entries=(*ledger.entries, keeper_dropped)))
 
-    assert stamped_covered.normalized_audio_sha256 == normalized_pcm_digest(tmp_path / "x.wav")
-    assert stamped_covered.dataset_revision is not None
-    assert stamped_other == other
+
+def test_changed_media_of_a_listed_clip_fails_despite_recorded_hash(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    ledger = _ledger(rows)
+    _write_wav(tmp_path / "a.wav", 999)
+
+    with pytest.raises(CurationLedgerError, match="changed"):
+        audit_dataset_recipe(rows, recipe=_recipe(), strict=True, curation=ledger)
+
+
+def test_changed_media_of_a_duplicate_peer_fails(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    ledger = _ledger(rows)
+    _write_wav(tmp_path / "c.wav", 999)
+
+    with pytest.raises(CurationLedgerError, match="changed"):
+        apply_curation_ledger(rows, ledger)
+
+
+def test_strict_curation_rejects_rows_without_revision(tmp_path: Path) -> None:
+    rows = [replace(row, dataset_revision=None) for row in _rows_with_duplicates(tmp_path)]
+
+    with pytest.raises(CurationLedgerError, match="rebuild the manifest"):
+        audit_dataset_recipe(rows, recipe=_recipe(), strict=True, curation=_ledger(rows))
+
+
+def test_strict_audit_names_the_rebuild_for_rows_without_revision(tmp_path: Path) -> None:
+    rows = [replace(row, dataset_revision=None) for row in _rows_with_duplicates(tmp_path)]
+
+    with pytest.raises(DatasetAuditError, match="rebuild the manifest"):
+        audit_dataset_recipe(rows[6:], recipe=_recipe(), strict=True)
+
+
+def test_partial_conflicting_group_fails(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    ledger = _ledger(rows)
+    without_a = replace(ledger, entries=ledger.entries[1:])
+
+    with pytest.raises(CurationLedgerError, match="conflicting"):
+        audit_dataset_recipe(rows, recipe=_recipe(), strict=True, curation=without_a)
+
+
+def test_entry_for_another_revision_of_a_loaded_corpus_fails(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    ledger = _ledger(rows)
+    moved = replace(ledger.entries[0], dataset_revision="fixture-r2")
+
+    with pytest.raises(CurationLedgerError, match="revision"):
+        apply_curation_ledger(rows, replace(ledger, entries=(moved, *ledger.entries[1:])))
+
+
+def test_entry_for_another_loaded_corpus_does_not_match_the_row(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    for name, seed in (("o1", 501), ("o2", 502)):
+        _write_wav(tmp_path / f"{name}.wav", seed)
+        digest = normalized_audio_sha256(tmp_path / f"{name}.wav")
+        rows.append(
+            replace(
+                _row(tmp_path, name, "happy", name, digest),
+                corpus="other",
+                sample_id=f"other:{name}.wav",
+                speaker_id=f"other:{name}",
+            )
+        )
+    ledger = _ledger(rows)
+    moved = replace(ledger.entries[0], corpus="other")
+
+    with pytest.raises(CurationLedgerError, match="does not exist"):
+        apply_curation_ledger(rows, replace(ledger, entries=(moved, *ledger.entries[1:])))
+
+
+def test_curated_rows_pass_with_excluded_clips_absent(tmp_path: Path) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    ledger = _ledger(rows)
+    excluded = {"acted:a.wav", "acted:e.wav", "acted:f.wav"}
+    curated = [row for row in rows if row.sample_id not in excluded]
+
+    report = audit_dataset_recipe(curated, recipe=_recipe(), strict=True, curation=ledger)
+
+    assert [item.sample_id for item in report.curation_excluded] == sorted(excluded)
+    _write_wav(tmp_path / "c.wav", 999)
+    with pytest.raises(CurationLedgerError, match="changed"):
+        audit_dataset_recipe(curated, recipe=_recipe(), strict=True, curation=ledger)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_tree_hash_matches_git_for_plain_and_lfs_blobs(tmp_path: Path) -> None:
+    audio = tmp_path / "audio"
+    (audio / "Actor_01").mkdir(parents=True)
+    (audio / "Actor_10").mkdir()
+    _write_wav(audio / "Actor_01" / "x.wav", 1)
+    _write_wav(audio / "Actor_10" / "y.wav", 2)
+    _write_wav(audio / "z.wav", 3)
+    files = sorted(path for path in audio.rglob("*.wav"))
+    pointers = tmp_path / "pointers"
+    for path in files:
+        target = pointers / path.relative_to(audio)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        target.write_text(
+            "version https://git-lfs.github.com/spec/v1\n"
+            f"oid sha256:{digest}\nsize {path.stat().st_size}\n",
+            encoding="ascii",
+        )
+
+    def git_tree(root: Path) -> str:
+        env = {"GIT_DIR": str(tmp_path / f"{root.name}.git"), "GIT_WORK_TREE": str(root)}
+        subprocess.run(["git", "init", "-q"], check=True, env=env)
+        subprocess.run(["git", "add", "-A"], check=True, env=env)
+        result = subprocess.run(
+            ["git", "write-tree"], check=True, env=env, capture_output=True, text=True
+        )
+        return result.stdout.strip()
+
+    relative = {path.relative_to(audio).as_posix(): path for path in files}
+    assert git_tree_sha1({rel: git_blob_sha1(path) for rel, path in relative.items()}) == git_tree(
+        audio
+    )
+    assert git_tree_sha1(
+        {rel: git_lfs_pointer_sha1(path) for rel, path in relative.items()}
+    ) == git_tree(pointers)
