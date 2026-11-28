@@ -16,7 +16,13 @@ import ser._internal.data.strategies.default as default_strategies
 import ser._internal.models.emotion_model as emotion_model
 import ser.config as config_module
 from ser._internal.config.schema import profile_artifact_file_names
-from ser._internal.data.curation_ledger import CurationLedger, git_blob_sha1, git_tree_sha1
+from ser._internal.data.curation_ledger import (
+    CurationLedger,
+    LedgerEntry,
+    git_blob_sha1,
+    git_tree_sha1,
+    normalized_audio_sha256,
+)
 from ser._internal.license_check import load_persisted_backend_consents
 from ser._internal.runtime.accurate_inference import AccurateRuntimeDependencyError
 from ser._internal.runtime.commands import WorkflowErrorDisposition, classify_training_exception
@@ -1406,6 +1412,17 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     ):
         rng = np.random.default_rng(seed)
         sf.write(dataset_root / rel, rng.uniform(-0.5, 0.5, 400).astype(np.float32), 16_000)
+    kept = "Actor_01/03-01-03-01-01-01-01.wav"
+    repeat = "Actor_01/03-01-03-01-01-02-01.wav"
+    (dataset_root / repeat).write_bytes((dataset_root / kept).read_bytes())
+    decision = LedgerEntry(
+        corpus="ravdess",
+        dataset_revision=ravdess_adapter.RAVDESS_DATASET_REVISION,
+        sample_id=f"ravdess:{repeat}",
+        kept_sample_id=f"ravdess:{kept}",
+        reason="exact_repeat_same_label",
+        normalized_audio_sha256=normalized_audio_sha256(dataset_root / repeat),
+    )
     monkeypatch.setattr(
         ravdess_adapter,
         "RAVDESS_AUDIO_TREE_SHA1",
@@ -1419,7 +1436,7 @@ def test_cli_dataset_workflow_configure_download_and_registry_load(
     monkeypatch.setattr(
         default_strategies,
         "load_builtin_curation_ledger",
-        lambda: CurationLedger(ledger_id="fixture", version="1", entries=()),
+        lambda: CurationLedger(ledger_id="fixture", version="1", entries=(decision,)),
     )
     manifest_path = tmp_path / "manifests" / "ravdess.jsonl"
 
