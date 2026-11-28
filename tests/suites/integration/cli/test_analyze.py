@@ -19,14 +19,16 @@ import pytest
 from tests.suites.unit.analysis._json_schema_subset import validate
 from tests.suites.unit.analysis._stand_ins import (
     CANONICAL_RATE_HZ,
+    FailingClassifier,
     noise,
+    silence,
     tone,
     write_model,
     write_wav,
 )
 
 from ser._internal.features.feature_extractor import extract_feature_from_signal
-from ser.api import utterance_record_json_schema
+from ser.api import AnalysisConfig, UtteranceAnalyzer, utterance_record_json_schema
 
 _PRIVATE = "caller-content-never-logged"
 _PAUSE_BEFORE_RENAME = """
@@ -68,7 +70,7 @@ def _rows(path: Path) -> list[dict[str, Any]]:
 
 
 def test_batch_records_failures_and_summarizes_resume(tmp_path: Path, batch_model: Path) -> None:
-    write_wav(tmp_path / "audio" / "tone.wav", tone(0.35))
+    audio = write_wav(tmp_path / "audio" / "tone.wav", tone(0.35))
     manifest = tmp_path / f"{_PRIVATE}.jsonl"
     manifest.write_text(
         json.dumps({"id": "opaque\né", "path": "audio/tone.wav", "ignore": _PRIVATE})
@@ -101,6 +103,15 @@ def test_batch_records_failures_and_summarizes_resume(tmp_path: Path, batch_mode
     for row in rows:
         assert row.keys() == {"id", "record"}
         assert validate(row["record"], utterance_record_json_schema("ser.utterance/v1")) == []
+    with UtteranceAnalyzer.load(
+        profile="fast",
+        model_path=batch_model,
+        allow_legacy_baseline=True,
+        config=AnalysisConfig(max_threads=1),
+    ) as analyzer:
+        expected = analyzer.analyze(audio)
+    expected["timing_ms"] = rows[0]["record"]["timing_ms"]
+    assert rows[0]["record"] == expected
     assert _PRIVATE not in out.read_text()
     counts = {"ok": 1, "unreadable": 1}
     assert [row["record"]["status"] for row in rows] == list(counts)
@@ -122,6 +133,34 @@ def test_batch_records_failures_and_summarizes_resume(tmp_path: Path, batch_mode
         "skipped": 2,
         "statuses": counts,
     }
+
+
+def test_batch_continues_after_model_error(tmp_path: Path) -> None:
+    feature_size = int(extract_feature_from_signal(tone(3.0), CANONICAL_RATE_HZ).size)
+    model = write_model(
+        tmp_path / "model.pkl", feature_size=feature_size, classifier_type=FailingClassifier
+    )
+    audio = tmp_path / "audio"
+    write_wav(audio / "b-error.wav", tone(0.35))
+    write_wav(audio / "c-short.wav", tone(0.1))
+    write_wav(audio / "d-silent.wav", silence(0.35))
+    manifest = tmp_path / "input.jsonl"
+    names = ["a-missing.wav", "b-error.wav", "c-short.wav", "d-silent.wav"]
+    manifest.write_text(
+        "".join(json.dumps({"id": name, "path": f"audio/{name}"}) + "\n" for name in names)
+    )
+    out = tmp_path / "out.jsonl"
+    result = _run("--manifest", manifest, "--out", out, "--model", model, "--allow-legacy-baseline")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+    rows = _rows(out)
+    assert [row["id"] for row in rows] == names
+    assert [row["record"]["status"] for row in rows] == [
+        "unreadable",
+        "model_error",
+        "too_short",
+        "silent",
+    ]
 
 
 def test_batch_directory_is_sorted_and_quiet(tmp_path: Path, batch_model: Path) -> None:

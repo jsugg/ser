@@ -119,7 +119,7 @@ def _json_object(line: bytes) -> dict[str, object] | None:
 
 
 def _manifest_rows(manifest: Path) -> list[_InputRow]:
-    if not stat.S_ISREG(manifest.stat().st_mode):
+    if not manifest.is_file():
         raise _InvalidBatch("The manifest must be a regular file.")
     rows: list[_InputRow] = []
     seen: set[str] = set()
@@ -146,12 +146,16 @@ def _inputs(args: _BatchArgs) -> tuple[list[_InputRow], Path]:
         rows = _manifest_rows(args.manifest)
     else:
         assert args.directory is not None
+        if not args.directory.is_dir():
+            raise _InvalidBatch("--dir must name an existing directory.")
         rows = [
             _InputRow(path.name, path)
             for path in sorted(args.directory.iterdir())
             if path.suffix.lower() == ".wav" and path.is_file()
         ]
 
+    if not args.out.parent.is_dir():
+        raise _InvalidBatch("The output directory must exist and be a directory.")
     parent = Path(os.path.realpath(args.out.parent, strict=True))
     out = parent / args.out.name
     if out.is_symlink() or any(
@@ -159,6 +163,8 @@ def _inputs(args: _BatchArgs) -> tuple[list[_InputRow], Path]:
         for path in (args.manifest, args.model)
     ):
         raise _InvalidBatch("The output must not alias an input or be a symbolic link.")
+    if out.exists() and not out.is_file():
+        raise _InvalidBatch("The existing output must be a regular file.")
     if (
         args.directory is not None
         and Path(os.path.realpath(args.directory)) == parent
@@ -174,15 +180,13 @@ def _inputs(args: _BatchArgs) -> tuple[list[_InputRow], Path]:
 
 def _read_checkpoint(out: Path, rows: list[_InputRow]) -> _Checkpoint | None:
     try:
-        mode = out.stat().st_mode
+        stream = out.open("rb")
     except FileNotFoundError:
         return None
-    if not stat.S_ISREG(mode):
-        raise _InvalidBatch("The existing output must be a regular file.")
 
     digest: str | None = None
     counts: Counter[str] = Counter()
-    with out.open("rb") as stream:
+    with stream:
         for index, line in enumerate(stream):
             entry = _json_object(line) if line.endswith(b"\n") else None
             if (
@@ -243,18 +247,28 @@ def _remove_stale_staging(out: Path) -> None:
                 os.unlink(entry.path)
 
 
+def _staging_prefix(out: Path) -> str:
+    return f".{out.name}{_STAGING_MARKER}"
+
+
 def _publish(out: Path, lines: list[bytes], *, has_checkpoint: bool) -> None:
     staging: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            dir=out.parent, prefix=f".{out.name}{_STAGING_MARKER}", delete=False
+            dir=out.parent, prefix=_staging_prefix(out), delete=False
         ) as stream:
             staging = Path(stream.name)
+            mode = 0o600
             if has_checkpoint:
                 with out.open("rb") as previous:
+                    mode = stat.S_IMODE(os.fstat(previous.fileno()).st_mode)
                     shutil.copyfileobj(previous, stream)
             stream.writelines(lines)
             stream.flush()
+            if hasattr(os, "fchmod"):
+                os.fchmod(stream.fileno(), mode)
+            elif has_checkpoint:
+                os.chmod(staging, mode)
             os.fsync(stream.fileno())
         os.replace(staging, out)
     finally:
@@ -272,6 +286,8 @@ def _run(args: _BatchArgs, settings: AppConfig) -> None:
 
 def _run_batch(args: _BatchArgs, settings: AppConfig, rows: list[_InputRow], out: Path) -> None:
     checkpoint = _read_checkpoint(out, rows)
+    with tempfile.NamedTemporaryFile(dir=out.parent, prefix=_staging_prefix(out)):
+        pass
     counts = checkpoint.statuses if checkpoint is not None else Counter()
     skipped = counts.total()
     has_checkpoint = checkpoint is not None
