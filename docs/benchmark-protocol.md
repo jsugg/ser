@@ -13,7 +13,8 @@ default is presumed. SER's eight labels (`ser-8-v1`, section 4.1) are the shippe
 A report supports these claims and no others: the model's UAR, macro-F1, per-class recall,
 confusion matrix and calibration error, with confidence intervals, on the test partition of each
 named dataset and aggregated per benchmark language (section 8.4), for speakers whose speech was in
-no train or dev partition of the bundle and, for `verified` provenance, in no data the model was
+no train or dev partition of the bundle (for a dataset without speaker identity: whose source
+collection is in no training set, 5.4) and, for `verified` provenance, in no data the model was
 fitted, tuned or calibrated on (section 6.1); whether model A beats model B (section 10.2); and
 whether the model passes the acceptance thresholds (section 10.4).
 
@@ -25,9 +26,9 @@ agreement with the owner's own reading of his recordings (E3-4); or about fairne
 demographic groups. No figure is pooled across datasets or languages.
 
 **Descriptive-only flags.** A result carrying a dataset flag (`identity_unresolved`, 5.2;
-`degenerate_label_set`, 4.3) or a model flag (`provenance_unknown`, `test_overlap`,
-`overlap_unverified`, 6.1) is reported and never enters sections 10.2 to 10.5, with the single
-exception of the U11 comparator of section 9.
+`degenerate_label_set`, 4.3; `source_in_training`, 6) or a model flag (`provenance_unknown`,
+`test_overlap`, `overlap_unverified`, 6.1) is reported and never enters sections 10.2 to 10.5,
+with the single exception of the U11 comparator of section 9.
 
 The only earlier result (RAVDESS accuracy 58.6%, UAR 56.8%, `fast` profile) came from a split by
 clip, not by speaker, and is not comparable with any figure produced here.
@@ -107,8 +108,8 @@ scored); **excluded** (not in the bundle).
 |---|---|---|---|---|---|
 | `ravdess` | `en` | acted, 24 actors | yes (actor in filename) | `cc-by-nc-sa-4.0` (`noncommercial`) | train/dev/test |
 | `crema-d` | `en` | acted, 91 actors | yes (actor in filename) | `odbl-1.0` (`share_alike`) | train/dev/test |
-| `mesd` | `es` (Mexican) | acted | to be verified by brief D4-2 | `cc-by-4.0` (`open`) | by the admission rule below |
-| `spanish-meacorpus-2023` | `es` | natural | to be verified by D4-2 | `cc-by-nc-4.0` (`noncommercial`) | by the admission rule below |
+| `mesd` | `es` (Mexican) | acted | none known; verified by brief D4-2 | `cc-by-4.0` (`open`) | test-only candidate (admission rule below) |
+| `spanish-meacorpus-2023` | `es` | natural | none known; verified by D4-2 | `cc-by-nc-4.0` (`noncommercial`) | test-only candidate (admission rule below) |
 | `escorpus-pe` | `es` (Peruvian) | — | — | `cc-by-4.0` (`open`) | excluded: valence/arousal values only, no named emotion categories |
 | `coraa-ser` | `pt` (Brazilian) | natural, 933 clips | — | `custom-research-only` (`research_only`) | excluded: neutral / non-neutral labels only, and Portuguese is not a benchmark language |
 | `msp-podcast` third-party mirror | `en` | natural | no | `msp-academic-license` (`academic_only`) | training-only (below) |
@@ -117,16 +118,16 @@ scored); **excluded** (not in the bundle).
 yet qualified. Each enters a bundle only through this route: brief D4-2 records, for the pinned
 source revision, (a) the raw category inventory and (b) whether each row carries an individual
 speaker id. If (a) differs from the dataset's map in section 4.1, the dataset is excluded until a
-new protocol version changes the map. Otherwise its role is train/dev/test if (b) holds, and it
-is excluded if not (section 5.4). The manifest records the D4-2
-record's SHA-256. A dataset not listed in this table enters only through a new protocol version.
+new protocol version changes the map. Otherwise its role is train/dev/test if (b) holds, and
+test-only if not (section 5.4). The manifest records the D4-2 record's SHA-256. A dataset not
+listed in this table enters only through a new protocol version.
 
 **Permission to train is separate from label qualification.** All catalogued data may be used to
 train private models. Whether a dataset's labels are benchmark ground truth is decided only by
 sections 3 and 4. A model trained on any dataset whose catalogue policy is not `open` is private.
 
 **The MSP-Podcast mirror is training-only.** It is not the official release and has no speaker
-identity and no official split; under section 5.4 it is never dev or test and never scored. Its
+identity and no official split; under section 5.4 it is training-only and never scored. Its
 56,157 rows whose label the mirror introduced rather than the source keep split `train` with
 `label: null` and reason `label_not_from_source`; they are never gold labels, and a model that uses
 their mirror labels as targets says so in its provenance list (section 6.1). An official
@@ -246,7 +247,8 @@ Seed: `17`. Every component is assigned by the first of these rules that applies
    `n_dev = n_test = max(1, R(0.2·n))`, `n_train = n − n_dev − n_test`.
 
    The first `n_train` components are train, the next `n_dev` dev, the rest test. For `n ≥ 3`
-   every count is at least 1.
+   every count is at least 1. This rule, and its `n < 3` exclusion, apply only to train/dev/test
+   datasets, which have speaker identity; a dataset without it bypasses them (5.4).
 4. **Role only.** A component with rows of test-only datasets only is test (reason
    `test_only_dataset`); one with rows of training-only datasets only is train (reason
    `training_only_dataset`).
@@ -258,11 +260,15 @@ gives 14/5/5 speakers; for `crema-d` (`n = 91`) 55/18/18. The seed is never chan
 
 ### 5.4 Rows without speaker identity
 
-A dataset without individual speaker identity is never dev or test; it may be training-only where
-the owner's licence decision allows it, as for the MSP-Podcast mirror (section 3), and it is still
-subject to the audio-hash check of 5.1. Otherwise it is excluded. A row without a node is train,
-reason `training_only_dataset`, if its dataset is training-only; otherwise it is excluded, reason
-`no_speaker_identity`.
+A dataset without per-clip speaker identity cannot be split, so it is used whole, in exactly one
+role, never split and never dev. By default it is **test-only**: none of it is used for fitting,
+tuning or calibration, and an official split it is distributed with is ignored (its official
+training part is not used for training). It counts for acceptance and selection like any other
+test set if it passes audit check A7 and the audio-hash checks of 5.1 and A4 against all training
+data. It is **training-only** only where the owner's licence decision assigns that role and its
+labels do not qualify for testing: today the MSP-Podcast mirror alone. A row without a node is
+test, reason `test_only_dataset`, in a test-only dataset; train, reason `training_only_dataset`,
+in a training-only dataset; otherwise excluded, reason `no_speaker_identity`.
 
 ### 5.5 Split ledger and digest
 
@@ -308,9 +314,10 @@ before every benchmark run and on its own. Checks, over all datasets together:
 | A4 shared audio | 0 non-null `audio_sha256` values appear in more than one of train, dev, test |
 | A5 duplicate audio | 0 non-null `audio_sha256` values appear twice among non-excluded rows |
 | A6 model data | section 6.1 |
+| A7 test-only sources | for each test-only dataset without speaker identity (5.4), no dataset with train rows shares a source collection with it, according to the dataset cards |
 
 A1 to A5 failing stops the run. A6 never stops the run; it sets the model's provenance level and
-flags.
+flags. A7 never stops the run; a dataset failing it carries `source_in_training`.
 
 ### 6.1 Model provenance
 
@@ -328,10 +335,11 @@ calibration, including a base model's:
 The flag `test_overlap` is set on a dataset's results when, for a `verified` model, a listed row
 is in that dataset's test partition, shares its speaker group with a test row, or has the
 `audio_sha256` of a test row; or, for any other model, its card or publisher list names that
-dataset or a speaker or recording of its test partition. The flag `overlap_unverified` is set on a
-test dataset's results when the model was trained on the MSP-Podcast mirror and the mirror's dataset
-card cannot rule out source recordings or speakers shared with that dataset. Both flags remove the
-result from clean comparison; they are flags, not provenance levels.
+dataset, its source collection, or a speaker or recording of its test partition. The flag
+`overlap_unverified` is set on a test dataset's results when the model was trained on the
+MSP-Podcast mirror and the mirror's dataset card cannot rule out source recordings or speakers
+shared with that dataset. Both flags remove the result from clean comparison; they are flags, not
+provenance levels.
 
 `verified` and `declared` models may enter confirmatory selection; `unknown` ones cannot. The
 owner's own recordings (E3-4) are free of overlap by construction; for a `declared` model they are
@@ -407,14 +415,18 @@ definitions equal scikit-learn's macro recall and macro F1 with `zero_division=0
 UAR, macro-F1, accuracy, per-class recall, precision and F1, the confusion matrix, ECE with its
 per-bin table, `n_rows`, `n_speakers`, `n_failed`, `coverage`, `rows_label_not_in_model`,
 `mean_out_of_set_mass`, and confidence intervals for UAR, macro-F1 and ECE. `n_speakers` is the
-number of test speaker groups. A dataset with fewer than 5 test speaker groups is flagged
-`underpowered`; its intervals are reported but are not reliable.
+number of test speaker groups, null for a dataset without speaker identity. A dataset with fewer
+than 5 test resampling units (8.3) is flagged `underpowered`; its intervals are reported but are
+not reliable.
 
 ### 8.3 Bootstrap confidence intervals
 
 - **Unit: the speaker group**, because rows of one speaker are correlated and the claim is about
   new speakers. The units of dataset `d` are its `S` test speaker groups in code-point order of
-  group id, fixed by the ledger, whatever their labels. `B = 10,000` resamples.
+  group id, fixed by the ledger, whatever their labels. For a dataset without speaker identity
+  (5.4) the unit is the row, its `S` test rows in `sample_id` order, and its intervals are flagged
+  `ci_utterance_unit`: such an interval is narrower than a speaker-level one would be, because
+  rows of one speaker are correlated. `B = 10,000` resamples.
 - **Random draws:** for each dataset, a generator `numpy.random.Generator(numpy.random.PCG64(s_d))`
   with `s_d` = the first 8 bytes, read as a big-endian unsigned integer, of SHA-256 of the UTF-8
   string `"17:bootstrap:" + d`. For `b = 0 … B−1`:
@@ -432,8 +444,8 @@ number of test speaker groups. A dataset with fewer than 5 test speaker groups i
 
 ### 8.4 Per language, never pooled
 
-For benchmark language `ℓ`, the **required datasets** `D_ℓ` are its datasets with the
-train/dev/test role in the bundle that carry no dataset flag of section 1. `D_ℓ` depends only on
+For benchmark language `ℓ`, the **required datasets** `D_ℓ` are its datasets with a train/dev/test
+or test-only role in the bundle that carry no dataset flag of section 1. `D_ℓ` depends only on
 the bundle, is the same for every model and baseline, and is frozen in the selection plan (10.5).
 Each dataset is weighted equally whatever its size:
 
@@ -443,7 +455,10 @@ Each dataset is weighted equally whatever its size:
 - its interval uses, for each `b`, the mean over `d ∈ D_ℓ` of the resample-`b` values (datasets are
   resampled independently, stratified by dataset). If a speaker group is in the test partition of
   two datasets of `D_ℓ`, independent draws misstate the uncertainty: the language intervals are
-  null and flagged `ci_unavailable_shared_groups`.
+  null and flagged `ci_unavailable_shared_groups`. If `D_ℓ` mixes speaker-level and
+  utterance-level units, the language intervals are null and flagged `ci_mixed_units`. Point
+  values are unaffected, so acceptance (10.4) is too; comparisons in that language are made per
+  dataset (10.2).
 
 Rows of different datasets are never merged into one confusion matrix or one metric. No figure
 across languages is computed.
@@ -454,7 +469,7 @@ across languages is computed.
 |---|---|---|
 | every metric, count-derived ratio and interval of a dataset | the dataset has no eligible row for the model (`N = 0`, including `|K| = 0`) | failed rows: they are counted, lower recall and block acceptance |
 | ECE and its interval | `N' = 0` | — |
-| an interval | some resample has no value (`ci_undefined`), or shared groups (`ci_unavailable_shared_groups`) | — |
+| an interval | some resample has no value (`ci_undefined`), shared groups (`ci_unavailable_shared_groups`), or mixed units (`ci_mixed_units`) | — |
 | a language value | `D_ℓ` is empty or any dataset value it averages is null | — |
 | a field the reference does not define | always: `chance` is analytic (its values are expectations under uniform guessing), so its confusion matrix, ECE, bins, intervals, `n_failed` and `coverage` are null | — |
 
@@ -494,11 +509,12 @@ ECE enters only acceptance (10.4).
 **Confirmatory comparisons** are made only between candidates of a frozen selection plan (10.5),
 on `D_ℓ` and `K*_d`, with the same resamples (8.3). For each resample `b`:
 `Δ_b = UAR_A,b − UAR_B,b` per dataset, and `Δ_ℓ,b` = mean of the dataset `Δ_b` over `D_ℓ`. The
-interval of `Δ_ℓ` is familywise-adjusted by Bonferroni: with `M` = the number of candidate pairs
-times the number of benchmark languages, fixed in the plan, the tail levels are `q = 0.025/M` and
-`1 − 0.025/M` (8.3). A beats B if, in every benchmark language, the adjusted `Δ_ℓ` interval is
-non-null and its upper end is not below 0, and in at least one its lower end is above 0.
-Otherwise A does not beat B.
+**required contrasts** are `Δ_ℓ` for each benchmark language, except that a language whose `D_ℓ`
+mixes units (8.4) contributes the dataset `Δ` of each `d ∈ D_ℓ` instead. Intervals are
+familywise-adjusted by Bonferroni: with `M` = the number of candidate pairs times the number of
+required contrasts, fixed in the plan, the tail levels are `q = 0.025/M` and `1 − 0.025/M` (8.3).
+A beats B if every required contrast's adjusted interval is non-null and its upper end is not
+below 0, and at least one's lower end is above 0. Otherwise A does not beat B.
 
 **Descriptive comparisons** use unadjusted 95% intervals, on `K*_d` or on `K_AB`; they are labelled
 descriptive and decide nothing.
@@ -710,10 +726,11 @@ test = S2.
 
 Only exact-content duplicates are detected, not re-encoded, trimmed or re-amplified copies or
 shared prompt texts. Acted corpora dominate; no conversational test set exists yet. If D4-2 finds
-no individual speaker identity in `mesd` or `spanish-meacorpus-2023`, `D_es` is empty and no model
-can be accepted. `declared` provenance cannot be checked row by row. Intervals depend on numpy's
-PCG64 stream, hence the recorded numpy version. A wall-clock timeout can fail a row on a slow
-machine.
+no speaker identity in `mesd` and `spanish-meacorpus-2023`, Spanish is tested only on test-only
+datasets with utterance-level intervals, which overstate precision (8.3), and no model was fitted
+on Spanish benchmark rows. `declared` provenance cannot be checked row by row. Intervals depend on
+numpy's PCG64 stream, hence the recorded numpy version. A wall-clock timeout can fail a row on a
+slow machine.
 
 ## 14. Relation to the existing quality gate
 
