@@ -11,7 +11,8 @@ import stat
 import sys
 import tempfile
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never, cast
@@ -213,6 +214,26 @@ def _read_checkpoint(out: Path, rows: list[_InputRow]) -> _Checkpoint | None:
     return _Checkpoint(counts, digest)
 
 
+@contextmanager
+def _output_lock(out: Path) -> Iterator[bool]:
+    try:
+        import fcntl
+    except ImportError:
+        yield False
+        return
+
+    lock = out.with_name(f".{out.name}.lock")
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise _InvalidBatch("Another batch owns the output lock.") from None
+        yield True
+    finally:
+        os.close(fd)
+
+
 def _publish(out: Path, lines: list[bytes], *, has_checkpoint: bool) -> None:
     staging: Path | None = None
     try:
@@ -234,6 +255,11 @@ def _publish(out: Path, lines: list[bytes], *, has_checkpoint: bool) -> None:
 
 def _run(args: _BatchArgs, settings: AppConfig) -> None:
     rows, out = _inputs(args)
+    with _output_lock(out):
+        _run_batch(args, settings, rows, out)
+
+
+def _run_batch(args: _BatchArgs, settings: AppConfig, rows: list[_InputRow], out: Path) -> None:
     checkpoint = _read_checkpoint(out, rows)
     counts = checkpoint.statuses if checkpoint is not None else Counter()
     skipped = counts.total()

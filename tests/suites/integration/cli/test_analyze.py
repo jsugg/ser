@@ -10,6 +10,8 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,21 @@ from ser._internal.features.feature_extractor import extract_feature_from_signal
 from ser.api import utterance_record_json_schema
 
 _PRIVATE = "caller-content-never-logged"
+_PAUSE_BEFORE_RENAME = """
+import os
+import sys
+from ser.__main__ import main
+
+output = sys.argv.pop(1)
+
+def pause_before_publish(event, args):
+    if event == "os.rename" and os.fspath(args[1]) == output:
+        print("ready to rename", file=sys.stderr, flush=True)
+        sys.stdin.buffer.read(1)
+
+sys.addaudithook(pause_before_publish)
+main()
+"""
 
 
 @pytest.fixture(scope="module")
@@ -218,23 +235,7 @@ def test_batch_killed_before_first_rename_publishes_nothing(
     manifest.write_text('{"id":"clip","path":"audio/missing.wav"}\n')
     out = tmp_path / "output.jsonl"
     args = ("--manifest", manifest, "--out", out, "--model", batch_model, "--allow-legacy-baseline")
-    script = """
-import os
-import signal
-import sys
-from ser.__main__ import main
-
-output = sys.argv.pop(1)
-
-def stop_before_publish(event, args):
-    if event == "os.rename" and os.fspath(args[1]) == output:
-        print("ready to rename", file=sys.stderr, flush=True)
-        os.kill(os.getpid(), signal.SIGSTOP)
-
-sys.addaudithook(stop_before_publish)
-main()
-"""
-    argv = [sys.executable, "-c", script, str(out), "analyze", *map(str, args)]
+    argv = [sys.executable, "-c", _PAUSE_BEFORE_RENAME, str(out), "analyze", *map(str, args)]
     _kill_after_event(argv, b"ready to rename")
     assert not out.exists()
     result = _run(*args)
@@ -242,9 +243,33 @@ main()
     assert [row["id"] for row in _rows(out)] == ["clip"]
 
 
-def _kill_after_event(argv: list[str], target: bytes) -> None:
+@pytest.mark.skipif(sys.platform != "linux", reason="POSIX output locking")
+def test_batch_refuses_concurrent_writer(tmp_path: Path, batch_model: Path) -> None:
+    manifest = tmp_path / "input.jsonl"
+    manifest.write_text(
+        '{"id":"first","path":"audio/x.wav"}\n{"id":"second","path":"audio/y.wav"}\n'
+    )
+    out = tmp_path / f"{_PRIVATE}.jsonl"
+    args = ("--manifest", manifest, "--out", out, "--model", batch_model, "--allow-legacy-baseline")
+    argv = [sys.executable, "-c", _PAUSE_BEFORE_RENAME, str(out), "analyze", *map(str, args)]
+    with _process_at_event(argv, b"ready to rename") as writer:
+        contender = _run(*args)
+        assert contender.returncode == 2, contender.stderr
+        assert contender.stdout == ""
+        assert contender.stderr == "ser analyze: Another batch owns the output lock.\n"
+        assert not out.exists()
+        stdout, stderr = writer.communicate(input=b"\n", timeout=30)
+        assert writer.returncode == 0, stderr
+        assert stdout == b""
+    assert [row["id"] for row in _rows(out)] == ["first", "second"]
+    assert out.with_name(f".{out.name}.lock").is_file()
+
+
+@contextmanager
+def _process_at_event(argv: list[str], target: bytes) -> Iterator[subprocess.Popen[bytes]]:
     with subprocess.Popen(
         argv,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
@@ -263,14 +288,19 @@ def _kill_after_event(argv: list[str], target: bytes) -> None:
                     pending = lines.pop()
                     if target in lines:
                         break
-            process.kill()
-            stdout, _ = process.communicate(timeout=10)
-            assert process.returncode == -signal.SIGKILL
-            assert stdout == b""
+            yield process
         finally:
             if process.returncode is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=10)
+
+
+def _kill_after_event(argv: list[str], target: bytes) -> None:
+    with _process_at_event(argv, target) as process:
+        process.kill()
+        stdout, _ = process.communicate(timeout=10)
+        assert process.returncode == -signal.SIGKILL
+        assert stdout == b""
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="SIGKILL process-resume proof")
