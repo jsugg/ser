@@ -210,7 +210,7 @@ class CremaDDatasetStrategy:
                 git_bin = _require_crema_d_git_tools()
                 logger.info("Repairing incomplete CREMA-D Git LFS checkout at %s", dataset_root)
                 for args, operation in (
-                    (("lfs", "install", "--local"), "Git LFS initialization"),
+                    (("lfs", "install", "--local", "--skip-repo"), "Git LFS initialization"),
                     (("lfs", "pull"), "Git LFS pull"),
                     (("lfs", "checkout"), "Git LFS checkout"),
                 ):
@@ -243,7 +243,7 @@ class CremaDDatasetStrategy:
                 operation="clone",
             )
             for args, operation in (
-                (("lfs", "install", "--local"), "Git LFS initialization"),
+                (("lfs", "install", "--local", "--skip-repo"), "Git LFS initialization"),
                 (("lfs", "pull"), "Git LFS pull"),
                 (("lfs", "checkout"), "Git LFS checkout"),
             ):
