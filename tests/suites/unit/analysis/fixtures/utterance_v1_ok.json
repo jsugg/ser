@@ -1,0 +1,53 @@
+{
+  "schema_version": "ser.utterance/v1",
+  "ser_version": "1.1.0",
+  "model_id": "medium-xlsr300m-head-bench1",
+  "model_sha256": "9f2c4a7e0b1d3f5a6c8e0a2b4d6f8a0c2e4a6c8e0b2d4f6a8c0e2a4c6e8a0b2d",
+  "label_set_id": "ravdess8/v1",
+  "labels": {
+    "angry": 0.07,
+    "calm": 0.11,
+    "disgust": 0.02,
+    "fearful": 0.05,
+    "happy": 0.09,
+    "neutral": 0.41,
+    "sad": 0.21,
+    "surprised": 0.04
+  },
+  "top_label": "neutral",
+  "confidence": 0.41,
+  "frames": [
+    {
+      "start_s": 0.0,
+      "end_s": 3.0,
+      "labels": {
+        "angry": 0.06,
+        "calm": 0.12,
+        "disgust": 0.02,
+        "fearful": 0.05,
+        "happy": 0.1,
+        "neutral": 0.4,
+        "sad": 0.21,
+        "surprised": 0.04
+      }
+    },
+    {
+      "start_s": 3.0,
+      "end_s": 6.2,
+      "labels": {
+        "angry": 0.08,
+        "calm": 0.1,
+        "disgust": 0.02,
+        "fearful": 0.05,
+        "happy": 0.08,
+        "neutral": 0.42,
+        "sad": 0.21,
+        "surprised": 0.04
+      }
+    }
+  ],
+  "dimensions": null,
+  "audio": {"duration_s": 6.2, "input_sample_rate_hz": 16000},
+  "status": "ok",
+  "timing_ms": {"features": 310, "predict": 4}
+}

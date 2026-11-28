@@ -1,0 +1,107 @@
+"""Backend seam: one model implementation per profile, loaded once per process."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import Literal, Protocol
+
+from ser._internal.utils.audio_utils import CanonicalAudio
+from ser.profiles import ProfileName
+from ser.runtime.contracts import LanguageHint, ModelFormat, ModelManifest
+
+
+@dataclass(frozen=True)
+class BackendFrame:
+    """Scores for one model window, in seconds of canonical audio. Descriptive only."""
+
+    start_s: float
+    end_s: float
+    labels: Mapping[str, float]
+
+
+@dataclass(frozen=True)
+class BackendScores:
+    """Backend output. ``labels`` is the one authority for the utterance scores."""
+
+    labels: Mapping[str, float]
+    frames: tuple[BackendFrame, ...]
+
+
+class AnalysisBackend(Protocol):
+    """A loaded model; holds no per-call state."""
+
+    def extract(self, audio: CanonicalAudio, *, deadline_monotonic_s: float) -> object:
+        """Computes model features from canonical audio."""
+        ...
+
+    def score(
+        self,
+        features: object,
+        *,
+        language: LanguageHint | None,
+        deadline_monotonic_s: float,
+    ) -> BackendScores:
+        """Scores features; ``language`` is the caller's validated hint."""
+        ...
+
+    def close(self) -> None:
+        """Releases the model."""
+        ...
+
+
+@dataclass(frozen=True)
+class BackendLoadRequest:
+    """Everything a loader receives; sent to the worker process on every start.
+
+    ``max_threads`` is ``None`` in inline isolation: a loader then leaves
+    process-wide thread settings alone. In the worker those are already capped.
+    """
+
+    artifact_format: ModelFormat
+    payload: bytes
+    manifest: ModelManifest
+    max_threads: int | None
+    device: Literal["cpu"] = "cpu"
+
+
+# Loaders must be module-level callables: they pickle by reference into the worker.
+type BackendLoader = Callable[[BackendLoadRequest], AnalysisBackend]
+
+
+def backend_loaders() -> Mapping[ProfileName, BackendLoader]:
+    """Returns the loader for each profile that analysis supports."""
+    raise NotImplementedError("Analysis backends are not implemented yet (briefs A1-2, A1-4).")
+
+
+def frame_layout(
+    duration_s: float, *, frame_size_s: float, stride_s: float
+) -> tuple[tuple[float, float], ...]:
+    """Windows of the ``fast`` backend.
+
+    Frame ``k`` starts at ``k * stride_s`` and ends at ``min(start + frame_size_s,
+    duration_s)``; frames are added until one reaches ``duration_s``. Audio no longer
+    than one frame gives the single frame ``(0, duration_s)``.
+    """
+    raise NotImplementedError("Frame layout is not implemented yet (brief A1-2).")
+
+
+def coverage_weighted_mean(frames: tuple[BackendFrame, ...], duration_s: float) -> dict[str, float]:
+    """The ``fast`` pooling rule: every instant of the utterance weighs the same.
+
+    Frame ``f`` weighs ``w_f``, the integral over ``f`` of ``1 / c(t)``, where ``c(t)``
+    counts the frames covering ``t``; the result is ``sum(w_f * p_f) / duration_s``.
+    """
+    raise NotImplementedError("Fast pooling is not implemented yet (brief A1-2).")
+
+
+__all__ = [
+    "AnalysisBackend",
+    "BackendFrame",
+    "BackendLoadRequest",
+    "BackendLoader",
+    "BackendScores",
+    "backend_loaders",
+    "coverage_weighted_mean",
+    "frame_layout",
+]
