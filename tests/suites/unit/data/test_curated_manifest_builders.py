@@ -314,11 +314,7 @@ def test_curated_single_class_subset_gets_the_release_diagnostic(
         subset = git_tree_sha1(
             {path.relative_to(root).as_posix(): git_blob_sha1(path) for path in root.rglob("*.wav")}
         )
-        module, constant, release = ravdess, "RAVDESS_AUDIO_TREE_SHA1", "Zenodo record 1188976"
-
-        def build() -> object:
-            return _build_ravdess(root, output, ledger)
-
+        pin, release = f"{ravdess.__name__}.RAVDESS_AUDIO_TREE_SHA1", "Zenodo record 1188976"
     else:
         ledger, _tree = _crema_d_tree(root)
         for path in (root / "AudioWAV").glob("*_SAD_*.wav"):
@@ -326,25 +322,27 @@ def test_curated_single_class_subset_gets_the_release_diagnostic(
         subset = git_tree_sha1(
             {path.name: git_lfs_pointer_sha1(path) for path in (root / "AudioWAV").glob("*.wav")}
         )
-        module, constant, release = crema_d, "CREMA_D_AUDIO_TREE_SHA1", "release v1.0"
+        pin, release = f"{crema_d.__name__}.CREMA_D_AUDIO_TREE_SHA1", "release v1.0"
 
-        def build() -> object:
-            return crema_d.build_crema_d_manifest_jsonl(
-                dataset_root=root,
-                dataset_glob_pattern="AudioWAV/**/*.wav",
-                emotion_code_map={"HAP": "happy", "SAD": "sad"},
-                default_language="en",
-                ontology=_ontology(),
-                max_failed_file_ratio=0.5,
-                output_path=output,
-                curation_ledger=ledger,
-            )
+    def build() -> object:
+        if corpus == "ravdess":
+            return _build_ravdess(root, output, ledger)
+        return crema_d.build_crema_d_manifest_jsonl(
+            dataset_root=root,
+            dataset_glob_pattern="AudioWAV/**/*.wav",
+            emotion_code_map={"HAP": "happy", "SAD": "sad"},
+            default_language="en",
+            ontology=_ontology(),
+            max_failed_file_ratio=0.5,
+            output_path=output,
+            curation_ledger=ledger,
+        )
 
     with pytest.raises(CurationLedgerError, match=f"does not match {release}"):
         build()
     assert not output.exists() and not source_manifest_path(output).exists()
 
-    monkeypatch.setattr(module, constant, subset)
+    monkeypatch.setattr(pin, subset)
 
     assert build() is None
     assert not output.exists() and not source_manifest_path(output).exists()
