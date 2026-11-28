@@ -40,7 +40,7 @@ def manifest(tmp_path: Path) -> Path:
 @pytest.fixture
 def no_model(monkeypatch: pytest.MonkeyPatch) -> None:
     def load(**kwargs: object) -> Never:
-        pytest.fail("The batch tried to load a model")
+        raise AssertionError("The batch tried to load a model")
 
     monkeypatch.setattr(UtteranceAnalyzer, "load", load)
 
