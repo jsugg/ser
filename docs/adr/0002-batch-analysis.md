@@ -16,16 +16,18 @@ list is validated before writing anything.
 
 ## Resume and publication
 
-Existing output must be a complete, newline-terminated prefix of the current
-input IDs in order. Those IDs are done, regardless of record status. Resume with
-unchanged inputs and options and one writer per output. Use a fresh output when
-files change or to retry a terminal status. If there is unfinished work, the first
-record's model digest pins the resume load; a completed output needs no model load.
+Resume from a checkpoint produced by this command. Existing output must be a
+complete, newline-terminated prefix of the current input IDs in order. Those IDs
+are done, regardless of record status. Resume with unchanged inputs and options
+and one writer per output. SER does not hash the audio or verify the source path
+for an existing ID. Use a fresh output when files change or to retry a terminal
+status. If there is unfinished work, the first record's model digest pins the
+resume load; a completed output needs no model load.
 
-Publish a chunk by writing the prior output plus new rows to a private temporary
-file in the output directory, flushing it with `fsync`, and atomically replacing
-the output there. A reader sees either the prior snapshot or the complete new
-one, never a partial line. After SIGKILL, at most the uncommitted chunk is
+Publish each chunk of up to 32 rows by writing the prior output plus new rows to
+a private temporary file in the output directory, flushing it with `fsync`, and
+atomically replacing the output there. A reader sees either the prior snapshot
+or the complete new one, never a partial line. After SIGKILL, at most one chunk is
 recomputed; abandoned temporary files are not results and can be removed once no
 writer is running. Copying the prefix at each checkpoint trades write volume for
 an ordinary, directly readable JSONL output. This is a process-crash guarantee,
@@ -44,5 +46,6 @@ Exit 0 means every input has a committed row, even if some statuses are not
 `ok`. Exit 2 means invalid CLI arguments, input, or existing output. Exit 1 means
 an operational failure (including input/output I/O or model load failure).
 Diagnostics never include paths, IDs, exception text, or audio. `--progress`
-reports count-only progress and `--summary` reports rows read, analysed this run,
-skipped, and status totals across both groups. Both write to stderr, not stdout.
+reports count-only progress, which can include rows not yet committed.
+`--summary` reports rows read, analysed this run, skipped, and status totals
+across both groups. Both write to stderr, not stdout.
