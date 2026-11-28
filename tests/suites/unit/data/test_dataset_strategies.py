@@ -13,15 +13,18 @@ import soundfile as sf
 
 import ser._internal.data.dataset_prepare as dataset_prepare
 import ser._internal.data.strategies.default as default_strategies
+from ser._internal.data.ontology import LabelOntology
 from ser._internal.data.strategies import (
     CremaDDatasetStrategy,
     DatasetStrategyRegistry,
     Emodb2DatasetStrategy,
+    MesdDatasetStrategy,
     PreparedManifestResult,
     RavdessDatasetStrategy,
     SpanishMeacorpus2023DatasetStrategy,
     build_default_dataset_strategies,
 )
+from ser.config import reload_settings
 
 
 def _write_crema_wav(dataset_root: Path) -> Path:
@@ -106,6 +109,21 @@ def test_source_override_support_is_only_enabled_for_msp() -> None:
     assert strategies["coraa-ser"].supports_source_overrides is False
     assert strategies["spanish-meacorpus-2023"].supports_source_overrides is False
     assert strategies["biic-podcast"].supports_source_overrides is False
+
+
+def test_mesd_manifest_rejects_external_labels(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="MESD does not accept external labels or audio paths"):
+        MesdDatasetStrategy().prepare_manifest(
+            settings=reload_settings(),
+            descriptor=dataset_prepare.SUPPORTED_DATASETS["mesd"],
+            dataset_root=tmp_path,
+            ontology=LabelOntology("test", frozenset({"angry"})),
+            manifest_path=tmp_path / "mesd.jsonl",
+            language="es",
+            labels_csv_path=tmp_path / "external.csv",
+            audio_base_dir=None,
+            options={},
+        )
 
 
 def test_crema_d_download_requires_git_lfs_before_clone(

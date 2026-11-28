@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 from sklearn.model_selection import train_test_split
 
 from ser._internal.data.adapters.ravdess import build_ravdess_utterances
+from ser._internal.data.catalog.public_datasets import MESD_CORPUS_ID
 from ser._internal.data.dataset_audit import audit_dataset_recipe
 from ser._internal.data.dataset_prepare import (
     prepare_from_registry_entry,
@@ -59,6 +60,13 @@ def _load_utterances_for_settings(
         raise RuntimeError("Strict dataset audit requires an explicit versioned dataset recipe.")
 
     def _validate_utterances(utterances: list[Utterance]) -> list[Utterance] | None:
+        training_rows = [row for row in utterances if row.corpus != MESD_CORPUS_ID]
+        if len(training_rows) != len(utterances):
+            logger.info(
+                "Excluded %d test-only MESD rows from training.",
+                len(utterances) - len(training_rows),
+            )
+        utterances = training_rows
         if not utterances:
             logger.warning("No manifest utterances loaded.")
             return None

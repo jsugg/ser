@@ -80,12 +80,51 @@ def test_generate_labels_from_audio_tree_writes_deterministic_rows(
     ]
 
 
-def test_infer_mesd_label_prefers_filename_prefix() -> None:
-    """MESD labels should resolve from canonical filename prefix."""
+@pytest.mark.parametrize(
+    ("name", "label"),
+    [
+        ("Anger_C_A_abajo.wav", "angry"),
+        ("Disgust_F_A_abajo.wav", "disgust"),
+        ("Fear_M_A_abajo.wav", "fearful"),
+        ("Happiness_C_A_abajo.wav", "happy"),
+        ("Neutral_M_A_abajo.wav", "neutral"),
+        ("Sadness_F_A_abajo.wav", "sad"),
+        ("Happiness_C_A_lento_dentro.wav", "happy"),
+        ("Happiness_F_B_L1_abuso.wav", None),
+        ("Anger_F_B_L2_abuso.wav", None),
+        ("angry/Unknown_C_A_abajo.wav", None),
+        ("Anger_X_A_abajo.wav", None),
+    ],
+)
+def test_infer_mesd_label_requires_a_documented_human_filename(
+    name: str, label: str | None
+) -> None:
+    assert downloads._infer_mesd_label(Path(name)) == label
 
-    assert downloads._infer_mesd_label(Path("Anger_C_A_abajo.wav")) == "angry"
-    assert downloads._infer_mesd_label(Path("Happiness_F_B_L1_abuso.wav")) == "happy"
-    assert downloads._infer_mesd_label(Path("Neutral_M_A_hola.wav")) == "neutral"
+
+def test_mesd_download_uses_pinned_mendeley_zip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from zipfile import ZipFile
+
+    def download(*, url: str, destination_path: Path) -> Path:
+        assert url == "https://data.mendeley.com/public-api/zip/cy34mh68j9/download/5"
+        with ZipFile(destination_path, "w") as archive:
+            archive.writestr("Anger_C_A_abajo.wav", b"fixture")
+        return destination_path
+
+    monkeypatch.setattr(downloads, "_download_file", download)
+    monkeypatch.setattr(
+        downloads, "_request_json", lambda *args, **kwargs: pytest.fail("No per-file requests")
+    )
+
+    artifacts = downloads.prepare_mesd_from_mendeley(dataset_root=tmp_path)
+
+    assert artifacts.files_seen == 1
+    assert artifacts.labels_csv_path is not None
+    assert artifacts.labels_csv_path.read_text(encoding="utf-8").endswith(
+        "raw/mesd-v5/Anger_C_A_abajo.wav,angry\n"
+    )
 
 
 def test_infer_escorpus_pe_label_maps_vad_triplets() -> None:
@@ -385,10 +424,10 @@ def test_prepare_mesd_from_mendeley_delegates_to_mendeley_helper(
     assert captured["dataset_root"] == tmp_path
     assert captured["dataset_id"] == downloads.MESD_MENDELEY_DATASET_ID
     assert captured["version"] == downloads.MESD_DEFAULT_VERSION
-    assert captured["extract_dir_name"] == "mesd"
+    assert captured["extract_dir_name"] == "mesd-v5"
     assert captured["labels_file_name"] == downloads.DEFAULT_LABELS_FILE_NAME
     assert captured["source_manifest_file_name"] == downloads.DEFAULT_SOURCE_MANIFEST_FILE_NAME
-    assert captured["download_mendeley_dataset_tree"] is downloads._download_mendeley_dataset_tree
+    assert captured["download_mendeley_dataset_tree"] is downloads._download_mendeley_archive_tree
     assert captured["generate_labels_from_audio_tree"] is downloads._generate_labels_from_audio_tree
     assert captured["infer_mesd_label"] is downloads._infer_mesd_label
     assert captured["write_source_manifest"] is downloads._write_source_manifest

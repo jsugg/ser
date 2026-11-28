@@ -41,7 +41,6 @@ from ser._internal.data.catalog.public_datasets import (
     MESD_CORPUS_ID,
     MESD_DATASET_LICENSE_ID,
     MESD_DATASET_POLICY_ID,
-    MESD_MANIFEST_SPEC,
     OREAU_FRENCH_ESD_CORPUS_ID,
     OREAU_FRENCH_ESD_DATASET_LICENSE_ID,
     OREAU_FRENCH_ESD_DATASET_POLICY_ID,
@@ -104,7 +103,6 @@ __all__ = [
     "build_emov_db_manifest_jsonl",
     "build_escorpus_pe_manifest_jsonl",
     "build_jl_corpus_manifest_jsonl",
-    "build_mesd_manifest_jsonl",
     "build_oreau_french_esd_manifest_jsonl",
     "build_pavoque_manifest_jsonl",
     "build_spanish_meacorpus_2023_manifest_jsonl",
@@ -179,30 +177,6 @@ def build_escorpus_pe_manifest_jsonl(
         max_failed_file_ratio=max_failed_file_ratio,
         output_path=output_path,
         spec=ESCORPUS_PE_MANIFEST_SPEC,
-    )
-
-
-def build_mesd_manifest_jsonl(
-    *,
-    dataset_root: Path,
-    labels_csv_path: Path,
-    audio_base_dir: Path | None,
-    ontology: LabelOntology,
-    default_language: str,
-    max_failed_file_ratio: float,
-    output_path: Path,
-) -> list[Utterance] | None:
-    """Builds utterances and persists a MESD JSONL manifest."""
-
-    return _build_manifest_jsonl(
-        dataset_root=dataset_root,
-        labels_csv_path=labels_csv_path,
-        audio_base_dir=audio_base_dir,
-        ontology=ontology,
-        default_language=default_language,
-        max_failed_file_ratio=max_failed_file_ratio,
-        output_path=output_path,
-        spec=MESD_MANIFEST_SPEC,
     )
 
 

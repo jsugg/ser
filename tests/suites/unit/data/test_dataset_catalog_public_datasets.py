@@ -9,6 +9,25 @@ from ser._internal.data.catalog.public_datasets import (
     PUBLIC_CSV_MANIFEST_SPECS,
     SPANISH_MEACORPUS_2023_CORPUS_ID,
 )
+from ser._internal.data.dataset_capabilities import resolve_dataset_capability_profile
+
+
+def test_escorpus_catalog_distinguishes_source_vad_and_research_terms() -> None:
+    profile = resolve_dataset_capability_profile("escorpus-pe")
+    assert profile.label_schema == "vad_only"
+    assert not profile.supervised_ser_candidate
+    assert any("research purposes" in note and "CC BY 4.0" in note for note in profile.notes)
+
+
+def test_meacorpus_catalog_does_not_imply_v2_can_be_rehydrated() -> None:
+    profile = resolve_dataset_capability_profile("spanish-meacorpus-2023")
+    assert any(
+        "18606423" in note
+        and "18246241" in note
+        and "neither CSV" in note
+        and "speaker IDs" in note
+        for note in profile.notes
+    )
 
 
 def test_public_csv_manifest_specs_are_indexed_by_corpus_id() -> None:
