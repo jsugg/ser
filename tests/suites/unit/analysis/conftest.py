@@ -42,7 +42,8 @@ def fast_feature_size() -> int:
 @pytest.fixture(scope="session")
 def model_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Directory whose name is a token that must never appear in logs or errors."""
-    return tmp_path_factory.mktemp("model-dir-token-91c2")
+    directory: Path = tmp_path_factory.mktemp("model-dir-token-91c2")
+    return directory
 
 
 @pytest.fixture(scope="session")
