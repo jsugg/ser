@@ -58,6 +58,8 @@ This project is not published on PyPI. The PyPI package named `ser` is a
 different project. There are no Git tags yet; tagged versions will be listed
 here once the first tag is cut.
 
+When upgrading to 1.1.0, install `ser[transcript]` to keep transcription, which a plain install no longer includes.
+
 To install an extra, pass a requirement such as
 `"ser[transcript] @ git+https://github.com/jsugg/ser.git"` to either installer.
 Transcription is requested by default for batch inference; install `transcript`
