@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import os
+import signal
 import sys
 import time
 from collections import deque
@@ -86,6 +87,17 @@ def _exit_on_parent_death(parent_sentinel: int) -> None:
     os._exit(1)
 
 
+def _arm_linux_parent_death(expected_parent_pid: int) -> None:
+    import ctypes
+
+    # The pipe watcher cannot run while native code holds the interpreter lock.
+    pr_set_pdeathsig = 1
+    if ctypes.CDLL(None).prctl(pr_set_pdeathsig, signal.SIGKILL, 0, 0, 0) != 0:
+        raise OSError("Could not arm the Linux worker parent-death signal.")
+    if os.getppid() != expected_parent_pid:
+        os._exit(1)
+
+
 def _worker_main(
     connection: Connection,
     request: BackendLoadRequest,
@@ -99,6 +111,8 @@ def _worker_main(
         if parent is not None:
             # Spawn supplies a dedicated parent pipe, separate from the work connection.
             Thread(target=_exit_on_parent_death, args=(parent.sentinel,), daemon=True).start()
+            if sys.platform == "linux" and parent.pid is not None:
+                _arm_linux_parent_death(parent.pid)
         threads = str(settings.max_threads)
         for key in (
             "OMP_NUM_THREADS",
