@@ -15,6 +15,7 @@ The repository currently keeps its architecture guidance in these maintained doc
 
 - [ADR 0001: Utterance analysis interface](0001-utterance-analysis.md)
 - [ADR 0004: Data-only fast model artifacts](0004-model-artifact-format.md)
+- [ADR 0006: Core install and extras](0006-core-install-and-extras.md)
 
 ## How this directory should be used
 

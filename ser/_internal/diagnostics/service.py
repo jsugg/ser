@@ -17,6 +17,7 @@ from ser._internal.transcript.backends import (
     CompatibilityIssueImpact,
     resolve_transcription_backend_adapter,
 )
+from ser._internal.transcript.backends.dependencies import missing_transcription_dependencies
 from ser._internal.transcript.runtime_policy import (
     DEFAULT_MPS_LOW_MEMORY_THRESHOLD_GB,
     resolve_transcription_runtime_policy,
@@ -256,13 +257,26 @@ def format_startup_preflight_one_liner(
     """Formats one single-line preflight summary for concise startup logging."""
     if not report.findings:
         return "Startup preflight: no findings."
-    primary = report.findings[0]
+    dependency_finding = next(
+        (
+            finding
+            for finding in report.findings
+            if finding.blocking
+            and (
+                finding.code.startswith("transcription_functional_missing_dependency_")
+                or finding.code == "runtime_capability_unavailable"
+            )
+        ),
+        None,
+    )
+    primary = dependency_finding or report.findings[0]
     additional = len(report.findings) - 1
     additional_suffix = f" (+{additional} more)" if additional > 0 else ""
     if primary.blocking or report.has_error:
+        detail = f"{primary.message} " if dependency_finding is not None else ""
         return (
             f"Startup preflight blocking issue [{primary.code}]{additional_suffix}. "
-            f"Execution halted. Run `{doctor_command}` for full details."
+            f"{detail}Execution halted. Run `{doctor_command}` for full details."
         )
     return (
         f"Startup preflight advisory [{primary.code}]{additional_suffix}. "
@@ -354,6 +368,16 @@ def _check_transcription_backend_compatibility(
     """Collects transcription backend compatibility findings for active profile."""
     profile_name = resolve_profile_name(settings)
     backend_id, model_name, use_demucs, use_vad = resolve_profile_transcription_config(profile_name)
+    missing = missing_transcription_dependencies(backend_id, use_demucs=use_demucs)
+    if missing is not None:
+        return (
+            DiagnosticFinding(
+                code=f"transcription_functional_missing_dependency_{backend_id}",
+                severity="error",
+                message=missing,
+                blocking=True,
+            ),
+        )
     torch_runtime = settings.torch_runtime
     requested_device = torch_runtime.device if isinstance(torch_runtime.device, str) else "cpu"
     requested_dtype = torch_runtime.dtype if isinstance(torch_runtime.dtype, str) else "auto"

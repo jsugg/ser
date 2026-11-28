@@ -45,6 +45,13 @@ after its first published distribution.
 
 ### Changed
 
+- **Breaking:** A plain install now provides the CPU-only `fast` core.
+  Install `ser[transcript]` and put `ffmpeg` on `PATH` for transcription.
+  The `medium` and `accurate` profiles need `ser[medium]`. The
+  `accurate-research` profile and corpus tooling need `ser[full]`
+  (`ser[all]` is an alias). Batch inference still requests transcripts by
+  default. For emotion-only predictions, pass `--no-transcript` on the CLI
+  or `include_transcript=False` in Python.
 - Audio read failures now raise the typed `AudioIntegrityError` and
   `AudioDecodeError` instead of a bare `OSError`, and preserve the underlying
   cause. Both subclass `OSError`, so existing handling keeps working.

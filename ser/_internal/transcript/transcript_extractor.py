@@ -35,6 +35,10 @@ class TranscriptionError(RuntimeError):
     """Raised when transcript extraction fails for operational reasons."""
 
 
+class TranscriptionDependencyError(TranscriptionError):
+    """Raised when dependencies for the requested transcription backend are missing."""
+
+
 class WhisperWord(Protocol):
     """Protocol for stable-whisper word-level transcript entries."""
 

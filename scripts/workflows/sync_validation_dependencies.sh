@@ -56,7 +56,7 @@ fi
 if [[ "$run_accurate_research" == "true" ]]; then
   sync_args+=(--extra full)
 else
-  sync_args+=(--extra medium)
+  sync_args+=(--extra medium --extra transcript)
 fi
 
 uv sync "${sync_args[@]}"
