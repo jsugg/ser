@@ -71,6 +71,10 @@ _DATASET_COMMAND_HELP = (
     "  ser doctor [--profile fast|medium|accurate|accurate-research] "
     "[--format text|json] [--strict]\n"
     "\n"
+    "Batch analysis:\n"
+    "  ser analyze (--manifest PATH | --dir PATH) --out PATH\n"
+    "  Run `ser analyze --help` for details.\n"
+    "\n"
     "Run `ser configure --help`, `ser data download --help`, and "
     "`ser doctor --help` for details."
 )
@@ -99,6 +103,10 @@ def _log_cli_records(records: Sequence[tuple[str, str]]) -> None:
 
 def _dispatch_subcommand(command: str, command_argv: Sequence[str], *, settings: AppConfig) -> None:
     """Runs one CLI subcommand and exits with its return code."""
+    if command == "analyze":
+        from ser._internal.analysis.batch import run_analyze_command
+
+        raise SystemExit(run_analyze_command(command_argv, settings=settings))
     try:
         if command == "configure":
             raise SystemExit(run_configure_command(list(command_argv), settings=settings))
@@ -118,7 +126,13 @@ def _dispatch_subcommand(command: str, command_argv: Sequence[str], *, settings:
 
 def _maybe_dispatch_subcommand(pre_remaining: Sequence[str], *, settings: AppConfig) -> bool:
     """Runs subcommand flow when one CLI subcommand is requested."""
-    if not pre_remaining or pre_remaining[0] not in {"configure", "data", "doctor", "models"}:
+    if not pre_remaining or pre_remaining[0] not in {
+        "analyze",
+        "configure",
+        "data",
+        "doctor",
+        "models",
+    }:
         return False
     _dispatch_subcommand(pre_remaining[0], pre_remaining[1:], settings=settings)
     return True
