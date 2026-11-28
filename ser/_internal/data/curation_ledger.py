@@ -165,6 +165,13 @@ def normalized_audio_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def media_digest(path: Path, cache: dict[Path, str]) -> str:
+    """Returns the current content hash of a file, computed once per cache."""
+    if path not in cache:
+        cache[path] = normalized_audio_sha256(path)
+    return cache[path]
+
+
 def git_blob_sha1(path: Path) -> bytes:
     """Returns the git blob id of a file's bytes."""
     digest = hashlib.sha1(f"blob {path.stat().st_size}\0".encode("ascii"))
@@ -257,7 +264,11 @@ def _dataset_root(rows: Sequence[Utterance]) -> Path | None:
 
 
 def apply_curation_ledger(
-    utterances: Sequence[Utterance], ledger: CurationLedger, *, strict: bool = True
+    utterances: Sequence[Utterance],
+    ledger: CurationLedger,
+    *,
+    strict: bool = True,
+    media_digests: dict[Path, str] | None = None,
 ) -> CurationResult:
     """Drops ledger-listed rows after checking every entry against the rows and the media.
 
@@ -266,7 +277,8 @@ def apply_curation_ledger(
     has the recorded content, and cover its whole duplicate group. A listed clip may be
     absent from the rows, as in a curated manifest; its file under the dataset root is
     checked instead. Rows without a dataset revision cannot be matched: strict mode
-    rejects them, otherwise their corpus is left uncurated.
+    rejects them, otherwise their corpus is left uncurated. ``media_digests`` caches the
+    current content hashes so a caller can reuse them.
     """
     by_id = {row.sample_id: row for row in utterances}
     rows_by_scope: defaultdict[tuple[str, str | None], list[Utterance]] = defaultdict(list)
@@ -313,7 +325,7 @@ def apply_curation_ledger(
         raise CurationLedgerError("A clip named as kept is also excluded by the ledger.")
 
     roots: dict[tuple[str, str], Path | None] = {}
-    current: dict[Path, str] = {}
+    current: dict[Path, str] = {} if media_digests is None else media_digests
 
     def clip_path(corpus: str, revision: str, sample_id: str) -> Path:
         row = by_id.get(sample_id)
@@ -330,9 +342,7 @@ def apply_curation_ledger(
         )
 
     def verify_media(sample_id: str, path: Path, expected: str) -> None:
-        if path not in current:
-            current[path] = normalized_audio_sha256(path)
-        if current[path] != expected:
+        if media_digest(path, current) != expected:
             raise CurationLedgerError(
                 f"Media of {sample_id!r} changed since its hash was recorded: expected "
                 f"{expected}, found {current[path]}. Rebuild the manifest and review the ledger."

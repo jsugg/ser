@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+import ser._internal.data.curation_ledger as curation_ledger
 from ser._internal.data.curation_ledger import (
     CurationLedger,
     CurationLedgerError,
@@ -264,6 +265,36 @@ def test_changed_media_of_a_duplicate_peer_fails(tmp_path: Path) -> None:
 
     with pytest.raises(CurationLedgerError, match="changed"):
         apply_curation_ledger(rows, ledger)
+
+
+@pytest.mark.parametrize("ledger_applied", [True, False])
+def test_strict_audit_fails_on_changed_media_of_a_row_outside_the_ledger(
+    tmp_path: Path, ledger_applied: bool
+) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    shutil.copyfile(tmp_path / "c.wav", tmp_path / "u0.wav")
+    curation = _ledger(rows) if ledger_applied else None
+    audited = rows if ledger_applied else rows[6:]
+
+    with pytest.raises(DatasetAuditError, match="'acted:u0.wav' changed"):
+        audit_dataset_recipe(audited, recipe=_recipe(), strict=True, curation=curation)
+
+
+def test_strict_audit_hashes_each_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = _rows_with_duplicates(tmp_path)
+    curated = [row for row in rows if row.sample_id not in {"acted:a.wav", "acted:e.wav"}]
+    calls: list[Path] = []
+
+    def counting(path: Path) -> str:
+        calls.append(path)
+        return normalized_audio_sha256(path)
+
+    monkeypatch.setattr(curation_ledger, "normalized_audio_sha256", counting)
+    audit_dataset_recipe(curated, recipe=_recipe(), strict=True, curation=_ledger(rows))
+
+    assert sorted(calls) == sorted(row.audio_path for row in rows)
 
 
 def test_strict_curation_rejects_rows_without_revision(tmp_path: Path) -> None:

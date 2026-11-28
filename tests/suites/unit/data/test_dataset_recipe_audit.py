@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
+import soundfile as sf
 
+from ser._internal.data.curation_ledger import normalized_audio_sha256
 from ser._internal.data.dataset_audit import DatasetAuditError, audit_dataset_recipe
 from ser._internal.data.manifest import MANIFEST_SCHEMA_VERSION, Utterance, VadTarget
 from ser._internal.data.recipe import CorpusRecipe, DatasetRecipe, route_utterance
@@ -51,6 +55,20 @@ def _row(
     )
 
 
+def _with_media(rows: list[Utterance], root: Path) -> list[Utterance]:
+    """Gives each row its own WAV under ``root`` and the matching content hash."""
+    root.mkdir(parents=True, exist_ok=True)
+    placed = []
+    for index, row in enumerate(rows):
+        path = root / f"{index}.wav"
+        rng = np.random.default_rng(index)
+        sf.write(path, rng.uniform(-0.5, 0.5, 400).astype(np.float32), 16_000)
+        placed.append(
+            replace(row, audio_path=path, normalized_audio_sha256=normalized_audio_sha256(path))
+        )
+    return placed
+
+
 def test_exact_and_approximate_labels_route_to_isolated_heads() -> None:
     """Approximate labels never train the public primary emotion head."""
     exact = route_utterance(
@@ -75,7 +93,7 @@ def test_exact_and_approximate_labels_route_to_isolated_heads() -> None:
     assert "primary_emotion" not in weak.tasks
 
 
-def test_audit_is_deterministic_grouped_and_exhaustively_accounted() -> None:
+def test_audit_is_deterministic_grouped_and_exhaustively_accounted(tmp_path: Path) -> None:
     """Per-corpus grouping is deterministic and every input receives one disposition."""
     rows = [
         _row(
@@ -87,6 +105,7 @@ def test_audit_is_deterministic_grouped_and_exhaustively_accounted() -> None:
         for index in range(1, 7)
     ]
     rows.append(_row("vad:1", label=None, speaker=None, digest="f" * 64, corpus="vad"))
+    rows = _with_media(rows, tmp_path)
 
     first = audit_dataset_recipe(rows, recipe=_recipe(), seed=9)
     second = audit_dataset_recipe(list(reversed(rows)), recipe=_recipe(), seed=9)
@@ -123,7 +142,7 @@ def test_non_strict_audit_quarantines_every_duplicate_deterministically() -> Non
     assert {entry.split for entry in first.ledger} == {"quarantined"}
 
 
-def test_manifest_digest_is_independent_of_install_root() -> None:
+def test_manifest_digest_is_independent_of_install_root(tmp_path: Path) -> None:
     """Moving identical content does not alter the reproducibility digest."""
     rows = [
         _row(
@@ -134,7 +153,9 @@ def test_manifest_digest_is_independent_of_install_root() -> None:
         )
         for index in range(1, 7)
     ]
-    moved = [replace(row, audio_path=Path("/other/root") / row.audio_path.name) for row in rows]
+    rows = _with_media(rows, tmp_path / "root")
+    shutil.copytree(tmp_path / "root", tmp_path / "other")
+    moved = [replace(row, audio_path=tmp_path / "other" / row.audio_path.name) for row in rows]
 
     first = audit_dataset_recipe(rows, recipe=_recipe(), seed=9)
     second = audit_dataset_recipe(moved, recipe=_recipe(), seed=9)

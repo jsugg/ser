@@ -6,12 +6,14 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from ser._internal.data.curation_ledger import (
     CurationExclusion,
     CurationLedger,
     apply_curation_ledger,
+    media_digest,
 )
 from ser._internal.data.manifest import SplitName, Utterance
 from ser._internal.data.recipe import (
@@ -162,6 +164,21 @@ def _validate_partition_isolation(entries: list[SplitLedgerEntry]) -> None:
                 )
 
 
+def _verify_recorded_media(utterances: list[Utterance], digests: dict[Path, str]) -> None:
+    for row in utterances:
+        try:
+            found = media_digest(row.audio_path, digests)
+        except (OSError, RuntimeError) as err:
+            raise DatasetAuditError(
+                f"Media of {row.sample_id!r} cannot be read ({err}); rebuild the manifest."
+            ) from err
+        if found != row.normalized_audio_sha256:
+            raise DatasetAuditError(
+                f"Media of {row.sample_id!r} changed since its hash was recorded: expected "
+                f"{row.normalized_audio_sha256}, found {found}. Rebuild the manifest."
+            )
+
+
 def audit_dataset_recipe(
     utterances: list[Utterance],
     *,
@@ -172,17 +189,22 @@ def audit_dataset_recipe(
 ) -> DatasetAuditReport:
     """Audits all rows, deduplicates content, and builds per-corpus split assignments.
 
-    Strict mode rejects missing revisions or hashes, duplicate content, leakage, and a
-    primary task with fewer than two populated classes. A curation ledger removes its
-    listed rows before auditing; they are counted and listed in the report.
+    Strict mode rejects missing revisions or hashes, duplicate content, leakage, a
+    primary task with fewer than two populated classes, and any row whose current media
+    no longer has its recorded hash. A curation ledger removes its listed rows before
+    auditing; they are counted and listed in the report.
     """
     recipe.validate()
+    input_rows = utterances
+    media_digests: dict[Path, str] = {}
     curation_excluded: tuple[CurationExclusion, ...] = ()
     if curation is not None:
         repeated = [key for key, n in Counter(row.sample_id for row in utterances).items() if n > 1]
         if repeated:
             raise DatasetAuditError(f"Duplicate sample_id {repeated[0]!r} across manifests.")
-        curated = apply_curation_ledger(utterances, curation, strict=strict)
+        curated = apply_curation_ledger(
+            utterances, curation, strict=strict, media_digests=media_digests
+        )
         utterances = list(curated.utterances)
         curation_excluded = curated.excluded
     sample_ids: set[str] = set()
@@ -320,6 +342,7 @@ def audit_dataset_recipe(
                 "Primary emotion evaluation classes are absent from train: "
                 + ", ".join(sorted(missing_train_labels))
             )
+        _verify_recorded_media(input_rows, media_digests)
 
     return DatasetAuditReport(
         recipe_id=recipe.recipe_id,
