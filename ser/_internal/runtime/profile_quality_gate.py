@@ -18,7 +18,10 @@ from ser._internal.data.data_loader import extract_ravdess_speaker_id_from_path
 from ser._internal.models.emotion_model import load_model, predict_emotions
 from ser._internal.repr import XLSRBackend
 from ser._internal.runtime.environment_plan import build_runtime_environment_plan
-from ser._internal.runtime.fast_public_boundary import ensure_legacy_fast_scoring
+from ser._internal.runtime.fast_public_boundary import (
+    ensure_legacy_fast_scoring,
+    raise_for_invalid_fast_revision,
+)
 from ser._internal.runtime.medium_inference import run_medium_inference
 from ser._internal.runtime.process_env import temporary_process_env
 from ser._internal.runtime.quality_gate_cli import (
@@ -535,7 +538,11 @@ def _build_fast_predictor(
         secure_model_file_name=secure_model_file_name,
         training_report_file_name=training_report_file_name,
     )
-    loaded_model = load_model(settings=artifact_settings)
+    try:
+        loaded_model = load_model(settings=artifact_settings)
+    except ValueError as err:
+        raise_for_invalid_fast_revision(err)
+        raise
     ensure_legacy_fast_scoring(loaded_model)
 
     def _predict(audio_path: str) -> Sequence[SegmentLike]:

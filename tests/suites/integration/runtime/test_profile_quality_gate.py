@@ -323,10 +323,10 @@ def test_build_fast_predictor_checks_contract_and_loads_once(
 ) -> None:
     """Fast gate predictor should preload model once and reuse it for all clips."""
     settings = reload_settings()
-    revision = (
-        fast_feature_contract(settings.feature_flags) if canonical else "handcrafted-v0-48000hz"
+    metadata = (
+        {"model_revision": fast_feature_contract(settings.feature_flags)} if canonical else {}
     )
-    loaded_model = SimpleNamespace(artifact_metadata={"model_revision": revision})
+    loaded_model = SimpleNamespace(artifact_metadata=metadata)
     loaded_calls: list[object] = []
     predict_calls: list[tuple[str, object | None]] = []
 

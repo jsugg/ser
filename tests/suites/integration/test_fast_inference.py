@@ -7,14 +7,17 @@ import re
 import threading
 import time
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 import pytest
+from sklearn.neural_network import MLPClassifier
 
 import ser._internal.models.training_support as training_support
 import ser.config as config
 from ser._internal.features.feature_extractor import fast_feature_contract
 from ser._internal.models import emotion_model
+from ser._internal.models.artifact_envelope import build_model_artifact
 from ser._internal.runtime import fast_public_boundary as fast_boundary
 from ser._internal.runtime.commands import classify_inference_exception
 from ser._internal.runtime.fast_inference import (
@@ -23,6 +26,7 @@ from ser._internal.runtime.fast_inference import (
     FastModelUnavailableError,
     run_fast_inference,
 )
+from ser._internal.runtime.profile_quality_gate import _build_fast_predictor
 from ser.runtime.contracts import InferenceRequest
 from ser.runtime.schema import OUTPUT_SCHEMA_VERSION, InferenceResult
 
@@ -162,6 +166,38 @@ def test_isolated_model_refusal_reaches_cli(monkeypatch: pytest.MonkeyPatch) -> 
     disposition = classify_inference_exception(refused.value)
     assert disposition.exit_code == 2
     assert disposition.message == _CONTRACT_REFUSAL
+
+
+@pytest.mark.parametrize("revision", ["handcrafted-v2-16000hz-mfcc", "", 123])
+@pytest.mark.parametrize("path", ["inference", "worker", "gate"])
+def test_legacy_paths_refuse_unsupported_artifact_revision(
+    tmp_path: Path, revision: object, path: str
+) -> None:
+    base = config.reload_settings()
+    settings = replace(base, models=replace(base.models, folder=tmp_path))
+    artifact = build_model_artifact(MLPClassifier(), 193, 8, ["happy", "sad"])
+    metadata = artifact["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["model_revision"] = revision
+    settings.models.model_file.write_bytes(pickle.dumps(artifact))
+    request = InferenceRequest(file_path="sample.wav", language="en", save_transcript=False)
+    error_type = FastModelLoadError if path == "inference" else fast_boundary.FastModelLoadError
+
+    with pytest.raises(error_type) as refused:
+        if path == "inference":
+            run_fast_inference(request, settings)
+        elif path == "worker":
+            fast_boundary._prepare_fast_process_operation(
+                fast_boundary.FastProcessPayload(request, settings)
+            )
+        else:
+            _build_fast_predictor(
+                model_file_name=settings.models.model_file_name,
+                secure_model_file_name=settings.models.secure_model_file_name,
+                training_report_file_name=settings.models.training_report_file_name,
+                settings=settings,
+            )
+    assert str(refused.value) == _CONTRACT_REFUSAL
 
 
 def test_fast_timeout_retries_up_to_configured_budget(

@@ -10,7 +10,6 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Literal
 
-from ser._internal.features.feature_extractor import CANONICAL_FAST_FEATURE_CONTRACT_PREFIX
 from ser._internal.models.emotion_model import LoadedModel, load_model, predict_emotions_detailed
 from ser._internal.runtime.phase_contract import PHASE_EMOTION_INFERENCE, PHASE_EMOTION_SETUP
 from ser._internal.runtime.phase_timing import (
@@ -90,18 +89,32 @@ class FastModelLoadError(RuntimeError):
     """Spawn-safe fast worker error marker for model load failures."""
 
 
+_CONTRACT_REFUSAL = (
+    "This fast model was trained on canonical audio. This command path does not score it yet."
+)
+
+
+def raise_for_invalid_fast_revision(
+    error: ValueError, error_factory: Callable[[str], Exception] = FastModelLoadError
+) -> None:
+    """Recover the revision validation error wrapped by artifact candidate resolution."""
+    cause: BaseException | None = error
+    while cause is not None:
+        if isinstance(cause, ValueError) and cause.args == (
+            "Model artifact metadata contains invalid 'model_revision' value.",
+        ):
+            raise error_factory(_CONTRACT_REFUSAL) from error
+        cause = cause.__cause__
+
+
 def ensure_legacy_fast_scoring(
     loaded_model: LoadedModel,
     error_factory: Callable[[str], Exception] = FastModelLoadError,
 ) -> None:
-    """Refuse canonical fast models before native-rate feature extraction."""
+    """Native-rate fast models have no recorded feature contract."""
     metadata = loaded_model.artifact_metadata or {}
-    revision = metadata.get("model_revision")
-    if isinstance(revision, str) and revision.startswith(CANONICAL_FAST_FEATURE_CONTRACT_PREFIX):
-        raise error_factory(
-            "This fast model was trained on canonical audio. "
-            "This command path does not score it yet."
-        )
+    if metadata.get("model_revision") is not None:
+        raise error_factory(_CONTRACT_REFUSAL)
 
 
 def _load_fast_model_for_worker(
@@ -120,6 +133,7 @@ def _load_fast_model_for_worker(
         except FileNotFoundError as err:
             raise FastModelUnavailableError(str(err)) from err
         except ValueError as err:
+            raise_for_invalid_fast_revision(err)
             raise FastModelLoadError(
                 "Failed to load fast-profile model artifact from configured paths."
             ) from err
@@ -198,6 +212,7 @@ def run_fast_inference_from_public_boundary(
             except FileNotFoundError as err:
                 raise model_unavailable_error_type(str(err)) from err
             except ValueError as err:
+                raise_for_invalid_fast_revision(err, model_load_error_type)
                 raise model_load_error_type(
                     "Failed to load fast-profile model artifact from configured paths."
                 ) from err
