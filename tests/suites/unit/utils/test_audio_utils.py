@@ -1,14 +1,176 @@
 """Behavior tests for audio normalization and decoding guards."""
 
+import hashlib
+import subprocess
+import sys
 from pathlib import Path
+from textwrap import dedent
+from typing import cast
 
 import numpy as np
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+from numpy.typing import NDArray
 
 import ser._internal.utils.audio_utils as au
 from ser.config import AudioReadConfig
 
 pytestmark = pytest.mark.filterwarnings("ignore:path is deprecated.*:DeprecationWarning")
+
+
+@pytest.mark.parametrize("rate", [8_000, 16_000, 44_100, 48_000])
+def test_canonical_audio_preserves_band_limited_signal(rate: int) -> None:
+    def signal(sample_rate: int) -> NDArray[np.float64]:
+        time = np.arange(sample_rate) / sample_rate
+        envelope = np.sin(np.pi * time) ** 2
+        return np.asarray(
+            envelope
+            * (0.4 * np.sin(2 * np.pi * 440 * time) + 0.25 * np.sin(2 * np.pi * 3_200 * time)),
+            dtype=np.float64,
+        )
+
+    canonical = au.to_canonical_audio(signal(rate), rate)
+
+    assert canonical.sample_rate == 16_000
+    assert canonical.original_sample_rate == rate
+    assert canonical.duration_seconds == 1.0
+    assert canonical.samples.shape == (16_000,)
+    assert canonical.samples.dtype == np.float32
+    np.testing.assert_allclose(canonical.samples, signal(16_000), atol=2e-5, rtol=0)
+
+
+def test_canonical_audio_preserves_16khz_mono_float32_samples() -> None:
+    samples = np.asarray([-0.5, -0.0, 0.25, 0.75], dtype=np.float32)
+
+    canonical = au.to_canonical_audio(samples, 16_000)
+
+    assert canonical.samples.dtype == np.float32
+    assert canonical.samples.tobytes() == samples.tobytes()
+    assert not np.shares_memory(canonical.samples, samples)
+    assert canonical.duration_seconds == 4 / 16_000
+
+
+def test_canonical_audio_averages_channels_without_changing_input() -> None:
+    stereo = np.asarray([[0.5, 0.0], [1.0, -0.5], [2.0, 0.0]], dtype=np.float64)
+    original = stereo.copy()
+
+    canonical = au.to_canonical_audio(stereo, 16_000)
+
+    np.testing.assert_array_equal(canonical.samples, [0.25, 0.25, 0.5])
+    np.testing.assert_array_equal(stereo, original)
+    assert canonical.duration_seconds == 3 / 16_000
+
+
+def test_canonical_audio_accepts_explicit_channels_first_layout() -> None:
+    stereo = np.asarray([[0.5, 1.0, 0.0], [0.0, -0.5, 0.75]], dtype=np.float32)
+
+    canonical = au.to_canonical_audio(stereo, 16_000, channel_axis=0)
+
+    np.testing.assert_array_equal(canonical.samples, [0.25, 0.25, 0.375])
+    assert canonical.duration_seconds == 3 / 16_000
+
+
+def test_canonical_audio_rejects_invalid_channel_axis() -> None:
+    with pytest.raises(ValueError, match="channel_axis"):
+        au.to_canonical_audio(np.ones((3, 2)), 16_000, channel_axis=2)
+
+
+def test_canonical_audio_rejects_lists_with_value_error() -> None:
+    samples = cast(NDArray[np.generic], [0.1, 0.2])
+
+    with pytest.raises(ValueError, match="NumPy array"):
+        au.to_canonical_audio(samples, 16_000)
+
+
+def test_canonical_audio_has_identical_bytes_in_fresh_interpreter() -> None:
+    frames = np.arange(48_000, dtype=np.int32)
+    samples = np.stack((frames % 31 - 15, frames % 13 - 6), axis=1).astype(np.int16)
+    canonical = au.to_canonical_audio(samples, 48_000)
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            dedent("""\
+                import hashlib
+                import sys
+
+                import numpy as np
+
+                from ser._internal.utils.audio_utils import to_canonical_audio
+
+                samples = np.frombuffer(sys.stdin.buffer.read(), dtype=np.int16).reshape(-1, 2)
+                canonical = to_canonical_audio(samples, 48_000)
+                print(hashlib.sha256(canonical.samples.tobytes()).hexdigest())
+                """),
+        ],
+        input=samples.tobytes(),
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+
+    assert (
+        child.stdout.decode("ascii").strip()
+        == hashlib.sha256(canonical.samples.tobytes()).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("scale", [2**15, 2**31])
+def test_canonical_audio_scales_signed_pcm_to_full_scale(scale: int) -> None:
+    dtype = np.int16 if scale == 2**15 else np.int32
+    samples = np.asarray([-scale, -scale // 2, 0, scale // 2, scale - 1], dtype=dtype)
+
+    canonical = au.to_canonical_audio(samples, 16_000)
+
+    expected = np.asarray([-1, -0.5, 0, 0.5, (scale - 1) / scale], dtype=np.float32)
+    np.testing.assert_array_equal(canonical.samples, expected)
+
+
+def test_canonical_audio_centers_unsigned_pcm() -> None:
+    samples = np.asarray([0, 64, 128, 192, 255], dtype=np.uint8)
+
+    canonical = au.to_canonical_audio(samples, 16_000)
+
+    np.testing.assert_array_equal(canonical.samples, [-1.0, -0.5, 0.0, 0.5, 127 / 128])
+
+
+@pytest.mark.parametrize(
+    ("samples", "rate", "match"),
+    [
+        (np.empty(0), 16_000, "at least one sample"),
+        (np.empty((3, 0)), 16_000, "at least one sample"),
+        (np.asarray([np.nan]), 16_000, "finite"),
+        (np.asarray([[0.0, np.inf]]), 16_000, "finite"),
+        (np.asarray([-np.inf]), 16_000, "finite"),
+        (np.ones(1), 0, "sample_rate"),
+        (np.ones(1), -1, "sample_rate"),
+        (np.ones(1), 16_000.5, "sample_rate"),
+        (np.ones((1, 1, 1)), 16_000, "shape"),
+        (np.asarray(0.5), 16_000, "shape"),
+        (np.asarray([1j]), 16_000, "dtype"),
+    ],
+)
+def test_canonical_audio_rejects_invalid_input(
+    samples: NDArray[np.generic], rate: int, match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        au.to_canonical_audio(samples, rate)
+
+
+@given(
+    values=st.lists(st.floats(-2, 2, width=32), min_size=1, max_size=100),
+    rate=st.integers(1_000, 192_000),
+)
+def test_canonical_audio_has_deterministic_length_and_range(values: list[float], rate: int) -> None:
+    samples = np.asarray(values, dtype=np.float32)
+
+    canonical = au.to_canonical_audio(samples, rate)
+
+    assert canonical.samples.shape == ((len(values) * 16_000 + rate - 1) // rate,)
+    assert canonical.duration_seconds == len(values) / rate
+    assert np.all(np.abs(canonical.samples) <= 1.0)
+    assert canonical.samples.tobytes() == au.to_canonical_audio(samples, rate).samples.tobytes()
 
 
 def test_prepare_audio_buffer_converts_stereo_to_mono() -> None:
