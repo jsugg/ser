@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 from tests.suites.unit.analysis._contract import (
     INLINE,
     assert_valid_record,
@@ -18,6 +19,26 @@ from tests.suites.unit.analysis._stand_ins import CANONICAL_RATE_HZ, tone, write
 from tests.suites.unit.analysis._synthetic_artifacts import write_artifact
 
 from ser.api import AnalysisConfig
+
+
+@pytest.mark.usefixtures("scripted")
+def test_oversized_wav_reports_source_without_reading_samples(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wav = write_wav(tmp_path / "long.wav", tone(2.0))
+
+    def unexpected_read(*args: object, **kwargs: object) -> None:
+        pytest.fail("The decoder read samples past its configured source duration limit.")
+
+    monkeypatch.setattr(sf.SoundFile, "read", unexpected_read)
+    with load_artifact(
+        write_artifact(tmp_path / "model.ser"),
+        AnalysisConfig(isolation="inline", max_duration_s=1.0),
+    ) as analyzer:
+        record = analyzer.analyze(wav)
+
+    assert record["status"] == "too_long"
+    assert record["audio"] == {"duration_s": 2.0, "input_sample_rate_hz": CANONICAL_RATE_HZ}
 
 
 def _missing(directory: Path) -> Path:

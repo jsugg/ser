@@ -28,6 +28,9 @@ with UtteranceAnalyzer.load(profile="fast", model_path=path,
     record = analyzer.analyze(samples, sample_rate_hz=48_000, language="es")
 ```
 
+In a script, put the worker-mode `load` call under `if __name__ == "__main__":`
+so Python's spawn process can import the main module safely.
+
 ## Decisions
 
 Each decision gives the rule, then the reason, then the tests that pin it.

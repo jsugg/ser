@@ -103,10 +103,14 @@ def run_pipeline(
     if time.monotonic() >= deadline_monotonic_s():
         return PipelineOutcome("timeout", None, duration, rate, 0, 0)
     if job.path is not None:
-        decoded = audio_input.decode_file(job.path)
+        decoded = audio_input.decode_file(job.path, max_duration_s=config.max_duration_s)
         if isinstance(decoded, audio_input.UnreadableAudio):
             return finish("unreadable")
         rate = decoded.sample_rate_hz
+        if isinstance(decoded, audio_input.OversizedAudio):
+            duration = decoded.duration_s
+            report_duration(duration, rate)
+            return finish("too_long")
         duration = len(decoded.samples) / rate
         report_duration(duration, rate)
     else:

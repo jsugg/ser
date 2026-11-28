@@ -145,3 +145,15 @@ def test_inline_isolation_checks_the_deadline_between_stages_only(tmp_path: Path
     record = _analyse(analyzer, tone(1.0))
     assert record["status"] == "timeout"
     assert record["timing_ms"]["predict"] == 1_500
+
+
+@pytest.mark.usefixtures("virtual_analysis_time")
+def test_inline_expired_extraction_never_starts_scoring(tmp_path: Path) -> None:
+    config = AnalysisConfig(isolation="inline", timeout_floor_s=0.5, timeout_per_audio_second=0.1)
+    path = write_artifact(
+        tmp_path / "model.ser", script={"extract_elapsed_s": 1.5, "score_elapsed_s": 0.1}
+    )
+    with load_artifact(path, config) as analyzer:
+        record = _analyse(analyzer, tone(1.0))
+    assert record["status"] == "timeout"
+    assert record["timing_ms"] == {"features": 1_500, "predict": 0}
