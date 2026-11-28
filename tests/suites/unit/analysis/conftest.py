@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 from tests.suites.unit.analysis import _scripted_backend
-from tests.suites.unit.analysis._contract import IoGuard, io_guard, read_only_directory
+from tests.suites.unit.analysis._contract import _ANALYZERS, IoGuard, io_guard, read_only_directory
 from tests.suites.unit.analysis._stand_ins import (
     CANONICAL_RATE_HZ,
     LABELS,
@@ -31,6 +31,12 @@ import ser._internal.analysis.worker as worker_module
 from ser._internal.features.feature_extractor import extract_feature_from_signal
 from ser._internal.utils import audio_utils
 from ser._internal.utils.audio_utils import CanonicalAudio
+
+
+@pytest.fixture(autouse=True)
+def close_analyzers() -> Iterator[None]:
+    yield
+    _ANALYZERS.close()
 
 
 @pytest.fixture(scope="session")

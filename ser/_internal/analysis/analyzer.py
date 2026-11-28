@@ -16,7 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ser import __version__
-from ser._internal.analysis import artifact, backend
+from ser._internal.analysis import artifact, backend, worker
 from ser._internal.analysis.errors import (
     AnalysisClosedError,
     AnalysisModelLoadError,
@@ -34,7 +34,6 @@ from ser.profiles import ProfileName
 from ser.runtime.contracts import AnalysisConfig, AnalysisTargets, LanguageHint, ModelManifest
 from ser.runtime.schema import UTTERANCE_SCHEMA_VERSION, UtteranceFrame, UtteranceRecord
 
-_NOT_IMPLEMENTED = "UtteranceAnalyzer is not implemented yet (brief A1-2)."
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -185,7 +184,7 @@ class _InlineSession:
 class _LoadedSession:
     manifest: ModelManifest
     config: AnalysisConfig
-    runner: _InlineSession
+    runner: _InlineSession | worker.WorkerSupervisor
 
 
 def _record(manifest: ModelManifest, outcome: PipelineOutcome) -> UtteranceRecord:
@@ -294,12 +293,24 @@ class UtteranceAnalyzer:
             allow_legacy_baseline=allow_legacy_baseline,
             settings=settings,
         )
-        if config.isolation != "inline":
-            raise NotImplementedError(_NOT_IMPLEMENTED)
         request = backend.BackendLoadRequest(
-            manifest.artifact_format, opened.payload, manifest, None
+            manifest.artifact_format,
+            opened.payload,
+            manifest,
+            config.max_threads if config.isolation == "worker" else None,
         )
-        return cls(_LoadedSession(manifest, config, _InlineSession(request, loader)))
+        runner: _InlineSession | worker.WorkerSupervisor
+        if config.isolation == "inline":
+            runner = _InlineSession(request, loader)
+        else:
+            runner = worker.WorkerSupervisor(
+                request,
+                loader,
+                worker.WorkerSettings(
+                    config.max_threads, config.worker_nice, config.worker_start_timeout_s
+                ),
+            )
+        return cls(_LoadedSession(manifest, config, runner))
 
     @staticmethod
     def inspect_model(

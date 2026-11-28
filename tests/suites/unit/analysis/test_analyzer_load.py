@@ -47,7 +47,6 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_safe_artifact_manifest_is_its_verified_identity_and_licence(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser")
@@ -158,7 +157,6 @@ def test_an_artifact_for_another_profile_is_a_load_error(tmp_path: Path) -> None
         load_artifact(path)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(
     "training_audio",
@@ -178,11 +176,12 @@ def test_non_canonical_training_audio_is_a_baseline_on_opt_in_only(
 
     with pytest.raises(AnalysisModelNotConformingError):
         load_artifact(path)
-    analyzer = UtteranceAnalyzer.load(profile="fast", model_path=path, allow_legacy_baseline=True)
-
-    assert analyzer.model_manifest.baseline is True
-    assert analyzer.model_manifest.identity.model_id == f"baseline:test-model@{sha256}"
-    record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+    with UtteranceAnalyzer.load(
+        profile="fast", model_path=path, allow_legacy_baseline=True
+    ) as analyzer:
+        assert analyzer.model_manifest.baseline is True
+        assert analyzer.model_manifest.identity.model_id == f"baseline:test-model@{sha256}"
+        record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
     assert record["model_id"] == f"baseline:test-model@{sha256}"
 
 
@@ -278,7 +277,6 @@ def test_incompatible_legacy_files_are_load_errors_with_clean_tracebacks(
     assert "token-91c2" not in "".join(traceback.format_exception(error))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_backend_that_cannot_start_is_a_load_error(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"fail_load": True})
@@ -289,7 +287,6 @@ def test_a_backend_that_cannot_start_is_a_load_error(tmp_path: Path) -> None:
     assert _scripted_backend.SECRET not in "".join(traceback.format_exception(raised.value))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.parametrize("profile", ["accurate", "accurate-research"])
 def test_profile_without_an_analysis_backend_is_a_usage_error(
     fast_model_path: Path, profile: ProfileName
@@ -300,15 +297,14 @@ def test_profile_without_an_analysis_backend_is_a_usage_error(
         )
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_second_backend_serves_its_own_profile(tmp_path: Path) -> None:
     path = write_artifact(
         tmp_path / "medium.ser", profile="medium", backend_id="scripted-medium", model_id="m-1"
     )
 
-    analyzer = UtteranceAnalyzer.load(profile="medium", model_path=path)
-    record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
+    with UtteranceAnalyzer.load(profile="medium", model_path=path) as analyzer:
+        record = analyzer.analyze(tone(1.0), sample_rate_hz=CANONICAL_RATE_HZ)
 
     assert analyzer.model_manifest.identity.profile == "medium"
     assert record["status"] == "ok" and record["model_id"] == "m-1"

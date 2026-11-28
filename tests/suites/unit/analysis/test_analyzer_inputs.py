@@ -59,7 +59,6 @@ def test_samples_and_float_wav_of_the_same_audio_give_the_same_record(
     assert without_timing(from_samples) == without_timing(from_file)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("rate", [8_000, 44_100, 48_000])
 def test_every_input_rate_is_resampled_to_the_same_scores(tmp_path: Path, rate: int) -> None:
@@ -78,7 +77,6 @@ def test_every_input_rate_is_resampled_to_the_same_scores(tmp_path: Path, rate: 
         assert record["audio"]["duration_s"] == pytest.approx(2.0, abs=1e-3)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_stereo_is_mixed_by_the_canonical_conversion_not_by_dropping_a_channel(
     tmp_path: Path,
@@ -186,7 +184,6 @@ def test_integer_pcm_wav_is_accepted(tmp_path: Path, fast_model_path: Path) -> N
     assert analyzer.analyze(wav)["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("language", [None, "en", "es", "pt"])
 def test_the_language_hint_reaches_the_backend(

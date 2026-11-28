@@ -100,7 +100,6 @@ def test_a_failing_legacy_model_is_a_model_error(failing_model_path: Path) -> No
     assert_valid_record(record, analyzer.model_manifest)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("config", [AnalysisConfig(), INLINE], ids=["worker", "inline"])
 def test_a_raising_backend_is_a_model_error_that_leaks_nothing(
@@ -131,7 +130,6 @@ _INVALID_SCORES: dict[str, Mapping[str, object]] = {
 }
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize("script", list(_INVALID_SCORES.values()), ids=list(_INVALID_SCORES))
 def test_invalid_backend_scores_are_a_model_error(

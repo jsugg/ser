@@ -17,7 +17,6 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 from tests.suites.unit.analysis._contract import (
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
 )
@@ -69,7 +68,6 @@ def test_deadline_is_the_floor_or_two_seconds_per_audio_second(
 _BRANCHES = AnalysisConfig(timeout_floor_s=2.0, timeout_per_audio_second=1.0)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(
     ("seconds", "sleep_s"),
@@ -85,7 +83,6 @@ def test_both_deadline_branches_allow_work_within_them(
     assert _analyse(analyzer, tone(seconds))["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_hung_backend_times_out_on_time_and_the_worker_comes_back(
     tmp_path: Path, spies: Counter[str]
@@ -105,7 +102,6 @@ def test_a_hung_backend_times_out_on_time_and_the_worker_comes_back(
     assert spies["read_model_file"] == 1
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_call_that_times_out_in_the_queue_does_not_evict_the_running_one(
     tmp_path: Path, spies: Counter[str]
@@ -127,7 +123,6 @@ def test_a_call_that_times_out_in_the_queue_does_not_evict_the_running_one(
     assert spies["start_worker"] == 1
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_worker_that_dies_is_a_model_error_and_is_replaced(
     tmp_path: Path, spies: Counter[str]
@@ -146,7 +141,6 @@ def test_a_worker_that_dies_is_a_model_error_and_is_replaced(
     assert spies["read_model_file"] == 1
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_a_failed_restart_is_a_model_error_and_the_next_call_retries(tmp_path: Path) -> None:
     config = AnalysisConfig(timeout_floor_s=1.0, timeout_per_audio_second=0.5)

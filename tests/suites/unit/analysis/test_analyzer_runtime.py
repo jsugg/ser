@@ -38,7 +38,6 @@ def _analyse(analyzer: UtteranceAnalyzer, samples: NDArray[np.float32]) -> Utter
     return analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_the_model_is_read_and_started_once_for_many_analyses(
     tmp_path: Path, spies: Counter[str]
@@ -51,7 +50,6 @@ def test_the_model_is_read_and_started_once_for_many_analyses(
     assert (spies["read_model_file"], spies["start_worker"]) == (1, 1)
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inline_loads_the_backend_once(tmp_path: Path) -> None:
     analyzer = load_artifact(write_artifact(tmp_path / "m.ser", script={"name": "once"}), INLINE)
@@ -195,7 +193,6 @@ def test_two_analyzers_in_two_threads_are_independent(
     assert sequential[0][0]["model_sha256"] != sequential[1][0]["model_sha256"]
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inline_calls_on_one_instance_never_overlap_in_the_backend(tmp_path: Path) -> None:
     script = {"gate": "held", "exclusive": True}
@@ -215,7 +212,6 @@ def test_inline_calls_on_one_instance_never_overlap_in_the_backend(tmp_path: Pat
     assert statuses == ("ok", "ok")
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_inline_instances_do_not_serialise_each_other(tmp_path: Path) -> None:
     holder = load_artifact(write_artifact(tmp_path / "a.ser", script={"gate": "g"}), INLINE)
@@ -234,7 +230,6 @@ def test_inline_instances_do_not_serialise_each_other(tmp_path: Path) -> None:
     assert second["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_close_waits_for_the_call_in_flight(tmp_path: Path) -> None:
     analyzer = load_artifact(write_artifact(tmp_path / "m.ser", script={"gate": "c"}), INLINE)
@@ -266,7 +261,6 @@ def test_close_is_idempotent_and_ends_the_analyzer(
         _analyse(analyzer, tone(1.0))
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(
     ("failure", "expected"),
@@ -280,3 +274,16 @@ def test_interrupts_and_memory_errors_propagate_inline(
 
     with pytest.raises(expected):
         _analyse(analyzer, tone(1.0))
+
+
+@pytest.mark.usefixtures("scripted")
+@_MODES
+def test_context_exit_closes_before_an_explicit_close(
+    tmp_path: Path, config: AnalysisConfig
+) -> None:
+    with load_artifact(write_artifact(tmp_path / "model.ser"), config) as analyzer:
+        assert _analyse(analyzer, tone(1.0))["status"] == "ok"
+
+    with pytest.raises(AnalysisClosedError):
+        _analyse(analyzer, tone(1.0))
+    analyzer.close()

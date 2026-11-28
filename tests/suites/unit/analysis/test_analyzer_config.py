@@ -13,7 +13,6 @@ import threadpoolctl
 from numpy.typing import NDArray
 from tests.suites.unit.analysis._contract import (
     INLINE,
-    NOT_IMPLEMENTED,
     assert_valid_record,
     load_artifact,
 )
@@ -120,7 +119,6 @@ def test_exact_silence_threshold_is_not_silent(tmp_path: Path) -> None:
         assert analyzer.analyze(samples, sample_rate_hz=CANONICAL_RATE_HZ)["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 def test_performance_targets_are_not_enforced(tmp_path: Path) -> None:
     path = write_artifact(tmp_path / "model.ser", script={"extract_sleep_s": 1.0})
@@ -131,7 +129,6 @@ def test_performance_targets_are_not_enforced(tmp_path: Path) -> None:
     assert record["status"] == "ok"
 
 
-@NOT_IMPLEMENTED
 @pytest.mark.usefixtures("scripted")
 @pytest.mark.parametrize(("nice", "threads"), [(19, 2), (5, 1)], ids=["default", "custom"])
 def test_worker_runs_at_low_priority_with_capped_threads_and_no_gpu(

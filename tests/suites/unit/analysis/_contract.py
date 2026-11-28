@@ -15,7 +15,7 @@ import sys
 import types
 import typing
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +32,7 @@ from ser.api import (
 
 PROBABILITY_SUM_TOLERANCE = 1e-6
 INLINE = AnalysisConfig(isolation="inline")
+_ANALYZERS = ExitStack()
 
 NOT_IMPLEMENTED = pytest.mark.xfail(
     strict=True,
@@ -45,8 +46,10 @@ def load_baseline(
     config: AnalysisConfig | None = None,
 ) -> UtteranceAnalyzer:
     """Loads a legacy ``fast`` pickle, which only loads as an explicit baseline."""
-    return UtteranceAnalyzer.load(
-        profile="fast", model_path=model_path, allow_legacy_baseline=True, config=config
+    return _ANALYZERS.enter_context(
+        UtteranceAnalyzer.load(
+            profile="fast", model_path=model_path, allow_legacy_baseline=True, config=config
+        )
     )
 
 
@@ -55,7 +58,9 @@ def load_artifact(
     config: AnalysisConfig | None = None,
 ) -> UtteranceAnalyzer:
     """Loads a synthetic safe artifact as a conforming ``fast`` model."""
-    return UtteranceAnalyzer.load(profile="fast", model_path=model_path, config=config)
+    return _ANALYZERS.enter_context(
+        UtteranceAnalyzer.load(profile="fast", model_path=model_path, config=config)
+    )
 
 
 def assert_valid_record(record: UtteranceRecord, manifest: ModelManifest) -> None:
