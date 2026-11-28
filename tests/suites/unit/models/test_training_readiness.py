@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from types import MappingProxyType, ModuleType
 from typing import cast
 
 import numpy as np
+import psutil
 import pytest
 import soundfile as sf
 from hypothesis import given
@@ -161,6 +163,68 @@ def test_valid_tiny_audio_inventory_passes_and_writes_atomic_report(tmp_path: Pa
     assert resolved == tuple(samples)
     assert report_path.is_file()
     assert not list(report_path.parent.glob(f".{report_path.name}.*"))
+
+
+def _simulate_linux_host_memory(
+    monkeypatch: pytest.MonkeyPatch, *, free_mib: int, available_mib: int
+) -> None:
+    """Makes both host memory probes report the given MemFree and MemAvailable."""
+    mib = 1024 * 1024
+    page_size = 4096
+    real_sysconf = os.sysconf
+    real_memory = psutil.virtual_memory()
+
+    def _sysconf(name: str | int) -> int:
+        if name == "SC_AVPHYS_PAGES":
+            return free_mib * mib // page_size
+        if name in {"SC_PAGE_SIZE", "SC_PAGESIZE"}:
+            return page_size
+        return real_sysconf(name)
+
+    monkeypatch.setattr(os, "sysconf", _sysconf)
+    monkeypatch.setattr(
+        psutil,
+        "virtual_memory",
+        lambda: real_memory._replace(free=free_mib * mib, available=available_mib * mib),
+    )
+
+
+def test_readiness_ignores_low_free_memory_when_page_cache_is_reclaimable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Linux host with little MemFree but ample MemAvailable is ready to train."""
+    _simulate_linux_host_memory(monkeypatch, free_mib=300, available_mib=11 * 1024)
+
+    report, _ = run_training_readiness(
+        settings=_settings(tmp_path),
+        load_utterances=lambda: _inventory(tmp_path),
+        report_path=tmp_path / "reports" / "readiness.json",
+    )
+
+    assert [finding.message for finding in report.findings if finding.blocking] == []
+    assert report.ready is True
+
+
+def test_readiness_blocks_when_available_memory_is_below_requirement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _simulate_linux_host_memory(monkeypatch, free_mib=100, available_mib=200)
+
+    report, _ = run_training_readiness(
+        settings=_settings(tmp_path),
+        load_utterances=lambda: _inventory(tmp_path),
+        report_path=tmp_path / "reports" / "readiness.json",
+    )
+
+    assert report.ready is False
+    assert any(
+        finding.reason_code is FailureReasonCode.RESOURCE_LIMIT
+        and finding.blocking
+        and "memory" in finding.message
+        for finding in report.findings
+    )
 
 
 def test_readiness_logs_start_phase_and_done_events(
