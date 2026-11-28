@@ -392,18 +392,22 @@ def apply_curation_ledger(
             continue
         for entry in members:
             kept_id = cast(str, entry.kept_sample_id)
-            kept_path = clip_path(corpus, revision, kept_id)
             kept = by_id.get(kept_id)
+            if kept is None or (kept.corpus, kept.dataset_revision) != (corpus, revision):
+                raise CurationLedgerError(
+                    f"Ledger entry {entry.sample_id!r}: its kept clip {kept_id!r} is not a row "
+                    f"of {corpus} revision {revision!r} in the manifest, so neither copy would "
+                    "remain. Rebuild the manifest from the full release."
+                )
             found = by_id.get(entry.sample_id)
-            if kept is not None and (
-                kept.normalized_audio_sha256 != digest
-                or (found is not None and kept.label != found.label)
+            if kept.normalized_audio_sha256 != digest or (
+                found is not None and kept.label != found.label
             ):
                 raise CurationLedgerError(
                     f"Ledger entry {entry.sample_id!r} names kept clip {kept_id!r} that "
                     "differs in content or carries another label."
                 )
-            verify_media(kept_id, kept_path, digest)
+            verify_media(kept_id, kept.audio_path, digest)
 
     return CurationResult(
         utterances=tuple(row for row in utterances if row.sample_id not in excluded),
