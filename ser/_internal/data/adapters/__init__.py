@@ -12,6 +12,7 @@ from .crema_d import (
     build_crema_d_manifest_jsonl,
     build_crema_d_utterances,
 )
+from .mesd import build_mesd_manifest_jsonl
 from .msp_podcast import (
     MSP_PODCAST_CORPUS_ID,
     build_msp_podcast_manifest_jsonl,
@@ -38,7 +39,6 @@ from .public_csv_datasets import (
     build_emov_db_manifest_jsonl,
     build_escorpus_pe_manifest_jsonl,
     build_jl_corpus_manifest_jsonl,
-    build_mesd_manifest_jsonl,
     build_oreau_french_esd_manifest_jsonl,
     build_pavoque_manifest_jsonl,
     build_spanish_meacorpus_2023_manifest_jsonl,

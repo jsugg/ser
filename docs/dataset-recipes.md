@@ -30,6 +30,28 @@ supervised validation or test. Approximate mappings are routed to `raw_emotion`,
 eight-class primary head. The `calm` output remains part of the runtime contract and is not inferred
 from neutral or sleepy labels.
 
+## MESD v5: Spanish test only
+
+Run `ser data download --dataset mesd` to install the pinned Mendeley release
+(`10.17632/cy34mh68j9.5`, CC BY 4.0). Run the same command with `--skip-download` to
+rebuild from the extracted release; external labels and audio paths are not accepted.
+The manifest contains 861 distinct human recordings,
+including child voices (`voice_type: C`, alongside adult `F` and `M`). The six source
+emotions map to the same emotions in SER's ontology. There are no per-clip speaker IDs.
+The dataset root's `mesd-dispositions.csv` accounts for every source file, including the
+288 naturalness-reduced WAVs, one byte-identical copy, and two non-audio files.
+`mesd-SHA256SUMS` records raw-file hashes relative to `raw/mesd-v5`; the manifest records
+normalized PCM hashes separately. Preparation verifies the extracted inventory against
+a pinned SHA-256 before writing these artifacts. The disposition ledger is authoritative:
+the download-time `labels.csv` lists filename labels before deduplication, and
+`source_manifest.json` reports acquisition counts, not test-set membership.
+
+The training loader excludes MESD. Load its JSONL with the MESD dataset root as
+`base_dir` to resolve the relative audio paths. Every row
+has the project-assigned `split: test`, not a source `native_split`. The recipe audit
+honors a complete explicit split assignment even without speaker IDs; without it, these
+rows land in `ssl_only`. MESD alone cannot satisfy strict training audit requirements.
+
 ## Reproducibility artifacts
 
 The audit emits canonical recipe, manifest, and split-ledger SHA-256 digests. Artifact envelope v3

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ser._internal.data.adapters.mesd import build_mesd_manifest_jsonl
 from ser._internal.data.adapters.public_csv_datasets import (
     build_asvp_esd_manifest_jsonl,
     build_att_hack_manifest_jsonl,
@@ -15,7 +16,6 @@ from ser._internal.data.adapters.public_csv_datasets import (
     build_emov_db_manifest_jsonl,
     build_escorpus_pe_manifest_jsonl,
     build_jl_corpus_manifest_jsonl,
-    build_mesd_manifest_jsonl,
     build_oreau_french_esd_manifest_jsonl,
     build_pavoque_manifest_jsonl,
     build_spanish_meacorpus_2023_manifest_jsonl,
@@ -171,15 +171,50 @@ class EscorpusPeDatasetStrategy(_AutoCsvLabelsDatasetStrategy):
         )
 
 
-class MesdDatasetStrategy(_AutoCsvLabelsDatasetStrategy):
+class MesdDatasetStrategy:
     """Strategy for MESD dataset operations."""
 
-    def __init__(self) -> None:
-        super().__init__(
-            dataset_label="MESD",
-            download_preparer=prepare_mesd_from_mendeley,
-            manifest_builder=build_mesd_manifest_jsonl,
+    supports_source_overrides = False
+
+    def download(
+        self,
+        *,
+        descriptor: DatasetDescriptor,
+        dataset_root: Path,
+        source_repo_id: str | None,
+        source_revision: str | None,
+    ) -> tuple[str | None, str | None]:
+        artifacts = prepare_mesd_from_mendeley(dataset_root=dataset_root)
+        logger.info(
+            "MESD source prepared (wav_files=%d human_labels=%d source_manifest=%s)",
+            artifacts.files_seen,
+            artifacts.labels_written,
+            artifacts.source_manifest_path,
         )
+        return (None, None)
+
+    def prepare_manifest(
+        self,
+        *,
+        settings: AppConfig,
+        descriptor: DatasetDescriptor,
+        dataset_root: Path,
+        ontology: LabelOntology,
+        manifest_path: Path,
+        language: str,
+        labels_csv_path: Path | None,
+        audio_base_dir: Path | None,
+        options: dict[str, str],
+    ) -> PreparedManifestResult:
+        if labels_csv_path is not None or audio_base_dir is not None:
+            raise ValueError("MESD does not accept external labels or audio paths.")
+        rows = build_mesd_manifest_jsonl(
+            dataset_root=dataset_root, ontology=ontology, output_path=manifest_path
+        )
+        logger.info(
+            "Prepared %d MESD test rows; see mesd-dispositions.csv for exclusions.", len(rows)
+        )
+        return PreparedManifestResult(manifest_paths=(manifest_path,), options=options)
 
 
 class OreauFrenchEsdDatasetStrategy(_AutoCsvLabelsDatasetStrategy):

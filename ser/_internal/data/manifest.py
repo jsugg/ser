@@ -179,6 +179,7 @@ class Utterance:
     dataset_policy_id: str | None = None
     dataset_license_id: str | None = None
     source_url: str | None = None
+    voice_type: str | None = None
 
     def require_label(self) -> str:
         """Returns the primary label or raises at a supervised-only boundary."""
@@ -310,6 +311,7 @@ class Utterance:
             dataset_policy_id=_read_text_field(record, "dataset_policy_id"),
             dataset_license_id=_read_text_field(record, "dataset_license_id"),
             source_url=_read_text_field(record, "source_url"),
+            voice_type=_read_text_field(record, "voice_type"),
         )
         utterance.validate(ontology=ontology)
         return utterance
@@ -347,6 +349,7 @@ class Utterance:
             "dataset_policy_id": self.dataset_policy_id,
             "dataset_license_id": self.dataset_license_id,
             "source_url": self.source_url,
+            "voice_type": self.voice_type,
         }
         record.update((key, value) for key, value in optional_fields.items() if value is not None)
         return record

@@ -230,6 +230,23 @@ def test_load_utterances_prefers_manifest_when_configured(
     assert all(item.audio_path.is_absolute() for item in utterances)
 
 
+def test_training_loader_excludes_mesd_even_from_an_explicit_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "combined.jsonl"
+    manifest_path.write_text(
+        '{"sample_id":"mesd:a","corpus":"mesd","audio_path":"a.wav","label":"happy"}\n'
+        '{"sample_id":"ravdess:b","corpus":"ravdess","audio_path":"b.wav","label":"happy"}\n'
+        '{"sample_id":"ravdess:c","corpus":"ravdess","audio_path":"c.wav","label":"sad"}\n',
+        encoding="utf-8",
+    )
+    settings = _build_settings()
+    settings.dataset.manifest_paths = (manifest_path,)
+
+    utterances = dl.load_utterances(settings=cast(AppConfig, settings))
+
+    assert utterances is not None
+    assert [row.sample_id for row in utterances] == ["ravdess:b", "ravdess:c"]
+
+
 def test_strict_dataset_audit_requires_explicit_recipe() -> None:
     """The strict safety flag cannot silently become a no-op."""
     settings = _build_settings(max_failed_file_ratio=1.0)

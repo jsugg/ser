@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
+
+from ser._internal.data.catalog.public_datasets import MESD_MANIFEST_SPEC
 
 _TOKEN_LABEL_MAP: dict[str, str] = {
     "anger": "angry",
@@ -53,14 +56,9 @@ _TOKEN_LABEL_MAP: dict[str, str] = {
     "mepris": "contempt",
 }
 
-_MESD_PREFIX_MAP: dict[str, str] = {
-    "anger": "angry",
-    "disgust": "disgust",
-    "fear": "fearful",
-    "happiness": "happy",
-    "neutral": "neutral",
-    "sadness": "sad",
-}
+_MESD_NAME = re.compile(
+    r"(Anger|Disgust|Fear|Happiness|Neutral|Sadness)_([FMC])_([AB])_(?:(L[12])_)?(.+)"
+)
 
 _ESCORPUS_PE_VAD_PATTERN = re.compile(r"-(\d{2})-(\d{2})-(\d{2})$")
 
@@ -98,13 +96,36 @@ def infer_escorpus_pe_label(path: Path) -> str | None:
     return "neutral"
 
 
+@dataclass(frozen=True)
+class MesdFilename:
+    """Source metadata encoded in a MESD v5 WAV filename."""
+
+    emotion: str
+    voice_type: str
+    reduction_level: str | None
+
+    @property
+    def label(self) -> str:
+        return MESD_MANIFEST_SPEC.label_mapping[self.emotion.lower()]
+
+
+def parse_mesd_filename(path: Path) -> MesdFilename | None:
+    """Parses the documented human and naturalness-reduced filename formats."""
+    match = _MESD_NAME.fullmatch(path.stem) if path.suffix == ".wav" else None
+    if match is None:
+        return None
+    emotion, voice_type, corpus, reduction_level, word = match.groups()
+    if not all(token.isalpha() and token.islower() for token in word.split("_")):
+        return None
+    if reduction_level is not None and (voice_type, corpus) != ("F", "B"):
+        return None
+    return MesdFilename(emotion, voice_type, reduction_level)
+
+
 def infer_mesd_label(path: Path) -> str | None:
-    """Infers one MESD label from filename prefix with token fallback."""
-    first = path.stem.split("_", maxsplit=1)[0].strip().lower()
-    mapped = _MESD_PREFIX_MAP.get(first)
-    if mapped is not None:
-        return mapped
-    return infer_label_from_path_tokens(path)
+    """Returns an exact categorical label for a human MESD clip only."""
+    parsed = parse_mesd_filename(path)
+    return parsed.label if parsed is not None and parsed.reduction_level is None else None
 
 
 def infer_att_hack_label(path: Path) -> str | None:

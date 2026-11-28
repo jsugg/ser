@@ -95,7 +95,7 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
         dataset_id="escorpus-pe",
         summary="Peruvian Spanish speech corpus with filename-encoded VAD dimensions.",
         modalities=("audio", "dimensional_annotations"),
-        label_schema="vad_heuristic_to_canonical",
+        label_schema="vad_only",
         has_label_mapping=False,
         supervised_ser_candidate=False,
         ssl_candidate=True,
@@ -107,7 +107,8 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
             "representation_learning",
         ),
         notes=(
-            "VAD triplets are converted to weak categorical proxies; not recommended as a primary supervised target.",
+            "The source provides only VAD; SER's legacy categorical labels are heuristic proxies.",
+            "The authors restrict use to research purposes despite the Zenodo CC BY 4.0 tag.",
         ),
     ),
     "mesd": DatasetCapabilityProfile(
@@ -116,16 +117,12 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
         modalities=("audio", "metadata"),
         label_schema="emotion_mapped_to_canonical",
         has_label_mapping=True,
-        supervised_ser_candidate=True,
-        ssl_candidate=True,
+        supervised_ser_candidate=False,
+        ssl_candidate=False,
         multimodal_candidate=False,
         mergeable_with_emotion_ontology=True,
-        recommended_uses=(
-            "supervised_ser_training",
-            "cross_lingual_emotion_transfer",
-            "ssl_pretraining",
-        ),
-        notes=("Labels inferred from canonical filename prefixes.",),
+        recommended_uses=("test_only",),
+        notes=("Human clips only; F/M/C voice type is not speaker identity.",),
     ),
     "oreau-french-esd": DatasetCapabilityProfile(
         dataset_id="oreau-french-esd",
@@ -280,7 +277,13 @@ _PROFILES: dict[str, DatasetCapabilityProfile] = {
             "audio_text_emotion_fusion",
             "ssl_pretraining",
         ),
-        notes=("Zenodo ships metadata/transcripts; audio needs local rehydration from YouTube.",),
+        notes=(
+            "Zenodo v2 (18606423) omits the YouTube IDs and time bounds in v1 (18246241); "
+            "the upstream rehydration script works with neither CSV alone. Neither version "
+            "supplies speaker IDs, and v1 video IDs overlap across the published train/test split.",
+            "The authors' CC BY-NC 4.0 terms apply to annotations, transcriptions and metadata, "
+            "not YouTube audio.",
+        ),
     ),
     "biic-podcast": DatasetCapabilityProfile(
         dataset_id="biic-podcast",

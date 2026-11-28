@@ -18,13 +18,17 @@ from pathlib import Path
 from ser._internal.data import archive_extraction as archive_extraction_helpers
 from ser._internal.data import jl_corpus_downloads as jl_corpus_download_helpers
 from ser._internal.data import mendeley_dataset_preparation as mendeley_dataset_preparation_helpers
-from ser._internal.data import mendeley_downloads as mendeley_download_helpers
 from ser._internal.data import openslr_dataset_preparation as openslr_dataset_preparation_helpers
 from ser._internal.data import openslr_downloads as openslr_download_helpers
 from ser._internal.data import openslr_resolution as openslr_resolution_helpers
 from ser._internal.data import provider_dataset_preparation as provider_dataset_preparation_helpers
 from ser._internal.data import provider_downloads as provider_download_helpers
 from ser._internal.data import zenodo_downloads as zenodo_download_helpers
+from ser._internal.data.catalog.public_datasets import (
+    MESD_DEFAULT_VERSION,
+    MESD_EXTRACT_DIR_NAME,
+    MESD_MENDELEY_DATASET_ID,
+)
 from ser._internal.data.provider_dataset_preparation import (
     AutoDownloadArtifacts,
     GeneratedLabelsStats,
@@ -65,9 +69,6 @@ RAVDESS_ZENODO_ARCHIVE_KEY = "Audio_Speech_Actors_01-24.zip"
 OREAU_FRENCH_ESD_ZENODO_RECORD_ID = "4405783"
 OREAU_FRENCH_ESD_RAR_KEYS = ("Or\u00e9auFR_01.rar", "Or\u00e9auFR_02.rar")
 OREAU_FRENCH_ESD_DOC_KEY = "Doc_FR.rar"
-
-MESD_MENDELEY_DATASET_ID = "cy34mh68j9"
-MESD_DEFAULT_VERSION = 5
 
 JL_CORPUS_KAGGLE_DATASET_REF = "tli725/jl-corpus"
 JL_CORPUS_HF_DATASET_ID = "CLAPv2/JL-Corpus"
@@ -535,19 +536,19 @@ def prepare_escorpus_pe_from_zenodo(*, dataset_root: Path) -> AutoDownloadArtifa
     )
 
 
-def _download_mendeley_dataset_tree(
+def _download_mendeley_archive_tree(
     *,
     dataset_id: str,
     version: int,
     destination_root: Path,
 ) -> int:
-    return mendeley_download_helpers.download_mendeley_dataset_tree_from_api(
-        dataset_id=dataset_id,
-        version=version,
-        destination_root=destination_root,
-        request_json=_request_json,
-        download_file=_download_file,
+    archive_path = _download_file(
+        url=f"https://data.mendeley.com/public-api/zip/{dataset_id}/download/{version}",
+        destination_path=destination_root.parent / f"{dataset_id}-{version}.zip",
     )
+    _ensure_extracted_archive(archive_path=archive_path, extract_root=destination_root)
+    marker_name = f".extract-ok-{archive_path.name}.json"
+    return sum(path.is_file() and path.name != marker_name for path in destination_root.rglob("*"))
 
 
 def prepare_mesd_from_mendeley(*, dataset_root: Path) -> AutoDownloadArtifacts:
@@ -556,10 +557,10 @@ def prepare_mesd_from_mendeley(*, dataset_root: Path) -> AutoDownloadArtifacts:
         dataset_root=dataset_root,
         dataset_id=MESD_MENDELEY_DATASET_ID,
         version=MESD_DEFAULT_VERSION,
-        extract_dir_name="mesd",
+        extract_dir_name=MESD_EXTRACT_DIR_NAME,
         labels_file_name=DEFAULT_LABELS_FILE_NAME,
         source_manifest_file_name=DEFAULT_SOURCE_MANIFEST_FILE_NAME,
-        download_mendeley_dataset_tree=_download_mendeley_dataset_tree,
+        download_mendeley_dataset_tree=_download_mendeley_archive_tree,
         generate_labels_from_audio_tree=_generate_labels_from_audio_tree,
         infer_mesd_label=_infer_mesd_label,
         write_source_manifest=_write_source_manifest,
