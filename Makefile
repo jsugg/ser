@@ -56,6 +56,9 @@ type-completeness:
 test:
 	uv run --frozen --extra dev pytest -q
 
+# Measured workers may change to a read-only working directory.
+test-cov: export COVERAGE_FILE := $(CURDIR)/.coverage
+test-cov: export SER_COVERAGE_SOURCE := $(CURDIR)/ser
 test-cov:
 	uv run --frozen --extra dev coverage erase
 	uv run --frozen --extra dev coverage run -m pytest -q
